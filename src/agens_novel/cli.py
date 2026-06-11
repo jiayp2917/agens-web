@@ -4,6 +4,7 @@ Subcommands:
   init    — create runtime/ skeleton, verify env (no key printed).
   run     — execute the Writer Agent on a user input.
   status  — show the most recent run summary.
+  repl    — launch the interactive multi-agent REPL.
 """
 
 from __future__ import annotations
@@ -161,6 +162,25 @@ def status() -> None:
         f"  ok:        {not audit.get('llm_error')}",
         title=f"latest run ({len(runs)} total)",
     ))
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# repl — interactive multi-agent REPL
+# ─────────────────────────────────────────────────────────────────────────────
+@app.command()
+def repl() -> None:
+    """Launch the interactive multi-agent REPL."""
+    from .repl import Repl, default_runner
+
+    settings = Settings()
+    if not settings.has_api_key():
+        console.print(
+            "[yellow]⚠ AGNES_API_KEY is not set — the REPL will reject writes.[/yellow]\n"
+            "  Set it in your shell, or use scripts/run_with_key.ps1."
+        )
+
+    session = Repl(runner=default_runner)
+    raise typer.Exit(code=session.run())
 
 
 if __name__ == "__main__":
