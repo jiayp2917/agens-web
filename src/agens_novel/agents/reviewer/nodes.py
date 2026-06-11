@@ -138,7 +138,7 @@ def save_artifact(state: dict[str, Any]) -> dict[str, Any]:
 # ─────────────────────────────────────────────────────────────────────────────
 # Helpers
 # ─────────────────────────────────────────────────────────────────────────────
-_JSON_RE = re.compile(r"\{[^{}]*\"score\"[^{}]*\"passed\"[^{}]*\"feedback\"[^{}]*\}", re.DOTALL)
+_MAX_CANDIDATE_LEN = 65536
 
 
 def _parse_review_output(text: str) -> tuple[int, bool, str]:
@@ -148,24 +148,38 @@ def _parse_review_output(text: str) -> tuple[int, bool, str]:
     - clean JSON: ``{"score": 8, "passed": true, "feedback": "..."}``
     - JSON wrapped in ```json fences```
     - JSON embedded in surrounding prose
+    - Fields in any order
+
+    Strategy: extract candidate substrings, then try ``json.loads`` on each
+    and check for the three required keys.
     """
     candidates: list[str] = []
-    # 1. Fenced block
-    fence = re.search(r"```(?:json)?\s*(\{.*?\})\s*```", text, re.DOTALL)
+    # 1. Fenced block (greedy to handle nested braces in values).
+    fence = re.search(r"```(?:json)?\s*(\{.*\})\s*```", text, re.DOTALL)
     if fence:
         candidates.append(fence.group(1))
-    # 2. Regex match for the full triple
-    for m in _JSON_RE.finditer(text):
-        candidates.append(m.group(0))
-    # 3. Whole-string JSON
+    # 2. Whole-string JSON
     stripped = text.strip()
     if stripped.startswith("{") and stripped.endswith("}"):
         candidates.append(stripped)
+    # 3. First brace-to-brace substring (for prose-embedded JSON).
+    first_brace = stripped.find("{")
+    last_brace = stripped.rfind("}")
+    if first_brace >= 0 and last_brace > first_brace:
+        candidate = stripped[first_brace : last_brace + 1]
+        if candidate not in candidates:
+            candidates.append(candidate)
 
     last_err: Exception | None = None
     for c in candidates:
+        if len(c) > _MAX_CANDIDATE_LEN:
+            continue
         try:
             data = json.loads(c)
+            if not isinstance(data, dict):
+                continue
+            if "score" not in data:
+                continue
             score = int(data.get("score", 0))
             passed = bool(data.get("passed", score >= 7))
             feedback = str(data.get("feedback", "")).strip() or "ok"

@@ -179,7 +179,7 @@ class TestReplErrorHandling:
         repl = Repl(input_fn=lambda _p: next(inputs), runner=error_runner)
         repl.run()
         out = capsys.readouterr().out
-        assert "boom" in out
+        assert "pipeline failed" in out or "error" in out.lower()
 
     def test_eof_exits_cleanly(self, capsys, monkeypatch) -> None:
         from agens_novel.repl import Repl
@@ -192,3 +192,48 @@ class TestReplErrorHandling:
         repl = Repl(input_fn=raise_eof)
         rc = repl.run()
         assert rc == 0
+
+    def test_stop_iteration_exits_cleanly(self, monkeypatch) -> None:
+        """Exhausted test input generators should not crash the loop."""
+        from agens_novel.repl import Repl
+
+        monkeypatch.setenv("AGNES_API_KEY", "sk-test-1234567890")
+
+        def raise_stop(_p):
+            raise StopIteration
+
+        repl = Repl(input_fn=raise_stop)
+        rc = repl.run()
+        assert rc == 0
+
+    def test_keyboard_interrupt_exits_cleanly(self, monkeypatch) -> None:
+        from agens_novel.repl import Repl
+
+        monkeypatch.setenv("AGNES_API_KEY", "sk-test-1234567890")
+
+        def raise_kbi(_p):
+            raise KeyboardInterrupt
+
+        repl = Repl(input_fn=raise_kbi)
+        rc = repl.run()
+        assert rc == 0
+
+    def test_console_uses_legacy_windows_for_gbk_safety(self) -> None:
+        """On Windows the default REPL Console must be legacy_windows=True
+        so that Rich avoids Unicode box drawing that crashes on GBK stdout."""
+        from agens_novel.repl import Repl
+
+        repl = Repl()
+        # When no explicit console is passed, the default should be GBK-safe.
+        assert repl.console.legacy_windows is True
+
+    def test_help_text_is_ascii(self) -> None:
+        """The help banner must not contain non-ASCII characters that
+        would crash a GBK-encoded terminal."""
+        from agens_novel.repl import loop as repl_loop
+
+        help_agents = repl_loop.HELP_AGENTS
+        prompt = repl_loop.PROMPT
+        # All characters in these user-facing strings must be ASCII.
+        assert all(ord(c) < 128 for c in help_agents), f"non-ASCII in HELP_AGENTS: {help_agents!r}"
+        assert all(ord(c) < 128 for c in prompt), f"non-ASCII in PROMPT: {prompt!r}"

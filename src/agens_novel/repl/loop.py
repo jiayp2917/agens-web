@@ -35,13 +35,13 @@ from .commands import (
 
 log = logging.getLogger(__name__)
 
-PROMPT = "agens ❯ "
+PROMPT = "agens> "
 HELP_AGENTS = (
-    "Pipeline: [bold]Planner → Writer → Reviewer → Editor[/bold]\n"
-    "  • Planner   — free-form request → outline\n"
-    "  • Writer    — outline + request → draft\n"
-    "  • Reviewer  — draft → score + feedback (loops Writer, max 3 iters)\n"
-    "  • Editor    — draft + feedback → final prose"
+    "Pipeline: [bold]Planner -> Writer -> Reviewer -> Editor[/bold]\n"
+    "  - Planner   - free-form request -> outline\n"
+    "  - Writer    - outline + request -> draft\n"
+    "  - Reviewer  - draft -> score + feedback (loops Writer, max 3 iters)\n"
+    "  - Editor    - draft + feedback -> final prose"
 )
 
 
@@ -54,7 +54,7 @@ class Repl:
         input_fn: Callable[[str], str] | None = None,
         runner: Callable[[str, str], dict] | None = None,
     ) -> None:
-        self.console = console or Console(legacy_windows=False, soft_wrap=True)
+        self.console = console or Console(legacy_windows=True, soft_wrap=True)
         self.input_fn = input_fn or (lambda prompt: Prompt.ask(prompt, console=self.console))
         # runner is injected by main(); default rejects writes to keep the
         # REPL usable in environments without a configured API key.
@@ -77,8 +77,6 @@ class Repl:
         s = Settings()
         for k, v in s.public_summary().items():
             self.console.print(f"  {k}: {v}")
-        masked = mask(s.api_key) if hasattr(s, "api_key") else "<unset>"
-        self.console.print(f"  api_key: {masked}")
 
     def cmd_status(self, _args: str) -> None:
         from . import status_view
@@ -99,6 +97,12 @@ class Repl:
         if not args.strip():
             self.console.print("[yellow]usage: /plan <request>[/yellow]")
             return
+        if not _has_api_key():
+            self.console.print(
+                "[red]AGNES_API_KEY is not set. "
+                "Run `agens-novel init` first.[/red]"
+            )
+            return
         from . import planner_view
         planner_view.run_plan_only(self.console, args.strip())
 
@@ -111,14 +115,15 @@ class Repl:
     # ─────────────────────────────────────────────────────────────────────────
     def run(self) -> int:
         self.console.print(Panel(
-            "[bold]agens-novel[/bold] — multi-agent novel REPL\n"
+            "[bold]agens-novel[/bold] - multi-agent novel REPL\n"
             "Type a writing request, or /help for commands.",
             border_style="cyan",
         ))
         while True:
             try:
                 raw = self.input_fn(PROMPT)
-            except (EOFError, KeyboardInterrupt):
+            except (EOFError, KeyboardInterrupt, StopIteration):
+                # EOF on stdin (Ctrl+Z / Ctrl+D), Ctrl+C, or exhausted test input.
                 self.console.print()
                 return 0
 
@@ -126,6 +131,7 @@ class Repl:
             if isinstance(cmd, EmptyCommand):
                 continue
             if isinstance(cmd, ExitCommand):
+                self.console.print("[dim]bye.[/dim]")
                 return 0
             if isinstance(cmd, SlashCommand):
                 self.history.append(f"/{cmd.name} {cmd.args}".rstrip())
@@ -160,21 +166,22 @@ class Repl:
 
     def _handle_write(self, text: str) -> None:
         if not _has_api_key():
-            self.console.print("[red]✘ AGNES_API_KEY is not set. Run `agens-novel init` first.[/red]")
+            self.console.print("[red]AGNES_API_KEY is not set. Run `agens-novel init` first.[/red]")
             return
         with self.console.status("[bold green]running multi-agent pipeline..."):
             try:
                 result = self.runner(text, "")
-            except Exception as e:  # noqa: BLE001
-                self.console.print(f"[red]pipeline error:[/red] {e}")
+            except (SystemExit, KeyboardInterrupt):
+                raise
+            except Exception:  # noqa: BLE001
+                log.exception("pipeline error")
+                self.console.print("[red]pipeline error[/red] (see logs for details)")
                 return
         if not result:
             self.console.print("[red]runner returned no result[/red]")
             return
         if result.get("error"):
-            self.console.print(f"[red]✘ {result['error']}[/red]")
-            if result.get("audit_path"):
-                self.console.print(f"  audit: {result['audit_path']}")
+            self.console.print(f"[red]error:[/red] pipeline failed")
             return
 
         final = (result.get("final_text") or result.get("draft") or "").strip()
@@ -199,7 +206,12 @@ def _has_api_key() -> bool:
 # Default runner wiring (used when REPL is launched via the CLI).
 # ─────────────────────────────────────────────────────────────────────────────
 def default_runner(user_request: str, style_hint: str) -> dict:
-    """Run the full orchestrator graph synchronously and return the final state."""
+    """Run the full orchestrator graph synchronously and return the final state.
+
+    Uses ``asyncio.run()`` unconditionally because the REPL is always launched
+    from a synchronous CLI entry point -- there is never a pre-existing event
+    loop.
+    """
     from ..orchestrator import build_orchestrator_graph
     import asyncio
     import uuid
@@ -212,11 +224,4 @@ def default_runner(user_request: str, style_hint: str) -> dict:
         "thread_id": thread_id,
     }
     config = {"configurable": {"thread_id": thread_id}}
-
-    try:
-        loop = asyncio.get_event_loop()
-        if loop.is_running():
-            return loop.run_until_complete(graph.ainvoke(initial, config=config))
-    except RuntimeError:
-        pass
     return asyncio.run(graph.ainvoke(initial, config=config))

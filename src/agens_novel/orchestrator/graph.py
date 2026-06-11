@@ -1,15 +1,14 @@
-"""Orchestrator — chains Planner → Writer → Reviewer → Editor.
+"""Orchestrator -- chains Planner -> Writer -> Reviewer -> Editor.
 
 The Orchestrator is a single ``StateGraph(OrchestratorState)`` that runs each
 sub-agent in sequence. After the Reviewer runs, the orchestrator either
 forwards to the Editor (review passed) or loops back to the Writer with
 feedback appended to the user message (review failed, iterations < 3).
 
-Note: the four sub-agents are themselves state graphs. To keep the
-orchestrator's state shape stable, we invoke each sub-agent by calling
-its nodes directly here, passing the orchestrator's state into them. This
-sidesteps LangGraph's "state must match the sub-graph's TypedDict" friction
-because all four sub-agents share ``OrchestratorState`` already.
+Sub-agents are invoked by calling their node functions directly (not via
+compiled sub-graphs) so that all four share the OrchestratorState shape.
+The trade-off is that sub-graph checkpointers are not used; see the README
+for the rationale.
 """
 
 from __future__ import annotations
@@ -25,6 +24,7 @@ from ..agents.editor import nodes as editor_nodes
 from ..agents.planner import nodes as planner_nodes
 from ..agents.reviewer import nodes as reviewer_nodes
 from ..agents.writer import nodes as writer_nodes
+from ..artifacts import store
 from ..state.orchestrator_schema import OrchestratorState
 from ..utils.timing import utcnow_iso
 
@@ -32,73 +32,96 @@ log = logging.getLogger(__name__)
 
 
 # ─────────────────────────────────────────────────────────────────────────────
-# Sub-agent wrappers: run a sub-graph and merge its output back into the
-# orchestrator's running state. Each wrapper handles the full
-# load → build → call → save cycle for its agent.
+# Sub-agent wrapper
 # ─────────────────────────────────────────────────────────────────────────────
-def _run_sub_agent(state: dict[str, Any], agent_module: Any) -> dict[str, Any]:
-    """Drive a sub-agent by calling its four nodes in order and merging output."""
+async def _run_sub_agent(state: dict[str, Any], agent_module: Any) -> dict[str, Any]:
+    """Drive a sub-agent by calling its four nodes in order and merging output.
+
+    Async so it works correctly inside LangGraph's ``ainvoke``. We skip
+    ``load_settings`` when the orchestrator has already bootstrapped run_id /
+    model / base_url, to keep a single run_id for cross-agent correlation.
+    """
     updates: dict[str, Any] = {}
-    updates.update(agent_module.load_settings(state))
+    if state.get("run_id"):
+        # Orchestrator already bootstrapped -- carry forward.
+        updates.update({
+            "run_id": state["run_id"],
+            "model": state.get("model", ""),
+            "base_url": state.get("base_url", ""),
+            "api_key_set": state.get("api_key_set", False),
+            "started_at": state.get("started_at", ""),
+        })
+    else:
+        updates.update(agent_module.load_settings(state))
     updates.update(agent_module.build_prompt({**state, **updates}))
-    import asyncio
-    try:
-        loop = asyncio.get_event_loop()
-        if loop.is_running():
-            llm_updates = loop.run_until_complete(_async_call(agent_module, {**state, **updates}))
-        else:
-            llm_updates = asyncio.run(_async_call(agent_module, {**state, **updates}))
-    except RuntimeError:
-        llm_updates = asyncio.run(_async_call(agent_module, {**state, **updates}))
-    updates.update(llm_updates)
+    updates.update(await agent_module.call_agnes_llm({**state, **updates}))
     updates.update(agent_module.save_artifact({**state, **updates}))
     return updates
-
-
-async def _async_call(agent_module: Any, state: dict[str, Any]) -> dict[str, Any]:
-    return await agent_module.call_agnes_llm(state)
 
 
 # ─────────────────────────────────────────────────────────────────────────────
 # Orchestrator nodes
 # ─────────────────────────────────────────────────────────────────────────────
-def plan_dispatch(state: dict[str, Any]) -> dict[str, Any]:
+def init_run(state: dict[str, Any]) -> dict[str, Any]:
+    """Bootstrap the orchestrator run: generate run_id, read env, validate."""
+    user_request = state.get("user_request", "").strip()
+    if not user_request:
+        raise ValueError("user_request is required (pass a non-empty string).")
+    base_url = os.environ.get("AGNES_BASE_URL", "https://apihub.agnes-ai.com/v1")
+    model = os.environ.get("AGNES_MODEL", "agnes-2.0-flash")
+    api_key = os.environ.get("AGNES_API_KEY", "")
+    run_id = store.new_run_id()
+    log.info("[orchestrator.init] run_id=%s model=%s", run_id, model)
+    return {
+        "run_id": run_id,
+        "model": model,
+        "base_url": base_url,
+        "api_key_set": bool(api_key),
+        "started_at": utcnow_iso(),
+    }
+
+
+async def plan_dispatch(state: dict[str, Any]) -> dict[str, Any]:
     """Run the Planner sub-agent."""
     log.info("[orchestrator] -> planner")
-    out = _run_sub_agent(state, planner_nodes)
+    out = await _run_sub_agent(state, planner_nodes)
     log.info("[orchestrator] planner done: outline=%d chars", len(out.get("outline", "")))
+    # Propagate any LLM error to the orchestrator-level error field.
+    if out.get("llm_error"):
+        out["error"] = out["llm_error"]
     return out
 
 
-def write_dispatch(state: dict[str, Any]) -> dict[str, Any]:
+async def write_dispatch(state: dict[str, Any]) -> dict[str, Any]:
     """Run the Writer sub-agent, feeding it the planner's outline as the
-    primary user request. The original user request and review feedback (if
-    any, on retry) are also attached to the Writer's prompt via a state-level
-    override on ``user_input`` and ``style_hint``."""
+    primary user request."""
     log.info("[orchestrator] -> writer (iter=%s)", state.get("review_iterations", 0))
-    # The Writer expects ``user_input``/``style_hint`` fields, not the
-    # orchestrator's ``user_request``/``outline``. Build a Writer-shaped
-    # substate on the fly.
     substate = dict(state)
     substate["user_input"] = _build_writer_user_input(state)
     substate["style_hint"] = state.get("style_hint", "")
-    out = _run_sub_agent(substate, writer_nodes)
+    out = await _run_sub_agent(substate, writer_nodes)
     log.info("[orchestrator] writer done: draft=%d chars", len(out.get("draft", out.get("output_text", ""))))
     # Normalize Writer's ``output_text`` into the orchestrator's ``draft``.
     if "draft" not in out and "output_text" in out:
         out["draft"] = out["output_text"]
+    if out.get("llm_error"):
+        out["error"] = out["llm_error"]
     return out
 
 
-def review_dispatch(state: dict[str, Any]) -> dict[str, Any]:
+async def review_dispatch(state: dict[str, Any]) -> dict[str, Any]:
     log.info("[orchestrator] -> reviewer (iter=%s)", state.get("review_iterations", 0))
-    out = _run_sub_agent(state, reviewer_nodes)
+    out = await _run_sub_agent(state, reviewer_nodes)
     log.info("[orchestrator] reviewer done: score=%s passed=%s", out.get("review_score"), out.get("review_passed"))
     return out
 
 
 def review_decide(state: dict[str, Any]) -> str:
-    """Conditional edge after review: editor if passed or max iterations, else writer."""
+    """Conditional edge after review: editor if passed or max iterations, else writer.
+
+    Short-circuits to ``finish`` on any agent-level error (LLM failure etc.).
+    The iteration cap (>= 3) prevents infinite loops.
+    """
     if state.get("error"):
         return "finish"
     passed = bool(state.get("review_passed"))
@@ -109,17 +132,17 @@ def review_decide(state: dict[str, Any]) -> str:
     return "writer"
 
 
-def editor_save(state: dict[str, Any]) -> dict[str, Any]:
+async def editor_save(state: dict[str, Any]) -> dict[str, Any]:
     log.info("[orchestrator] -> editor")
-    out = _run_sub_agent(state, editor_nodes)
+    out = await _run_sub_agent(state, editor_nodes)
     log.info("[orchestrator] editor done: final=%d chars", len(out.get("final_text", "")))
+    if out.get("llm_error"):
+        out["error"] = out["llm_error"]
     return out
 
 
 def orchestrator_finish(state: dict[str, Any]) -> dict[str, Any]:
     """Write the final orchestrator-level audit and log the run."""
-    from ..artifacts import store
-
     run_id = state.get("run_id") or store.new_run_id()
     final_text = state.get("final_text") or state.get("draft") or ""
     audit = {
@@ -161,13 +184,13 @@ def _build_writer_user_input(state: dict[str, Any]) -> str:
     the original request, and (if present) the reviewer's feedback."""
     parts: list[str] = []
     if state.get("user_request"):
-        parts.append(f"[用户原始请求]\n{state['user_request']}")
+        parts.append(f"[user request]\n{state['user_request']}")
     if state.get("outline"):
-        parts.append(f"[大纲]\n{state['outline']}")
+        parts.append(f"[outline]\n{state['outline']}")
     if state.get("plan_notes"):
-        parts.append(f"[风格计划]\n{state['plan_notes']}")
+        parts.append(f"[style plan]\n{state['plan_notes']}")
     if state.get("review_feedback") and not state.get("review_passed"):
-        parts.append(f"[审稿修改意见(必须落实)]\n{state['review_feedback']}")
+        parts.append(f"[review feedback (must address)]\n{state['review_feedback']}")
     return "\n\n".join(parts)
 
 
@@ -176,16 +199,18 @@ def _build_writer_user_input(state: dict[str, Any]) -> str:
 # ─────────────────────────────────────────────────────────────────────────────
 def build_orchestrator_graph() -> Any:
     g = StateGraph(OrchestratorState)
+    g.add_node("init_run", init_run)
     g.add_node("planner", plan_dispatch)
     g.add_node("writer", write_dispatch)
     g.add_node("reviewer", review_dispatch)
     g.add_node("editor", editor_save)
     g.add_node("finish", orchestrator_finish)
 
-    g.add_edge(START, "planner")
+    g.add_edge(START, "init_run")
+    g.add_edge("init_run", "planner")
     g.add_edge("planner", "writer")
     g.add_edge("writer", "reviewer")
-    # Conditional: pass -> editor; fail -> writer (loop)
+    # Conditional: pass -> editor; fail -> writer (loop); error -> finish
     g.add_conditional_edges(
         "reviewer",
         review_decide,
