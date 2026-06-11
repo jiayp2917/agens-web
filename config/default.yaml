@@ -1,0 +1,26 @@
+# agens-novel default config
+
+# LLM call defaults
+llm:
+  default_model: agnes-2.0-flash
+  default_temperature: 0.7
+  default_max_tokens: 4096
+  request_timeout_seconds: 60
+  max_retries: 3
+  retry_initial_backoff_seconds: 1.0
+  retry_max_backoff_seconds: 8.0
+
+# Writer Agent settings
+writer:
+  temperature: 0.7
+  max_tokens: 4096
+  artifact_subdir: writer
+
+# Paths (relative to project root, or absolute)
+paths:
+  project_root: .
+  runtime_dir: runtime
+  artifact_root: runtime/artifacts
+  checkpoint_dir: runtime/checkpoints
+  log_dir: runtime/logs
+  system_prompt_dir: config/prompts/system

@@ -1,0 +1,25 @@
+"""Reducer functions for LangGraph Annotated state fields."""
+
+from __future__ import annotations
+
+from operator import add
+from typing import Annotated
+
+
+def last_wins(existing: list, new: list) -> list:
+    """Reducer that returns only the latest value (replaces, doesn't append).
+
+    Useful for "current X" fields where history is irrelevant.
+
+    Semantics:
+      * If new is a non-empty list → return new (replace).
+      * If new is an empty list   → keep existing (do not clobber).
+    """
+    if new:
+        return new
+    return existing or []
+
+
+# Convenience: Annotated alias used in state schemas.
+Append = Annotated[list, add]
+ReplaceList = Annotated[list, last_wins]
