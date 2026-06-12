@@ -67,10 +67,17 @@ _WRITE_INTENT_KEYWORDS = (
     "write a", "write me", "generate", "story", "novel",
 )
 
+# Phrases that contain a write keyword but are NOT actually a writing request.
+_WRITE_INTENT_NEGATIVE = (
+    "read me a", "tell me a", "what is", "how to", "read me a story",
+)
+
 
 def has_write_intent(text: str) -> bool:
     """Heuristic: does the input look like a writing request?"""
     lower = text.lower()
+    if any(neg in lower for neg in _WRITE_INTENT_NEGATIVE):
+        return False
     return any(kw in lower for kw in _WRITE_INTENT_KEYWORDS)
 
 
