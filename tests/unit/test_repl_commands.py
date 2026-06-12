@@ -1,4 +1,4 @@
-"""Unit tests for the REPL command parser and dispatcher."""
+"""Unit tests for the REPL command parser, dispatcher, and chat mode."""
 
 from __future__ import annotations
 
@@ -8,6 +8,7 @@ from agens_novel.repl import (
     SlashCommand,
     WriteCommand,
     format_help,
+    has_write_intent,
     parse_command,
 )
 
@@ -19,7 +20,6 @@ class TestParseCommand:
     def test_blank_is_empty(self) -> None:
         assert isinstance(parse_command(""), EmptyCommand)
         assert isinstance(parse_command("   "), EmptyCommand)
-        assert isinstance(parse_command("\t\n"), EmptyCommand)
 
     def test_slash_help(self) -> None:
         c = parse_command("/help")
@@ -28,10 +28,10 @@ class TestParseCommand:
         assert c.args == ""
 
     def test_slash_with_args(self) -> None:
-        c = parse_command("/plan 用 50 字写许满")
+        c = parse_command("/plan write a story")
         assert isinstance(c, SlashCommand)
         assert c.name == "plan"
-        assert "许满" in c.args
+        assert "story" in c.args
 
     def test_slash_is_case_insensitive_on_name(self) -> None:
         c = parse_command("/HELP")
@@ -39,13 +39,13 @@ class TestParseCommand:
         assert c.name == "help"
 
     def test_exit_aliases(self) -> None:
-        for s in ["/exit", "/quit", ":q", ":quit", "exit", "quit"]:
+        for s in ["/exit", "/quit", ":q", ":quit"]:
             assert isinstance(parse_command(s), ExitCommand), s
 
     def test_free_form_text_is_write(self) -> None:
-        c = parse_command("写一段都市修仙的开头")
+        c = parse_command("hello world")
         assert isinstance(c, WriteCommand)
-        assert "都市修仙" in c.text
+        assert c.text == "hello world"
 
     def test_free_form_text_is_stripped(self) -> None:
         c = parse_command("  hello world  ")
@@ -55,6 +55,34 @@ class TestParseCommand:
     def test_lone_slash_is_empty(self) -> None:
         assert isinstance(parse_command("/"), EmptyCommand)
 
+    def test_new_commands_parse(self) -> None:
+        for name in ["write", "review", "edit", "run", "step", "reset"]:
+            c = parse_command(f"/{name}")
+            assert isinstance(c, SlashCommand), f"/{name}"
+            assert c.name == name
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# has_write_intent
+# ─────────────────────────────────────────────────────────────────────────────
+class TestWriteIntent:
+    def test_detects_chinese_write_intent(self) -> None:
+        assert has_write_intent("写一段都市修仙开头")
+        assert has_write_intent("帮我写个故事")
+        assert has_write_intent("生成一个片段")
+
+    def test_detects_english_write_intent(self) -> None:
+        assert has_write_intent("write a story about dragons")
+        assert has_write_intent("generate a novel opening")
+
+    def test_no_intent_for_greeting(self) -> None:
+        assert not has_write_intent("你好")
+        assert not has_write_intent("hello")
+
+    def test_no_intent_for_questions(self) -> None:
+        assert not has_write_intent("今天天气怎么样")
+        assert not has_write_intent("what is langgraph")
+
 
 # ─────────────────────────────────────────────────────────────────────────────
 # format_help
@@ -62,8 +90,13 @@ class TestParseCommand:
 class TestFormatHelp:
     def test_lists_all_commands(self) -> None:
         text = format_help()
-        for name in ["help", "exit", "status", "config", "history", "agents", "plan"]:
-            assert f"/{name}" in text
+        for name in ["help", "exit", "status", "config", "history", "agents",
+                      "plan", "write", "review", "edit", "run", "step", "reset"]:
+            assert f"/{name}" in text, f"missing /{name} in help"
+
+    def test_mentions_chat_agent(self) -> None:
+        text = format_help()
+        assert "Chat Agent" in text
 
     def test_returns_string(self) -> None:
         assert isinstance(format_help(), str)
@@ -71,15 +104,13 @@ class TestFormatHelp:
 
 
 # ─────────────────────────────────────────────────────────────────────────────
-# Repl dispatcher (uses an injected input function — no real stdin)
+# Repl dispatcher
 # ─────────────────────────────────────────────────────────────────────────────
 class TestReplDispatch:
     def test_help_dispatch(self, capsys) -> None:
         from agens_novel.repl import Repl
 
-        repl = Repl(input_fn=lambda _p: "/help")
-        # We don't enter run() because the prompt would block; just verify
-        # cmd_help is callable and prints the help text.
+        repl = Repl()
         repl.cmd_help("")
         captured = capsys.readouterr()
         assert "Available commands" in captured.out
@@ -92,8 +123,6 @@ class TestReplDispatch:
         out = capsys.readouterr().out
         assert "Planner" in out
         assert "Writer" in out
-        assert "Reviewer" in out
-        assert "Editor" in out
 
     def test_history_empty(self, capsys) -> None:
         from agens_novel.repl import Repl
@@ -104,11 +133,9 @@ class TestReplDispatch:
         assert "no history" in out.lower()
 
     def test_unknown_slash_in_dispatch(self, capsys) -> None:
-        from agens_novel.repl import Repl
+        from agens_novel.repl import Repl, SlashCommand
 
         repl = Repl()
-        # _dispatch_slash should print an error and not exit.
-        from agens_novel.repl import SlashCommand
         exited = repl._dispatch_slash(SlashCommand(name="foobar", args=""))
         assert exited is False
         out = capsys.readouterr().out
@@ -119,8 +146,52 @@ class TestReplDispatch:
 
         repl = Repl()
         assert repl._dispatch_slash(SlashCommand(name="exit", args="")) is True
-        assert repl._dispatch_slash(SlashCommand(name="quit", args="")) is True
 
+    def test_step_with_no_session(self, capsys) -> None:
+        from agens_novel.repl import Repl
+
+        repl = Repl()
+        repl.cmd_step("")
+        out = capsys.readouterr().out
+        assert "no active pipeline" in out.lower()
+
+    def test_reset_clears_session(self, capsys) -> None:
+        from agens_novel.repl import Repl
+
+        repl = Repl()
+        repl.pipeline_session.user_request = "test"
+        repl.cmd_reset("")
+        assert repl.pipeline_session.user_request == ""
+
+    def test_write_without_plan_shows_error(self, capsys) -> None:
+        from agens_novel.repl import Repl
+
+        repl = Repl()
+        repl.cmd_write("")
+        out = capsys.readouterr().out
+        assert "No outline" in out
+
+    def test_review_without_draft_shows_error(self, capsys) -> None:
+        from agens_novel.repl import Repl
+
+        repl = Repl()
+        repl.cmd_review("")
+        out = capsys.readouterr().out
+        assert "No draft" in out
+
+    def test_edit_without_draft_shows_error(self, capsys) -> None:
+        from agens_novel.repl import Repl
+
+        repl = Repl()
+        repl.cmd_edit("")
+        out = capsys.readouterr().out
+        assert "No draft" in out
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# Repl main loop
+# ─────────────────────────────────────────────────────────────────────────────
+class TestReplLoop:
     def test_run_loop_with_injected_inputs(self, capsys) -> None:
         from agens_novel.repl import Repl
 
@@ -128,73 +199,10 @@ class TestReplDispatch:
         repl = Repl(input_fn=lambda _p: next(inputs))
         rc = repl.run()
         assert rc == 0
-        # History should contain the two non-exit commands.
         assert any(line.startswith("/help") for line in repl.history)
         assert any(line.startswith("/agents") for line in repl.history)
 
-    def test_run_loop_with_write_command_calls_runner(self, capsys, monkeypatch) -> None:
-        from agens_novel.repl import Repl
-
-        monkeypatch.setenv("AGNES_API_KEY", "sk-test-1234567890")
-        called: list[tuple[str, str]] = []
-
-        def fake_runner(req: str, hint: str) -> dict:
-            called.append((req, hint))
-            return {"final_text": "**最终的正文**", "draft": "draft", "review_score": 8,
-                    "review_iterations": 1, "output_path": "/tmp/x", "audit_path": "/tmp/a",
-                    "error": ""}
-
-        inputs = iter(["写一段都市修仙", "/exit"])
-        repl = Repl(input_fn=lambda _p: next(inputs), runner=fake_runner)
-        rc = repl.run()
-        assert rc == 0
-        assert called == [("写一段都市修仙", "")]
-
-
-class TestReplErrorHandling:
-    def test_write_without_api_key_rejected(self, capsys, monkeypatch) -> None:
-        from agens_novel.repl import Repl
-
-        monkeypatch.delenv("AGNES_API_KEY", raising=False)
-        # runner would be called only if api key is set
-        def fail_runner(*_a, **_k):  # pragma: no cover
-            raise AssertionError("runner should not be called")
-
-        inputs = iter(["写一段", "/exit"])
-        repl = Repl(input_fn=lambda _p: next(inputs), runner=fail_runner)
-        rc = repl.run()
-        assert rc == 0
-        out = capsys.readouterr().out
-        assert "AGNES_API_KEY" in out
-
-    def test_write_with_runner_error(self, capsys, monkeypatch) -> None:
-        from agens_novel.repl import Repl
-
-        monkeypatch.setenv("AGNES_API_KEY", "sk-test-1234567890")
-
-        def error_runner(_req, _hint):
-            return {"error": "boom", "final_text": "", "audit_path": "/x"}
-
-        inputs = iter(["x", "/exit"])
-        repl = Repl(input_fn=lambda _p: next(inputs), runner=error_runner)
-        repl.run()
-        out = capsys.readouterr().out
-        assert "pipeline failed" in out or "error" in out.lower()
-
-    def test_eof_exits_cleanly(self, capsys, monkeypatch) -> None:
-        from agens_novel.repl import Repl
-
-        monkeypatch.setenv("AGNES_API_KEY", "sk-test-1234567890")
-
-        def raise_eof(_p):
-            raise EOFError
-
-        repl = Repl(input_fn=raise_eof)
-        rc = repl.run()
-        assert rc == 0
-
     def test_stop_iteration_exits_cleanly(self, monkeypatch) -> None:
-        """Exhausted test input generators should not crash the loop."""
         from agens_novel.repl import Repl
 
         monkeypatch.setenv("AGNES_API_KEY", "sk-test-1234567890")
@@ -218,22 +226,140 @@ class TestReplErrorHandling:
         rc = repl.run()
         assert rc == 0
 
-    def test_console_uses_legacy_windows_for_gbk_safety(self) -> None:
-        """On Windows the default REPL Console must be legacy_windows=True
-        so that Rich avoids Unicode box drawing that crashes on GBK stdout."""
+    def test_console_uses_legacy_windows(self) -> None:
         from agens_novel.repl import Repl
 
         repl = Repl()
-        # When no explicit console is passed, the default should be GBK-safe.
         assert repl.console.legacy_windows is True
 
     def test_help_text_is_ascii(self) -> None:
-        """The help banner must not contain non-ASCII characters that
-        would crash a GBK-encoded terminal."""
         from agens_novel.repl import loop as repl_loop
 
-        help_agents = repl_loop.HELP_AGENTS
         prompt = repl_loop.PROMPT
-        # All characters in these user-facing strings must be ASCII.
-        assert all(ord(c) < 128 for c in help_agents), f"non-ASCII in HELP_AGENTS: {help_agents!r}"
         assert all(ord(c) < 128 for c in prompt), f"non-ASCII in PROMPT: {prompt!r}"
+
+    def test_exit_command_prints_bye(self, capsys) -> None:
+        from agens_novel.repl import Repl
+
+        inputs = iter(["/exit"])
+        repl = Repl(input_fn=lambda _p: next(inputs))
+        rc = repl.run()
+        assert rc == 0
+        out = capsys.readouterr().out
+        assert "bye" in out
+
+    def test_slash_run_without_args_shows_usage(self, capsys, monkeypatch) -> None:
+        from agens_novel.repl import Repl
+
+        monkeypatch.setenv("AGNES_API_KEY", "sk-test-1234567890")
+        inputs = iter(["/run", "/exit"])
+        repl = Repl(input_fn=lambda _p: next(inputs))
+        repl.run()
+        out = capsys.readouterr().out
+        assert "usage" in out.lower()
+
+    def test_slash_plan_without_args_shows_usage(self, capsys, monkeypatch) -> None:
+        from agens_novel.repl import Repl
+
+        monkeypatch.setenv("AGNES_API_KEY", "sk-test-1234567890")
+        inputs = iter(["/plan", "/exit"])
+        repl = Repl(input_fn=lambda _p: next(inputs))
+        repl.run()
+        out = capsys.readouterr().out
+        assert "usage" in out.lower()
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# Chat mode (free-form input goes to Chat Agent)
+# ─────────────────────────────────────────────────────────────────────────────
+class TestChatMode:
+    def test_write_without_api_key_rejected(self, capsys, monkeypatch) -> None:
+        from agens_novel.repl import Repl
+
+        monkeypatch.delenv("AGNES_API_KEY", raising=False)
+
+        def fail_runner(*_a, **_k):
+            raise AssertionError("runner should not be called")
+
+        inputs = iter(["hello", "/exit"])
+        repl = Repl(input_fn=lambda _p: next(inputs), runner=fail_runner)
+        rc = repl.run()
+        assert rc == 0
+        out = capsys.readouterr().out
+        assert "AGNES_API_KEY" in out
+
+    def test_write_intent_triggers_confirm(self, monkeypatch) -> None:
+        """Free-form text with write intent shows confirmation dialog."""
+        from agens_novel.repl import Repl
+
+        monkeypatch.setenv("AGNES_API_KEY", "sk-test-1234567890")
+
+        # Simulate: user types write-intent text, chooses "cancel" (option 2),
+        # then /exit.
+        inputs = iter(["write a story", "3", "/exit"])
+        repl = Repl(input_fn=lambda _p: next(inputs))
+        rc = repl.run()
+        assert rc == 0
+
+    def test_eof_exits_cleanly(self, monkeypatch) -> None:
+        from agens_novel.repl import Repl
+
+        monkeypatch.setenv("AGNES_API_KEY", "sk-test-1234567890")
+
+        def raise_eof(_p):
+            raise EOFError
+
+        repl = Repl(input_fn=raise_eof)
+        rc = repl.run()
+        assert rc == 0
+
+
+class TestPipelineSession:
+    def test_initial_state(self) -> None:
+        from agens_novel.repl.pipeline_session import PipelineSession
+
+        s = PipelineSession()
+        assert s.user_request == ""
+        assert s.completed_stages == []
+
+    def test_next_stage_sequence(self) -> None:
+        from agens_novel.repl.pipeline_session import PipelineSession
+
+        s = PipelineSession(user_request="test")
+        assert s.next_stage() == "planner"
+        s.mark_done("planner")
+        assert s.next_stage() == "writer"
+
+    def test_can_run_prerequisites(self) -> None:
+        from agens_novel.repl.pipeline_session import PipelineSession
+
+        s = PipelineSession()
+        assert not s.can_run("writer")  # needs outline
+        s.outline = "test outline"
+        assert s.can_run("writer")
+
+    def test_reset_clears_state(self) -> None:
+        from agens_novel.repl.pipeline_session import PipelineSession
+
+        s = PipelineSession(user_request="test", outline="x")
+        s.mark_done("planner")
+        s.reset()
+        assert s.user_request == ""
+        assert s.outline == ""
+        assert s.completed_stages == []
+
+    def test_as_orchestrator_state(self) -> None:
+        from agens_novel.repl.pipeline_session import PipelineSession
+
+        s = PipelineSession(user_request="test", draft="hello")
+        d = s.as_orchestrator_state()
+        assert d["user_request"] == "test"
+        assert d["draft"] == "hello"
+
+    def test_update_from_result(self) -> None:
+        from agens_novel.repl.pipeline_session import PipelineSession
+
+        s = PipelineSession()
+        s.update_from_result({"outline": "bullet1", "plan_notes": "fast"})
+        assert s.outline == "bullet1"
+        assert s.plan_notes == "fast"

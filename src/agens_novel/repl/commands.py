@@ -4,16 +4,15 @@ Each input line is classified into one of:
   - ``SlashCommand``: a ``/foo args...`` directive
   - ``EmptyCommand``: blank or whitespace
   - ``ExitCommand``: ``/exit``, ``/quit``, ``:q``, EOF
-  - ``WriteCommand``: a free-form writing request
+  - ``WriteCommand``: free-form text (dispatched to Chat Agent)
 
-The parser is intentionally pure: no I/O, no side effects. The REPL loop in
-``repl.loop`` consumes ``ParsedCommand`` values and dispatches them.
+The parser is intentionally pure: no I/O, no side effects.
 """
 
 from __future__ import annotations
 
 from dataclasses import dataclass
-from typing import Literal, Union
+from typing import Union
 
 
 @dataclass(frozen=True)
@@ -41,36 +40,50 @@ ParsedCommand = Union[SlashCommand, WriteCommand, EmptyCommand, ExitCommand]
 
 
 # ─────────────────────────────────────────────────────────────────────────────
-# Slash commands — single source of truth for help text and dispatch.
+# Slash commands -- single source of truth for help text and dispatch.
 # ─────────────────────────────────────────────────────────────────────────────
 SLASH_COMMANDS: dict[str, str] = {
-    "help": "Show available slash commands.",
-    "exit": "Exit the REPL.",
-    "quit": "Alias for /exit.",
+    "help":   "Show available slash commands.",
+    "exit":   "Exit the REPL.",
+    "quit":   "Alias for /exit.",
     "status": "Show the most recent run summary.",
-    "clear": "Clear the screen.",
+    "clear":  "Clear the screen.",
     "config": "Show current configuration (api_key masked).",
-    "history": "Show commands issued in this session.",
+    "history":"Show commands issued in this session.",
     "agents": "List the four agents in the pipeline.",
-    "plan": "Plan only — run the Planner, print outline, do not write.",
+    "plan":   "Plan stage -- run Planner, print outline, store in session.",
+    "write":  "Write stage -- run Writer using session outline.",
+    "review": "Review stage -- run Reviewer on session draft.",
+    "edit":   "Edit stage -- run Editor on session draft + feedback.",
+    "run":    "Run full pipeline automatically (no confirmations).",
+    "step":   "Show current pipeline session state and next stage.",
+    "reset":  "Reset the pipeline session, clearing all stage outputs.",
 }
+
+# Keywords that suggest the user wants to write fiction (not just chat).
+_WRITE_INTENT_KEYWORDS = (
+    "写一段", "写一篇", "写个", "写作", "帮我写", "生成",
+    "小说", "故事", "开头", "结尾", "续写", "片段",
+    "write a", "write me", "generate", "story", "novel",
+)
+
+
+def has_write_intent(text: str) -> bool:
+    """Heuristic: does the input look like a writing request?"""
+    lower = text.lower()
+    return any(kw in lower for kw in _WRITE_INTENT_KEYWORDS)
 
 
 def parse_command(line: str) -> ParsedCommand:
-    """Classify a single REPL input line.
-
-    Public so the test suite can exercise it without driving a real REPL.
-    """
+    """Classify a single REPL input line."""
     stripped = line.strip()
     if not stripped:
         return EmptyCommand()
 
-    # Exit aliases
     lower = stripped.lower()
-    if lower in {"/exit", "/quit", ":q", ":quit", "exit", "quit"}:
+    if lower in {"/exit", "/quit", ":q", ":quit"}:
         return ExitCommand()
 
-    # Slash command
     if stripped.startswith("/"):
         body = stripped[1:]
         if not body:
@@ -80,7 +93,6 @@ def parse_command(line: str) -> ParsedCommand:
         args = parts[1] if len(parts) > 1 else ""
         return SlashCommand(name=name, args=args)
 
-    # Anything else is treated as a free-form writing request.
     return WriteCommand(text=stripped)
 
 
@@ -90,5 +102,6 @@ def format_help() -> str:
     for name, desc in SLASH_COMMANDS.items():
         lines.append(f"  /{name:<8} {desc}")
     lines.append("")
-    lines.append("Anything else is treated as a writing request and dispatched to the multi-agent pipeline.")
+    lines.append("Anything else is sent to the Chat Agent for free-form conversation.")
+    lines.append("Writing requests are detected and a confirmation prompt is shown.")
     return "\n".join(lines)

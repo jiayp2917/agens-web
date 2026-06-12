@@ -1,4 +1,4 @@
-"""Interactive REPL — slash commands, history, and dispatcher."""
+"""Interactive REPL -- slash commands, history, and dispatcher."""
 
 from .commands import (
     EmptyCommand,
@@ -7,6 +7,7 @@ from .commands import (
     SlashCommand,
     WriteCommand,
     format_help,
+    has_write_intent,
     parse_command,
 )
 from .loop import Repl, default_runner
@@ -16,6 +17,7 @@ __all__ = [
     "default_runner",
     "parse_command",
     "format_help",
+    "has_write_intent",
     "ParsedCommand",
     "SlashCommand",
     "WriteCommand",
