@@ -50,6 +50,7 @@ class GameSession:
     experience: int = 0
     experience_to_next: int = 100
     insight: int = 0  # 感悟/心境 — gate resource for major-realm breakthroughs
+    breakthrough_flags: list[str] = field(default_factory=list)
     gold: int = 0
     techniques: list[dict] = field(default_factory=list)
     inventory: list[dict] = field(default_factory=list)
@@ -116,6 +117,7 @@ class GameSession:
                 "experience": self.experience,
                 "experience_to_next": self.experience_to_next,
                 "insight": self.insight,
+                "breakthrough_flags": self.breakthrough_flags,
                 "gold": self.gold,
                 "techniques": self.techniques,
                 "inventory": self.inventory,
@@ -257,6 +259,25 @@ class GameSession:
         if "inventory" in char_delta and "inventory_add" not in char_delta:
             if isinstance(char_delta["inventory"], list):
                 self.inventory = char_delta["inventory"]
+        if "breakthrough_flags" in char_delta:
+            val = char_delta["breakthrough_flags"]
+            if isinstance(val, list):
+                self.breakthrough_flags = _dedupe_strings(val)
+            else:
+                log.warning("apply_delta: breakthrough_flags must be list, got %s", type(val).__name__)
+        if "breakthrough_flags_add" in char_delta:
+            add = char_delta["breakthrough_flags_add"]
+            if add is None:
+                log.warning("apply_delta: breakthrough_flags_add is None, ignoring")
+            elif isinstance(add, list):
+                for flag in _dedupe_strings(add):
+                    if flag not in self.breakthrough_flags:
+                        self.breakthrough_flags.append(flag)
+            elif isinstance(add, str):
+                if add and add not in self.breakthrough_flags:
+                    self.breakthrough_flags.append(add)
+            else:
+                log.warning("apply_delta: breakthrough_flags_add must be list or str, got %s", type(add).__name__)
         if "status_effects" in char_delta:
             val = char_delta["status_effects"]
             if isinstance(val, list):
@@ -384,6 +405,7 @@ class GameSession:
                 "experience": self.experience,
                 "experience_to_next": self.experience_to_next,
                 "insight": self.insight,
+                "breakthrough_flags": self.breakthrough_flags,
                 "gold": self.gold, "techniques": self.techniques,
                 "inventory": self.inventory,
                 "status_effects": self.status_effects,
@@ -439,6 +461,8 @@ class GameSession:
         session.experience = char.get("experience", 0)
         session.experience_to_next = char.get("experience_to_next", 100)
         session.insight = char.get("insight", 0)
+        flags = char.get("breakthrough_flags", [])
+        session.breakthrough_flags = _dedupe_strings(flags) if isinstance(flags, list) else []
         session.gold = char.get("gold", 0)
         session.techniques = char.get("techniques", [])
         session.inventory = char.get("inventory", [])
@@ -464,3 +488,15 @@ class GameSession:
     def reset(self) -> None:
         """Clear all state for a new game."""
         self.__init__()
+
+
+def _dedupe_strings(values: list[Any]) -> list[str]:
+    """Return unique non-empty strings while preserving order."""
+    out: list[str] = []
+    for value in values:
+        if not isinstance(value, str):
+            continue
+        text = value.strip()
+        if text and text not in out:
+            out.append(text)
+    return out

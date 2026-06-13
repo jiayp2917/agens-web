@@ -86,6 +86,17 @@ def _make_session(**overrides):
         "experience": 300,
         "experience_to_next": 100,
         "insight": 9999,        # enough 感悟 to pass the breakthrough gate by default
+        "breakthrough_flags": [
+            "foundation_aid",
+            "golden_core_aid",
+            "nascent_soul_aid",
+            "spirit_transformation_aid",
+            "unity_law_aid",
+            "mahayana_vow_aid",
+            "tribulation_preparation",
+            "tribulation_elixir",
+            "ascension_protection",
+        ],
         "game_over": False,
         "hp": 100,
         "hp_max": 100,
@@ -151,6 +162,40 @@ class TestCanAttemptBreakthrough:
         can, reason = rs.can_attempt_breakthrough(session)
         assert can is False
         assert "感悟" in reason
+
+    def test_not_eligible_missing_breakthrough_resource(self):
+        rs = RealmSystem()
+        session = _make_session(
+            realm="练气", realm_stage=9, experience=300,
+            experience_to_next=100, insight=999, breakthrough_flags=[],
+        )
+        can, reason = rs.can_attempt_breakthrough(session)
+        assert can is False
+        assert "破境准备不足" in reason
+        assert "筑基" in reason
+
+    def test_inventory_item_can_satisfy_requirement(self):
+        rs = RealmSystem()
+        session = _make_session(
+            realm="练气", realm_stage=9, experience=300,
+            experience_to_next=100, insight=999,
+            breakthrough_flags=[],
+            inventory=[{"name": "筑基丹", "type": "丹药"}],
+        )
+        can, reason = rs.can_attempt_breakthrough(session)
+        assert can is True
+        assert reason == ""
+
+    def test_tribulation_to_ascension_requires_elixir_and_protection(self):
+        rs = RealmSystem()
+        session = _make_session(
+            realm="渡劫", realm_stage=4, experience=30000,
+            experience_to_next=20000, insight=999,
+            breakthrough_flags=["tribulation_elixir"],
+        )
+        can, reason = rs.can_attempt_breakthrough(session)
+        assert can is False
+        assert "护身法宝" in reason or "雷劫阵法" in reason
 
     def test_not_eligible_max_realm(self):
         rs = RealmSystem()

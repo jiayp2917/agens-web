@@ -26,3 +26,17 @@ def test_parse_world_output_preserves_opening_choices() -> None:
     assert world_description == "前言"
     assert opening == "晨雾漫过山门。"
     assert data["choices"] == ["留在山门吐纳", "询问接引弟子", "观察灵气流向"]
+
+
+def test_parse_world_output_does_not_pad_short_choices() -> None:
+    payload = {
+        "character": {"name": "许满", "realm": "练气"},
+        "world": {"location": "青玄宗山门"},
+        "opening_narrative": "晨雾漫过山门。",
+        "choices": ["请教陈师兄"],
+    }
+    text = f"前言\n<world_data>\n{json.dumps(payload, ensure_ascii=False)}\n</world_data>"
+
+    data, _world_description, _opening = _parse_world_output(text)
+
+    assert data["choices"] == ["请教陈师兄"]

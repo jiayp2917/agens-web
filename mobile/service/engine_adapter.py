@@ -97,7 +97,7 @@ class EngineAdapter:
         self._run_in_thread(self.engine.new_game, concept)
 
     def start_from_profile(self, profile: dict[str, Any]) -> None:
-        self.engine.start_from_profile(profile)
+        self._run_in_thread(self.engine.start_from_profile, profile)
 
     def handle_action(self, text: str) -> None:
         self._run_in_thread(self.engine.handle_action, text)

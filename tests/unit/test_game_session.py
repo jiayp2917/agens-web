@@ -31,6 +31,7 @@ class TestGameSessionInit:
         assert s.last_choices == []
         assert s.experience == 0
         assert s.experience_to_next == 100
+        assert s.breakthrough_flags == []
         assert s.gold == 0
         assert s.techniques == []
         assert s.inventory == []
@@ -197,6 +198,12 @@ class TestGameSessionApplyDelta:
         s.apply_delta({"world": {"active_quests_add": [{"name": "入门修行"}]}})
         assert len(s.active_quests) == 1
 
+    def test_apply_breakthrough_flags_add(self):
+        s = GameSession()
+        s.apply_delta({"character": {"breakthrough_flags_add": ["foundation_aid", "foundation_aid", 123]}})
+        s.apply_delta({"character": {"breakthrough_flags_add": "golden_core_aid"}})
+        assert s.breakthrough_flags == ["foundation_aid", "golden_core_aid"]
+
 
 class TestGameSessionSerialization:
     """Test to_save_dict / from_save_dict round-trip."""
@@ -222,6 +229,7 @@ class TestGameSessionSerialization:
         s.last_choices = ["探查异动", "通知同门"]
         s.experience = 500
         s.experience_to_next = 300
+        s.breakthrough_flags = ["foundation_aid"]
         s.gold = 50
         s.techniques = [{"name": "火球术", "type": "术法"}]
         s.inventory = [{"name": "回血丹", "type": "丹药"}]
@@ -262,6 +270,7 @@ class TestGameSessionSerialization:
         assert s2.last_choices == ["探查异动", "通知同门"]
         assert s2.experience == 500
         assert s2.experience_to_next == 300
+        assert s2.breakthrough_flags == ["foundation_aid"]
         assert s2.gold == 50
         assert s2.techniques == [{"name": "火球术", "type": "术法"}]
         assert s2.inventory == [{"name": "回血丹", "type": "丹药"}]

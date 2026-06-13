@@ -71,6 +71,9 @@ REALM_CONFIGS: dict[str, dict[str, Any]] = {
         "stages": 9,
         "experience_required": 100,
         "insight_required": 30,
+        "breakthrough_requirements": [
+            {"key": "foundation_aid", "label": "筑基丹、师门护持或筑基机缘"},
+        ],
         "breakthrough_base_rate": 0.80,
         "hp_base": 100,
         "mp_base": 50,
@@ -84,6 +87,9 @@ REALM_CONFIGS: dict[str, dict[str, Any]] = {
         "stages": 4,
         "experience_required": 300,
         "insight_required": 60,
+        "breakthrough_requirements": [
+            {"key": "golden_core_aid", "label": "结金丹、凝丹机缘或金丹法门"},
+        ],
         "breakthrough_base_rate": 0.60,
         "hp_base": 200,
         "mp_base": 100,
@@ -97,6 +103,9 @@ REALM_CONFIGS: dict[str, dict[str, Any]] = {
         "stages": 4,
         "experience_required": 600,
         "insight_required": 100,
+        "breakthrough_requirements": [
+            {"key": "nascent_soul_aid", "label": "化婴丹、生死顿悟或元婴护法"},
+        ],
         "breakthrough_base_rate": 0.45,
         "hp_base": 400,
         "mp_base": 200,
@@ -110,6 +119,9 @@ REALM_CONFIGS: dict[str, dict[str, Any]] = {
         "stages": 4,
         "experience_required": 1200,
         "insight_required": 150,
+        "breakthrough_requirements": [
+            {"key": "spirit_transformation_aid", "label": "神魂试炼、心魔明悟或化神契机"},
+        ],
         "breakthrough_base_rate": 0.30,
         "hp_base": 800,
         "mp_base": 400,
@@ -123,6 +135,9 @@ REALM_CONFIGS: dict[str, dict[str, Any]] = {
         "stages": 4,
         "experience_required": 2500,
         "insight_required": 200,
+        "breakthrough_requirements": [
+            {"key": "unity_law_aid", "label": "天地法则感悟或合体道基"},
+        ],
         "breakthrough_base_rate": 0.20,
         "hp_base": 1600,
         "mp_base": 800,
@@ -137,6 +152,9 @@ REALM_CONFIGS: dict[str, dict[str, Any]] = {
         "stages": 4,
         "experience_required": 5000,
         "insight_required": 260,
+        "breakthrough_requirements": [
+            {"key": "mahayana_vow_aid", "label": "宏愿因果、宗门气运或大乘道果"},
+        ],
         "breakthrough_base_rate": 0.15,
         "hp_base": 3200,
         "mp_base": 1600,
@@ -150,6 +168,9 @@ REALM_CONFIGS: dict[str, dict[str, Any]] = {
         "stages": 4,
         "experience_required": 10000,
         "insight_required": 330,
+        "breakthrough_requirements": [
+            {"key": "tribulation_preparation", "label": "雷劫情报、避劫阵基或渡劫场地"},
+        ],
         "breakthrough_base_rate": 0.10,
         "hp_base": 6400,
         "mp_base": 3200,
@@ -163,6 +184,10 @@ REALM_CONFIGS: dict[str, dict[str, Any]] = {
         "stages": 4,
         "experience_required": 20000,
         "insight_required": 400,
+        "breakthrough_requirements": [
+            {"key": "tribulation_elixir", "label": "渡劫丹或同等续命丹药"},
+            {"key": "ascension_protection", "label": "护身法宝、雷劫阵法或替劫符箓"},
+        ],
         "breakthrough_base_rate": 0.05,
         "hp_base": 12800,
         "mp_base": 6400,
@@ -176,6 +201,7 @@ REALM_CONFIGS: dict[str, dict[str, Any]] = {
         "stages": 1,
         "experience_required": 999999,
         "insight_required": 0,
+        "breakthrough_requirements": [],
         "breakthrough_base_rate": 0.00,
         "hp_base": 99999,
         "mp_base": 99999,

@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+from unittest.mock import patch
+
 from agens_novel.engine.game_engine import GameEngine
 from agens_novel.game.constants import ATTRIBUTE_KEYS, SPECIAL_START_ATTRIBUTES
 
@@ -18,15 +20,25 @@ def test_start_from_profile_initializes_session(tmp_path, monkeypatch):
     narratives = []
     engine.on_narrative = lambda text, turn: narratives.append((text, turn))
 
-    engine.start_from_profile({
-        "char_name": "许满",
-        "talent": "剑心微明",
-        "spirit_root": "火灵根",
-        "family_background": "寒门",
-        "difficulty": "普通",
-        "attributes": {key: 60 for key in ATTRIBUTE_KEYS},
-        "choices": ["留在山门吐纳", "询问接引弟子", "观察灵气流向"],
-    })
+    def runner(agent_name, user_input, session, **kwargs):
+        assert agent_name == "world_builder"
+        return {
+            "generated_data": {
+                "opening_narrative": "天道初开。",
+                "choices": ["留在山门吐纳", "询问接引弟子", "观察灵气流向"],
+            },
+            "llm_error": "",
+        }
+
+    with patch("agens_novel.engine.game_engine.run_turn_sync", side_effect=runner):
+        engine.start_from_profile({
+            "char_name": "许满",
+            "talent": "剑心微明",
+            "spirit_root": "火灵根",
+            "family_background": "寒门",
+            "difficulty": "普通",
+            "attributes": {key: 60 for key in ATTRIBUTE_KEYS},
+        })
 
     s = engine.game_session
     assert s.game_started is True
@@ -95,3 +107,64 @@ def test_special_profile_result_can_be_built_without_pre_reveal(tmp_path, monkey
     assert s.talent == SPECIAL_TALENT
     assert s.spirit_root == SPECIAL_ROOT
     assert s.family_background == SPECIAL_FAMILY
+
+
+def test_start_from_profile_generates_opening_choices_from_model(tmp_path, monkeypatch):
+    from agens_novel import paths
+    monkeypatch.setattr(paths, "SAVE_DIR", tmp_path)
+
+    engine = GameEngine()
+
+    def runner(agent_name, user_input, session, **kwargs):
+        assert agent_name == "world_builder"
+        return {
+            "generated_data": {
+                "world": {"location": "青玄宗山门", "current_scene": "接引台"},
+                "opening_narrative": "接引钟声响起。",
+                "choices": ["拜见接引弟子", "观察灵气", "整理行囊"],
+            },
+            "llm_error": "",
+        }
+
+    with patch("agens_novel.engine.game_engine.run_turn_sync", side_effect=runner):
+        engine.start_from_profile({"char_name": "许满"})
+
+    assert engine.game_session.last_choices == ["拜见接引弟子", "观察灵气", "整理行囊"]
+
+
+def test_start_from_profile_model_failure_uses_tiandao_fallback(tmp_path, monkeypatch):
+    from agens_novel import paths
+    monkeypatch.setattr(paths, "SAVE_DIR", tmp_path)
+    engine = GameEngine()
+    infos: list[str] = []
+    engine.on_info = lambda msg: infos.append(msg)
+
+    def runner(agent_name, user_input, session, **kwargs):
+        return {"generated_data": {}, "llm_error": "timeout"}
+
+    with patch("agens_novel.engine.game_engine.run_turn_sync", side_effect=runner):
+        engine.start_from_profile({"char_name": "许满"})
+
+    assert len(engine.game_session.last_choices) == 3
+    assert any("天道紊乱" in msg for msg in infos)
+
+
+def test_start_from_profile_uses_profile_choices_only_after_model_failure(tmp_path, monkeypatch):
+    from agens_novel import paths
+    monkeypatch.setattr(paths, "SAVE_DIR", tmp_path)
+    engine = GameEngine()
+    infos: list[str] = []
+    engine.on_info = lambda msg: infos.append(msg)
+
+    def runner(agent_name, user_input, session, **kwargs):
+        assert agent_name == "world_builder"
+        return {"generated_data": {}, "llm_error": "timeout"}
+
+    with patch("agens_novel.engine.game_engine.run_turn_sync", side_effect=runner):
+        engine.start_from_profile({
+            "char_name": "许满",
+            "choices": ["退回山门", "询问执事"],
+        })
+
+    assert engine.game_session.last_choices == ["退回山门", "询问执事"]
+    assert any("天道紊乱" in msg for msg in infos)

@@ -45,14 +45,15 @@
 第三部分:建议行动选项,用 <choices> 和 </choices> 标签包裹一个 JSON 数组:
 <choices>
 [
-  "留在当前地点静心吐纳,稳固气息",
-  "询问附近修士,打听当前处境",
-  "观察四周灵气流向,寻找异常机缘"
+  "贴合上一段叙事的具体行动一",
+  "贴合当前人物/NPC/地点的具体行动二",
+  "贴合当前风险或机缘的具体行动三"
 ]
 </choices>
 
 choices 必须恰好 3 条,对应玩家界面的 A/B/C。不要输出 D 选项;D 永远是玩家自行键入行动。
-每条 choices 都应是可直接执行的玩家行动,必须贴合当前状态、地点、境界和叙事。
+每条 choices 都应是可直接执行的玩家行动,必须贴合当前状态、地点、境界、上文叙事、NPC、资源、瓶颈和风险。
+不要反复给固定模板选项;如果玩家处于瓶颈,至少一个选项应引导获取真实资源、机缘、心境或护道准备,而不是继续空泛修炼。
 
 ## 战斗结构化输出
 当战斗发生时,在 state_update 的 character.combat 中输出:
@@ -103,11 +104,17 @@ choices 必须恰好 3 条,对应玩家界面的 A/B/C。不要输出 D 选项;D
    - 生死搏杀、顿悟、重大机缘可 +20~30。
 3. 感悟门槛由当前境界决定(练气30/筑基60/金丹100/元婴150/化神200/合体260/大乘330/渡劫400)。
    当玩家修为已满却感悟不足时,在叙事中点出"修为虽满,道心未明,需外出历练、参悟机缘"。
+4. 大境界突破还需要轻量破境准备。获得丹药、法宝、机缘、心魔明悟、法则感悟、渡劫阵法等时,
+   可在 `character.breakthrough_flags_add` 追加以下标识之一:
+   `foundation_aid`, `golden_core_aid`, `nascent_soul_aid`, `spirit_transformation_aid`,
+   `unity_law_aid`, `mahayana_vow_aid`, `tribulation_preparation`, `tribulation_elixir`,
+   `ascension_protection`。
+   纯修炼不得追加这些标识。
 
 state_update 示例(非修炼行为给感悟):
 ```json
 {
-  "character": {"mp": "-10", "experience": "+15", "insight": "+8"},
+  "character": {"mp": "-10", "experience": "+15", "insight": "+8", "breakthrough_flags_add": ["foundation_aid"]},
   "world": {"current_scene": "荒野历练"}
 }
 ```

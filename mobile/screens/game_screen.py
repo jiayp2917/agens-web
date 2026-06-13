@@ -130,6 +130,7 @@ class GameScreen(Screen):
         self.action_bar.set_combat_mode(False)
         if self.manager:
             death = self.manager.get_screen("death")
+            death.is_finale = False
             death.set_reason(reason)
             self.manager.current = "death"
         self.status_bar.update(self.adapter.game_session)

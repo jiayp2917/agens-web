@@ -214,31 +214,31 @@ class NarrativeView(ScrollView):
         box = BoxLayout(
             orientation="vertical",
             size_hint_y=None,
-            spacing=dp(6),
-            padding=[0, dp(8), 0, 0],
+            spacing=dp(3),
+            padding=[0, dp(5), 0, 0],
         )
         box.bind(minimum_height=box.setter("height"))
         labels = ("A", "B", "C")
         for index, choice in enumerate(choices[:3]):
             label = f"{labels[index]}. {choice}"
-            label = _soft_wrap_cjk(label, columns=24)
-            btn = themed_button(label, font_size=dp(12), size_hint_y=None, height=dp(42))
+            label = _soft_wrap_cjk(label, columns=30)
+            btn = themed_button(label, font_size=dp(11), size_hint_y=None, height=dp(32))
             btn.halign = "left"
             btn.valign = "middle"
-            _bind_wrapped_height(btn, dp(42))
+            _bind_wrapped_height(btn, dp(32))
             btn.bind(on_release=lambda _inst, c=choice: self._emit_choice(c))
             box.add_widget(btn)
         hint = Label(
             text="[color={}]D. 自行键入行动[/color]".format(rgba_to_hex(theme.text_hint)),
             markup=True,
-            font_size=dp(12),
+            font_size=dp(11),
             size_hint_y=None,
-            height=dp(24),
+            height=dp(18),
             halign="left",
             valign="middle",
             color=theme.text_hint,
         )
-        _bind_wrapped_height(hint, dp(24))
+        _bind_wrapped_height(hint, dp(18))
         box.add_widget(hint)
         self._choices_box = box
         self._layout.add_widget(box)

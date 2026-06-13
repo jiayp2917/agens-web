@@ -35,6 +35,19 @@ from agens_novel.game.realm import RealmSystem
 from agens_novel.game.constants import REALM_ORDER, REALM_CONFIGS, SPIRIT_ROOT_MAP
 
 
+ALL_BREAKTHROUGH_FLAGS = [
+    "foundation_aid",
+    "golden_core_aid",
+    "nascent_soul_aid",
+    "spirit_transformation_aid",
+    "unity_law_aid",
+    "mahayana_vow_aid",
+    "tribulation_preparation",
+    "tribulation_elixir",
+    "ascension_protection",
+]
+
+
 # ─── Fixtures ──────────────────────────────────────────────────────────────
 
 @pytest.fixture
@@ -389,6 +402,7 @@ class TestRealmEdgeCases:
         s.experience = 999
         s.experience_to_next = 100
         s.insight = 999  # clear the 感悟 gate so the attempt actually resolves
+        s.breakthrough_flags = list(ALL_BREAKTHROUGH_FLAGS)
         s.hp = 100
 
         rs = RealmSystem()
@@ -406,6 +420,7 @@ class TestRealmEdgeCases:
         s.experience = 999
         s.experience_to_next = 100
         s.insight = 999  # clear the 感悟 gate so the attempt actually resolves
+        s.breakthrough_flags = list(ALL_BREAKTHROUGH_FLAGS)
 
         rs = RealmSystem()
         with patch.object(random, "random", return_value=0.0):
@@ -423,6 +438,7 @@ class TestRealmEdgeCases:
         s.experience = 99999
         s.experience_to_next = 1
         s.insight = 999  # 渡劫 requires 400 感悟 — clear the gate to reach 飞升
+        s.breakthrough_flags = list(ALL_BREAKTHROUGH_FLAGS)
 
         rs = RealmSystem()
         # Ensure REALM_CONFIGS has 渡劫 with stages=1, or adjust.

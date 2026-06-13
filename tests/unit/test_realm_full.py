@@ -24,6 +24,17 @@ def _make_session_at_final_stage(realm: str, **overrides) -> GameSession:
         mp=cfg.mp_base,
         mp_max=cfg.mp_base,
         game_started=True,
+        breakthrough_flags=[
+            "foundation_aid",
+            "golden_core_aid",
+            "nascent_soul_aid",
+            "spirit_transformation_aid",
+            "unity_law_aid",
+            "mahayana_vow_aid",
+            "tribulation_preparation",
+            "tribulation_elixir",
+            "ascension_protection",
+        ],
         **overrides,
     )
     return s

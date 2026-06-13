@@ -7,7 +7,7 @@ from unittest.mock import patch
 
 import pytest
 
-from agens_novel.engine.game_engine import GameEngine
+from agens_novel.engine.game_engine import GameEngine, fallback_choices
 from agens_novel.repl.game_session import GameSession
 
 
@@ -23,6 +23,7 @@ def _canned_world_builder() -> dict[str, Any]:
                 "hp": 100, "hp_max": 100, "mp": 50, "mp_max": 50,
                 "spirit_root": "火木双灵根", "spirit_root_grade": "地",
                 "experience": 0, "experience_to_next": 100, "gold": 10,
+                "breakthrough_flags": [],
                 "techniques": [{"name": "基础吐纳术", "level": 1, "type": "内功"}],
                 "inventory": [{"name": "粗布道袍", "quantity": 1, "type": "防具"}],
                 "status_effects": [], "lifespan": 100,
@@ -96,6 +97,70 @@ class TestGameEngineNewGame:
         assert engine.game_session.hp == 100
         assert engine.game_session.last_choices == ["留在山门吐纳", "询问接引弟子", "观察灵气流向"]
         assert len(narratives) == 1
+
+    def test_model_choices_not_padded_when_less_than_three(self, monkeypatch) -> None:
+        monkeypatch.setenv("AGNES_API_KEY", "sk-test-1234567890")
+        engine = GameEngine()
+
+        def runner(agent_name, user_input, session, **kw):
+            if agent_name == "world_builder":
+                data = _canned_world_builder()
+                data["generated_data"]["choices"] = ["请教陈师兄", "查看山门规矩"]
+                return data
+            return {}
+
+        with patch("agens_novel.engine.game_engine.run_turn_sync", side_effect=runner):
+            engine.new_game("许满")
+
+        assert engine.game_session.last_choices == ["请教陈师兄", "查看山门规矩"]
+
+    def test_empty_model_choices_use_visible_fallback_notice(self, monkeypatch) -> None:
+        monkeypatch.setenv("AGNES_API_KEY", "sk-test-1234567890")
+        engine = GameEngine()
+        infos: list[str] = []
+        engine.on_info = lambda msg: infos.append(msg)
+        engine.start_from_profile({"char_name": "许满", "choices": ["观察山门"]})
+
+        def runner(agent_name, user_input, session, **kw):
+            if agent_name == "narrator":
+                return {
+                    "narrative": "风声一滞。",
+                    "state_delta": {"character": {"experience": "+5"}},
+                    "choices": [],
+                    "llm_error": "timeout",
+                }
+            return {}
+
+        with patch("agens_novel.engine.game_engine.run_turn_sync", side_effect=runner):
+            engine.handle_action("观察")
+
+        assert len(engine.game_session.last_choices) == 3
+        assert any("天道紊乱" in msg for msg in infos)
+
+    def test_empty_successful_choices_still_show_fallback_notice(self, monkeypatch) -> None:
+        monkeypatch.setenv("AGNES_API_KEY", "sk-test-1234567890")
+        engine = GameEngine()
+        infos: list[str] = []
+        engine.on_info = lambda msg: infos.append(msg)
+        engine.start_from_profile({"char_name": "许满", "opening_narrative": "山门初开。", "choices": ["观察"]})
+
+        def runner(agent_name, user_input, session, **kw):
+            if agent_name == "narrator":
+                return {
+                    "narrative": "你听见钟声。",
+                    "state_delta": {"character": {"experience": "+5"}},
+                    "choices": [],
+                    "llm_error": "",
+                }
+            if agent_name == "judge":
+                return _canned_judge()
+            return {}
+
+        with patch("agens_novel.engine.game_engine.run_turn_sync", side_effect=runner):
+            engine.handle_action("观察")
+
+        assert len(engine.game_session.last_choices) == 3
+        assert any("天道紊乱" in msg for msg in infos)
 
     def test_new_game_without_api_key(self, monkeypatch) -> None:
         """Built-in key is always the fallback, so _has_api_key always True.
@@ -192,6 +257,23 @@ class TestGameEngineHandleAction:
         assert seen_inputs == ["询问接引弟子"]
         assert engine.game_session.last_choices == ["继续询问", "返回山门", "观察弟子神色"]
 
+    def test_choice_letter_ignores_missing_slot(self, monkeypatch) -> None:
+        engine = GameEngine()
+
+        def runner(agent_name, user_input, session, **kw):
+            if agent_name == "world_builder":
+                return {"generated_data": {}, "llm_error": "timeout"}
+            return {}
+
+        with patch("agens_novel.engine.game_engine.run_turn_sync", side_effect=runner):
+            engine.start_from_profile({
+                "char_name": "许满",
+                "opening_narrative": "山门初开。",
+                "choices": ["只给一条"],
+            })
+
+        assert engine._resolve_choice_input("C") is None
+
     def test_d_prefix_is_free_typed_action(self, monkeypatch) -> None:
         monkeypatch.setenv("AGNES_API_KEY", "sk-test-1234567890")
         seen_inputs: list[str] = []
@@ -237,6 +319,8 @@ class TestGameEngineHandleAction:
         monkeypatch.setenv("AGNES_API_KEY", "sk-test-1234567890")
         engine = GameEngine()
         engine.game_session.game_started = True
+        infos: list[str] = []
+        engine.on_info = lambda msg: infos.append(msg)
 
         def fake_runner(agent_name, user_input, session, **kw):
             raise RuntimeError("LLM exploded")
@@ -245,6 +329,8 @@ class TestGameEngineHandleAction:
             engine.handle_action("修炼")
 
         assert engine.game_session.turn_count == 0
+        assert len(engine.game_session.last_choices) == 3
+        assert any("天道紊乱" in msg for msg in infos)
 
     def test_judge_exception_fallback(self, monkeypatch) -> None:
         """Judge crashes — default to NOT approving (safe default)."""
@@ -332,6 +418,41 @@ class TestGameEngineHandleAction:
         assert narratives == []
         assert any("审判未通过" in msg for msg in infos)
         assert engine.game_session.current_scene == "晨雾中的青云山外门"
+
+    def test_judge_reject_without_correction_keeps_model_choices(self, monkeypatch) -> None:
+        monkeypatch.setenv("AGNES_API_KEY", "sk-test-1234567890")
+        engine = GameEngine()
+
+        with _patch_turn_runner():
+            engine.new_game("许满")
+
+        infos: list[str] = []
+        engine.on_info = lambda msg: infos.append(msg)
+
+        def selective_runner(agent_name, user_input, session, **kw):
+            if agent_name == "narrator":
+                return {
+                    "narrative": "你试图强闯内门。",
+                    "state_delta": {"character": {"mp": "-20"}},
+                    "choices": ["向执事解释来意", "退回山门等候", "寻找外门任务"],
+                    "llm_error": "",
+                }
+            if agent_name == "judge":
+                return {
+                    "approved": False,
+                    "corrected_delta": {},
+                    "judgment_note": "越权强闯不成立",
+                    "review_score": 0,
+                    "llm_error": "",
+                }
+            return {}
+
+        with patch("agens_novel.engine.game_engine.run_turn_sync", side_effect=selective_runner):
+            engine.handle_action("强闯内门")
+
+        assert engine.game_session.last_choices == ["向执事解释来意", "退回山门等候", "寻找外门任务"]
+        assert any("审判未通过" in msg for msg in infos)
+        assert not any("天道紊乱" in msg for msg in infos)
 
     def test_action_delta_filters_identity_and_reset_scene(self, monkeypatch) -> None:
         monkeypatch.setenv("AGNES_API_KEY", "sk-test-1234567890")
@@ -580,7 +701,7 @@ class TestStageAdvancement:
         assert delta is None
 
     def test_chain_multiple_stages_in_action(self, monkeypatch) -> None:
-        """One action with large XP should advance multiple stages."""
+        """Pure cultivation caps large XP so one action does not skip the journey."""
         monkeypatch.setenv("AGNES_API_KEY", "sk-test-1234567890")
         engine = GameEngine()
         infos: list[str] = []
@@ -607,10 +728,9 @@ class TestStageAdvancement:
             engine.new_game("许满")
             engine.handle_action("闭关修炼")
 
-        # Should have advanced multiple stages (500 XP with initial xp_needed=100).
-        assert engine.game_session.realm_stage > 2
+        assert engine.game_session.realm_stage == 2
         stage_msgs = [m for m in infos if "修为精进" in m]
-        assert len(stage_msgs) >= 2  # Multiple advances
+        assert len(stage_msgs) == 1
 
 
 class TestBreakthroughRouting:
@@ -671,10 +791,12 @@ class TestFinaleCallback:
         engine.game_session.experience = 20001
         engine.game_session.experience_to_next = 20000
         engine.game_session.insight = 999  # 渡劫 requires 400 感悟 to break through
+        engine.game_session.breakthrough_flags = ["tribulation_elixir", "ascension_protection"]
 
-        # Mock random to guarantee success.
-        with patch("agens_novel.game.realm.random.random", return_value=0.001):
-            engine.attempt_breakthrough()
+        # Mock random and LLM to guarantee deterministic unit behavior.
+        with _patch_turn_runner():
+            with patch("agens_novel.game.realm.random.random", return_value=0.001):
+                engine.attempt_breakthrough()
 
         assert len(finales) == 1
         assert game_overs == []
@@ -804,12 +926,76 @@ class TestInsightGate:
         engine.game_session.experience = 500
         engine.game_session.experience_to_next = 100
         engine.game_session.insight = 999  # well past the 30 gate
+        engine.game_session.breakthrough_flags = ["foundation_aid"]
 
-        with patch("agens_novel.game.realm.random.random", return_value=0.001):
-            engine.attempt_breakthrough()
+        with _patch_turn_runner():
+            with patch("agens_novel.game.realm.random.random", return_value=0.001):
+                engine.attempt_breakthrough()
 
         assert engine.game_session.realm == "筑基", \
             f"Breakthrough should reach 筑基, got {engine.game_session.realm}"
+        assert engine.game_session.last_choices == fallback_choices(engine.game_session)
+
+    def test_breakthrough_updates_model_choices(self, monkeypatch) -> None:
+        monkeypatch.setenv("AGNES_API_KEY", "sk-test-1234567890")
+        engine = GameEngine()
+
+        with _patch_turn_runner():
+            engine.new_game("许满")
+
+        engine.game_session.realm = "练气"
+        engine.game_session.realm_stage = 9
+        engine.game_session.experience = 500
+        engine.game_session.experience_to_next = 100
+        engine.game_session.insight = 999
+        engine.game_session.breakthrough_flags = ["foundation_aid"]
+
+        def runner(agent_name, user_input, session, **kw):
+            if agent_name == "narrator":
+                return {
+                    "narrative": "你破开瓶颈。",
+                    "state_delta": {},
+                    "choices": ["稳固筑基道台", "拜谢护法长老", "查看新功法"],
+                    "llm_error": "",
+                }
+            if agent_name == "judge":
+                return _canned_judge()
+            return {}
+
+        with patch("agens_novel.engine.game_engine.run_turn_sync", side_effect=runner):
+            with patch("agens_novel.game.realm.random.random", return_value=0.001):
+                engine.attempt_breakthrough()
+
+        assert engine.game_session.realm == "筑基"
+        assert engine.game_session.last_choices == ["稳固筑基道台", "拜谢护法长老", "查看新功法"]
+
+    def test_breakthrough_narrator_error_uses_fallback_choices(self, monkeypatch) -> None:
+        monkeypatch.setenv("AGNES_API_KEY", "sk-test-1234567890")
+        engine = GameEngine()
+        infos: list[str] = []
+        engine.on_info = lambda msg: infos.append(msg)
+
+        with _patch_turn_runner():
+            engine.new_game("许满")
+
+        engine.game_session.realm = "练气"
+        engine.game_session.realm_stage = 9
+        engine.game_session.experience = 500
+        engine.game_session.experience_to_next = 100
+        engine.game_session.insight = 999
+        engine.game_session.breakthrough_flags = ["foundation_aid"]
+
+        def runner(agent_name, user_input, session, **kw):
+            if agent_name == "narrator":
+                return {"narrative": "", "state_delta": {}, "choices": [], "llm_error": "timeout"}
+            return {}
+
+        with patch("agens_novel.engine.game_engine.run_turn_sync", side_effect=runner):
+            engine.attempt_breakthrough()
+
+        assert engine.game_session.realm == "练气"
+        assert len(engine.game_session.last_choices) == 3
+        assert any("天道紊乱" in msg for msg in infos)
 
     def test_insight_resets_on_breakthrough(self, monkeypatch) -> None:
         """A successful breakthrough zeroes 感悟 (new realm, new bottleneck)."""
@@ -824,9 +1010,11 @@ class TestInsightGate:
         engine.game_session.experience = 500
         engine.game_session.experience_to_next = 100
         engine.game_session.insight = 999
+        engine.game_session.breakthrough_flags = ["foundation_aid"]
 
-        with patch("agens_novel.game.realm.random.random", return_value=0.001):
-            engine.attempt_breakthrough()
+        with _patch_turn_runner():
+            with patch("agens_novel.game.realm.random.random", return_value=0.001):
+                engine.attempt_breakthrough()
 
         assert engine.game_session.realm == "筑基"
         assert engine.game_session.insight == 0, \

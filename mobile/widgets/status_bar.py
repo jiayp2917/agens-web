@@ -76,7 +76,7 @@ class StatusBar(BoxLayout):
             ("spirit_root", "灵根"),
             ("talent", "天赋"),
             ("insight", "感悟"),
-            ("luck", "气运"),
+            ("prep", "准备"),
         ]:
             cell = Label(
                 text=f"{caption}  -",
@@ -107,7 +107,7 @@ class StatusBar(BoxLayout):
                 "spirit_root": "灵根  -",
                 "talent": "天赋  -",
                 "insight": "感悟  -",
-                "luck": "气运  -",
+                "prep": "准备  -",
             }
         else:
             self.lbl_name.text = session.char_name or "无名"
@@ -115,13 +115,14 @@ class StatusBar(BoxLayout):
             stage = getattr(session, "realm_stage", 1)
             insight = getattr(session, "insight", 0)
             insight_req = _insight_required(session.realm)
+            prep_met, prep_total = _preparation_count(session)
             values = {
                 "age": f"年龄  {getattr(session, 'age', 16)}",
                 "realm": f"境界  {session.realm}{_stage_label(stage)}",
                 "spirit_root": f"灵根  {_compact(getattr(session, 'spirit_root', '') or '未觉醒', 6)}",
                 "talent": f"天赋  {_compact(getattr(session, 'talent', '') or '未显', 6)}",
                 "insight": f"感悟  {insight}/{insight_req}" if insight_req else f"感悟  {insight}",
-                "luck": f"气运  {getattr(session, 'luck', '') or '平稳'}",
+                "prep": f"准备  {prep_met}/{prep_total}" if prep_total else f"气运  {getattr(session, 'luck', '') or '平稳'}",
             }
         self.lbl_name.color = theme.text
         self.lbl_turn.color = theme.text_secondary
@@ -153,3 +154,17 @@ def _insight_required(realm: str) -> int:
         return int(cfg.get("insight_required", 0))
     except (TypeError, ValueError):
         return 0
+
+
+def _preparation_count(session) -> tuple[int, int]:
+    try:
+        from agens_novel.game.realm import RealmSystem
+        rs = RealmSystem()
+        cfg = rs.get_realm_config(getattr(session, "realm", ""))
+        if cfg is None:
+            return 0, 0
+        total = len(cfg.breakthrough_requirements)
+        missing = len(rs._missing_breakthrough_requirements(session, cfg))
+        return max(0, total - missing), total
+    except Exception:
+        return 0, 0

@@ -97,6 +97,8 @@ class CharacterState(TypedDict, total=False):
     inventory: list[InventoryItem]
     experience: int
     experience_to_next: int
+    insight: int
+    breakthrough_flags: list[str]
     gold: int
     status_effects: list[str]
     lifespan: int

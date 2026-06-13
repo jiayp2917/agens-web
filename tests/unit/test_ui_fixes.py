@@ -174,6 +174,18 @@ class TestSlashCommandParsing:
         for cmd in expected | chinese:
             assert f'"{cmd}"' in source, f"Missing slash command: {cmd}"
 
+    def test_choices_ui_is_compact_and_keeps_d_input_hint(self):
+        import pathlib
+        source = pathlib.Path("mobile/widgets/narrative_view.py").read_text(encoding="utf-8")
+        assert 'height=dp(32)' in source
+        assert 'D. 自行键入行动' in source
+
+    def test_normal_game_over_resets_finale_flag(self):
+        import pathlib
+        source = pathlib.Path("mobile/screens/game_screen.py").read_text(encoding="utf-8")
+        assert "death.is_finale = False" in source
+        assert "death.is_finale = True" in source
+
 
 # ─── Fix: apply_delta defensive guards ─────────────────────────────────────
 

@@ -1,7 +1,9 @@
-r"""Full cultivation flow demo — 练气 → 飞升 with mock LLM.
+r"""Visual Kivy flow demo for the cultivation rules.
 
-Launches the real Kivy UI and auto-drives a character through all 9 realms
-using deterministic mock responses. Screenshots are saved at each milestone.
+Launches the real Kivy UI and drives a short, inspectable rules loop:
+create character → gain a small layer → hit a breakthrough bottleneck →
+obtain preparation through deeds → attempt breakthrough. It prefers the real
+UI chain and logs whenever mock LLM or deterministic random is used.
 
 Usage:
     cd D:\chat\agens
@@ -10,11 +12,9 @@ Usage:
 
 from __future__ import annotations
 
-import os
 import sys
 import random
 import json
-import time
 from pathlib import Path
 from unittest.mock import patch
 
@@ -41,17 +41,15 @@ sys.path.insert(0, str(PROJECT_ROOT / "src"))
 
 # ── Mock LLM responses ───────────────────────────────────────────────────
 
-# XP per realm to give rapid progression through all layers.
-# We grant enough XP per action to advance ~2 layers at a time.
 XP_PER_ACTION = {
-    "练气": 250,   # 9 layers × 100 XP → ~4 actions to max
-    "筑基": 350,   # 4 layers × 300 XP
-    "金丹": 650,   # 4 layers × 600 XP
-    "元婴": 1300,  # 4 layers × 1200 XP
-    "化神": 2600,  # 4 layers × 2500 XP
-    "合体": 5200,  # 4 layers × 5000 XP
-    "大乘": 10200, # 4 layers × 10000 XP
-    "渡劫": 20200, # 4 layers × 20000 XP
+    "练气": 100,
+    "筑基": 120,
+    "金丹": 180,
+    "元婴": 260,
+    "化神": 360,
+    "合体": 520,
+    "大乘": 760,
+    "渡劫": 1000,
 }
 
 NARRATIVES = {
@@ -116,6 +114,7 @@ def _world_builder_result():
                 "hp": 100, "hp_max": 100, "mp": 50, "mp_max": 50,
                 "spirit_root": "火灵根", "spirit_root_grade": "地",
                 "experience": 0, "experience_to_next": 100,
+                "breakthrough_flags": [],
                 "gold": 50, "age": 16,
                 "talent": "剑心微明", "family_background": "寒门", "luck": "中上",
                 "difficulty": "普通",
@@ -136,49 +135,67 @@ def _world_builder_result():
                 "晨雾漫过青玄宗山门，许满踏上山门石阶。"
                 "火灵根在丹田深处泛起微光，修真之路就此开启。"
             ),
+            "choices": ["向陈师兄请教入门规矩", "在山门边试行吐纳", "查看随身物品与功法"],
         },
+        "llm_error": "",
     }
 
 
 def _narrator_result(session):
     realm = getattr(session, "realm", "练气")
-    stage = getattr(session, "realm_stage", 1)
+    action = getattr(session, "_demo_pending_action", "")
     xp_grant = XP_PER_ACTION.get(realm, 200)
+    is_deed = any(word in action for word in ("历练", "参悟", "寻找", "请教", "炼丹", "法宝", "阵法"))
 
-    narratives = NARRATIVES.get(realm, ["你默默修炼，修为有所精进。"])
-    narrative = random.choice(narratives)
+    if is_deed:
+        narrative = (
+            f"第{session.turn_count + 1}回合: 你没有继续闭门苦修，而是循着山门外的线索行动。"
+            "陈师兄指出破境不只靠灵气，还要丹药、护持与机缘。"
+        )
+        char_delta = {
+            "mp": "-8",
+            "experience": f"+{max(20, xp_grant // 2)}",
+            "insight": "+25",
+            "breakthrough_flags_add": ["foundation_aid"],
+            "inventory_add": [{"name": "筑基丹线索", "quantity": 1, "type": "机缘"}],
+        }
+        scene = "山门外历练"
+        choices = ["回山门整理所得", "继续请教陈师兄", "检查筑基准备"]
+    else:
+        narratives = NARRATIVES.get(realm, ["你默默修炼，修为有所精进。"])
+        narrative = f"第{session.turn_count + 1}回合: {random.choice(narratives)}"
+        char_delta = {
+            "mp": "-10",
+            "experience": f"+{xp_grant}",
+        }
+        scene = f"{realm}修炼中"
+        choices = ["继续吐纳稳固气息", "请教附近修士", "查看破境准备"]
 
     return {
-        "narrative": f"第{session.turn_count + 1}回合: {narrative}",
+        "narrative": narrative,
         "state_delta": {
-            "character": {
-                "mp": "-10",
-                "experience": f"+{xp_grant}",
-            },
-            "world": {"current_scene": f"{realm}修炼中"},
+            "character": char_delta,
+            "world": {"current_scene": scene},
         },
-        "choices": ["继续修炼", "尝试突破", "四处探索"],
+        "choices": choices,
+        "llm_error": "",
     }
 
 
 # ── Demo driver ──────────────────────────────────────────────────────────
 
 class DemoDriver:
-    """Auto-drives the Kivy UI through the full cultivation flow."""
+    """Auto-drives the Kivy UI through a visible rules loop."""
 
-    MILESTONE_REALMS = ["练气", "筑基", "金丹", "元婴", "化神", "合体", "大乘", "渡劫", "飞升"]
     SCREENSHOT_NODES = [
         ("01_home", "主页"),
         ("02_character_create", "角色创建"),
-        ("03_qi_refining", "练气"),
-        ("04_foundation", "筑基"),
-        ("05_golden_core", "金丹"),
-        ("06_nascent_soul", "元婴"),
-        ("07_spirit_transformation", "化神"),
-        ("08_unity", "合体"),
-        ("09_maha", "大乘"),
-        ("10_tribulation", "渡劫"),
-        ("11_ascension", "飞升结局"),
+        ("03_game_initial", "初始游戏"),
+        ("04_cultivation_stage_gain", "修炼升层"),
+        ("05_bottleneck_blocked", "瓶颈阻断"),
+        ("06_insight_action", "历练得机缘"),
+        ("07_breakthrough_attempt", "突破尝试"),
+        ("08_breakthrough_result", "突破结果"),
     ]
 
     def __init__(self):
@@ -189,18 +206,33 @@ class DemoDriver:
         self._last_realm = ""
         self._game_started = False
         self._flow_done = False
+        self._script = [
+            ("闭关修炼", "action_cultivate"),
+            ("闭关修炼", "action_cultivate"),
+            ("闭关修炼", "action_cultivate"),
+            ("闭关修炼", "action_cultivate"),
+            ("闭关修炼", "action_cultivate"),
+            ("闭关修炼", "action_cultivate"),
+            ("闭关修炼", "action_cultivate"),
+            ("闭关修炼", "action_cultivate"),
+            ("闭关修炼", "action_cultivate"),
+            ("冲击突破", "action_breakthrough_blocked"),
+            ("外出历练，向陈师兄请教筑基机缘", "action_insight"),
+            ("冲击突破", "action_breakthrough"),
+        ]
         self._log_path = DEMO_LOG_PATH
         self._log_path.write_text("", encoding="utf-8")
+        self._log_meta()
 
     def start(self):
         """Launch the Kivy app with demo driver."""
         # Start BGM before the app boots so the music is already in flight
         # by the time the home screen paints.
         self._start_bgm()
-        # Patch run_turn_sync before any game code imports.
+        # Patch run_turn_sync before any game code imports. This is a visible
+        # UI smoke demo, not a live LLM integration run; metadata is logged.
         with patch("agens_novel.engine.game_engine.run_turn_sync", side_effect=_mock_narrator):
-            # Also patch random.random for deterministic breakthroughs.
-            with patch("agens_novel.game.realm.random.random", return_value=0.01):
+            with patch("agens_novel.game.realm.random.random", return_value=0.05):
                 # Import the app inside patches.
                 from mobile.main import XianxiaApp
                 self.app = XianxiaApp()
@@ -258,7 +290,7 @@ class DemoDriver:
         """Navigate to game screen and begin the auto-play."""
         try:
             self.app.root.current = "game"
-            self._take_screenshot("03_qi_refining")
+            self._take_screenshot("03_game_initial")
             print("[DEMO] Game start screenshot taken")
             self._last_realm = "练气"
             self._realm_seen.add("练气")
@@ -286,90 +318,51 @@ class DemoDriver:
             stage = getattr(session, "realm_stage", 1)
             self._log_state("tick", session)
 
-            # Check for finale.
-            if session.finale:
-                self._flow_done = True
-                Clock.schedule_once(lambda dt: self._finish_finale("11_ascension"), 0.8)
-                return
             if session.game_over:
                 self._log_state("game_over_without_finale", session)
-                self._take_screenshot("11_game_over_unexpected")
+                self._take_screenshot("09_game_over_unexpected")
                 print("[DEMO] Unexpected game over before ascension.")
                 self._flow_done = True
                 Clock.schedule_once(lambda dt: App.get_running_app().stop(), 2.0)
                 return
 
-            # Check for new realm milestone.
-            if realm != self._last_realm and realm not in self._realm_seen:
-                self._realm_seen.add(realm)
-                self._last_realm = realm
-                # Find matching screenshot node.
-                for filename, label in self.SCREENSHOT_NODES:
-                    if label == realm:
-                        self._take_screenshot(filename)
-                        print(f"[DEMO] {realm} screenshot taken")
-                        break
-
-            # If we've reached 飞升, stop.
-            if realm == "飞升":
+            if self._step >= len(self._script):
                 self._flow_done = True
-                Clock.schedule_once(lambda dt: self._finish_finale("11_ascension"), 0.8)
+                self._take_screenshot("08_breakthrough_result")
+                self._log_state("demo_complete", session)
+                Clock.schedule_once(lambda dt: App.get_running_app().stop(), 2.0)
                 return
 
-            from agens_novel.game.constants import REALM_CONFIGS
-            cfg = REALM_CONFIGS.get(realm, {})
-            max_stage = cfg.get("stages", 4)
-            insight_req = cfg.get("insight_required", 0)
-            xp = getattr(session, "experience", 0)
-            xp_needed = getattr(session, "experience_to_next", 100)
-            insight = getattr(session, "insight", 0)
-
-            at_max = stage >= max_stage
-            xp_ready = xp >= xp_needed
-            insight_ready = insight >= insight_req
-
-            if at_max and xp_ready and insight_ready:
-                action_text = "冲击突破"
-                self._log_state("action_breakthrough", session, action_text)
-                print(f"[DEMO] BREAKTHROUGH from {realm} "
-                      f"(stage {stage}/{max_stage}, xp {xp}/{xp_needed}, 感悟 {insight}/{insight_req})")
-            elif at_max and xp_ready and not insight_ready:
-                # Stuck: XP full but 感悟 short — must do real deeds, not meditate.
-                action_text = random.choice(["外出历练", "参悟功法", "寻找机缘"])
-                self._log_state("action_insight", session, action_text)
-                print(f"[DEMO] STUCK at max layer — {action_text} for 感悟 "
-                      f"({insight}/{insight_req})")
-            else:
-                # Layers remain — cultivate, but weave in insight deeds so the
-                # demo visibly does more than meditate.
-                if not insight_ready and (self._step % 2 == 1):
-                    action_text = random.choice(["外出历练", "参悟功法", "寻找机缘"])
-                    self._log_state("action_insight", session, action_text)
-                    print(f"[DEMO] {action_text} for 感悟 "
-                          f"({insight}/{insight_req}) while in {realm} {stage}/{max_stage}")
-                else:
-                    action_text = "闭关修炼"
-                    self._log_state("action_cultivate", session, action_text)
-                    print(f"[DEMO] cultivate ({realm} {stage}/{max_stage}, "
-                          f"xp {xp}/{xp_needed}, 感悟 {insight}/{insight_req})")
+            action_text, event = self._script[self._step]
+            self._log_state(event, session, action_text)
+            print(f"[DEMO] {event}: {action_text} ({realm} {stage}层)")
 
             self._step += 1
 
             # Call handle_action which goes through the mock LLM.
-            Clock.schedule_once(lambda dt: self._feed_action(action_text), 0.3)
+            if event == "action_breakthrough":
+                self._take_screenshot("07_breakthrough_attempt")
+            Clock.schedule_once(lambda dt: self._feed_action(action_text, event), 0.3)
 
         except Exception as e:
             print(f"[DEMO] Error in _do_action: {e}")
             import traceback
             traceback.print_exc()
 
-    def _feed_action(self, text):
+    def _feed_action(self, text, event: str):
         """Feed text action to the game."""
         try:
             game_screen = self.app.root.get_screen("game")
             # Simulate typing and sending.
+            setattr(game_screen.adapter.game_session, "_demo_pending_action", text)
             game_screen.action_bar.text_input.text = text
             game_screen.action_bar._on_submit(None)
+            if event == "action_breakthrough_blocked":
+                Clock.schedule_once(lambda _dt: self._take_screenshot("05_bottleneck_blocked"), 0.8)
+            elif "历练" in text:
+                Clock.schedule_once(lambda _dt: self._take_screenshot("06_insight_action"), 0.8)
+            elif self._step == 1:
+                Clock.schedule_once(lambda _dt: self._take_screenshot("04_cultivation_stage_gain"), 0.8)
             # Schedule next action after processing.
             Clock.schedule_once(self._do_action, 1.5)
         except Exception as e:
@@ -384,16 +377,19 @@ class DemoDriver:
         except Exception as e:
             print(f"[DEMO] Screenshot error: {e}")
 
-    def _finish_finale(self, name: str):
-        try:
-            session = self.app.root.get_screen("game").adapter.game_session
-            self._log_state("finale_screenshot", session)
-            if self.app.root.current != "death":
-                self.app.root.current = "death"
-            self._take_screenshot(name)
-            print("[DEMO] ASCENSION! Screenshot taken.")
-        finally:
-            Clock.schedule_once(lambda dt: App.get_running_app().stop(), 2.0)
+    def _log_meta(self) -> None:
+        payload = {
+            "event": "demo_meta",
+            "mode": "ui_smoke_mock_llm",
+            "real_kivy_window": True,
+            "real_llm": False,
+            "mock_llm": True,
+            "judge_mock": True,
+            "forced_random": True,
+            "goal": "创建角色→修炼升层→瓶颈阻断→历练得机缘→突破尝试",
+        }
+        with self._log_path.open("a", encoding="utf-8") as fh:
+            fh.write(json.dumps(payload, ensure_ascii=False) + "\n")
 
     def _log_state(self, event: str, session, action: str = "") -> None:
         payload = {
@@ -405,6 +401,7 @@ class DemoDriver:
             "experience": getattr(session, "experience", 0),
             "experience_to_next": getattr(session, "experience_to_next", 0),
             "insight": getattr(session, "insight", 0),
+            "breakthrough_flags": getattr(session, "breakthrough_flags", []),
             "game_over": bool(getattr(session, "game_over", False)),
             "finale": bool(getattr(session, "finale", False)),
             "current_screen": getattr(self.app.root, "current", "") if self.app else "",
@@ -415,14 +412,15 @@ class DemoDriver:
 
 if __name__ == "__main__":
     print("=" * 60)
-    print("  文字修仙全流程演示 — 练气 → 飞升")
+    print("  文字修仙流程演示 — 修炼瓶颈与破境准备")
     print("=" * 60)
     print(f"  截图目录: {SCREENSHOTS_DIR}")
     print(f"  状态日志: {DEMO_LOG_PATH}")
     print()
-    print("  Mock LLM: 已启用 (确定性响应)")
-    print("  突破概率: 100% (演示模式)")
-    print("  感悟门槛: 已启用 (纯修炼无法突破，须历练/参悟)")
+    print("  真实 Kivy 窗口: 已启用")
+    print("  Mock LLM: 已启用并写入日志")
+    print("  随机数: 固定为可回放演示值")
+    print("  验证重点: 纯修炼只能升小层，缺资源/机缘时突破会被阻断")
     print()
     driver = DemoDriver()
     driver.start()

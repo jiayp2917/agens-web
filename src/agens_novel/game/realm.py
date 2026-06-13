@@ -29,6 +29,7 @@ class RealmConfig:
     hp_base: int = 100
     mp_base: int = 50
     spirit_root_bonus: dict[str, float] = field(default_factory=dict)
+    breakthrough_requirements: list[dict[str, str]] = field(default_factory=list)
 
     @classmethod
     def from_dict(cls, data: dict[str, Any]) -> RealmConfig:
@@ -42,6 +43,7 @@ class RealmConfig:
             hp_base=data.get("hp_base", 100),
             mp_base=data.get("mp_base", 50),
             spirit_root_bonus=data.get("spirit_root_bonus", {}),
+            breakthrough_requirements=list(data.get("breakthrough_requirements", [])),
         )
 
 
@@ -121,12 +123,34 @@ class RealmSystem:
                 "闭门造车难成大道——需外出历练、参悟机缘，方可破境。"
             )
 
+        missing = self._missing_breakthrough_requirements(session, cfg)
+        if missing:
+            return False, "破境准备不足：" + "；".join(missing) + "。"
+
         # Check if there is a next realm.
         next_realm = self.get_next_realm(realm)
         if next_realm is None:
             return False, "已达最高境界（飞升）。"
 
         return True, ""
+
+    def _missing_breakthrough_requirements(self, session: Any, cfg: RealmConfig) -> list[str]:
+        """Return labels for lightweight breakthrough gates that are not met."""
+        flags = _session_flags(session)
+        inventory_text = _inventory_text(getattr(session, "inventory", []))
+        missing: list[str] = []
+        for requirement in cfg.breakthrough_requirements:
+            key = requirement.get("key", "")
+            label = requirement.get("label", key)
+            if not key:
+                continue
+            if key in flags:
+                continue
+            aliases = _REQUIREMENT_ALIASES.get(key, ())
+            if any(alias in inventory_text for alias in aliases):
+                continue
+            missing.append(label)
+        return missing
 
     # ─────────────────────────────────────────────────────────────────────
     # Breakthrough rate calculation
@@ -286,3 +310,38 @@ class RealmSystem:
             "cultivation_bonus": sr_data.get("cultivation_bonus", 1.0),
             "breakthrough_bonus": sr_data.get("breakthrough_bonus", 0.0),
         }
+
+
+_REQUIREMENT_ALIASES: dict[str, tuple[str, ...]] = {
+    "foundation_aid": ("筑基丹", "筑基机缘", "筑基护持", "筑基法门"),
+    "golden_core_aid": ("结金丹", "凝丹机缘", "金丹法门"),
+    "nascent_soul_aid": ("化婴丹", "元婴护法", "生死顿悟"),
+    "spirit_transformation_aid": ("化神契机", "神魂试炼", "心魔明悟"),
+    "unity_law_aid": ("合体道基", "天地法则", "法则感悟"),
+    "mahayana_vow_aid": ("大乘道果", "宏愿因果", "宗门气运"),
+    "tribulation_preparation": ("避劫阵", "渡劫场", "雷劫情报", "渡劫准备"),
+    "tribulation_elixir": ("渡劫丹", "续命丹", "九转还魂丹"),
+    "ascension_protection": ("护身法宝", "雷劫阵", "替劫符", "护道阵"),
+}
+
+
+def _session_flags(session: Any) -> set[str]:
+    raw = getattr(session, "breakthrough_flags", [])
+    if not isinstance(raw, list):
+        return set()
+    return {item.strip() for item in raw if isinstance(item, str) and item.strip()}
+
+
+def _inventory_text(inventory: Any) -> str:
+    if not isinstance(inventory, list):
+        return ""
+    chunks: list[str] = []
+    for item in inventory:
+        if isinstance(item, str):
+            chunks.append(item)
+        elif isinstance(item, dict):
+            for key in ("name", "type", "rarity", "description"):
+                value = item.get(key)
+                if isinstance(value, str):
+                    chunks.append(value)
+    return " ".join(chunks)

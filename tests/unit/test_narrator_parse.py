@@ -43,6 +43,15 @@ class TestNarratorParse:
         assert narrative == "山风吹过石阶。"
         assert choices == ["修炼", "交谈", "探索"]
 
+    def test_choices_less_than_three_not_padded_by_parser(self) -> None:
+        text = (
+            "山门风急。\n"
+            "<state_update>{}</state_update>\n"
+            "<choices>[\"请教陈师兄\", \"查看令牌\"]</choices>"
+        )
+        _narrative, _delta, choices = _parse_narrator_output(text)
+        assert choices == ["请教陈师兄", "查看令牌"]
+
     def test_narrative_without_tag(self) -> None:
         text = "你走在山间小路上，远处传来鸟鸣。"
         narrative, delta, choices = _parse_narrator_output(text)
