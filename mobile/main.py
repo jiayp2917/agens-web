@@ -54,19 +54,11 @@ _theme.register_cjk_font()
 from kivy.app import App
 from kivy.core.window import Window
 from kivy.uix.screenmanager import ScreenManager, SlideTransition
-from kivy.uix.boxlayout import BoxLayout
-from kivy.uix.label import Label
-from kivy.uix.button import Button
-from kivy.metrics import dp
 
 from audio_manager import AudioManager
 from service.settings_store import load_settings, apply_settings_to_env
 from service.save_manager_compat import set_mobile_save_dir
 from screens.game_screen import GameScreen
-from screens.settings_screen import SettingsScreen
-from screens.save_screen import SaveScreen
-from screens.combat_screen import CombatScreen
-from screens.tutorial_screen import TutorialScreen
 from screens.home_screen import HomeScreen
 from screens.character_create_screen import CharacterCreateScreen
 from screens.death_screen import DeathScreen
@@ -115,10 +107,6 @@ class XianxiaApp(App):
 
         # Create screens.
         game = GameScreen(name="game")
-        settings = SettingsScreen(name="settings")
-        save_screen = SaveScreen(adapter=game.adapter, name="save")
-        combat = CombatScreen(adapter=game.adapter, name="combat")
-        tutorial = TutorialScreen(name="tutorial")
         home = HomeScreen(adapter=game.adapter, name="home")
         character_create = CharacterCreateScreen(adapter=game.adapter, name="character_create")
         death = DeathScreen(adapter=game.adapter, name="death")
@@ -126,10 +114,6 @@ class XianxiaApp(App):
         # Register screens.
         sm.add_widget(home)
         sm.add_widget(game)
-        sm.add_widget(settings)
-        sm.add_widget(save_screen)
-        sm.add_widget(combat)
-        sm.add_widget(tutorial)
         sm.add_widget(character_create)
         sm.add_widget(death)
 

@@ -9,7 +9,7 @@ __pycache__/
 *$py.class
 *.so
 .Python
-.venv/
+.venv*/
 venv/
 env/
 build/
@@ -26,3 +26,4 @@ runtime/artifacts/
 runtime/checkpoints/
 runtime/logs/
 runtime/backups/
+runtime/saves/

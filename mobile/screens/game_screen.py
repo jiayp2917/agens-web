@@ -24,7 +24,6 @@ from kivy.uix.boxlayout import BoxLayout
 from kivy.uix.label import Label
 from kivy.uix.screenmanager import Screen
 from kivy.uix.scrollview import ScrollView
-from kivy.uix.textinput import TextInput
 from service.engine_adapter import EngineAdapter
 from theme import add_background, current_theme, themed_button, themed_popup
 from widgets.action_bar import GameActionBar
@@ -291,56 +290,6 @@ class GameScreen(Screen):
     def _on_breakthrough(self) -> None:
         """User tapped breakthrough button."""
         self.adapter.attempt_breakthrough()
-
-    def _show_new_game_dialog(self) -> None:
-        """Popup with text input for new game concept."""
-        theme = current_theme()
-        content = BoxLayout(orientation="vertical", padding=dp(8), spacing=dp(8))
-        input_field = TextInput(
-            hint_text="输入角色设定（如: 我叫许满，火灵根）",
-            multiline=False,
-            font_size=dp(14),
-            size_hint_y=None,
-            height=dp(40),
-            background_color=theme.input_bg,
-            foreground_color=theme.text,
-            cursor_color=theme.primary,
-            hint_text_color=theme.text_hint,
-        )
-
-        btn_row = BoxLayout(
-            orientation="horizontal",
-            size_hint_y=None,
-            height=dp(36),
-            spacing=dp(8),
-        )
-        confirm_btn = themed_button("开始", font_size=dp(13))
-        cancel_btn = themed_button("取消", font_size=dp(13))
-
-        popup = themed_popup("开始新游戏", content, size_hint=(0.85, 0.35), auto_dismiss=False)
-
-        def on_confirm(instance):
-            concept = input_field.text.strip()
-            popup.dismiss()
-            if concept:
-                self.narrative_view.clear()
-                self._hide_combat_bar()
-                self.action_bar.set_combat_mode(False)
-                self.adapter.new_game(concept)
-
-        def on_cancel(instance):
-            popup.dismiss()
-
-        confirm_btn.bind(on_release=on_confirm)
-        cancel_btn.bind(on_release=on_cancel)
-
-        content.add_widget(input_field)
-        btn_row.add_widget(cancel_btn)
-        btn_row.add_widget(confirm_btn)
-        content.add_widget(btn_row)
-
-        input_field.bind(on_text_validate=lambda _: on_confirm(None))
-        popup.open()
 
     def _show_text_popup(self, title: str, text: str) -> None:
         """Show a scrollable text popup."""

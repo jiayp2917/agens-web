@@ -153,7 +153,7 @@ def set_theme(name: str) -> None:
     """Persist the theme name. The next call to current_theme() will see it.
 
     Does NOT call save_settings here — the caller is expected to save the
-    whole settings dict in one go (SettingsScreen does this).
+    whole settings dict in one go (the home settings popup does this).
     """
     global _DEFAULT_THEME
     if name in THEMES:
