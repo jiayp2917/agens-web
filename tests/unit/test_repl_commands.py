@@ -1,4 +1,4 @@
-"""Unit tests for the REPL command parser, dispatcher, and chat mode."""
+"""Unit tests for the REPL command parser and game commands."""
 
 from __future__ import annotations
 
@@ -8,7 +8,6 @@ from agens_novel.repl import (
     SlashCommand,
     WriteCommand,
     format_help,
-    has_write_intent,
     parse_command,
 )
 
@@ -28,10 +27,10 @@ class TestParseCommand:
         assert c.args == ""
 
     def test_slash_with_args(self) -> None:
-        c = parse_command("/plan write a story")
+        c = parse_command("/new 我叫许满")
         assert isinstance(c, SlashCommand)
-        assert c.name == "plan"
-        assert "story" in c.args
+        assert c.name == "new"
+        assert "许满" in c.args
 
     def test_slash_is_case_insensitive_on_name(self) -> None:
         c = parse_command("/HELP")
@@ -43,45 +42,23 @@ class TestParseCommand:
             assert isinstance(parse_command(s), ExitCommand), s
 
     def test_free_form_text_is_write(self) -> None:
-        c = parse_command("hello world")
+        c = parse_command("修炼吐纳")
         assert isinstance(c, WriteCommand)
-        assert c.text == "hello world"
+        assert c.text == "修炼吐纳"
 
     def test_free_form_text_is_stripped(self) -> None:
-        c = parse_command("  hello world  ")
+        c = parse_command("  修炼吐纳  ")
         assert isinstance(c, WriteCommand)
-        assert c.text == "hello world"
+        assert c.text == "修炼吐纳"
 
     def test_lone_slash_is_empty(self) -> None:
         assert isinstance(parse_command("/"), EmptyCommand)
 
-    def test_new_commands_parse(self) -> None:
-        for name in ["write", "review", "edit", "run", "step", "reset"]:
+    def test_new_game_commands_parse(self) -> None:
+        for name in ["new", "save", "load", "status", "inv", "skills", "map", "quest", "log", "expand", "reset"]:
             c = parse_command(f"/{name}")
             assert isinstance(c, SlashCommand), f"/{name}"
             assert c.name == name
-
-
-# ─────────────────────────────────────────────────────────────────────────────
-# has_write_intent
-# ─────────────────────────────────────────────────────────────────────────────
-class TestWriteIntent:
-    def test_detects_chinese_write_intent(self) -> None:
-        assert has_write_intent("写一段都市修仙开头")
-        assert has_write_intent("帮我写个故事")
-        assert has_write_intent("生成一个片段")
-
-    def test_detects_english_write_intent(self) -> None:
-        assert has_write_intent("write a story about dragons")
-        assert has_write_intent("generate a novel opening")
-
-    def test_no_intent_for_greeting(self) -> None:
-        assert not has_write_intent("你好")
-        assert not has_write_intent("hello")
-
-    def test_no_intent_for_questions(self) -> None:
-        assert not has_write_intent("今天天气怎么样")
-        assert not has_write_intent("what is langgraph")
 
 
 # ─────────────────────────────────────────────────────────────────────────────
@@ -90,13 +67,13 @@ class TestWriteIntent:
 class TestFormatHelp:
     def test_lists_all_commands(self) -> None:
         text = format_help()
-        for name in ["help", "exit", "status", "config", "history", "agents",
-                      "plan", "write", "review", "edit", "run", "step", "reset"]:
+        for name in ["help", "exit", "quit", "status", "new", "save", "load",
+                      "inv", "skills", "map", "quest", "log", "expand", "reset"]:
             assert f"/{name}" in text, f"missing /{name} in help"
 
-    def test_mentions_chat_agent(self) -> None:
+    def test_mentions_game(self) -> None:
         text = format_help()
-        assert "Chat Agent" in text
+        assert "游戏" in text or "修仙" in text
 
     def test_returns_string(self) -> None:
         assert isinstance(format_help(), str)
@@ -113,16 +90,7 @@ class TestReplDispatch:
         repl = Repl()
         repl.cmd_help("")
         captured = capsys.readouterr()
-        assert "Available commands" in captured.out
-
-    def test_agents_dispatch(self, capsys) -> None:
-        from agens_novel.repl import Repl
-
-        repl = Repl()
-        repl.cmd_agents("")
-        out = capsys.readouterr().out
-        assert "Planner" in out
-        assert "Writer" in out
+        assert "可用命令" in captured.out
 
     def test_history_empty(self, capsys) -> None:
         from agens_novel.repl import Repl
@@ -130,7 +98,7 @@ class TestReplDispatch:
         repl = Repl()
         repl.cmd_history("")
         out = capsys.readouterr().out
-        assert "no history" in out.lower()
+        assert "暂无历史" in out
 
     def test_unknown_slash_in_dispatch(self, capsys) -> None:
         from agens_novel.repl import Repl, SlashCommand
@@ -139,7 +107,7 @@ class TestReplDispatch:
         exited = repl._dispatch_slash(SlashCommand(name="foobar", args=""))
         assert exited is False
         out = capsys.readouterr().out
-        assert "unknown command" in out
+        assert "未知命令" in out
 
     def test_exit_dispatch_returns_true(self) -> None:
         from agens_novel.repl import Repl, SlashCommand
@@ -147,45 +115,30 @@ class TestReplDispatch:
         repl = Repl()
         assert repl._dispatch_slash(SlashCommand(name="exit", args="")) is True
 
-    def test_step_with_no_session(self, capsys) -> None:
+    def test_status_without_game_shows_hint(self, capsys) -> None:
         from agens_novel.repl import Repl
 
         repl = Repl()
-        repl.cmd_step("")
+        repl.cmd_status("")
         out = capsys.readouterr().out
-        assert "no active pipeline" in out.lower()
+        assert "尚未开始游戏" in out
 
     def test_reset_clears_session(self, capsys) -> None:
         from agens_novel.repl import Repl
 
         repl = Repl()
-        repl.pipeline_session.user_request = "test"
+        repl.game_session.char_name = "test"
         repl.cmd_reset("")
-        assert repl.pipeline_session.user_request == ""
+        assert repl.game_session.char_name == ""
 
-    def test_write_without_plan_shows_error(self, capsys) -> None:
+    def test_action_without_game_shows_hint(self, capsys, monkeypatch) -> None:
         from agens_novel.repl import Repl
 
+        monkeypatch.setenv("AGNES_API_KEY", "sk-test-1234567890")
         repl = Repl()
-        repl.cmd_write("")
+        repl._handle_action("修炼")
         out = capsys.readouterr().out
-        assert "No outline" in out
-
-    def test_review_without_draft_shows_error(self, capsys) -> None:
-        from agens_novel.repl import Repl
-
-        repl = Repl()
-        repl.cmd_review("")
-        out = capsys.readouterr().out
-        assert "No draft" in out
-
-    def test_edit_without_draft_shows_error(self, capsys) -> None:
-        from agens_novel.repl import Repl
-
-        repl = Repl()
-        repl.cmd_edit("")
-        out = capsys.readouterr().out
-        assert "No draft" in out
+        assert "尚未开始游戏" in out
 
 
 # ─────────────────────────────────────────────────────────────────────────────
@@ -195,12 +148,12 @@ class TestReplLoop:
     def test_run_loop_with_injected_inputs(self, capsys) -> None:
         from agens_novel.repl import Repl
 
-        inputs = iter(["/help", "/agents", "/exit"])
+        inputs = iter(["/help", "/status", "/exit"])
         repl = Repl(input_fn=lambda _p: next(inputs))
         rc = repl.run()
         assert rc == 0
         assert any(line.startswith("/help") for line in repl.history)
-        assert any(line.startswith("/agents") for line in repl.history)
+        assert any(line.startswith("/status") for line in repl.history)
 
     def test_stop_iteration_exits_cleanly(self, monkeypatch) -> None:
         from agens_novel.repl import Repl
@@ -232,11 +185,12 @@ class TestReplLoop:
         repl = Repl()
         assert repl.console.legacy_windows is True
 
-    def test_help_text_is_ascii(self) -> None:
+    def test_prompt_is_set(self) -> None:
         from agens_novel.repl import loop as repl_loop
 
         prompt = repl_loop.PROMPT
-        assert all(ord(c) < 128 for c in prompt), f"non-ASCII in PROMPT: {prompt!r}"
+        assert prompt.endswith("> ")
+        assert len(prompt) > 2
 
     def test_exit_command_prints_bye(self, capsys) -> None:
         from agens_novel.repl import Repl
@@ -246,120 +200,96 @@ class TestReplLoop:
         rc = repl.run()
         assert rc == 0
         out = capsys.readouterr().out
-        assert "bye" in out
-
-    def test_slash_run_without_args_shows_usage(self, capsys, monkeypatch) -> None:
-        from agens_novel.repl import Repl
-
-        monkeypatch.setenv("AGNES_API_KEY", "sk-test-1234567890")
-        inputs = iter(["/run", "/exit"])
-        repl = Repl(input_fn=lambda _p: next(inputs))
-        repl.run()
-        out = capsys.readouterr().out
-        assert "usage" in out.lower()
-
-    def test_slash_plan_without_args_shows_usage(self, capsys, monkeypatch) -> None:
-        from agens_novel.repl import Repl
-
-        monkeypatch.setenv("AGNES_API_KEY", "sk-test-1234567890")
-        inputs = iter(["/plan", "/exit"])
-        repl = Repl(input_fn=lambda _p: next(inputs))
-        repl.run()
-        out = capsys.readouterr().out
-        assert "usage" in out.lower()
+        assert "再见" in out
 
 
 # ─────────────────────────────────────────────────────────────────────────────
-# Chat mode (free-form input goes to Chat Agent)
+# GameSession
 # ─────────────────────────────────────────────────────────────────────────────
-class TestChatMode:
-    def test_write_without_api_key_rejected(self, capsys, monkeypatch) -> None:
-        from agens_novel.repl import Repl
-
-        monkeypatch.delenv("AGNES_API_KEY", raising=False)
-
-        def fail_runner(*_a, **_k):
-            raise AssertionError("runner should not be called")
-
-        inputs = iter(["hello", "/exit"])
-        repl = Repl(input_fn=lambda _p: next(inputs), runner=fail_runner)
-        rc = repl.run()
-        assert rc == 0
-        out = capsys.readouterr().out
-        assert "AGNES_API_KEY" in out
-
-    def test_write_intent_triggers_confirm(self, monkeypatch) -> None:
-        """Free-form text with write intent shows confirmation dialog."""
-        from agens_novel.repl import Repl
-
-        monkeypatch.setenv("AGNES_API_KEY", "sk-test-1234567890")
-
-        # Simulate: user types write-intent text, chooses "cancel" (option 2),
-        # then /exit.
-        inputs = iter(["write a story", "3", "/exit"])
-        repl = Repl(input_fn=lambda _p: next(inputs))
-        rc = repl.run()
-        assert rc == 0
-
-    def test_eof_exits_cleanly(self, monkeypatch) -> None:
-        from agens_novel.repl import Repl
-
-        monkeypatch.setenv("AGNES_API_KEY", "sk-test-1234567890")
-
-        def raise_eof(_p):
-            raise EOFError
-
-        repl = Repl(input_fn=raise_eof)
-        rc = repl.run()
-        assert rc == 0
-
-
-class TestPipelineSession:
+class TestGameSession:
     def test_initial_state(self) -> None:
-        from agens_novel.repl.pipeline_session import PipelineSession
+        from agens_novel.repl.game_session import GameSession
 
-        s = PipelineSession()
-        assert s.user_request == ""
-        assert s.completed_stages == []
+        s = GameSession()
+        assert s.char_name == ""
+        assert s.realm == "练气"
+        assert s.turn_count == 0
+        assert s.game_started is False
 
-    def test_next_stage_sequence(self) -> None:
-        from agens_novel.repl.pipeline_session import PipelineSession
+    def test_as_game_state(self) -> None:
+        from agens_novel.repl.game_session import GameSession
 
-        s = PipelineSession(user_request="test")
-        assert s.next_stage() == "planner"
-        s.mark_done("planner")
-        assert s.next_stage() == "writer"
+        s = GameSession(char_name="许满", realm="练气", realm_stage=3, hp=85)
+        d = s.as_game_state()
+        assert d["character"]["name"] == "许满"
+        assert d["character"]["realm"] == "练气"
+        assert d["character"]["hp"] == 85
 
-    def test_can_run_prerequisites(self) -> None:
-        from agens_novel.repl.pipeline_session import PipelineSession
+    def test_apply_delta_increment(self) -> None:
+        from agens_novel.repl.game_session import GameSession
 
-        s = PipelineSession()
-        assert not s.can_run("writer")  # needs outline
-        s.outline = "test outline"
-        assert s.can_run("writer")
+        s = GameSession(hp=80, mp=40)
+        s.apply_delta({"character": {"hp": "+10", "mp": "-5"}})
+        assert s.hp == 90
+        assert s.mp == 35
+
+    def test_apply_delta_absolute(self) -> None:
+        from agens_novel.repl.game_session import GameSession
+
+        s = GameSession(hp=80)
+        s.apply_delta({"character": {"hp": 50}})
+        assert s.hp == 50
+
+    def test_apply_delta_realm_change(self) -> None:
+        from agens_novel.repl.game_session import GameSession
+
+        s = GameSession(realm="练气")
+        s.apply_delta({"character": {"realm": "筑基"}})
+        assert s.realm == "筑基"
+
+    def test_apply_delta_world(self) -> None:
+        from agens_novel.repl.game_session import GameSession
+
+        s = GameSession()
+        s.apply_delta({"world": {"location": "青云山", "region": "东荒"}})
+        assert s.location == "青云山"
+        assert s.region == "东荒"
+
+    def test_apply_delta_game_over(self) -> None:
+        from agens_novel.repl.game_session import GameSession
+
+        s = GameSession()
+        s.apply_delta({"meta": {"game_over": True, "game_over_reason": "魂飞魄散"}})
+        assert s.game_over is True
+        assert s.error == "魂飞魄散"
+
+    def test_round_trip_serialization(self) -> None:
+        from agens_novel.repl.game_session import GameSession
+
+        s = GameSession(
+            char_name="许满", realm="练气", realm_stage=3,
+            hp=85, mp=30, spirit_root="火木双灵根",
+            location="青云山外门",
+            techniques=[{"name": "基础吐纳术", "level": 1, "type": "内功"}],
+        )
+        s.game_started = True
+        s.turn_count = 7
+        data = s.to_save_dict()
+        s2 = GameSession.from_save_dict(data)
+        assert s2.char_name == "许满"
+        assert s2.realm == "练气"
+        assert s2.hp == 85
+        assert s2.location == "青云山外门"
+        assert len(s2.techniques) == 1
+        assert s2.game_started is True
+        assert s2.turn_count == 7
 
     def test_reset_clears_state(self) -> None:
-        from agens_novel.repl.pipeline_session import PipelineSession
+        from agens_novel.repl.game_session import GameSession
 
-        s = PipelineSession(user_request="test", outline="x")
-        s.mark_done("planner")
+        s = GameSession(char_name="许满", realm="筑基", game_started=True, turn_count=50)
         s.reset()
-        assert s.user_request == ""
-        assert s.outline == ""
-        assert s.completed_stages == []
-
-    def test_as_orchestrator_state(self) -> None:
-        from agens_novel.repl.pipeline_session import PipelineSession
-
-        s = PipelineSession(user_request="test", draft="hello")
-        d = s.as_orchestrator_state()
-        assert d["user_request"] == "test"
-        assert d["draft"] == "hello"
-
-    def test_update_from_result(self) -> None:
-        from agens_novel.repl.pipeline_session import PipelineSession
-
-        s = PipelineSession()
-        s.update_from_result({"outline": "bullet1", "plan_notes": "fast"})
-        assert s.outline == "bullet1"
-        assert s.plan_notes == "fast"
+        assert s.char_name == ""
+        assert s.realm == "练气"
+        assert s.game_started is False
+        assert s.turn_count == 0

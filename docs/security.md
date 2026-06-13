@@ -9,11 +9,12 @@
 2. **The API key never appears in stdout/stderr.**
    - A `SecretRedactor` log filter replaces any `sk-[A-Za-z0-9_-]{8,}` token with `sk-***`.
    - The same filter rewrites `AGNES_API_KEY=<value>` to `AGNES_API_KEY=***`.
-3. **Source files in `D:/2917/novel/` are read-only.**
-   - The `Writer Agent` does not import or write to that tree.
-   - Future Agents (reviewer / publisher) must follow the same rule.
-4. **All AI outputs go to `runtime/artifacts/`.**
-   - This is the sandbox. Nothing escapes it without an explicit human `publish` action.
+3. **All AI outputs go to `runtime/artifacts/`.**
+   - This is the sandbox. Nothing escapes it without an explicit human action.
+4. **Save files are sandboxed in `runtime/saves/`.**
+   - Save names are sanitized: only alphanumeric, hyphen, underscore allowed.
+   - Path traversal (e.g. `../../etc/passwd`) is blocked by the sanitizer.
+   - See `paths.save_path()` for the sanitization logic.
 
 ## The env-injection pattern
 
@@ -23,7 +24,7 @@ It sets the env var for the child Python process, then clears it in
 on Ctrl+C / errors).
 
 ```powershell
-.\scripts\run_with_key.ps1 -ApiKey "<your key>" -- run --input "..."
+.\scripts\run_with_key.ps1 -ApiKey "<your key>" -- repl
 ```
 
 ## How to verify
@@ -39,5 +40,5 @@ select-string -Path runtime\logs\*.jsonl,runtime\artifacts\**\*.json -Pattern "s
 # (should return no matches)
 
 # 3. Run the test suite — it asserts the key is never logged.
-pytest -q
+python -m pytest -q
 ```

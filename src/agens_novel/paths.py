@@ -3,7 +3,7 @@
 All filesystem paths go through this module so that:
 - Tests can override `PROJECT_ROOT` to a tmp dir.
 - Runtime artifacts never escape the `runtime/` tree.
-- Source files in `D:/2917/novel/` are referenced read-only and never written to.
+- Source files in `config/` and `src/` are referenced read-only and never written to.
 """
 
 from __future__ import annotations
@@ -22,6 +22,7 @@ CHECKPOINT_DIR = RUNTIME_DIR / "checkpoints"
 LOG_DIR = RUNTIME_DIR / "logs"
 CONFIG_DIR = PROJECT_ROOT / "config"
 PROMPT_DIR = CONFIG_DIR / "prompts" / "system"
+SAVE_DIR = RUNTIME_DIR / "saves"
 
 
 def ensure_runtime_dirs() -> dict[str, Path]:
@@ -41,7 +42,10 @@ def ensure_runtime_dirs() -> dict[str, Path]:
 def agent_artifact_dir(agent_name: str) -> Path:
     """Return the artifact dir for a specific agent. Creates it on demand."""
     p = ARTIFACT_ROOT / agent_name
-    p.mkdir(parents=True, exist_ok=True)
+    try:
+        p.mkdir(parents=True, exist_ok=True)
+    except OSError:
+        pass  # May not be writable on Android; callers handle gracefully
     return p
 
 
@@ -60,3 +64,10 @@ def checkpoint_path(thread_id: str) -> Path:
     """SQLite checkpoint DB path. A single DB is fine for v1."""
     CHECKPOINT_DIR.mkdir(parents=True, exist_ok=True)
     return CHECKPOINT_DIR / f"{thread_id}.sqlite"
+
+
+def save_path(name: str) -> Path:
+    """Return the path for a game save file. Creates SAVE_DIR on demand."""
+    SAVE_DIR.mkdir(parents=True, exist_ok=True)
+    safe_name = "".join(c for c in name if c.isalnum() or c in ("-", "_")) or "default"
+    return SAVE_DIR / f"{safe_name}.json"

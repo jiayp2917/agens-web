@@ -1,7 +1,6 @@
 """SSE (Server-Sent Events) parser.
 
-Mirrors the line-splitting logic in ``D:/2917/agens/test-agnes.mjs`` (the
-Node.js harness that this project draws from). The contract:
+Parses OpenAI-compatible SSE streams into accumulated text content. The contract:
 
   - Input: an async iterable of byte chunks.
   - Output: a single accumulated string of ``text`` content (the model's

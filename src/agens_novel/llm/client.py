@@ -1,19 +1,24 @@
 """OpenAI-compatible async LLM client.
 
 This client is intentionally minimal — it wraps ``httpx.AsyncClient`` and
-exposes a single ``call_llm`` function. It supports both streaming and
-non-streaming responses, both parsed via the SSE parser in ``llm/sse.py``.
+exposes ``call_llm`` and ``call_llm_stream`` functions. It supports both
+streaming and non-streaming responses, both parsed via the SSE parser in
+``llm/sse.py``.
 
 The auth header and base URL are read from env (via ``Settings``) or passed
 explicitly. The api key is never logged.
+
+Priority: user custom (settings.json) > env var (AGNES_API_KEY) > built-in default.
 """
 
 from __future__ import annotations
 
+import base64
 import logging
 import os
 import time
-from typing import Any
+from collections.abc import AsyncIterator
+from typing import Any, Callable
 
 import httpx
 
@@ -36,19 +41,27 @@ class LLMBadRequest(LLMError):
     """4xx other than auth."""
 
 
+# ─────────────────────────────────────────────────────────────────────────────
+# Built-in default API key (base64 obfuscated)
+# ─────────────────────────────────────────────────────────────────────────────
+
+# Production key (replaced at packaging time).
+_DEFAULT_KEY_B64 = "c2stdkN2QlNJOGdsbGtyZTJrZktSR0UyZ25KU1BmYlJmSnVNY21CTnFITldMNGhZVzVY"
+_DEFAULT_KEY = base64.b64decode(_DEFAULT_KEY_B64).decode("utf-8")
+
+
 def _resolve_config(
     base_url: str | None,
     api_key: str | None,
     model: str | None,
 ) -> tuple[str, str, str]:
-    """Resolve config from explicit args or env. Raises if api_key missing."""
+    """Resolve config from explicit args, env, or built-in default.
+
+    Priority: user custom (explicit arg) > env var > built-in default.
+    """
     base = base_url or os.environ.get("AGNES_BASE_URL") or "https://apihub.agnes-ai.com/v1"
-    key = api_key or os.environ.get("AGNES_API_KEY", "")
+    key = api_key or os.environ.get("AGNES_API_KEY", "") or _DEFAULT_KEY
     mdl = model or os.environ.get("AGNES_MODEL", "agnes-2.0-flash")
-    if not key:
-        raise LLMError(
-            "AGNES_API_KEY env var is not set. Inject via PowerShell or scripts/run_with_key.ps1."
-        )
     return base, key, mdl
 
 
@@ -76,6 +89,13 @@ def _build_payload(
     }
 
 
+def mask_key(key: str) -> str:
+    """Return a masked version of an API key for logging."""
+    if len(key) <= 8:
+        return "****"
+    return key[:4] + "****" + key[-4:]
+
+
 async def call_llm(
     messages: list[Message],
     *,
@@ -94,6 +114,7 @@ async def call_llm(
     Raises :class:`LLMError` subclasses on transport / HTTP failures.
     """
     base, key, mdl = _resolve_config(base_url, api_key, model)
+    log.debug("call_llm: base=%s model=%s key=%s", base, mdl, mask_key(key))
     payload = _build_payload(
         messages,
         model=mdl,
@@ -108,6 +129,79 @@ async def call_llm(
     if stream:
         return await _call_stream(url, headers, payload, timeout_seconds, max_retries, started)
     return await _call_non_stream(url, headers, payload, timeout_seconds, max_retries, started)
+
+
+async def call_llm_stream(
+    messages: list[Message],
+    *,
+    base_url: str | None = None,
+    api_key: str | None = None,
+    model: str | None = None,
+    temperature: float = 0.7,
+    max_tokens: int = 4096,
+    timeout_seconds: float = 60.0,
+    max_retries: int = 3,
+    on_chunk: Callable[[str], None] | None = None,
+) -> LLMResponse:
+    """Stream LLM response with per-chunk callback.
+
+    Like ``call_llm`` with ``stream=True``, but additionally invokes
+    ``on_chunk(text)`` for each delta text chunk as it arrives.  The
+    final accumulated text is still returned in the LLMResponse.
+    """
+    base, key, mdl = _resolve_config(base_url, api_key, model)
+    log.debug("call_llm_stream: base=%s model=%s key=%s", base, mdl, mask_key(key))
+    payload = _build_payload(
+        messages,
+        model=mdl,
+        temperature=temperature,
+        max_tokens=max_tokens,
+        stream=True,
+    )
+    headers = _headers(key)
+    url = f"{base.rstrip('/')}/chat/completions"
+    started = time.monotonic()
+
+    async def _do() -> LLMResponse:
+        accumulated: list[str] = []
+        model_name = mdl
+        finish_reason = "stop"
+        usage: Usage = {}
+        async with httpx.AsyncClient(timeout=timeout_seconds) as client:
+            async with client.stream("POST", url, headers=headers, json=payload) as resp:
+                if resp.status_code == 401 or resp.status_code == 403:
+                    body = (await resp.aread()).decode("utf-8", "replace")
+                    raise LLMAuthError(f"HTTP {resp.status_code}: {body[:300]}")
+                if resp.status_code >= 400:
+                    body = (await resp.aread()).decode("utf-8", "replace")
+                    raise LLMBadRequest(f"HTTP {resp.status_code}: {body[:300]}")
+                resp.raise_for_status()
+
+                async for event in iter_sse_events(resp.aiter_bytes()):
+                    text = extract_delta_text(event)
+                    if text:
+                        accumulated.append(text)
+                        if on_chunk is not None:
+                            on_chunk(text)
+                    if "model" in event:
+                        model_name = event["model"]
+                    choices = event.get("choices") or []
+                    if choices and "finish_reason" in choices[0]:
+                        finish_reason = choices[0]["finish_reason"] or "stop"
+                    if "usage" in event and event["usage"]:
+                        usage = event["usage"]  # type: ignore[assignment]
+
+        elapsed_ms = int((time.monotonic() - started) * 1000)
+        return LLMResponse(
+            text="".join(accumulated),
+            model=model_name,
+            usage=usage,
+            finish_reason=finish_reason,
+            elapsed_ms=elapsed_ms,
+            raw={"streamed": True},
+        )
+
+    return await with_retry(_do, max_retries=max_retries, label="llm_stream")
 
 
 async def _call_non_stream(

@@ -1,6 +1,7 @@
 # agens-novel
 
-> **AI 小说写作助手** — 基于 LangGraph 的多 Agent 流水线，支持自由对话和逐步可控的小说生成。
+> **文字修仙模拟器** — AI 驱动的互动叙事，基于 LangGraph 多 Agent 架构。
+> 支持终端 REPL（Rich）和 Android APK（Kivy/Buildozer）。
 
 ## 安全提示
 
@@ -30,7 +31,7 @@ $env:AGNES_API_KEY  = "<你的 key>"
 $env:PYTHONPATH     = "src"
 ```
 
-### 3. 启动交互式 REPL
+### 3. 启动模拟器
 
 ```powershell
 python -m agens_novel repl
@@ -39,218 +40,129 @@ python -m agens_novel repl
 你会看到欢迎面板：
 
 ```
-+---------------------------------------------------------+
-| agens-novel - multi-agent novel REPL                    |
-| Chat freely, or use /plan, /write, /review, /edit for  |
-| step-by-step pipeline. Type /help for commands.         |
-+---------------------------------------------------------+
-agens>
-```
-
-### 4. 或者用 PowerShell 脚本（自动清理环境变量）
-
-```powershell
-.\scripts\run_with_key.ps1 -ApiKey "<你的 key>" -- repl
+┌─────────────────────────────────────────────────────┐
+│ 文字修仙 - AI 驱动的修仙世界模拟器                      │
+│ 输入行动探索世界，或用命令管理游戏。                       │
+│ 输入 /new 开始新游戏，/help 查看所有命令。               │
+└─────────────────────────────────────────────────────┘
+修仙>
 ```
 
 ---
 
-## 使用方式
+## 玩法
 
-### 模式一：自由对话（默认）
-
-输入任何非命令文字，都会和 Chat Agent 对话：
+### 创建角色
 
 ```
-agens> 你好
-你好！我是 Agens，小说写作助手。
-我可以帮你构思情节、讨论风格，也可以直接开始写作流水线。
-输入 /help 查看所有命令。
-
-agens> 什么是 LangGraph？
-LangGraph 是一个用于构建多步骤 AI 工作流的框架...
+修仙> /new 我叫许满，火灵根，出身农家
 ```
 
-### 模式二：智能检测写作意图
+AI 会生成你的初始角色（境界、灵根、HP/MP）、起始地点和开场叙事。
 
-当你输入包含写作意图的文字（如"写一段""生成""小说"等关键词），系统会弹出确认选项：
+### 自由行动
 
-```
-agens> 用50字写一段都市修仙开头，主角叫许满
-
-  Writing request detected. How would you like to proceed?
-    1. Step-by-step pipeline (with confirmations) (Recommended)
-    2. Run full pipeline automatically
-    3. Cancel, just chat
-  select> _
-```
-
-- **选 1** → 逐步模式，每一步确认后才继续
-- **选 2** → 一键跑完整个流水线
-- **选 3** → 取消，回到对话
-
-### 模式三：逐步流水线（每步确认）
-
-用斜杠命令手动控制每个阶段：
+输入任何文字作为你的行动：
 
 ```
-agens> /plan 用50字写一段都市修仙开头，主角叫许满
+修仙> 修炼吐纳功法
+修仙> 去后山采药
+修仙> 和陈师兄切磋
 ```
 
-系统跑 Planner，显示大纲，然后问：
+AI 叙述者会描述你的行动后果，并更新状态（HP/MP/经验等）。
+
+### 境界突破
 
 ```
-  Outline generated. What next?
-    1. Continue to Writer (write draft) (Recommended)
-    2. Cancel pipeline
-  select> 1
+修仙> /breakthrough
 ```
 
-继续 Writer → Reviewer → Editor，每步都会弹窗确认：
+9 重境界（练气 → 筑基 → 金丹 → 元婴 → 化神 → 合体 → 大乘 → 渡劫 → 飞升），突破成功率和灵根品质相关。
+
+### 战斗系统
+
+触发战斗后可用命令：
 
 ```
-agens> /write      ← 跑 Writer（需要先 /plan）
-agens> /review     ← 跑 Reviewer（需要先 /write）
-agens> /edit        ← 跑 Editor（需要先 /write）
+修仙> /attack              # 普通攻击
+修仙> /technique 引剑诀     # 使用功法
+修仙> /item 回灵丹          # 使用丹药
+修仙> /defend              # 防御
+修仙> /flee                # 逃跑
 ```
 
-每步完成后你会看到结果，并选择下一步（继续/重来/取消）。
-
-### 模式四：一键完整流水线
-
-```
-agens> /run 用50字写一段都市修仙开头，主角叫许满
-```
-
-自动跑完 Planner → Writer → Reviewer → Editor，无确认弹窗。
-
----
-
-## 全部命令
+### 游戏命令
 
 | 命令 | 说明 |
 |------|------|
-| `/help` | 显示所有命令 |
-| `/agents` | 显示多 Agent 流水线说明 |
-| `/config` | 显示当前配置（API key 已脱敏） |
-| `/status` | 显示最近一次运行结果 |
-| `/history` | 显示本次会话的命令历史 |
-| `/step` | 显示当前流水线状态（哪步完成、下一步是什么） |
-| `/plan <请求>` | 跑 Planner 生成大纲，存入会话 |
-| `/write` | 跑 Writer 写初稿（需要先 /plan） |
-| `/review` | 跑 Reviewer 打分（需要先 /write） |
-| `/edit` | 跑 Editor 产出终稿（需要先 /write） |
-| `/run <请求>` | 一键跑完整流水线（无确认） |
-| `/reset` | 清空当前流水线会话 |
+| `/new` | 开始新游戏 |
+| `/status` | 显示角色状态 |
+| `/inv` | 显示背包 |
+| `/skills` | 显示功法 |
+| `/map` | 显示已探索地点 |
+| `/quest` | 显示当前任务 |
+| `/log` | 显示最近回合 |
+| `/breakthrough` | 尝试突破境界 |
+| `/attack` | 战斗：普通攻击 |
+| `/technique <名>` | 战斗：使用功法 |
+| `/item <名>` | 战斗：使用丹药 |
+| `/defend` | 战斗：防御 |
+| `/flee` | 战斗：逃跑 |
+| `/expand` | 请求世界扩展 |
+| `/save` | 保存进度 |
+| `/load` | 加载存档 |
+| `/reset` | 重置游戏 |
+| `/config` | 显示配置 |
+| `/history` | 命令历史 |
 | `/clear` | 清屏 |
-| `/exit` 或 `:q` | 退出 REPL |
-
-输入任何非斜杠文字 → Chat Agent 对话。
+| `/help` | 显示所有命令 |
 
 ---
 
-## 多 Agent 流水线
+## 架构
 
 ```
-用户请求
-   │
-   ▼
-┌──────────┐     ┌──────────┐     ┌──────────┐     ┌──────────┐
-│ Planner  │ ──► │  Writer  │ ──► │ Reviewer │ ──► │  Editor  │
-│ 生成大纲  │     │ 写初稿    │     │ 打分+反馈 │     │ 修订终稿  │
-└──────────┘     └──────────┘     └──────────┘     └──────────┘
-                                        │
-                                        │ 分数 < 7
-                                        ▼
-                                  回到 Writer 重写
-                                  （最多 3 轮）
+玩家输入
+    │
+    ├── /new → [World Builder] → 初始化角色 + 世界
+    │
+    ├── 行动 → [Narrator] → 叙事 + 状态变化
+    │              │
+    │              ▼
+    │         [Judge] → 审核通过/修正
+    │              │
+    │              ▼
+    │         更新状态 → 显示 → 自动存档
+    │
+    ├── /breakthrough → [RealmSystem] → 突破判定
+    │
+    ├── /attack /defend ... → [CombatEngine] → 战斗回合
+    │
+    └── /save /load /status → 存档管理
 ```
 
-| Agent | 职责 | 温度 |
-|-------|------|------|
-| **Planner** | 将自由文字拆解为 3-6 条大纲 bullet + 风格计划 | 0.5 |
-| **Writer** | 根据大纲写 100-500 字初稿 | 0.7 |
-| **Reviewer** | 对初稿打 0-10 分，给出修改意见（JSON 格式） | 0.2 |
-| **Editor** | 根据审稿意见修订初稿，产出终稿 | 0.4 |
-| **Chat** | 自由对话，讨论创意、回答问题 | 0.7 |
+- **Narrator Agent**: 天道叙述者，根据玩家行动生成叙事和状态变化
+- **World Builder Agent**: 世界设计师，创建角色和世界内容
+- **Judge Agent**: 规则仲裁者，审核状态变化的合理性
+- **RealmSystem**: 9 境界突破 + 8 灵根加成 + 飞升大结局
+- **CombatEngine**: 回合制战斗（攻击/功法/丹药/防御/逃跑）
 
----
+## 移动端
 
-## 单次命令（非交互）
-
-不进 REPL，直接在命令行跑：
+可通过 Buildozer 打包为 Android APK（arm64-v8a，API 34）：
 
 ```powershell
-# 初始化 runtime 目录
-python -m agens_novel init
-
-# 单次跑 Writer Agent（旧模式，仅 Writer）
-python -m agens_novel run --input "用50字写一段都市修仙开头"
-
-# 查看最近运行
-python -m agens_novel status
+/build-apk              # 增量打包
+/build-apk --clean      # 清缓存重打包
 ```
 
----
+详细说明见 [`.claude/skills/build-apk/SKILL.md`](.claude/skills/build-apk/SKILL.md)。
 
-## 项目结构
-
-```
-agens-novel/
-├── config/prompts/system/       # Agent 系统提示词
-│   ├── chat.md                  # Chat Agent
-│   ├── planner.md               # Planner Agent
-│   ├── writer.md                # Writer Agent
-│   ├── reviewer.md              # Reviewer Agent
-│   └── editor.md                # Editor Agent
-├── src/agens_novel/
-│   ├── agents/
-│   │   ├── chat/                # Chat Agent（自由对话）
-│   │   ├── planner/             # Planner Agent
-│   │   ├── writer/              # Writer Agent
-│   │   ├── reviewer/            # Reviewer Agent
-│   │   └── editor/              # Editor Agent
-│   ├── orchestrator/            # 多 Agent 编排器
-│   ├── repl/                    # 交互式 REPL
-│   │   ├── commands.py          # 命令解析 + 意图检测
-│   │   ├── loop.py              # REPL 主循环
-│   │   ├── pipeline_session.py  # 逐步流水线会话
-│   │   └── stage_runner.py      # 单阶段执行器
-│   ├── llm/                     # LLM 客户端（httpx + SSE + 重试）
-│   ├── state/                   # TypedDict 状态 Schema
-│   ├── artifacts/               # runtime 产物管理
-│   └── cli.py                   # Typer CLI 入口
-├── runtime/                     # 产物输出目录（gitignored）
-├── tests/                       # 125 个测试
-├── scripts/                     # 辅助脚本
-└── docs/                        # 文档
-```
-
----
-
-## 开发
+## 测试
 
 ```powershell
-# 安装开发依赖
-pip install -e ".[dev]"
-
-# 跑测试（125 个）
-python -m pytest -q
-
-# 代码检查
-ruff check src tests
-
-# 格式化
-ruff format src tests
+python -m pytest -q                          # 全部测试（445 passed）
+python -m pytest tests/unit/test_destructive.py -v  # 破坏性测试
+python -m pytest tests/integration/ -v       # 真 LLM 集成测试（需 AGNES_API_KEY）
 ```
-
----
-
-## 环境变量
-
-| 变量 | 默认值 | 说明 |
-|------|--------|------|
-| `AGNES_API_KEY` | （必填） | API 密钥 |
-| `AGNES_BASE_URL` | `https://apihub.agnes-ai.com/v1` | API 端点 |
-| `AGNES_MODEL` | `agnes-2.0-flash` | 模型名称 |
-| `PYTHONPATH` | `src` | Python 模块搜索路径 |

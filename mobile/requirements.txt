@@ -1,0 +1,28 @@
+# Mobile dependencies for 文字修仙
+# Used by Buildozer to build the APK.
+#
+# The game engine (langgraph, langchain, httpx) makes HTTP calls to a remote
+# LLM API. No local model inference needed.
+#
+# pydantic is NOT a direct dependency — it was removed in Phase 1.
+# If langgraph's transitive dependency on pydantic-core fails to compile
+# for arm64, use the --no-deps approach with manually listed pure-Python deps.
+
+# Core UI
+kivy==2.3.0
+
+# HTTP client for LLM API calls
+httpx>=0.27.0
+
+# LangGraph agent framework (pure Python, but may pull pydantic transitively)
+langgraph>=0.2.0
+langchain-core>=0.3.0
+langchain-openai>=0.2.0
+
+# YAML config parsing (pure Python fallback)
+pyyaml>=6.0.1
+
+# NOTE: The following agens_novel deps are NOT needed on mobile:
+# - rich     (terminal only)
+# - typer    (terminal only)
+# - pydantic (removed from direct deps; may come via langgraph)

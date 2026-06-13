@@ -1,21 +1,21 @@
-"""Pydantic Settings: env-only configuration with secret redaction.
+"""Environment-driven settings with secret redaction.
 
 The Settings class is the single source of truth for runtime configuration.
 The API key is loaded from the AGNES_API_KEY env var and masked on repr.
-Never log the Settings object directly — call `settings.public_summary()`
+Never log the Settings object directly — call ``settings.public_summary()``
 instead.
+
+No external dependencies — pure Python, works on Android.
 """
 
 from __future__ import annotations
 
+import os
 from typing import Any
-
-from pydantic import Field
-from pydantic_settings import BaseSettings, SettingsConfigDict
 
 
 def _mask(value: str | None) -> str:
-    """Mask a secret value for safe display. Returns '***' if value is empty."""
+    """Mask a secret value for safe display. Returns '<unset>' if value is empty."""
     if not value:
         return "<unset>"
     if len(value) <= 8:
@@ -23,30 +23,41 @@ def _mask(value: str | None) -> str:
     return f"{value[:3]}***{value[-4:]}"
 
 
-class Settings(BaseSettings):
-    """Env-driven settings. Loaded lazily, masked on repr."""
+class Settings:
+    """Env-driven settings. Loaded from AGNES_* env vars, masked on repr.
 
-    model_config = SettingsConfigDict(
-        env_prefix="AGNES_",
-        env_file=None,  # Explicitly disable .env loading — env vars only.
-        extra="ignore",
-        case_sensitive=False,
-    )
+    Accepts ``**overrides`` so callers can inject values programmatically
+    (e.g. ``Settings(api_key="sk-...")``).
+    """
 
-    # Core API
-    api_key: str = Field(default="", description="Loaded from AGNES_API_KEY env var")
-    base_url: str = Field(default="https://apihub.agnes-ai.com/v1")
-    model: str = Field(default="agnes-2.0-flash")
-
-    # LLM call defaults
-    temperature: float = Field(default=0.7, ge=0.0, le=2.0)
-    max_tokens: int = Field(default=4096, ge=1, le=32000)
-    request_timeout_seconds: float = Field(default=60.0, gt=0)
-
-    # Retry
-    max_retries: int = Field(default=3, ge=0, le=10)
-    retry_initial_backoff_seconds: float = Field(default=1.0, gt=0)
-    retry_max_backoff_seconds: float = Field(default=8.0, gt=0)
+    def __init__(self, **overrides: Any) -> None:
+        self.api_key: str = overrides.get(
+            "api_key", os.environ.get("AGNES_API_KEY", ""),
+        )
+        self.base_url: str = overrides.get(
+            "base_url", os.environ.get("AGNES_BASE_URL", "https://apihub.agnes-ai.com/v1"),
+        )
+        self.model: str = overrides.get(
+            "model", os.environ.get("AGNES_MODEL", "agnes-2.0-flash"),
+        )
+        self.temperature: float = float(overrides.get(
+            "temperature", os.environ.get("AGNES_TEMPERATURE", "0.7"),
+        ))
+        self.max_tokens: int = int(overrides.get(
+            "max_tokens", os.environ.get("AGNES_MAX_TOKENS", "4096"),
+        ))
+        self.request_timeout_seconds: float = float(overrides.get(
+            "request_timeout_seconds", os.environ.get("AGNES_REQUEST_TIMEOUT_SECONDS", "60.0"),
+        ))
+        self.max_retries: int = int(overrides.get(
+            "max_retries", os.environ.get("AGNES_MAX_RETRIES", "3"),
+        ))
+        self.retry_initial_backoff_seconds: float = float(overrides.get(
+            "retry_initial_backoff_seconds", os.environ.get("AGNES_RETRY_INITIAL_BACKOFF_SECONDS", "1.0"),
+        ))
+        self.retry_max_backoff_seconds: float = float(overrides.get(
+            "retry_max_backoff_seconds", os.environ.get("AGNES_RETRY_MAX_BACKOFF_SECONDS", "8.0"),
+        ))
 
     def __repr__(self) -> str:
         """Mask api_key in repr to prevent accidental leak in tracebacks."""

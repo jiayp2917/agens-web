@@ -1,4 +1,5 @@
 # agens-novel default config
+# 文字修仙模拟器 - AI 驱动的互动叙事
 
 # LLM call defaults
 llm:
@@ -10,11 +11,22 @@ llm:
   retry_initial_backoff_seconds: 1.0
   retry_max_backoff_seconds: 8.0
 
-# Writer Agent settings
-writer:
-  temperature: 0.7
-  max_tokens: 4096
-  artifact_subdir: writer
+# Agent settings
+agents:
+  narrator:
+    temperature: 0.8       # 高创意 — 生成丰富叙事
+    max_tokens: 1536
+    artifact_subdir: narrator
+
+  world_builder:
+    temperature: 0.6       # 中等 — 世界生成需要一致性
+    max_tokens: 1024
+    artifact_subdir: world_builder
+
+  judge:
+    temperature: 0.2       # 严格 — 规则审核需要确定性
+    max_tokens: 512
+    artifact_subdir: judge
 
 # Paths (relative to project root, or absolute)
 paths:
@@ -23,4 +35,37 @@ paths:
   artifact_root: runtime/artifacts
   checkpoint_dir: runtime/checkpoints
   log_dir: runtime/logs
+  save_dir: runtime/saves
   system_prompt_dir: config/prompts/system
+
+# Game defaults
+game:
+  max_chat_history: 20     # 保留最近 N 回合聊天历史
+  max_turn_history: 20     # 存档中保留最近 N 回合记录
+  autosave_name: autosave
+  max_manual_saves: 5      # 手动存档槽位上限
+  realm_order:
+    - 练气
+    - 筑基
+    - 金丹
+    - 元婴
+    - 化神
+    - 合体
+    - 大乘
+    - 渡劫
+    - 飞升
+
+  # Combat settings
+  combat:
+    flee_base_rate: 0.80           # 非 Boss 逃跑成功率
+    boss_flee_rate: 0.00           # Boss 战不可逃跑
+    defend_damage_reduction: 0.50  # 防御减伤比例
+    attack_variance: 0.15          # 普攻伤害浮动比例
+    technique_variance: 0.10       # 功法伤害浮动比例
+
+  # Breakthrough settings
+  breakthrough:
+    failure_hp_loss_rate: 0.15     # 突破失败 HP 损失比例
+    failure_xp_loss: 20            # 突破失败经验损失
+    failure_debuff: "走火入魔"     # 突破失败附加状态
+    success_xp_cost: 50            # 突破成功经验消耗

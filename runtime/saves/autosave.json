@@ -1,0 +1,41 @@
+{
+  "turn_count": 0,
+  "game_started": true,
+  "game_over": false,
+  "character": {
+    "name": "",
+    "realm": "练气",
+    "realm_stage": 1,
+    "hp": 100,
+    "hp_max": 100,
+    "mp": 50,
+    "mp_max": 50,
+    "spirit_root": "",
+    "spirit_root_grade": "",
+    "experience": 0,
+    "experience_to_next": 100,
+    "gold": 0,
+    "techniques": [],
+    "inventory": [],
+    "status_effects": [],
+    "lifespan": 100,
+    "equipment_slots": {
+      "weapon": null,
+      "armor": null,
+      "accessory": null
+    },
+    "combat": null
+  },
+  "world": {
+    "location": "",
+    "region": "",
+    "current_scene": "",
+    "day_count": 1,
+    "npcs_present": [],
+    "active_quests": [],
+    "discovered_locations": [],
+    "lore_facts": []
+  },
+  "turn_history": [],
+  "finale": false
+}

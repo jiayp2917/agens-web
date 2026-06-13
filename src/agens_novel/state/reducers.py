@@ -23,3 +23,16 @@ def last_wins(existing: list, new: list) -> list:
 # Convenience: Annotated alias used in state schemas.
 Append = Annotated[list, add]
 ReplaceList = Annotated[list, last_wins]
+
+
+def apply_combat_delta(existing: dict | None, new: dict) -> dict:
+    """Reducer for combat state: replaces entirely when new is provided.
+
+    If new is an empty dict, keeps existing. If new contains a special
+    key ``_reset`` set to True, returns an empty dict (clears combat).
+    """
+    if new.get("_reset"):
+        return {}
+    if new:
+        return new
+    return existing or {}

@@ -2,16 +2,14 @@
 
 Subcommands:
   init    — create runtime/ skeleton, verify env (no key printed).
-  run     — execute the Writer Agent on a user input.
   status  — show the most recent run summary.
-  repl    — launch the interactive multi-agent REPL.
+  repl    — launch the interactive xianxia cultivation simulator.
 """
 
 from __future__ import annotations
 
 import json
 import logging
-import os
 from pathlib import Path
 from typing import Any, Optional
 
@@ -23,11 +21,10 @@ from . import __version__
 from . import paths
 from .logging_setup import setup_logging
 from .settings import Settings
-from .utils.secrets import mask
 
 app = typer.Typer(
     name="agens-novel",
-    help="LangGraph-based novel production system (single-Agent learning scaffold).",
+    help="文字修仙 - AI 驱动的修仙世界模拟器",
     no_args_is_help=True,
     add_completion=False,
 )
@@ -61,7 +58,7 @@ def init() -> None:
     """Create the runtime/ skeleton and verify the env (never prints the key)."""
     created = paths.ensure_runtime_dirs()
     console.print(Panel(
-        "[green]✔ runtime/ directories ready[/green]\n"
+        "[green]✔ runtime/ 目录已就绪[/green]\n"
         + "\n".join(f"  {name}: {p}" for name, p in created.items()),
         title="agens-novel init",
     ))
@@ -70,61 +67,19 @@ def init() -> None:
     summary = settings.public_summary()
     console.print(Panel(
         "\n".join(f"  {k}: {v}" for k, v in summary.items()),
-        title="Settings (api_key masked)",
+        title="配置（api_key 已脱敏）",
     ))
 
     if not settings.has_api_key():
         console.print(
-            "\n[yellow]⚠ AGNES_API_KEY is not set.[/yellow]\n"
-            "  Set it in your shell before running:\n"
+            "\n[yellow]⚠ AGNES_API_KEY 未设置。[/yellow]\n"
+            "  请先在终端中设置环境变量：\n"
             "    $env:AGNES_API_KEY = \"sk-...\"\n"
-            "  Or use scripts/run_with_key.ps1 to inject + auto-clean."
+            "  或使用 scripts/run_with_key.ps1 自动注入。"
         )
         raise typer.Exit(code=2)
 
-    console.print("[green]✔ AGNES_API_KEY is set[/green]")
-
-
-# ─────────────────────────────────────────────────────────────────────────────
-# run
-# ─────────────────────────────────────────────────────────────────────────────
-@app.command()
-def run(
-    input: str = typer.Option(..., "--input", "-i", help="The writing request."),
-    style_hint: str = typer.Option("", "--style", "-s", help="Optional style override."),
-) -> None:
-    """Run the Writer Agent on a user input."""
-    settings = Settings()
-    if not settings.has_api_key():
-        console.print("[red]✘ AGNES_API_KEY is not set. Run 'init' first.[/red]")
-        raise typer.Exit(code=2)
-
-    from .agents.writer.nodes import run_writer_agent
-
-    with console.status("[bold green]Running Writer Agent..."):
-        result = run_writer_agent(user_input=input, style_hint=style_hint)
-
-    if result.get("llm_error"):
-        console.print(
-            Panel(
-                f"[red]LLM call failed:[/red]\n{result['llm_error']}\n\n"
-                f"audit: {result.get('audit_path', '<not written>')}",
-                title="Writer Agent — error",
-            )
-        )
-        raise typer.Exit(code=1)
-
-    output = result.get("output_text", "").strip()
-    console.print(Panel(
-        output or "(empty output)",
-        title=f"output.md (run {result.get('run_id', '?')})",
-        border_style="green",
-    ))
-    console.print(
-        f"\n[dim]path:[/dim] {result.get('output_path')}\n"
-        f"[dim]audit:[/dim] {result.get('audit_path')}\n"
-        f"[dim]tokens:[/dim] {result.get('usage')} | [dim]elapsed:[/dim] {result.get('elapsed_ms')}ms"
-    )
+    console.print("[green]✔ AGNES_API_KEY 已设置[/green]")
 
 
 # ─────────────────────────────────────────────────────────────────────────────
@@ -133,14 +88,14 @@ def run(
 @app.command()
 def status() -> None:
     """Show the most recent run summary."""
-    artifacts_root = paths.ARTIFACT_ROOT / "writer"
+    artifacts_root = paths.ARTIFACT_ROOT / "narrator"
     if not artifacts_root.exists():
-        console.print("[yellow]No runs yet. Use `run` to start.[/yellow]")
+        console.print("[yellow]尚无运行记录。输入 agens-novel repl 开始游戏。[/yellow]")
         return
 
     runs = [p for p in artifacts_root.iterdir() if p.is_dir()]
     if not runs:
-        console.print("[yellow]No runs yet. Use `run` to start.[/yellow]")
+        console.print("[yellow]尚无运行记录。[/yellow]")
         return
     runs.sort(key=lambda p: p.stat().st_mtime, reverse=True)
     latest = runs[0]
@@ -160,26 +115,26 @@ def status() -> None:
         f"  elapsed:   {audit.get('elapsed_ms', '?')}ms\n"
         f"  output:    {output_path}\n"
         f"  ok:        {not audit.get('llm_error')}",
-        title=f"latest run ({len(runs)} total)",
+        title=f"最近一次运行（共 {len(runs)} 次）",
     ))
 
 
 # ─────────────────────────────────────────────────────────────────────────────
-# repl — interactive multi-agent REPL
+# repl — interactive game
 # ─────────────────────────────────────────────────────────────────────────────
 @app.command()
 def repl() -> None:
-    """Launch the interactive multi-agent REPL."""
-    from .repl import Repl, default_runner
+    """Launch the interactive xianxia cultivation simulator."""
+    from .repl import Repl
 
     settings = Settings()
     if not settings.has_api_key():
         console.print(
-            "[yellow]⚠ AGNES_API_KEY is not set — the REPL will reject writes.[/yellow]\n"
-            "  Set it in your shell, or use scripts/run_with_key.ps1."
+            "[yellow]⚠ AGNES_API_KEY 未设置 — 游戏将无法运行。[/yellow]\n"
+            "  请先设置环境变量，或使用 scripts/run_with_key.ps1。"
         )
 
-    session = Repl(runner=default_runner)
+    session = Repl()
     raise typer.Exit(code=session.run())
 
 

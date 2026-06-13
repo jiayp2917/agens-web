@@ -1,0 +1,1 @@
+"""Kivy mobile frontend package."""

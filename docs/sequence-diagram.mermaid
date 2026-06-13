@@ -1,0 +1,152 @@
+%% 流式叙事流程
+sequenceDiagram
+    actor User
+    participant GS as GameScreen
+    participant EA as EngineAdapter
+    participant GE as GameEngine
+    participant TR as TurnRunner
+    participant Narr as NarratorAgent
+    participant LLM as LLMClient
+
+    User->>GS: 输入行动文字
+    GS->>GS: narrative_view.add_info("> 行动")
+    GS->>EA: handle_action(text)
+    EA->>EA: _run_in_thread(engine.handle_action)
+    Note over EA: 后台线程执行
+
+    EA->>GE: handle_action(text)
+    GE->>GE: on_loading("天道运转中...")
+    GE->>TR: run_turn_sync("narrator", text, session, stream_callback=cb)
+
+    TR->>Narr: build_narrator_graph().ainvoke(state)
+    Narr->>Narr: load_settings → build_prompt
+    Narr->>LLM: call_llm(messages, stream=True)
+
+    loop SSE Chunk
+        LLM-->>Narr: delta chunk
+        Narr-->>GE: stream_callback(chunk_text) [on_stream_chunk]
+        GE-->>EA: Clock.schedule_once → on_stream_chunk
+        EA-->>GS: _on_stream_chunk(text)
+        GS->>GS: narrative_view.append_chunk(text)
+    end
+
+    LLM-->>Narr: [DONE] 完整文本
+    Narr->>Narr: save_artifact → parse state_update
+
+    GE->>GE: on_loading("天道审判中...")
+    GE->>TR: run_turn_sync("judge", ...)
+
+    TR->>GE: judge_result (approved/corrected_delta)
+    GE->>GE: apply_delta(corrected_delta)
+    GE->>GE: _check_game_over()
+    GE->>GE: on_narrative(narrative, turn)
+    GE->>GE: on_status_bar(...)
+    GE->>GE: _auto_save()
+
+---
+
+%% 战斗回合流程
+sequenceDiagram
+    actor User
+    participant GS as GameScreen
+    participant EA as EngineAdapter
+    participant GE as GameEngine
+    participant CE as CombatEngine
+    participant Narr as NarratorAgent
+
+    Note over GE: 战斗触发（Narrator 输出 encounter + combat_start delta）
+
+    GE->>GE: apply_delta → combat 不为 None
+    GE->>CE: start_combat(session, enemy)
+    CE-->>GE: CombatState (phase=player_turn)
+    GE->>EA: on_combat_update(combat_state)
+    EA-->>GS: 显示 CombatBar
+
+    User->>GS: 点击"普攻"按钮
+    GS->>EA: handle_combat_action("attack", "")
+    EA->>GE: handle_combat_action("attack", "")
+    GE->>CE: player_action(state, "attack")
+    CE-->>GE: CombatState (phase=enemy_turn)
+
+    GE->>CE: enemy_turn(state)
+    CE-->>GE: CombatState (phase=player_turn 或 result)
+
+    GE->>Narr: 叙事：描述战斗经过
+    Narr-->>GE: narrative + combat_result delta
+
+    GE->>GE: apply_delta(combat_result)
+    GE->>GE: _check_game_over() [HP 归零?]
+
+    alt 战斗继续
+        GE->>EA: on_combat_update(combat_state)
+        EA-->>GS: 更新战斗 UI
+    else 战斗胜利
+        GE->>GE: combat = None
+        GE->>EA: on_combat_update(None) + on_narrative
+        EA-->>GS: 退出战斗模式
+    else 玩家死亡
+        GE->>GE: game_over = True
+        GE->>EA: on_game_over(reason)
+        EA-->>GS: 显示 Game Over
+    end
+
+---
+
+%% 境界突破流程
+sequenceDiagram
+    actor User
+    participant GS as GameScreen
+    participant EA as EngineAdapter
+    participant GE as GameEngine
+    participant RS as RealmSystem
+    participant Narr as NarratorAgent
+    participant Judge as JudgeAgent
+
+    User->>GS: 点击"突破"按钮
+    GS->>EA: attempt_breakthrough()
+    EA->>GE: attempt_breakthrough()
+
+    GE->>RS: can_attempt_breakthrough(session)
+    RS-->>GE: True/False + 原因
+
+    alt 不满足条件
+        GE->>EA: on_info("经验不足，无法突破")
+    else 满足条件
+        GE->>RS: calculate_breakthrough_rate(session)
+        RS-->>GE: rate (0.0~1.0)
+
+        GE->>Narr: 叙事：突破过程描述
+        Narr-->>GE: narrative + state_delta (含突破结果)
+
+        GE->>Judge: 审查突破 delta
+        Judge-->>GE: approved + corrected_delta
+
+        alt approved + realm 变化
+            GE->>GE: apply_delta → realm 更新
+            GE->>EA: on_narrative("突破成功！")
+        else approved + realm 未变
+            GE->>GE: apply_delta → 经验/HP 变化
+            GE->>EA: on_narrative("突破失败...")
+            GE->>GE: status_effects 添加 "走火入魔"
+        end
+    end
+
+---
+
+%% 模型切换流程
+sequenceDiagram
+    actor User
+    participant SS as SettingsScreen
+    participant Store as SettingsStore
+    participant GE as GameEngine
+
+    User->>SS: 修改 Model/Base URL/API Key
+    SS->>Store: save_settings(data)
+    Store->>Store: 写入 settings.json
+    Store->>Store: apply_settings_to_env(data)
+
+    Note over Store: 优先级：用户自定义 > 环境变量 > 内置默认
+
+    User->>SS: 点击"返回游戏"
+    SS->>GE: 下次 LLM 调用自动使用新配置
+    Note over GE: load_settings() 从 os.environ 读取最新值
