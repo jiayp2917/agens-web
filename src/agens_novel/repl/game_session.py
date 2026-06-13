@@ -49,6 +49,7 @@ class GameSession:
     attributes: dict[str, int] = field(default_factory=lambda: dict(DEFAULT_ATTRIBUTES))
     experience: int = 0
     experience_to_next: int = 100
+    insight: int = 0  # 感悟/心境 — gate resource for major-realm breakthroughs
     gold: int = 0
     techniques: list[dict] = field(default_factory=list)
     inventory: list[dict] = field(default_factory=list)
@@ -114,6 +115,7 @@ class GameSession:
                 "attributes": self.attributes,
                 "experience": self.experience,
                 "experience_to_next": self.experience_to_next,
+                "insight": self.insight,
                 "gold": self.gold,
                 "techniques": self.techniques,
                 "inventory": self.inventory,
@@ -157,7 +159,7 @@ class GameSession:
         char_delta = delta.get("character", {})
         for key in (
             "hp", "mp", "experience", "gold", "lifespan", "realm_stage",
-            "experience_to_next", "hp_max", "mp_max", "age",
+            "experience_to_next", "hp_max", "mp_max", "age", "insight",
         ):
             if key in char_delta:
                 val = char_delta[key]
@@ -185,6 +187,7 @@ class GameSession:
         # Floor guards: prevent negative values on key stats.
         self.experience = max(0, self.experience)
         self.gold = max(0, self.gold)
+        self.insight = max(0, self.insight)
         self.lifespan = max(1, self.lifespan)
         self.age = max(1, self.age)
 
@@ -221,7 +224,7 @@ class GameSession:
         if "difficulty" in char_delta and isinstance(char_delta["difficulty"], str):
             self.difficulty = char_delta["difficulty"]
         if "game_mode" in char_delta and isinstance(char_delta["game_mode"], str):
-            self.game_mode = char_delta["game_mode"]
+            self.game_mode = DEFAULT_GAME_MODE
         if "attributes" in char_delta and isinstance(char_delta["attributes"], dict):
             merged = dict(self.attributes)
             for key, value in char_delta["attributes"].items():
@@ -380,6 +383,7 @@ class GameSession:
                 "attributes": self.attributes,
                 "experience": self.experience,
                 "experience_to_next": self.experience_to_next,
+                "insight": self.insight,
                 "gold": self.gold, "techniques": self.techniques,
                 "inventory": self.inventory,
                 "status_effects": self.status_effects,
@@ -424,7 +428,7 @@ class GameSession:
         session.family_background = char.get("family_background", "")
         session.luck = char.get("luck", "中上")
         session.difficulty = char.get("difficulty", "普通")
-        session.game_mode = char.get("game_mode", data.get("game_mode", DEFAULT_GAME_MODE))
+        session.game_mode = DEFAULT_GAME_MODE
         attrs = char.get("attributes", {})
         if isinstance(attrs, dict):
             merged_attrs = dict(DEFAULT_ATTRIBUTES)
@@ -434,6 +438,7 @@ class GameSession:
             session.attributes = merged_attrs
         session.experience = char.get("experience", 0)
         session.experience_to_next = char.get("experience_to_next", 100)
+        session.insight = char.get("insight", 0)
         session.gold = char.get("gold", 0)
         session.techniques = char.get("techniques", [])
         session.inventory = char.get("inventory", [])

@@ -24,6 +24,7 @@ class RealmConfig:
     name: str = ""
     stages: int = 1
     experience_required: int = 100
+    insight_required: int = 0
     breakthrough_base_rate: float = 0.80
     hp_base: int = 100
     mp_base: int = 50
@@ -36,6 +37,7 @@ class RealmConfig:
             name=data.get("name", ""),
             stages=data.get("stages", 1),
             experience_required=data.get("experience_required", 100),
+            insight_required=data.get("insight_required", 0),
             breakthrough_base_rate=data.get("breakthrough_base_rate", 0.80),
             hp_base=data.get("hp_base", 100),
             mp_base=data.get("mp_base", 50),
@@ -93,6 +95,7 @@ class RealmSystem:
         realm_stage = getattr(session, "realm_stage", 1)
         experience = getattr(session, "experience", 0)
         experience_to_next = getattr(session, "experience_to_next", 100)
+        insight = getattr(session, "insight", 0)
         game_over = getattr(session, "game_over", False)
 
         if game_over:
@@ -109,6 +112,14 @@ class RealmSystem:
         # Must have sufficient experience.
         if experience < experience_to_next:
             return False, f"经验不足({experience}/{experience_to_next})，无法突破。"
+
+        # Must have sufficient insight (感悟/心境) — pure cultivation alone cannot
+        # break through.  See the "感悟" gate design in the project notes.
+        if insight < cfg.insight_required:
+            return False, (
+                f"道心未明，感悟不足（{insight}/{cfg.insight_required}）。"
+                "闭门造车难成大道——需外出历练、参悟机缘，方可破境。"
+            )
 
         # Check if there is a next realm.
         next_realm = self.get_next_realm(realm)
@@ -176,6 +187,8 @@ class RealmSystem:
                     "mp_max": next_cfg.mp_base,
                     "mp": next_cfg.mp_base,
                     "experience": "-50",  # consume some experience
+                    "experience_to_next": next_cfg.experience_required,
+                    "insight": 0,  # reset insight — new realm, new bottleneck
                 },
                 "meta": {
                     "breakthrough_result": "success",
@@ -202,6 +215,59 @@ class RealmSystem:
                     "status_effect_add": "走火入魔",
                 },
             }
+
+    # ─────────────────────────────────────────────────────────────────────
+    # Small-layer (stage) advancement within a realm
+    # ─────────────────────────────────────────────────────────────────────
+
+    def try_advance_stage(self, session: Any) -> dict[str, Any] | None:
+        """Check if the player can advance to the next small layer.
+
+        Called after every action that may grant experience.  When the player
+        has enough accumulated XP to fill the current layer and is not yet at
+        the realm's maximum stage, they auto-advance one layer.
+
+        Returns a delta dict for ``apply_delta``, or ``None`` if no advancement
+        is possible right now.
+        """
+        realm = getattr(session, "realm", "练气")
+        stage = getattr(session, "realm_stage", 1)
+        xp = getattr(session, "experience", 0)
+        xp_needed = getattr(session, "experience_to_next", 100)
+
+        cfg = self.get_realm_config(realm)
+        if cfg is None:
+            return None
+
+        if xp < xp_needed:
+            return None
+
+        if stage >= cfg.stages:
+            return None  # at max layer — need breakthrough, not stage advance
+
+        # Advance to next layer within the same realm.
+        next_stage = stage + 1
+        hp_gain = max(1, cfg.hp_base // 8)
+        mp_gain = max(1, cfg.mp_base // 8)
+
+        delta: dict[str, Any] = {
+            "character": {
+                "realm_stage": next_stage,
+                "experience": f"-{xp_needed}",
+                # Keep experience_to_next stable so breakthrough threshold
+                # matches the realm config and doesn't drift upward.
+                "hp_max": f"+{hp_gain}",
+                "hp": f"+{hp_gain}",
+                "mp_max": f"+{mp_gain}",
+                "mp": f"+{mp_gain}",
+            },
+            "meta": {
+                "stage_advanced": True,
+                "new_stage": next_stage,
+                "max_stage": cfg.stages,
+            },
+        }
+        return delta
 
     # ─────────────────────────────────────────────────────────────────────
     # Spirit root modifier

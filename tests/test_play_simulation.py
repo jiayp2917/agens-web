@@ -239,7 +239,7 @@ class TestNormalPlayer:
             "探索秘境",
             "购买丹药",
             "修炼剑法",
-            "尝试突破",
+            "打坐修行",
         ]
 
         # Build per-turn narrator responses with varying deltas.
@@ -253,7 +253,7 @@ class TestNormalPlayer:
             {"character": {"experience": "+25", "gold": "-10", "inventory_add": [{"name": "秘境地图碎片", "quantity": 1, "type": "材料"}]}, "world": {"current_scene": "古修秘境", "discovered_add": ["古修遗迹"]}},
             {"character": {"gold": "-5", "inventory_add": [{"name": "回气丹", "quantity": 3, "type": "丹药", "rarity": "良品"}]}, "world": {"current_scene": "坊市"}},
             {"character": {"mp": "-15", "experience": "+20"}, "world": {"current_scene": "练剑崖"}},
-            {"character": {"mp": "-10", "experience": "+15"}, "world": {"current_scene": "修炼中"}},
+            {"character": {"mp": "-10", "experience": "+15"}, "world": {"current_scene": "打坐修行"}},
         ]
 
         # Build narrator responses.

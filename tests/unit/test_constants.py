@@ -27,8 +27,6 @@ from agens_novel.game.constants import (
     DEFAULT_ATTRIBUTES,
     DIFFICULTY_OPTIONS,
     FAMILY_BACKGROUNDS,
-    GAME_MODE_LABELS,
-    GameMode,
     SPECIAL_START_ATTRIBUTES,
     SPECIAL_START_CODE,
     SPECIAL_START_NAME,
@@ -200,12 +198,6 @@ class TestCombatConstants:
 
 class TestPrototypeConstants:
     """Validate Android prototype constants."""
-
-    def test_game_modes(self):
-        assert GameMode.HIGH.value == "high"
-        assert GameMode.MID.value == "mid"
-        assert GameMode.LOW.value == "low"
-        assert GAME_MODE_LABELS["mid"] == "中自由度"
 
     def test_character_creation_options(self):
         assert "天命道胎" in TALENT_OPTIONS

@@ -49,6 +49,8 @@ class EngineAdapter:
             lambda dt: self._emit("on_character_created", session))
         self.engine.on_loading = lambda msg: Clock.schedule_once(
             lambda dt: self._emit("on_loading", msg))
+        self.engine.on_finale = lambda reason: Clock.schedule_once(
+            lambda dt: self._emit("on_finale", reason))
         self.engine.on_stream_chunk = lambda text: Clock.schedule_once(
             lambda dt: self._emit("on_stream_chunk", text))
         self.engine.on_combat_update = lambda combat_state: Clock.schedule_once(
@@ -64,6 +66,7 @@ class EngineAdapter:
         self.on_loading: Callable | None = None
         self.on_stream_chunk: Callable | None = None
         self.on_combat_update: Callable | None = None
+        self.on_finale: Callable | None = None
 
     def _emit(self, event: str, *args: Any) -> None:
         cb = getattr(self, event, None)

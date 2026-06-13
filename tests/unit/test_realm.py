@@ -85,6 +85,7 @@ def _make_session(**overrides):
         "realm_stage": 9,       # final stage of 练气 (9 stages)
         "experience": 300,
         "experience_to_next": 100,
+        "insight": 9999,        # enough 感悟 to pass the breakthrough gate by default
         "game_over": False,
         "hp": 100,
         "hp_max": 100,
@@ -139,6 +140,17 @@ class TestCanAttemptBreakthrough:
         can, reason = rs.can_attempt_breakthrough(session)
         assert can is False
         assert "经验不足" in reason
+
+    def test_not_eligible_insufficient_insight(self):
+        """Max layer + full XP but insufficient 感悟 → blocked (闭门造车)."""
+        rs = RealmSystem()
+        session = _make_session(
+            realm="练气", realm_stage=9, experience=300,
+            experience_to_next=100, insight=5,  # 练气 requires 30
+        )
+        can, reason = rs.can_attempt_breakthrough(session)
+        assert can is False
+        assert "感悟" in reason
 
     def test_not_eligible_max_realm(self):
         rs = RealmSystem()

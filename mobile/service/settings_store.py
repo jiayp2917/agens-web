@@ -60,6 +60,7 @@ def save_settings(data: dict) -> None:
     p.parent.mkdir(parents=True, exist_ok=True)
     safe_data = dict(data)
     safe_data.pop("api_key", None)
+    safe_data.pop("game_mode", None)
     p.write_text(json.dumps(safe_data, ensure_ascii=False, indent=2), encoding="utf-8")
 
 

@@ -1,23 +1,21 @@
-"""Bottom action bar — text input + quick-action buttons + combat mode."""
+"""Bottom action bar — typed action input with compact utility commands."""
 
 from kivy.metrics import dp
 from kivy.uix.boxlayout import BoxLayout
-from kivy.uix.gridlayout import GridLayout
+from kivy.uix.scrollview import ScrollView
 from kivy.uix.textinput import TextInput
 from theme import add_background, current_theme, themed_button
 
 
 class GameActionBar(BoxLayout):
-    """Bottom bar with quick-action buttons and text input.
-
-    Switches between normal mode and combat mode.
+    """Bottom bar with text input as the primary game action.
 
     NOTE: Named GameActionBar to avoid collision with Kivy's built-in
     ActionBar (kivy.uix.actionbar.ActionBar) which has background_color,
     background_image etc. that Kivy's style.kv tries to apply.
 
     Events:
-        on_action(text)     — user submitted free-text action
+        on_action(text)     — user submitted typed action
         on_command(cmd)     — user tapped a quick-action button
     """
 
@@ -39,32 +37,44 @@ class GameActionBar(BoxLayout):
         super().__init__(
             orientation="vertical",
             size_hint_y=None,
-            height=dp(112),
+            height=dp(84),
             **kwargs,
         )
         add_background(self, color=theme.surface)
 
-        # Button row inside a scroll view.
-        self._btn_row = GridLayout(
-            cols=5,
+        # Compact horizontally scrolling tool row. This keeps Android portrait
+        # layouts from overflowing while preserving every command.
+        self._tool_scroll = ScrollView(
             size_hint_y=None,
-            height=dp(64),
-            spacing=[dp(4), dp(4)],
+            height=dp(40),
+            do_scroll_x=True,
+            do_scroll_y=False,
+            bar_width=0,
+            scroll_type=["content"],
+        )
+        self._btn_row = BoxLayout(
+            orientation="horizontal",
+            size_hint_y=None,
+            height=dp(40),
+            size_hint_x=None,
+            spacing=dp(4),
             padding=[dp(2), dp(4)],
         )
+        self._btn_row.bind(minimum_width=self._btn_row.setter("width"))
         self._build_normal_buttons()
-        self.add_widget(self._btn_row)
+        self._tool_scroll.add_widget(self._btn_row)
+        self.add_widget(self._tool_scroll)
 
         # Input row.
         input_row = BoxLayout(
             orientation="horizontal",
             size_hint_y=None,
-            height=dp(40),
+            height=dp(42),
             spacing=dp(4),
             padding=[dp(4), dp(2)],
         )
         self.text_input = TextInput(
-            hint_text="输入行动...",
+            hint_text="D. 自行键入行动...",
             multiline=False,
             font_size=dp(14),
             background_color=theme.input_bg,
@@ -83,7 +93,6 @@ class GameActionBar(BoxLayout):
 
         # State.
         self._combat_mode = False
-        self._game_mode = "high"
 
         # Callbacks.
         self.on_action = None
@@ -93,43 +102,39 @@ class GameActionBar(BoxLayout):
         """Build normal mode buttons."""
         self._btn_row.clear_widgets()
         for label, cmd in self.BUTTONS:
-            btn = themed_button(label, font_size=dp(10))
+            btn = themed_button(
+                label,
+                font_size=dp(11),
+                size_hint=(None, None),
+                width=dp(56),
+                height=dp(32),
+            )
             btn.bind(on_release=lambda instance, c=cmd: self._on_command(c))
             self._btn_row.add_widget(btn)
 
     def set_combat_mode(self, in_combat: bool) -> None:
-        """Switch button layout for combat vs normal mode."""
+        """Adjust the input hint while keeping typed play available."""
         theme = current_theme()
         self._combat_mode = in_combat
         if in_combat:
-            self.text_input.hint_text = "战斗中 — 使用战斗按钮操作"
-            self.text_input.disabled = True
+            self.text_input.hint_text = "战斗中，输入攻击、防御、逃跑或施展功法..."
+            self.text_input.disabled = False
+            self.send_btn.text = "送"
         else:
-            self.apply_game_mode(self._game_mode)
+            self.apply_choices_mode()
         # Re-apply theme colors so hint change doesn't dim the input.
         self.text_input.background_color = theme.input_bg
         self.text_input.foreground_color = theme.text
         self.text_input.cursor_color = theme.primary
         self.text_input.hint_text_color = theme.text_hint
 
-    def apply_game_mode(self, mode: str) -> None:
-        """Apply high/mid/low freedom input behavior."""
-        self._game_mode = mode
+    def apply_choices_mode(self) -> None:
+        """Apply the single A/B/C choices + D typed-input behavior."""
         if self._combat_mode:
             return
-        if mode == "low":
-            self.text_input.text = ""
-            self.text_input.hint_text = "请选择上方行动"
-            self.text_input.disabled = True
-            self.send_btn.text = "定"
-        elif mode == "mid":
-            self.text_input.hint_text = "也可以自由输入行动..."
-            self.text_input.disabled = False
-            self.send_btn.text = "送"
-        else:
-            self.text_input.hint_text = "输入任意行动..."
-            self.text_input.disabled = False
-            self.send_btn.text = "送"
+        self.text_input.hint_text = "D. 自行键入行动..."
+        self.text_input.disabled = False
+        self.send_btn.text = "送"
 
     def _on_submit(self, instance) -> None:
         text = self.text_input.text.strip()

@@ -197,13 +197,16 @@ def save_artifact(state: dict[str, Any]) -> dict[str, Any]:
 # ─────────────────────────────────────────────────────────────────────────────
 
 _TAG_RE = re.compile(r"<state_update>(.*?)</state_update>", re.DOTALL)
+_CHOICES_RE = re.compile(r"<choices>(.*?)</choices>", re.DOTALL)
 
 
 def _parse_narrator_output(text: str) -> tuple[str, dict, list[str]]:
     """Extract (narrative, state_delta, choices) from the narrator LLM output.
 
-    The narrative is everything before the ``<state_update>`` tag.
-    The delta is parsed as JSON from within the tags.
+    The narrative is everything before the first structured tag.
+    The delta is parsed as JSON from within ``<state_update>``.
+    Choices can be emitted as ``<choices>["...", "...", "..."]</choices>``
+    or as ``meta.choices`` inside the state update.
     """
     narrative = text
     state_delta: dict = {}
@@ -211,14 +214,49 @@ def _parse_narrator_output(text: str) -> tuple[str, dict, list[str]]:
 
     m = _TAG_RE.search(text)
     if m:
-        # Narrative is everything before the tag.
-        narrative = text[: m.start()].strip()
         raw_json = m.group(1).strip()
         try:
             data = json.loads(raw_json)
             if isinstance(data, dict):
                 state_delta = data
+                choices = _normalize_choices(data.get("meta", {}).get("choices"))
         except (json.JSONDecodeError, ValueError):
             log.warning("[narrator] state_update JSON parse failed: %s", raw_json[:200])
 
+    choices_match = _CHOICES_RE.search(text)
+    if choices_match:
+        choices = _normalize_choices(_parse_choices_payload(choices_match.group(1).strip())) or choices
+
+    tag_starts = [match.start() for match in (m, choices_match) if match]
+    if tag_starts:
+        narrative = text[: min(tag_starts)].strip()
+
     return narrative, state_delta, choices
+
+
+def _parse_choices_payload(raw: str) -> Any:
+    try:
+        return json.loads(raw)
+    except (json.JSONDecodeError, ValueError):
+        lines = [line.strip(" \t-0123456789.ABCabc、.：:") for line in raw.splitlines()]
+        return [line for line in lines if line]
+
+
+def _normalize_choices(value: Any) -> list[str]:
+    choices: list[str] = []
+    if not isinstance(value, list):
+        return choices
+    for item in value:
+        if isinstance(item, str):
+            text = item
+        elif isinstance(item, dict):
+            raw = item.get("action") or item.get("text") or item.get("label")
+            text = str(raw) if raw is not None else ""
+        else:
+            text = ""
+        text = text.strip()
+        if text:
+            choices.append(text)
+        if len(choices) == 3:
+            break
+    return choices

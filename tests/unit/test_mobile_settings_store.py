@@ -28,4 +28,4 @@ def test_save_settings_does_not_persist_api_key(tmp_path, monkeypatch):
     settings_path = tmp_path / ".agens_novel" / "settings.json"
     saved = json.loads(settings_path.read_text(encoding="utf-8"))
     assert "api_key" not in saved
-    assert saved["game_mode"] == "mid"
+    assert "game_mode" not in saved

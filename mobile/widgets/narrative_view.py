@@ -8,6 +8,36 @@ from kivy.uix.scrollview import ScrollView
 from theme import add_background, current_theme, rgba_to_hex, themed_button
 
 
+def _bind_wrapped_height(widget, min_height: float = 0) -> None:
+    """Wrap text to widget width and grow height from rendered texture."""
+
+    def update_text_size(instance, width) -> None:
+        instance.text_size = (max(1, width), None)
+
+    def update_height(instance, texture_size) -> None:
+        instance.height = max(min_height, texture_size[1] + dp(2))
+
+    widget.bind(width=update_text_size, texture_size=update_height)
+
+
+def _soft_wrap_cjk(text: str, columns: int = 28) -> str:
+    """Insert conservative line breaks for long CJK-heavy mobile text."""
+    wrapped: list[str] = []
+    break_chars = "，。；、！？：,.!?;:"
+    for paragraph in text.splitlines() or [""]:
+        line = paragraph.strip()
+        while len(line) > columns:
+            cut = max(line.rfind(ch, 0, columns + 1) for ch in break_chars)
+            if cut < max(10, columns // 2):
+                cut = columns
+            else:
+                cut += 1
+            wrapped.append(line[:cut].rstrip())
+            line = line[cut:].lstrip()
+        wrapped.append(line)
+    return "\n".join(wrapped)
+
+
 class NarrativeView(ScrollView):
     """Scrollable area that accumulates narrative text.
 
@@ -28,12 +58,14 @@ class NarrativeView(ScrollView):
         # theme background; ScrollView itself remains transparent.
         self._layout = BoxLayout(
             orientation="vertical",
+            size_hint_x=1,
             size_hint_y=None,
             padding=[dp(8), dp(4)],
             spacing=dp(4),
         )
         add_background(self._layout, color=theme.bg)
         self._layout.bind(minimum_height=self._layout.setter("height"))
+        self.bind(width=lambda _inst, width: setattr(self._layout, "width", width))
         self.add_widget(self._layout)
 
         # Current streaming label (for append_chunk).
@@ -69,12 +101,12 @@ class NarrativeView(ScrollView):
                 valign="middle",
                 color=theme.text_hint,
             )
-            lbl_header.bind(width=lambda *a: lbl_header.setter("text_size")(lbl_header, (lbl_header.width, None)))
+            _bind_wrapped_height(lbl_header, dp(20))
             self._layout.add_widget(lbl_header)
 
         if text:
             lbl = Label(
-                text=text,
+                text=_soft_wrap_cjk(text),
                 markup=False,
                 font_size=dp(14),
                 size_hint_y=None,
@@ -82,8 +114,7 @@ class NarrativeView(ScrollView):
                 valign="top",
                 color=theme.text,
             )
-            lbl.bind(width=lambda *a: lbl.setter("text_size")(lbl, (lbl.width, None)))
-            lbl.bind(texture_size=lbl.setter("size"))
+            _bind_wrapped_height(lbl)
             self._layout.add_widget(lbl)
 
         # Clear streaming state.
@@ -123,7 +154,7 @@ class NarrativeView(ScrollView):
             # Show only the narrative portion.
             self._streaming_text = clean
             if self._streaming_label is not None:
-                self._streaming_label.text = clean
+                self._streaming_label.text = _soft_wrap_cjk(clean)
             self.scroll_y = 0
             return
 
@@ -139,17 +170,12 @@ class NarrativeView(ScrollView):
                 valign="top",
                 color=theme.text,
             )
-            self._streaming_label.bind(
-                width=lambda *a: self._streaming_label.setter("text_size")(
-                    self._streaming_label, (self._streaming_label.width, None)
-                )
-            )
-            self._streaming_label.bind(texture_size=self._streaming_label.setter("size"))
+            _bind_wrapped_height(self._streaming_label)
             self._layout.add_widget(self._streaming_label)
             self._streaming_text = ""
 
         self._streaming_text += text
-        self._streaming_label.text = self._streaming_text
+        self._streaming_label.text = _soft_wrap_cjk(self._streaming_text)
 
         # Auto-scroll to bottom.
         self.scroll_y = 0
@@ -165,17 +191,17 @@ class NarrativeView(ScrollView):
     def add_info(self, text: str) -> None:
         """Append a dim info line."""
         theme = current_theme()
+        display_text = _soft_wrap_cjk(text, columns=30)
         lbl = Label(
-            text=f"[color={rgba_to_hex(theme.text_hint)}]{text}[/color]",
+            text=f"[color={rgba_to_hex(theme.text_hint)}]{display_text}[/color]",
             markup=True,
             font_size=dp(12),
             size_hint_y=None,
-            height=dp(20),
             halign="left",
-            valign="middle",
+            valign="top",
             color=theme.text_hint,
         )
-        lbl.bind(width=lambda *a: lbl.setter("text_size")(lbl, (lbl.width, None)))
+        _bind_wrapped_height(lbl, dp(20))
         self._layout.add_widget(lbl)
         self.scroll_y = 0
 
@@ -184,6 +210,7 @@ class NarrativeView(ScrollView):
         self.clear_choices()
         if not choices:
             return
+        theme = current_theme()
         box = BoxLayout(
             orientation="vertical",
             size_hint_y=None,
@@ -191,11 +218,28 @@ class NarrativeView(ScrollView):
             padding=[0, dp(8), 0, 0],
         )
         box.bind(minimum_height=box.setter("height"))
-        for index, choice in enumerate(choices, start=1):
-            label = choice if choice.strip().startswith(("①", "②", "③", "④")) else f"{index}. {choice}"
-            btn = themed_button(label, font_size=dp(12), size_hint_y=None, height=dp(38))
+        labels = ("A", "B", "C")
+        for index, choice in enumerate(choices[:3]):
+            label = f"{labels[index]}. {choice}"
+            label = _soft_wrap_cjk(label, columns=24)
+            btn = themed_button(label, font_size=dp(12), size_hint_y=None, height=dp(42))
+            btn.halign = "left"
+            btn.valign = "middle"
+            _bind_wrapped_height(btn, dp(42))
             btn.bind(on_release=lambda _inst, c=choice: self._emit_choice(c))
             box.add_widget(btn)
+        hint = Label(
+            text="[color={}]D. 自行键入行动[/color]".format(rgba_to_hex(theme.text_hint)),
+            markup=True,
+            font_size=dp(12),
+            size_hint_y=None,
+            height=dp(24),
+            halign="left",
+            valign="middle",
+            color=theme.text_hint,
+        )
+        _bind_wrapped_height(hint, dp(24))
+        box.add_widget(hint)
         self._choices_box = box
         self._layout.add_widget(box)
         self.scroll_y = 0

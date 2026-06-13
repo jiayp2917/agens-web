@@ -49,6 +49,14 @@ log = logging.getLogger(__name__)
 # Type aliases for callbacks.
 Callback = Callable[..., None]
 
+# Baseline 感悟 (insight) granted per non-cultivation action, on top of any
+# LLM-granted insight. Pure-cultivation actions (闭关/打坐/吐纳…) grant none —
+# see ``_is_pure_cultivation``. This enforces the "闭门造车难成大道" rule: major
+# breakthroughs require insight, which only real deeds (explore/combat/comprehend)
+# can build, never silent meditation.
+INSIGHT_BASE_GAIN = 8
+CHOICE_LABELS = ("A", "B", "C")
+
 
 class GameEngine:
     """UI-agnostic game logic service.
@@ -152,7 +160,7 @@ class GameEngine:
             self.game_session.family_background = char_data.get("family_background", self.game_session.family_background)
             self.game_session.luck = char_data.get("luck", self.game_session.luck)
             self.game_session.difficulty = char_data.get("difficulty", self.game_session.difficulty)
-            self.game_session.game_mode = char_data.get("game_mode", self.game_session.game_mode)
+            self.game_session.game_mode = DEFAULT_GAME_MODE
             attrs = char_data.get("attributes")
             if isinstance(attrs, dict):
                 merged_attrs = dict(self.game_session.attributes)
@@ -192,10 +200,11 @@ class GameEngine:
             desc = result.get("world_description", "")
             opening = desc or "世界已生成。"
 
-        self.game_session.last_choices = _default_choices(self.game_session)
+        self.game_session.last_choices = normalize_choices(generated.get("choices"), self.game_session)
         self._emit("on_narrative", opening, 0)
         self._emit("on_character_created", self.game_session)
         self._emit("on_status_bar", format_status_bar(self.game_session))
+        self._record_opening_context(opening)
         self._auto_save()
 
     def start_from_profile(self, profile: dict[str, Any]) -> None:
@@ -227,7 +236,7 @@ class GameEngine:
         self.game_session.family_background = str(profile.get("family_background") or FAMILY_BACKGROUNDS[0])
         self.game_session.difficulty = str(profile.get("difficulty") or DIFFICULTY_OPTIONS[1])
         self.game_session.luck = str(profile.get("luck") or _luck_from_attributes(attrs))
-        self.game_session.game_mode = str(profile.get("game_mode") or DEFAULT_GAME_MODE)
+        self.game_session.game_mode = DEFAULT_GAME_MODE
         self.game_session.attributes = attrs
         self.game_session.hp = int(profile.get("hp") or (999 if special else 100))
         self.game_session.hp_max = int(profile.get("hp_max") or self.game_session.hp)
@@ -243,10 +252,11 @@ class GameEngine:
         self.game_session.lore_facts = ["青玄宗立于东荒云脉之上，山门深处常有灵雾不散。"]
 
         opening = str(profile.get("opening_narrative") or _profile_opening(self.game_session, special))
-        self.game_session.last_choices = _default_choices(self.game_session)
+        self.game_session.last_choices = normalize_choices(profile.get("choices"), self.game_session)
         self._emit("on_narrative", opening, 0)
         self._emit("on_character_created", self.game_session)
         self._emit("on_status_bar", format_status_bar(self.game_session))
+        self._record_opening_context(opening)
         self._auto_save()
 
     def handle_action(self, text: str) -> None:
@@ -264,6 +274,22 @@ class GameEngine:
 
         if self.game_session.game_over:
             self._emit("on_info", f"游戏已结束: {self.game_session.error}\n输入 /new 开始新游戏，或 /reset 重置。")
+            return
+
+        selected_choice = self._resolve_choice_input(text)
+        if selected_choice is not None:
+            text = selected_choice
+
+        # Route natural-language breakthrough intent before combat check
+        # so "突破" during combat is still treated as breakthrough.
+        if self._parse_breakthrough_action(text):
+            self.attempt_breakthrough()
+            return
+
+        combat_action = self._parse_typed_combat_action(text)
+        if combat_action is not None:
+            action, target = combat_action
+            self.handle_combat_action(action, target)
             return
 
         self.game_session.turn_count += 1
@@ -290,7 +316,7 @@ class GameEngine:
         narrative = narrator_result.get("narrative", "")
         state_delta = narrator_result.get("state_delta", {})
         choices = narrator_result.get("choices", [])
-        self.game_session.last_choices = choices or _default_choices(self.game_session)
+        self.game_session.last_choices = normalize_choices(choices, self.game_session)
 
         # Step 2: Run judge (if there is a delta to validate).
         if state_delta:
@@ -315,7 +341,7 @@ class GameEngine:
                     note = judge_result.get("judgment_note", "")
                     log.info("Judge rejected (no corrected delta): %s", note)
                     self._emit("on_info", "天道审判未通过，行动结果暂不生效。")
-                    self._emit("on_narrative", narrative, self.game_session.turn_count)
+                    self.game_session.last_choices = normalize_choices(None, self.game_session)
                     self._emit("on_status_bar", format_status_bar(self.game_session))
                     self._auto_save()
                     return
@@ -323,12 +349,41 @@ class GameEngine:
                 if note:
                     log.info("Judge corrected: %s", note)
 
-        # Step 3: Apply delta.
+        state_delta = self._sanitize_action_delta(state_delta)
+
+        # Apply the 感悟 (insight) rule: pure cultivation grants no insight;
+        # any other action gains a baseline (plus whatever the LLM granted).
+        is_cultivation = self._is_pure_cultivation(text)
+        state_delta = self._apply_insight_rule(text, state_delta)
+
+        combat_delta_seen = False
+        combat_delta = None
+        char_delta = state_delta.get("character")
+        if isinstance(char_delta, dict) and "combat" in char_delta:
+            combat_delta_seen = True
+            char_delta = dict(char_delta)
+            combat_delta = char_delta.pop("combat")
+            state_delta = {**state_delta, "character": char_delta}
+
+        # Step 3: Apply non-combat delta.
         self.game_session.apply_delta(state_delta)
 
+        # Step 3.5: Auto-advance small layers — chain until no more advancement.
+        while True:
+            stage_delta = self.realm_system.try_advance_stage(self.game_session)
+            if stage_delta is None:
+                break
+            self.game_session.apply_delta(stage_delta)
+            new_stage = stage_delta.get("meta", {}).get("new_stage", 0)
+            max_stage = stage_delta.get("meta", {}).get("max_stage", 0)
+            self._emit("on_info", f"修为精进！{self.game_session.realm}第{new_stage}层（{new_stage}/{max_stage}）")
+
+        # Step 3.6: Nudge players who keep meditating at max layer — pure
+        # cultivation alone cannot break through; they need 感悟 from real deeds.
+        self._maybe_emit_insight_hint(is_cultivation)
+
         # Step 4: Handle combat state changes.
-        combat_delta = state_delta.get("character", {}).get("combat")
-        if combat_delta is not None:
+        if combat_delta_seen:
             self._handle_combat_start_or_update(combat_delta)
 
         # Step 5: Check game over.
@@ -366,7 +421,7 @@ class GameEngine:
     def handle_combat_action(self, action: str, target: str = "") -> None:
         """Process a player combat action.
 
-        Called by UI when player taps a combat button (attack/technique/item/defend/flee).
+        Called when player text is recognized as a structured combat move.
         """
         combat = self.game_session.combat
         if combat is None:
@@ -403,9 +458,188 @@ class GameEngine:
             self._emit("on_error", "战斗异常，已退出战斗状态。")
             self._emit("on_combat_update", None)
 
+    def _parse_breakthrough_action(self, text: str) -> bool:
+        """Detect natural-language breakthrough intent.
+
+        Allows players to type "突破", "尝试突破", "冲击筑基",
+        "准备渡劫飞升", etc. instead of always using /breakthrough.
+        """
+        if self.game_session.combat:
+            return False  # can't attempt breakthrough during combat
+
+        compact = "".join(text.strip().lower().split())
+        keywords = (
+            "突破", "尝试突破", "冲击下一境界", "准备渡劫",
+            "冲关", "破境", "渡劫飞升",
+            "冲击筑基", "冲击金丹", "冲击元婴", "冲击化神",
+            "冲击合体", "冲击大乘", "冲击渡劫", "冲击飞升",
+            "准备突破",
+        )
+        return any(kw in compact for kw in keywords)
+
+    def _resolve_choice_input(self, text: str) -> str | None:
+        """Map A/B/C or 1/2/3 input to the current model choice.
+
+        D is the free-input branch. ``D: xxx``/``D.xxx`` submit only ``xxx``;
+        plain text is already free input and returns ``None``.
+        """
+        raw = text.strip()
+        if not raw:
+            return None
+
+        normalized = raw.upper().replace("．", ".").replace("：", ":")
+        choices = normalize_choices(self.game_session.last_choices, self.game_session)
+
+        key = normalized.rstrip(".:、)） ").strip()
+        mapping = {"A": 0, "B": 1, "C": 2, "1": 0, "2": 1, "3": 2}
+        if key in mapping:
+            return choices[mapping[key]]
+
+        for prefix in ("D:", "D.", "D、", "4:", "4.", "4、"):
+            if normalized.startswith(prefix):
+                return raw[len(prefix):].strip()
+
+        return None
+
+    # ─── 感悟 (insight) rule ──────────────────────────────────────────
+
+    # Meditation verbs: their presence means the action *could* be pure cultivation.
+    _MEDITATION_KEYWORDS: tuple[str, ...] = (
+        "闭关", "打坐", "吐纳", "静坐", "冥想", "静修", "参禅", "盘膝",
+        "闭目", "运功", "运转", "吐故纳新", "吸纳", "静心", "修炼", "修行",
+        "入定", "凝神", "冥思",
+    )
+    # Activity verbs: if any appear alongside meditation verbs, the action is
+    # NOT pure cultivation (e.g. "修炼剑法" practices the sword, "打坐参悟"
+    # contemplates) and therefore grants 感悟.
+    _ACTIVITY_KEYWORDS: tuple[str, ...] = (
+        "剑法", "剑诀", "剑术", "刀法", "拳法", "掌法", "法术", "术法",
+        "战斗", "杀敌", "攻击", "防御", "施展", "催动", "历练", "探索",
+        "寻宝", "寻药", "买药", "购买", "交易", "谈话", "询问", "请教",
+        "救人", "帮助", "炼丹", "炼器", "制符", "破阵", "师父", "师兄",
+        "师姐", "长老", "掌门", "外出", "出门", "离开", "行走", "入城",
+        "进入", "任务", "秘境", "坊市", "参悟", "悟道",
+        # Unambiguous single-char activity markers.
+        "战", "斗", "敌", "妖", "兽", "寻", "药", "宝", "丹", "阵", "符",
+    )
+
+    def _is_pure_cultivation(self, text: str) -> bool:
+        """Return True if the typed action is pure meditation/cultivation.
+
+        Pure cultivation (闭关、打坐、吐纳、静坐…) accumulates 修为 but grants
+        NO 感悟 — so it cannot, by itself, enable a major-realm breakthrough.
+        """
+        compact = "".join(text.strip().lower().split())
+        if not compact:
+            return False
+        has_meditation = any(kw in compact for kw in self._MEDITATION_KEYWORDS)
+        if not has_meditation:
+            return False
+        has_activity = any(kw in compact for kw in self._ACTIVITY_KEYWORDS)
+        return not has_activity
+
+    def _apply_insight_rule(self, text: str, delta: dict[str, Any]) -> dict[str, Any]:
+        """Enforce the 感悟 gate on an action's state delta.
+
+        - Pure cultivation: drop any insight the LLM may have granted (it grants none).
+        - Any other action: grant a baseline plus the LLM-granted insight.
+        """
+        if not isinstance(delta, dict):
+            return delta
+        char = delta.get("character")
+        char = dict(char) if isinstance(char, dict) else {}
+        llm_insight = _parse_delta_int(char.get("insight", 0))
+
+        if self._is_pure_cultivation(text):
+            char.pop("insight", None)
+        else:
+            total = INSIGHT_BASE_GAIN + max(0, llm_insight)
+            char["insight"] = f"+{total}"
+
+        delta["character"] = char
+        return delta
+
+    def _maybe_emit_insight_hint(self, is_cultivation: bool) -> None:
+        """Nudge the player when stuck at max layer — only after pure cultivation."""
+        if not is_cultivation:
+            return
+        cfg = self.realm_system.get_realm_config(self.game_session.realm)
+        if cfg is None:
+            return
+        if self.game_session.realm_stage < cfg.stages:
+            return  # still has layers to gain via cultivation
+        insight = self.game_session.insight
+        if insight >= cfg.insight_required:
+            self._emit("on_info", "修为圆满、感悟通透，可尝试突破。")
+        else:
+            self._emit(
+                "on_info",
+                f"修为已满，然闭门造车难以寸进。需外出历练、参悟机缘，"
+                f"积累感悟（{insight}/{cfg.insight_required}）方可突破。",
+            )
+
+    def _parse_typed_combat_action(self, text: str) -> tuple[str, str] | None:
+        """Map natural-language combat input onto the structured combat engine.
+
+        The mobile UI is input-first: a player can type "攻击", "防御",
+        "施展火球术", "使用回春丹" or "逃跑" instead of pressing combat
+        buttons. Inputs that are not clearly combat commands stay on the LLM
+        narrator path so the player can still observe, negotiate, feint, etc.
+        """
+        combat = self.game_session.combat
+        if not combat:
+            return None
+
+        raw = text.strip()
+        if not raw:
+            return None
+        compact = "".join(raw.lower().split())
+
+        if any(word in compact for word in ("逃跑", "逃走", "撤退", "脱身", "遁走", "离开战斗")):
+            return "flee", ""
+
+        if any(word in compact for word in ("服用", "吞服", "使用丹药", "用药", "吃药")):
+            return "item", self._extract_named_combat_target(raw, "consumables", ("服用", "吞服", "使用", "用", "吃"))
+
+        if any(word in compact for word in ("防御", "格挡", "护体", "闪避", "躲避", "防守", "守住")):
+            return "defend", ""
+
+        if any(word in compact for word in ("施展", "催动", "运转", "功法", "法术", "术法", "剑诀")):
+            return "technique", self._extract_named_combat_target(raw, "techniques", ("施展", "催动", "运转", "使用"))
+
+        if any(word in compact for word in ("攻击", "普攻", "进攻", "挥剑", "出剑", "斩", "刺", "劈", "砍")):
+            return "attack", ""
+
+        return None
+
+    def _extract_named_combat_target(
+        self,
+        text: str,
+        collection_key: str,
+        verbs: tuple[str, ...],
+    ) -> str:
+        """Return a named technique/item if the typed text mentions one."""
+        combat = self.game_session.combat or {}
+        player = combat.get("player", {})
+        for item in player.get(collection_key, []):
+            if not isinstance(item, dict):
+                continue
+            name = str(item.get("name") or "")
+            if name and name in text:
+                return name
+
+        target = text.strip()
+        for verb in verbs:
+            target = target.replace(verb, "")
+        for filler in ("我", "你", "向", "对", "朝", "敌人", "妖兽", "一下"):
+            target = target.replace(filler, "")
+        return target.strip()
+
     def _handle_combat_start_or_update(self, combat_delta: Any) -> None:
         """Process combat state changes from narrator delta."""
-        if combat_delta is None:
+        if combat_delta is None or combat_delta == {}:
+            self.game_session.combat = None
+            self._emit("on_combat_update", None)
             return
 
         if isinstance(combat_delta, dict):
@@ -551,6 +785,9 @@ class GameEngine:
         self._emit("on_status_bar", format_status_bar(self.game_session))
         self._auto_save()
 
+        if is_finale:
+            return
+
         if self._check_game_over():
             return
 
@@ -562,6 +799,9 @@ class GameEngine:
         Returns True if game is over.
         """
         if self.game_session.game_over:
+            if self.game_session.finale:
+                self._emit("on_finale", self.game_session.error or "飞升成仙，修真之路圆满。")
+                return True
             self._emit("on_game_over", self.game_session.error or "游戏结束。")
             return True
 
@@ -708,6 +948,87 @@ class GameEngine:
             except Exception:
                 log.warning("Auto-save failed", exc_info=True)
 
+    def _record_opening_context(self, opening: str) -> None:
+        """Seed chat history so the first player action cannot look like a blank world."""
+        if not opening:
+            return
+        self.game_session.chat_history = [
+            {
+                "role": "assistant",
+                "content": (
+                    "开局已经建立，当前角色、地点和世界状态以当前状态 JSON 为准。\n"
+                    f"{opening}"
+                ),
+            }
+        ]
+
+    def _sanitize_action_delta(self, delta: dict[str, Any]) -> dict[str, Any]:
+        """Drop ordinary-turn updates that reset character identity or continuity.
+
+        LLM output is intentionally high variance, but mobile free actions must
+        not re-open the world or replace the player's established profile.
+        Breakthroughs and combat resolution use dedicated engine paths.
+        """
+        if not isinstance(delta, dict):
+            return {}
+
+        sanitized: dict[str, Any] = dict(delta)
+        char_delta = sanitized.get("character")
+        if isinstance(char_delta, dict):
+            char_delta = dict(char_delta)
+            for key in (
+                "name",
+                "realm",
+                "realm_stage",
+                "spirit_root",
+                "spirit_root_grade",
+                "talent",
+                "family_background",
+                "luck",
+                "difficulty",
+                "game_mode",
+                "attributes",
+                "inventory",
+                "techniques",
+            ):
+                char_delta.pop(key, None)
+            sanitized["character"] = char_delta
+
+        world_delta = sanitized.get("world")
+        if isinstance(world_delta, dict):
+            world_delta = dict(world_delta)
+            for key in ("location", "region", "current_scene"):
+                value = world_delta.get(key)
+                if self._looks_like_world_reset(value):
+                    world_delta.pop(key, None)
+            sanitized["world"] = world_delta
+
+        return sanitized
+
+    def _looks_like_world_reset(self, value: Any) -> bool:
+        """Detect common first-scene resets that contradict an established run."""
+        if not isinstance(value, str):
+            return True
+        if not value.strip():
+            return True
+        lowered = value.lower()
+        reset_markers = ("混沌", "虚空", "未开", "起源", "void", "chaos")
+        return any(marker in lowered for marker in reset_markers)
+
+
+def _parse_delta_int(value: Any) -> int:
+    """Parse a delta int value that may be ``int`` or a ``"+N"``/``"-N"``/``"N"`` string."""
+    if isinstance(value, bool):
+        return 0
+    if isinstance(value, int):
+        return value
+    if isinstance(value, str):
+        try:
+            return int(value)
+        except ValueError:
+            return 0
+    return 0
+
 
 def _luck_from_attributes(attributes: dict[str, int]) -> str:
     """Map numeric creation luck to a compact display label."""
@@ -737,8 +1058,45 @@ def _profile_opening(session: GameSession, special: bool = False) -> str:
     )
 
 
+def normalize_choices(raw_choices: Any, session: GameSession | None = None) -> list[str]:
+    """Return exactly three clean model-choice texts for A/B/C UI slots."""
+    choices: list[str] = []
+    if isinstance(raw_choices, list):
+        for item in raw_choices:
+            text = _choice_text(item)
+            if text:
+                choices.append(text)
+            if len(choices) == len(CHOICE_LABELS):
+                break
+
+    fallback = _default_choices(session or GameSession())
+    for item in fallback:
+        if len(choices) == len(CHOICE_LABELS):
+            break
+        if item not in choices:
+            choices.append(item)
+    return choices[: len(CHOICE_LABELS)]
+
+
+def _choice_text(item: Any) -> str:
+    """Extract display/action text from a model choice object."""
+    if isinstance(item, str):
+        text = item
+    elif isinstance(item, dict):
+        value = item.get("action") or item.get("text") or item.get("label")
+        text = str(value) if value is not None else ""
+    else:
+        text = ""
+    text = text.strip()
+    for prefix in ("A.", "B.", "C.", "A、", "B、", "C、", "A:", "B:", "C:"):
+        if text.upper().startswith(prefix):
+            text = text[len(prefix):].strip()
+            break
+    return text
+
+
 def _default_choices(session: GameSession) -> list[str]:
-    """Generate grounded fallback choices for UI modes when the LLM omits them."""
+    """Generate grounded fallback choices when the LLM omits A/B/C."""
     location = session.location or "当前地点"
     if session.combat:
         return ["谨慎防守并观察敌人破绽", "施展最熟悉的功法", "寻找脱身路线"]

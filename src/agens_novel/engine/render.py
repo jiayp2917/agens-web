@@ -37,14 +37,29 @@ def _spirit_root_str(session: GameSession) -> str:
     return " ".join(parts) if parts else "未觉醒"
 
 
+def _insight_required(session: GameSession) -> int:
+    """Insight needed to break out of the current realm (0 if unknown/terminal)."""
+    from ..game.constants import REALM_CONFIGS
+    cfg = REALM_CONFIGS.get(getattr(session, "realm", ""))
+    if not isinstance(cfg, dict):
+        return 0
+    try:
+        return int(cfg.get("insight_required", 0))
+    except (TypeError, ValueError):
+        return 0
+
+
 def format_status_bar(session: GameSession) -> str:
     """One-line compact status."""
     realm_str = f"{session.realm}{_stage_suffix(session.realm_stage)}"
     hp = f"HP:{session.hp}/{session.hp_max}"
     mp = f"MP:{session.mp}/{session.mp_max}"
+    insight = getattr(session, "insight", 0)
+    insight_req = _insight_required(session)
+    insight_str = f"感悟:{insight}/{insight_req}" if insight_req else f"感悟:{insight}"
     loc = session.location or "未知"
     combat_marker = " ⚔" if session.combat else ""
-    return f"[{realm_str} | {hp} | {mp} | 地点:{loc} | 第{session.turn_count}回合{combat_marker}]"
+    return f"[{realm_str} | {hp} | {mp} | {insight_str} | 地点:{loc} | 第{session.turn_count}回合{combat_marker}]"
 
 
 def format_status_card(session: GameSession) -> str:
@@ -53,6 +68,9 @@ def format_status_card(session: GameSession) -> str:
     hp_bar = _bar(session.hp, session.hp_max)
     mp_bar = _bar(session.mp, session.mp_max)
     xp_bar = _bar(session.experience, session.experience_to_next)
+    insight = getattr(session, "insight", 0)
+    insight_req = _insight_required(session)
+    insight_bar = _bar(insight, insight_req) if insight_req else ""
 
     lines = [
         f"  姓名:   {session.char_name or '未命名'}",
@@ -65,6 +83,7 @@ def format_status_card(session: GameSession) -> str:
         f"  家世:   {getattr(session, 'family_background', '') or '凡俗'}",
         f"  气运:   {getattr(session, 'luck', '') or '平稳'}",
         f"  经验:   {xp_bar} {session.experience}/{session.experience_to_next}",
+        f"  感悟:   {insight_bar} {insight}/{insight_req}" if insight_req else f"  感悟:   {insight}",
         f"  寿命:   {session.lifespan} 年",
         f"  灵石:   {session.gold}",
         f"  地点:   {session.location or '未知'}" + (f" - {session.region}" if session.region else ""),
@@ -216,12 +235,17 @@ def format_realm(session: GameSession) -> str:
 
     realm_str = f"{session.realm}{_stage_suffix(session.realm_stage)}"
     xp_bar = _bar(session.experience, session.experience_to_next)
+    insight = getattr(session, "insight", 0)
+    insight_req = _insight_required(session)
+    insight_bar = _bar(insight, insight_req) if insight_req else ""
 
     lines = [
         f"  境界: {realm_str}",
         f"  经验: {xp_bar} {session.experience}/{session.experience_to_next}",
-        f"  灵根: {_spirit_root_str(session)}",
     ]
+    if insight_req:
+        lines.append(f"  感悟: {insight_bar} {insight}/{insight_req}（突破所需）")
+    lines.append(f"  灵根: {_spirit_root_str(session)}")
 
     # Show next realm info if applicable.
     try:

@@ -35,7 +35,6 @@ PRESETS = [
     ("自定义", "", ""),
 ]
 
-GAME_MODES = [("高自由度", "high"), ("中自由度", "mid"), ("低自由度", "low")]
 THEME_CHOICES = [("宣纸白", "white"), ("墨绿", "green"), ("暗夜", "black")]
 
 
@@ -48,7 +47,6 @@ class HomeScreen(Screen):
         self.audio = AudioManager()
         self._tutorial_page = 0
         self._selected_theme = "white"
-        self._selected_mode = "high"
         self._bgm_enabled = True
         self._sfx_enabled = True
         self._popup = None
@@ -105,14 +103,17 @@ class HomeScreen(Screen):
             pos_hint={"center_x": 0.5, "top": 0.78},
             spacing=dp(8),
         )
-        title_box.add_widget(Label(
+        title = Label(
             text="[b]文字修仙\n模拟器[/b]",
             markup=True,
-            font_size=dp(36),
+            font_size=dp(32),
             line_height=1.05,
             color=theme.text,
             halign="center",
-        ))
+            valign="middle",
+        )
+        title.bind(width=lambda *_a: title.setter("text_size")(title, (title.width, None)))
+        title_box.add_widget(title)
         title_box.add_widget(Label(
             text="天道有常",
             font_size=dp(13),
@@ -258,7 +259,6 @@ class HomeScreen(Screen):
         audio = AudioManager()
         audio.apply_settings(data)
         self._selected_theme = data.get(THEME_KEY, "white")
-        self._selected_mode = data.get("game_mode", "high")
         self._bgm_enabled = audio.bgm_enabled
         self._sfx_enabled = audio.sfx_enabled
 
@@ -280,7 +280,6 @@ class HomeScreen(Screen):
         _add_field(form, "Model", self.input_model, theme)
         _add_field(form, "API Key", self.input_api_key, theme)
         _add_field(form, "主题色", self._segmented(THEME_CHOICES, self._selected_theme, self._pick_theme), theme)
-        _add_field(form, "游玩模式", self._segmented(GAME_MODES, self._selected_mode, self._pick_mode), theme)
         _add_field(form, "音频", self._audio_segments(), theme)
         scroll.add_widget(form)
         outer.add_widget(scroll)
@@ -321,12 +320,6 @@ class HomeScreen(Screen):
             self._popup.dismiss()
         self._show_settings_popup()
 
-    def _pick_mode(self, value: str) -> None:
-        self._selected_mode = value
-        if self._popup:
-            self._popup.dismiss()
-        self._show_settings_popup()
-
     def _pick_audio(self, value: str) -> None:
         if value == "bgm":
             self._bgm_enabled = not self._bgm_enabled
@@ -355,7 +348,6 @@ class HomeScreen(Screen):
             "base_url": self.input_base_url.text.strip() or PRESETS[0][1],
             "model": self.input_model.text.strip() or PRESETS[0][2],
             THEME_KEY: self._selected_theme,
-            "game_mode": self._selected_mode,
             "bgm_enabled": self._bgm_enabled,
             "sfx_enabled": self._sfx_enabled,
         })
@@ -368,8 +360,6 @@ class HomeScreen(Screen):
         set_theme(self._selected_theme)
         Window.clearcolor = current_theme().bg
         self.audio.apply_settings(data)
-        if self.adapter:
-            self.adapter.game_session.game_mode = self._selected_mode
         if self._popup:
             self._popup.dismiss()
         self._refresh_audio_button()
@@ -390,7 +380,9 @@ class HomeScreen(Screen):
             self.btn_audio.opacity = 1.0 if self.audio.bgm_enabled else 0.55
 
     def _play_menu_bgm(self) -> None:
-        self.audio.play_bgm(_asset_path("audio", "bgm", "bgm_menu.ogg"))
+        # Alias routed through agens_novel.bgm — resolves to project-root
+        # bgm.flac (or a track-specific alias when more files are added).
+        self.audio.play_bgm("default")
 
     def _on_quit(self) -> None:
         from kivy.app import App
@@ -448,7 +440,7 @@ def _add_field(form: BoxLayout, label: str, widget: Widget, theme) -> None:
 _TUTORIAL_PAGES = [
     (
         "你将以自然语言行动，天道会根据选择生成回合叙事与状态变化。\n\n"
-        "高自由度只保留输入；中自由度给出建议选项；低自由度需要按选项推进。"
+        "每回合显示 A/B/C 三个建议行动；D 为底部输入框，可自行键入任意行动。"
     ),
     (
         "境界依次为练气、筑基、金丹、元婴、化神、合体、大乘、渡劫、飞升。\n\n"

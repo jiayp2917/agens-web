@@ -10,9 +10,9 @@ Layout:
   │ Scrollable Narrative Area   │
   │                             │
   ├─────────────────────────────┤
-  │ Combat Bar (during combat)  │
+  │ Combat Status (during combat)│
   ├─────────────────────────────┤
-  │ Button Row + Text Input     │
+  │ Utility Row + Text Input    │
   └─────────────────────────────┘
   + Loading Overlay (on top)
 """
@@ -21,6 +21,7 @@ from __future__ import annotations
 
 from kivy.metrics import dp
 from kivy.uix.boxlayout import BoxLayout
+from kivy.uix.floatlayout import FloatLayout
 from kivy.uix.label import Label
 from kivy.uix.screenmanager import Screen
 from kivy.uix.scrollview import ScrollView
@@ -53,9 +54,17 @@ class GameScreen(Screen):
         self.adapter.on_loading = self._on_loading
         self.adapter.on_stream_chunk = self._on_stream_chunk
         self.adapter.on_combat_update = self._on_combat_update
+        self.adapter.on_finale = self._on_finale
+        self._save_popup = None
+        self._load_popup = None
 
         # Build layout.
-        self.layout = BoxLayout(orientation="vertical")
+        self.root = FloatLayout()
+        self.layout = BoxLayout(
+            orientation="vertical",
+            size_hint=(1, 1),
+            pos_hint={"x": 0, "y": 0},
+        )
 
         # Top: status bar (includes breakthrough button — merged RealmCard)
         self.status_bar = StatusBar()
@@ -69,9 +78,10 @@ class GameScreen(Screen):
 
         # Combat bar (hidden by default).
         self.combat_bar = CombatBar()
-        self.combat_bar.on_combat_action = self._on_combat_action
         self.combat_bar.height = 0
         self.combat_bar.size_hint_y = None
+        self.combat_bar.opacity = 0
+        self.combat_bar.disabled = True
         self.layout.add_widget(self.combat_bar)
 
         # Bottom: action bar
@@ -80,22 +90,26 @@ class GameScreen(Screen):
         self.action_bar.on_command = self._on_user_command
         self.layout.add_widget(self.action_bar)
 
-        self.add_widget(self.layout)
+        self.root.add_widget(self.layout)
 
-        # Loading overlay.
+        # Loading overlay. It must be the last child so it covers the whole screen.
         self.loading_overlay = LoadingOverlay()
+        self.loading_overlay.hide()
+        self.root.add_widget(self.loading_overlay)
+        self.add_widget(self.root)
 
     def on_enter(self, *args):
         """Called when this screen becomes active."""
-        self._refresh_mode_ui()
+        self._refresh_choices_ui()
         self.status_bar.update(self.adapter.game_session)
 
     # ─── Adapter callbacks (called on Kivy main thread) ────────────────
 
     def _on_narrative(self, text: str, turn: int) -> None:
+        self.loading_overlay.hide()
         self.narrative_view.finalize_stream()
         self.narrative_view.add_narrative(text, turn)
-        self._refresh_mode_ui()
+        self._refresh_choices_ui()
         self.status_bar.update(self.adapter.game_session)
 
     def _on_status_bar(self, text: str) -> None:
@@ -106,6 +120,7 @@ class GameScreen(Screen):
         self.narrative_view.add_info(f"[错误] {msg}")
 
     def _on_info(self, msg: str) -> None:
+        self.loading_overlay.hide()
         self.narrative_view.add_info(msg)
         self.status_bar.update(self.adapter.game_session)
 
@@ -123,7 +138,7 @@ class GameScreen(Screen):
         self.loading_overlay.hide()
         self.narrative_view.add_info("角色创建成功！输入行动开始游戏。")
         self.status_bar.update(session)
-        self._refresh_mode_ui()
+        self._refresh_choices_ui()
 
     def _on_loading(self, msg: str) -> None:
         self.loading_overlay.show(msg)
@@ -147,13 +162,17 @@ class GameScreen(Screen):
 
     def _show_combat_bar(self) -> None:
         """Show the combat bar."""
-        self.combat_bar.height = dp(80)
+        self.combat_bar.height = dp(46)
         self.combat_bar.size_hint_y = None
+        self.combat_bar.opacity = 1
+        self.combat_bar.disabled = False
 
     def _hide_combat_bar(self) -> None:
         """Hide the combat bar."""
         self.combat_bar.height = 0
         self.combat_bar.size_hint_y = None
+        self.combat_bar.opacity = 0
+        self.combat_bar.disabled = True
         self.combat_bar.update_combat(None)
 
     # ─── User input handlers ───────────────────────────────────────────
@@ -199,6 +218,11 @@ class GameScreen(Screen):
         "/settings": "_nav_settings", "/设置": "_nav_settings",
         "/home": "_nav_home", "/主页": "_nav_home",
         "/saves": "_nav_saves", "/存档管理": "_nav_saves",
+        "/attack": "_combat_attack", "/攻击": "_combat_attack",
+        "/defend": "_combat_defend", "/防御": "_combat_defend",
+        "/flee": "_combat_flee", "/逃跑": "_combat_flee",
+        "/technique": "_combat_technique", "/功法攻击": "_combat_technique",
+        "/item": "_combat_item", "/使用丹药": "_combat_item",
     }
 
     def _parse_slash_command(self, text: str) -> str | None:
@@ -208,10 +232,14 @@ class GameScreen(Screen):
 
         cmd = self._SLASH_COMMANDS.get(key)
         if cmd is None:
-            # Unknown command — let it flow as normal text.
-            self.narrative_view.add_info(f"> {text}")
-            self.adapter.handle_action(text)
+            # Unknown command — let the caller submit it once as normal text.
             return None
+
+        if cmd.startswith("_combat_"):
+            action = cmd.removeprefix("_combat_")
+            target = parts[1].strip() if len(parts) > 1 else ""
+            self.adapter.handle_combat_action(action, target)
+            return cmd
 
         # Navigation commands.
         if cmd == "_nav_settings":
@@ -246,7 +274,8 @@ class GameScreen(Screen):
                 self.manager.current = "home"
                 self.manager.get_screen("home")._show_settings_popup()
         elif cmd == "status":
-            self._show_text_popup("角色状态", self.adapter.get_status())
+            text = f"{self.adapter.get_status()}\n\n【功法】\n{self.adapter.get_skills()}"
+            self._show_text_popup("角色状态", text)
         elif cmd == "inv":
             self._show_text_popup("背包", self.adapter.get_inventory())
         elif cmd == "skills":
@@ -267,25 +296,22 @@ class GameScreen(Screen):
             if self.manager:
                 self.manager.current = "home"
 
-    def _refresh_mode_ui(self) -> None:
-        """Apply freedom-mode behavior and render choices if needed."""
+    def _refresh_choices_ui(self) -> None:
+        """Render the single A/B/C choices mode."""
         session = self.adapter.game_session
-        mode = getattr(session, "game_mode", "high") or "high"
-        try:
-            from service.settings_store import load_settings
-            mode = load_settings().get("game_mode", mode)
-            session.game_mode = mode
-        except Exception:
-            pass
-        self.action_bar.apply_game_mode(mode)
-        if mode == "high":
-            self.narrative_view.clear_choices()
-        else:
-            self.narrative_view.render_choices(getattr(session, "last_choices", []) or [])
+        self.action_bar.apply_choices_mode()
+        self.narrative_view.render_choices(getattr(session, "last_choices", []) or [])
 
-    def _on_combat_action(self, action: str, target: str) -> None:
-        """User tapped a combat action button."""
-        self.adapter.handle_combat_action(action, target)
+    def _on_finale(self, reason: str) -> None:
+        """Handle ascension finale (飞升) — different from death."""
+        self.loading_overlay.hide()
+        self._hide_combat_bar()
+        self.action_bar.set_combat_mode(False)
+        if self.manager:
+            death = self.manager.get_screen("death")
+            death.set_reason(reason)
+            death.is_finale = True
+            self.manager.current = "death"
 
     def _on_breakthrough(self) -> None:
         """User tapped breakthrough button."""
@@ -319,6 +345,8 @@ class GameScreen(Screen):
 
     def _show_save_slot_dialog(self) -> None:
         """Show a popup for choosing which slot to save into."""
+        if self._save_popup:
+            self._save_popup.dismiss()
         content = BoxLayout(orientation="vertical", padding=dp(8), spacing=dp(6))
 
         from agens_novel.repl.save_manager import get_manual_save_slots
@@ -344,19 +372,20 @@ class GameScreen(Screen):
         popup = themed_popup("选择存档位置", content, size_hint=(0.85, 0.65), auto_dismiss=False)
         cancel_btn.bind(on_release=lambda _: popup.dismiss())
         content.add_widget(cancel_btn)
+        self._save_popup = popup
+        popup.bind(on_dismiss=lambda *_: setattr(self, "_save_popup", None))
         popup.open()
 
     def _do_save_slot(self, slot_name: str) -> None:
         """Execute save to the given slot and close parent popup."""
         self.adapter.save(slot_name)
-        # Dismiss the save slot popup.
-        for widget in self.window.children:
-            if isinstance(widget, type(self.window.children[0])) and hasattr(widget, 'dismiss'):
-                widget.dismiss()
-                break
+        if self._save_popup:
+            self._save_popup.dismiss()
 
     def _show_load_slot_dialog(self) -> None:
         """Show a popup for choosing which slot to load from."""
+        if self._load_popup:
+            self._load_popup.dismiss()
         theme = current_theme()
         content = BoxLayout(orientation="vertical", padding=dp(8), spacing=dp(6))
 
@@ -392,20 +421,28 @@ class GameScreen(Screen):
         popup = themed_popup("选择读档", content, size_hint=(0.85, 0.65), auto_dismiss=False)
         cancel_btn.bind(on_release=lambda _: popup.dismiss())
         content.add_widget(cancel_btn)
+        self._load_popup = popup
+        popup.bind(on_dismiss=lambda *_: setattr(self, "_load_popup", None))
         popup.open()
 
     def _do_load_slot(self, slot_name: str) -> None:
         """Execute load from the given slot and close parent popup."""
+        if not self._save_exists(slot_name):
+            self.adapter.load(slot_name)
+            return
         self.narrative_view.clear()
         self._hide_combat_bar()
         self.action_bar.set_combat_mode(False)
         self.adapter.load(slot_name)
         self.status_bar.update(self.adapter.game_session)
-        self.status_bar.update(self.adapter.game_session)
-        # Dismiss the load slot popup by finding any open popup.
-        from kivy.uix.popup import Popup
-        if self.parent:
-            for child in self.parent.children:
-                if isinstance(child, Popup):
-                    child.dismiss()
-                    break
+        if self._load_popup:
+            self._load_popup.dismiss()
+
+    def _save_exists(self, slot_name: str) -> bool:
+        """Return True when a concrete save slot exists."""
+        from agens_novel.repl.save_manager import list_saves
+
+        return any(
+            item.get("name") == slot_name and not item.get("error")
+            for item in list_saves()
+        )

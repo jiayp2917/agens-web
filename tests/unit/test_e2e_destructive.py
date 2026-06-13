@@ -388,6 +388,7 @@ class TestRealmEdgeCases:
         s.realm_stage = 9
         s.experience = 999
         s.experience_to_next = 100
+        s.insight = 999  # clear the 感悟 gate so the attempt actually resolves
         s.hp = 100
 
         rs = RealmSystem()
@@ -404,6 +405,7 @@ class TestRealmEdgeCases:
         s.realm_stage = 9
         s.experience = 999
         s.experience_to_next = 100
+        s.insight = 999  # clear the 感悟 gate so the attempt actually resolves
 
         rs = RealmSystem()
         with patch.object(random, "random", return_value=0.0):
@@ -415,11 +417,12 @@ class TestRealmEdgeCases:
     def test_flying_breakthrough_sets_finale(self):
         """Breaking through to 飞升 should set finale flag."""
         s = GameSession()
-        # Need to be at 渡劫 (second-to-last realm), final stage, enough exp.
+        # Need to be at 渡劫 (second-to-last realm), final stage, enough exp + 感悟.
         s.realm = REALM_ORDER[-2]  # 渡劫
         s.realm_stage = 1
         s.experience = 99999
         s.experience_to_next = 1
+        s.insight = 999  # 渡劫 requires 400 感悟 — clear the gate to reach 飞升
 
         rs = RealmSystem()
         # Ensure REALM_CONFIGS has 渡劫 with stages=1, or adjust.
@@ -430,9 +433,10 @@ class TestRealmEdgeCases:
         with patch.object(random, "random", return_value=0.0):
             delta = rs.attempt_breakthrough(s)
 
-        if delta["meta"]["breakthrough_result"] == "success":
-            assert delta["meta"].get("finale") is True
-            assert delta["meta"].get("game_over") is True
+        assert delta["meta"]["breakthrough_result"] == "success", \
+            "With 感悟 cleared and random forced low, breakthrough must succeed"
+        assert delta["meta"].get("finale") is True
+        assert delta["meta"].get("game_over") is True
 
 
 # ─── 5. Turn runner: stream_callback isolation ────────────────────────────

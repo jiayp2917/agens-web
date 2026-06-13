@@ -121,6 +121,16 @@ class XianxiaApp(App):
 
         return sm
 
+    def on_stop(self, *args, **kwargs):  # noqa: D401, ANN001 — Kivy contract
+        """Tear down the BGM service so SDL audio resources are released cleanly."""
+        try:
+            from agens_novel.bgm import shutdown_service
+
+            shutdown_service()
+        except Exception:
+            pass
+        return super().on_stop(*args, **kwargs)
+
 
 if __name__ == "__main__":
     XianxiaApp().run()

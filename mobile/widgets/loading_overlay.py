@@ -32,6 +32,7 @@ class LoadingOverlay(BoxLayout):
         )
         # Start hidden.
         self.opacity = 0
+        self.disabled = True
         self.size_hint = (1, 1)
         self.pos_hint = {"x": 0, "y": 0}
 
@@ -67,6 +68,7 @@ class LoadingOverlay(BoxLayout):
         self.lbl.text = f"[b]{message}[/b]"
         self.visible = True
         self.opacity = 1
+        self.disabled = False
 
         # Start dot animation.
         self._dot_count = 0
@@ -79,6 +81,7 @@ class LoadingOverlay(BoxLayout):
         """Hide the overlay."""
         self.visible = False
         self.opacity = 0
+        self.disabled = True
         if self._anim_event:
             self._anim_event.cancel()
             self._anim_event = None

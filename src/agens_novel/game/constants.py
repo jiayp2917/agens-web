@@ -6,29 +6,16 @@ slot configuration.  All constants are module-level for easy import.
 
 from __future__ import annotations
 
-from enum import StrEnum
 from typing import Any
 
 # ─────────────────────────────────────────────────────────────────────────────
-# Gameplay mode / character creation constants
+# Gameplay / character creation constants
 # ─────────────────────────────────────────────────────────────────────────────
 
 
-class GameMode(StrEnum):
-    """Mobile play-mode options used by the Android UI."""
-
-    HIGH = "high"
-    MID = "mid"
-    LOW = "low"
-
-
-GAME_MODE_LABELS: dict[str, str] = {
-    GameMode.HIGH.value: "高自由度",
-    GameMode.MID.value: "中自由度",
-    GameMode.LOW.value: "低自由度",
-}
-
-DEFAULT_GAME_MODE = GameMode.HIGH.value
+# Kept only as a legacy save-field value. The UI now has one mode:
+# A/B/C model choices plus D typed input.
+DEFAULT_GAME_MODE = "abcd"
 
 TALENT_OPTIONS: list[str] = [
     "平平无奇",
@@ -83,6 +70,7 @@ REALM_CONFIGS: dict[str, dict[str, Any]] = {
         "name": "练气",
         "stages": 9,
         "experience_required": 100,
+        "insight_required": 30,
         "breakthrough_base_rate": 0.80,
         "hp_base": 100,
         "mp_base": 50,
@@ -95,6 +83,7 @@ REALM_CONFIGS: dict[str, dict[str, Any]] = {
         "name": "筑基",
         "stages": 4,
         "experience_required": 300,
+        "insight_required": 60,
         "breakthrough_base_rate": 0.60,
         "hp_base": 200,
         "mp_base": 100,
@@ -107,6 +96,7 @@ REALM_CONFIGS: dict[str, dict[str, Any]] = {
         "name": "金丹",
         "stages": 4,
         "experience_required": 600,
+        "insight_required": 100,
         "breakthrough_base_rate": 0.45,
         "hp_base": 400,
         "mp_base": 200,
@@ -119,6 +109,7 @@ REALM_CONFIGS: dict[str, dict[str, Any]] = {
         "name": "元婴",
         "stages": 4,
         "experience_required": 1200,
+        "insight_required": 150,
         "breakthrough_base_rate": 0.30,
         "hp_base": 800,
         "mp_base": 400,
@@ -131,6 +122,7 @@ REALM_CONFIGS: dict[str, dict[str, Any]] = {
         "name": "化神",
         "stages": 4,
         "experience_required": 2500,
+        "insight_required": 200,
         "breakthrough_base_rate": 0.20,
         "hp_base": 1600,
         "mp_base": 800,
@@ -144,6 +136,7 @@ REALM_CONFIGS: dict[str, dict[str, Any]] = {
         "name": "合体",
         "stages": 4,
         "experience_required": 5000,
+        "insight_required": 260,
         "breakthrough_base_rate": 0.15,
         "hp_base": 3200,
         "mp_base": 1600,
@@ -156,6 +149,7 @@ REALM_CONFIGS: dict[str, dict[str, Any]] = {
         "name": "大乘",
         "stages": 4,
         "experience_required": 10000,
+        "insight_required": 330,
         "breakthrough_base_rate": 0.10,
         "hp_base": 6400,
         "mp_base": 3200,
@@ -168,6 +162,7 @@ REALM_CONFIGS: dict[str, dict[str, Any]] = {
         "name": "渡劫",
         "stages": 4,
         "experience_required": 20000,
+        "insight_required": 400,
         "breakthrough_base_rate": 0.05,
         "hp_base": 12800,
         "mp_base": 6400,
@@ -180,6 +175,7 @@ REALM_CONFIGS: dict[str, dict[str, Any]] = {
         "name": "飞升",
         "stages": 1,
         "experience_required": 999999,
+        "insight_required": 0,
         "breakthrough_base_rate": 0.00,
         "hp_base": 99999,
         "mp_base": 99999,

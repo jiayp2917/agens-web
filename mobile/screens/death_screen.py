@@ -17,18 +17,22 @@ class DeathScreen(Screen):
         super().__init__(**kwargs)
         self.adapter = adapter
         self.reason = "修行路无常，仍可从此处重开一世。"
+        self.is_finale = False
         theme = current_theme()
         add_background(self, color=theme.bg)
 
         outer = BoxLayout(orientation="vertical", padding=[dp(36), dp(150)], spacing=dp(18))
-        outer.add_widget(Label(
+
+        self.title_label = Label(
             text="[b]道途已断[/b]",
             markup=True,
             font_size=dp(32),
             color=theme.error_color,
             size_hint_y=None,
             height=dp(58),
-        ))
+        )
+        outer.add_widget(self.title_label)
+
         self.copy = Label(
             text=self._copy_text(),
             font_size=dp(15),
@@ -40,13 +44,13 @@ class DeathScreen(Screen):
         outer.add_widget(self.copy)
 
         actions = BoxLayout(orientation="vertical", size_hint_y=None, height=dp(170), spacing=dp(12))
-        restart_btn = themed_button("重新开始", font_size=dp(15), size_hint_y=None, height=dp(46))
+        self.restart_btn = themed_button("重新开始", font_size=dp(15), size_hint_y=None, height=dp(46))
         load_btn = themed_button("读取存档", font_size=dp(15), size_hint_y=None, height=dp(46))
         home_btn = themed_button("返回主页", font_size=dp(15), size_hint_y=None, height=dp(46))
-        restart_btn.bind(on_release=lambda _: self._restart())
+        self.restart_btn.bind(on_release=lambda _: self._restart())
         load_btn.bind(on_release=lambda _: self._load())
         home_btn.bind(on_release=lambda _: self._home())
-        actions.add_widget(restart_btn)
+        actions.add_widget(self.restart_btn)
         actions.add_widget(load_btn)
         actions.add_widget(home_btn)
         outer.add_widget(actions)
@@ -54,8 +58,25 @@ class DeathScreen(Screen):
 
     def set_reason(self, reason: str) -> None:
         self.reason = reason or self.reason
-        if hasattr(self, "copy"):
+
+    def on_enter(self, *args):
+        """Apply finale or death styling when the screen becomes active."""
+        theme = current_theme()
+        if self.is_finale:
+            self.title_label.text = "[b]飞升成仙[/b]"
+            self.title_label.color = theme.success_color
+            self.restart_btn.text = "再入轮回"
+            self.copy.text = (
+                f"{self.reason}\n\n"
+                "九天之上，金光万丈。你回望凡尘最后一缕云烟，"
+                "踏过天门，从此长生久视，不再入劫。"
+            )
+        else:
+            self.title_label.text = "[b]道途已断[/b]"
+            self.title_label.color = theme.error_color
+            self.restart_btn.text = "重新开始"
             self.copy.text = self._copy_text()
+        super().on_enter(*args)
 
     def _copy_text(self) -> str:
         return (

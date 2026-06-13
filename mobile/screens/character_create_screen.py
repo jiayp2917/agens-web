@@ -6,7 +6,6 @@ import random
 
 from kivy.metrics import dp
 from kivy.uix.boxlayout import BoxLayout
-from kivy.uix.gridlayout import GridLayout
 from kivy.uix.label import Label
 from kivy.uix.progressbar import ProgressBar
 from kivy.uix.screenmanager import Screen
@@ -14,7 +13,6 @@ from kivy.uix.scrollview import ScrollView
 from kivy.uix.spinner import Spinner
 from kivy.uix.textinput import TextInput
 from service.engine_adapter import EngineAdapter
-from service.settings_store import load_settings
 from theme import add_background, current_theme, themed_button
 
 from agens_novel.game.constants import (
@@ -47,7 +45,7 @@ class CharacterCreateScreen(Screen):
 
         theme = current_theme()
         add_background(self, color=theme.bg)
-        root = BoxLayout(orientation="vertical", padding=[dp(16), dp(14)], spacing=dp(10))
+        root = BoxLayout(orientation="vertical", padding=[dp(14), dp(12)], spacing=dp(8))
 
         top = BoxLayout(orientation="horizontal", size_hint_y=None, height=dp(40), spacing=dp(8))
         back_btn = themed_button("返回", font_size=dp(13), size_hint_x=0.28)
@@ -57,8 +55,13 @@ class CharacterCreateScreen(Screen):
         root.add_widget(top)
 
         scroll = ScrollView()
-        self.form = BoxLayout(orientation="vertical", size_hint_y=None, spacing=dp(9))
+        self.form = BoxLayout(
+            orientation="vertical",
+            size_hint=(1, None),
+            spacing=dp(8),
+        )
         self.form.bind(minimum_height=self.form.setter("height"))
+        scroll.bind(width=lambda _inst, width: setattr(self.form, "width", width))
 
         self.input_game_name = _input("青云小传", theme)
         self.input_char_name = _input("许满", theme)
@@ -66,7 +69,7 @@ class CharacterCreateScreen(Screen):
         _field(self.form, "游戏名称", self.input_game_name, theme)
         _field(self.form, "角色名", self.input_char_name, theme)
 
-        grid = GridLayout(cols=2, size_hint_y=None, spacing=[dp(8), dp(8)])
+        grid = BoxLayout(orientation="vertical", size_hint_y=None, spacing=dp(8))
         grid.bind(minimum_height=grid.setter("height"))
         self.spinner_talent = _spinner("剑心微明", TALENT_OPTIONS, theme)
         roots = [item["name"] for item in SPIRIT_ROOTS] + [SPECIAL_ROOT]
@@ -79,14 +82,16 @@ class CharacterCreateScreen(Screen):
         _field(grid, "难度", self.spinner_difficulty, theme)
         self.form.add_widget(grid)
 
-        self.form.add_widget(Label(
+        attr_title = Label(
             text="基础属性",
             font_size=dp(12),
             color=theme.text_secondary,
             size_hint_y=None,
             height=dp(22),
             halign="left",
-        ))
+        )
+        attr_title.bind(width=lambda *_a: attr_title.setter("text_size")(attr_title, (attr_title.width, None)))
+        self.form.add_widget(attr_title)
         for key in ATTRIBUTE_KEYS:
             self.form.add_widget(self._attribute_row(key, theme))
 
@@ -105,7 +110,7 @@ class CharacterCreateScreen(Screen):
         self.result_container = BoxLayout(orientation="vertical", size_hint_y=None, height=0)
         self.form.add_widget(self.result_container)
 
-        row = BoxLayout(orientation="horizontal", size_hint_y=None, height=dp(46), spacing=dp(10))
+        row = BoxLayout(orientation="horizontal", size_hint_y=None, height=dp(44), spacing=dp(8))
         random_btn = themed_button("随机", font_size=dp(15))
         start_btn = themed_button("开始", font_size=dp(15))
         random_btn.bind(on_release=lambda _: self._randomize())
@@ -122,10 +127,10 @@ class CharacterCreateScreen(Screen):
         self._sync_special_state()
 
     def _attribute_row(self, key: str, theme) -> BoxLayout:
-        row = BoxLayout(orientation="horizontal", size_hint_y=None, height=dp(26), spacing=dp(8))
-        label = Label(text=ATTRIBUTE_LABELS[key], font_size=dp(12), color=theme.text, size_hint_x=0.18)
-        bar = ProgressBar(max=100, value=self.attributes[key], size_hint_x=0.64)
-        value = Label(text=str(self.attributes[key]), font_size=dp(12), color=theme.text_secondary, size_hint_x=0.18)
+        row = BoxLayout(orientation="horizontal", size_hint_y=None, height=dp(24), spacing=dp(6))
+        label = Label(text=ATTRIBUTE_LABELS[key], font_size=dp(11), color=theme.text, size_hint_x=0.22)
+        bar = ProgressBar(max=100, value=self.attributes[key], size_hint_x=0.58)
+        value = Label(text=str(self.attributes[key]), font_size=dp(11), color=theme.text_secondary, size_hint_x=0.20)
         self._attribute_widgets[key] = (bar, value)
         row.add_widget(label)
         row.add_widget(bar)
@@ -141,13 +146,7 @@ class CharacterCreateScreen(Screen):
 
     def _sync_special_state(self) -> None:
         if self.input_game_name.text.strip() == SPECIAL_START_CODE:
-            self.input_char_name.text = SPECIAL_START_NAME
-            self.spinner_talent.text = SPECIAL_TALENT
-            self.spinner_root.text = SPECIAL_ROOT
-            self.spinner_family.text = SPECIAL_FAMILY
-            self.attributes = dict(SPECIAL_START_ATTRIBUTES)
-            self._refresh_attributes()
-            self._show_result_panel()
+            self._hide_result_panel()
         else:
             self._hide_result_panel()
 
@@ -163,7 +162,7 @@ class CharacterCreateScreen(Screen):
         self.result_container.height = dp(184)
         title = Label(text="[b]开局命格[/b]", markup=True, font_size=dp(17), color=theme.accent, size_hint_y=None, height=dp(30))
         self.result_container.add_widget(title)
-        grid = GridLayout(cols=2, size_hint_y=None, height=dp(98), spacing=[dp(6), dp(6)])
+        grid = BoxLayout(orientation="vertical", size_hint_y=None, height=dp(98), spacing=dp(6))
         for text in ["属性\n全满", f"家世\n{SPECIAL_FAMILY}", f"天赋\n{SPECIAL_TALENT}", f"灵根\n{SPECIAL_ROOT}"]:
             grid.add_widget(Label(text=text, font_size=dp(12), color=theme.text, halign="center"))
         self.result_container.add_widget(grid)
@@ -184,17 +183,16 @@ class CharacterCreateScreen(Screen):
     def _start(self) -> None:
         self._sync_special_state()
         special = self.input_game_name.text.strip() == SPECIAL_START_CODE
-        mode = load_settings().get("game_mode", "high")
+        attributes = dict(SPECIAL_START_ATTRIBUTES if special else self.attributes)
         profile = {
             "game_name": self.input_game_name.text.strip(),
-            "char_name": self.input_char_name.text.strip() or "无名",
-            "talent": self.spinner_talent.text,
-            "spirit_root": self.spinner_root.text,
-            "spirit_root_grade": "天" if self.spinner_root.text in {"冰灵根", "雷灵根", "风灵根", SPECIAL_ROOT} else "地",
-            "family_background": self.spinner_family.text,
+            "char_name": SPECIAL_START_NAME if special else (self.input_char_name.text.strip() or "无名"),
+            "talent": SPECIAL_TALENT if special else self.spinner_talent.text,
+            "spirit_root": SPECIAL_ROOT if special else self.spinner_root.text,
+            "spirit_root_grade": "天" if special or self.spinner_root.text in {"冰灵根", "雷灵根", "风灵根", SPECIAL_ROOT} else "地",
+            "family_background": SPECIAL_FAMILY if special else self.spinner_family.text,
             "difficulty": self.spinner_difficulty.text,
-            "attributes": dict(self.attributes),
-            "game_mode": mode,
+            "attributes": attributes,
             "special_start": special,
         }
         if special:
@@ -250,7 +248,9 @@ def _spinner(text: str, values: list[str], theme) -> Spinner:
 
 
 def _field(parent, label: str, widget, theme) -> None:
-    box = BoxLayout(orientation="vertical", size_hint_y=None, height=dp(62), spacing=dp(3))
-    box.add_widget(Label(text=label, font_size=dp(11), color=theme.text_secondary, size_hint_y=None, height=dp(18)))
+    box = BoxLayout(orientation="vertical", size_hint_y=None, height=dp(58), spacing=dp(3))
+    lbl = Label(text=label, font_size=dp(11), color=theme.text_secondary, size_hint_y=None, height=dp(18), halign="left")
+    lbl.bind(width=lambda *_a: lbl.setter("text_size")(lbl, (lbl.width, None)))
+    box.add_widget(lbl)
     box.add_widget(widget)
     parent.add_widget(box)

@@ -53,6 +53,10 @@ class Repl:
         # runner is kept for API compatibility but not used.
         self.runner = runner
         self.history: list[str] = []
+        # BGM service is best-effort: never blocks the REPL even when audio
+        # init fails (headless test env, missing device, no pygame, …).
+        self._bgm = _bgm_or_none()
+        self._bgm_started = False
 
         # Game engine — owns all game logic and state.
         self.engine = GameEngine()
@@ -76,6 +80,7 @@ class Repl:
             self.console.print(Panel(text, title=f"第 {turn} 回合", border_style="cyan"))
         else:
             self.console.print(Panel(text, title="天道初开", border_style="cyan"))
+        self._print_choices()
 
     def _cb_status_bar(self, text: str) -> None:
         self.console.print(text)
@@ -91,12 +96,21 @@ class Repl:
 
     def _cb_character_created(self, session: object) -> None:
         self.console.print(render_status_panel(self.game_session))
+        self._print_choices()
 
     def _cb_loading(self, msg: str) -> None:
         # In the REPL, loading messages are shown via console.status() in the
         # calling methods (cmd_new, _handle_action). This callback is a no-op
         # here but used by the mobile UI.
         pass
+
+    def _print_choices(self) -> None:
+        choices = list(getattr(self.game_session, "last_choices", []) or [])[:3]
+        if not choices:
+            return
+        for label, choice in zip(("A", "B", "C"), choices, strict=False):
+            self.console.print(f"[cyan]{label}.[/cyan] {choice}")
+        self.console.print("[cyan]D.[/cyan] 自行键入行动")
 
     # ─────────────────────────────────────────────────────────────────────────
     # 确认弹窗（编号选择）
@@ -286,6 +300,12 @@ class Repl:
         with self.console.status("[bold green]天道初开，世界生成中..."):
             self.engine.new_game(concept)
 
+        # Start the BGM once the world exists. Silently no-op if audio
+        # is unavailable in the host environment.
+        if self._bgm is not None and not self._bgm_started:
+            if self._bgm.play("default", loop=True):
+                self._bgm_started = True
+
     def cmd_save(self, args: str) -> None:
         name = args.strip() or "autosave"
         from .save_manager import save_game
@@ -334,6 +354,12 @@ class Repl:
             try:
                 from .save_manager import save_game
                 save_game(self.game_session, "autosave")
+            except Exception:
+                pass
+        # Stop the BGM so SDL/pygame releases the audio device cleanly.
+        if self._bgm is not None:
+            try:
+                self._bgm.stop()
             except Exception:
                 pass
         self.console.print("[dim]道阻且长，行则将至。再见。[/dim]")
@@ -419,3 +445,18 @@ class Repl:
 def _has_api_key() -> bool:
     """Check if an API key is available (env var or built-in fallback)."""
     return bool(os.environ.get("AGNES_API_KEY", "")) or True  # built-in key fallback
+
+
+def _bgm_or_none():
+    """Return a BGM service instance, or ``None`` if import/init fails.
+
+    Wrapping the import in a helper keeps :class:`Repl` resilient in
+    environments where the BGM module is broken (missing native deps,
+    test runners, etc.) — the game still runs, just without music.
+    """
+    try:
+        from ..bgm import get_service
+
+        return get_service()
+    except Exception:
+        return None

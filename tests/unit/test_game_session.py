@@ -26,7 +26,7 @@ class TestGameSessionInit:
         assert s.family_background == ""
         assert s.luck == "中上"
         assert s.difficulty == "普通"
-        assert s.game_mode == "high"
+        assert s.game_mode == "abcd"
         assert s.attributes == DEFAULT_ATTRIBUTES
         assert s.last_choices == []
         assert s.experience == 0
@@ -69,7 +69,7 @@ class TestGameSessionApplyDelta:
         assert s.family_background == "寒门"
         assert s.luck == "平稳"
         assert s.difficulty == "困难"
-        assert s.game_mode == "mid"
+        assert s.game_mode == "abcd"
         assert s.attributes["root_bone"] == 75
         assert s.attributes["luck"] == 100
         assert "bad" not in s.attributes
@@ -217,7 +217,7 @@ class TestGameSessionSerialization:
         s.family_background = "寒门"
         s.luck = "中上"
         s.difficulty = "困难"
-        s.game_mode = "mid"
+        s.game_mode = "abcd"
         s.attributes = {key: 66 for key in DEFAULT_ATTRIBUTES}
         s.last_choices = ["探查异动", "通知同门"]
         s.experience = 500
@@ -257,7 +257,7 @@ class TestGameSessionSerialization:
         assert s2.family_background == "寒门"
         assert s2.luck == "中上"
         assert s2.difficulty == "困难"
-        assert s2.game_mode == "mid"
+        assert s2.game_mode == "abcd"
         assert s2.attributes == {key: 66 for key in DEFAULT_ATTRIBUTES}
         assert s2.last_choices == ["探查异动", "通知同门"]
         assert s2.experience == 500
@@ -299,7 +299,7 @@ class TestGameSessionSerialization:
         assert s.char_name == "旧角色"
         assert s.age == 16
         assert s.luck == "中上"
-        assert s.game_mode == "high"
+        assert s.game_mode == "abcd"
         assert s.attributes == DEFAULT_ATTRIBUTES
 
 

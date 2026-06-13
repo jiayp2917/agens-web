@@ -7,6 +7,9 @@ This manager therefore treats missing files as a no-op instead of an error.
 from __future__ import annotations
 
 from pathlib import Path
+from typing import Union
+
+BgmPath = Union[str, Path]
 
 
 class AudioManager:
@@ -29,10 +32,36 @@ class AudioManager:
         self._current_path = ""
         self._initialized = True
 
-    def play_bgm(self, path: str | Path, loop: bool = True) -> bool:
-        """Play BGM if enabled and the asset exists."""
+    def play_bgm(self, path: BgmPath, loop: bool = True) -> bool:
+        """Play BGM if enabled and the asset exists.
+
+        ``path`` can be an absolute filesystem path (legacy) or an alias
+        resolved through :mod:`agens_novel.bgm` (e.g. ``"default"``).
+        Aliases allow the same call site to work on desktop, mobile, and
+        in tests without hard-coding file paths.
+        """
         if not self.bgm_enabled:
             return False
+        # ── Alias path: defer to the shared BGM service ────────────────
+        if isinstance(path, str):
+            try:
+                from agens_novel.bgm import get_service, is_alias
+
+                if is_alias(path):
+                    ok = get_service().play(path, loop=loop)
+                    if ok:
+                        # Drop any legacy direct-loaded track; record alias.
+                        if self._current_bgm is not None:
+                            try:
+                                self._current_bgm.stop()
+                            except Exception:
+                                pass
+                            self._current_bgm = None
+                        self._current_path = path
+                    return ok
+            except Exception:
+                return False
+        # ── Legacy absolute path: direct SoundLoader ───────────────────
         asset = Path(path)
         if not asset.exists():
             return False

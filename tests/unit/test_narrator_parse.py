@@ -19,6 +19,30 @@ class TestNarratorParse:
         assert delta == {"character": {"mp": "-10", "experience": "+15"}}
         assert choices == []
 
+    def test_choices_tag_json_array(self) -> None:
+        text = (
+            "山门雾气渐开。\n"
+            "<state_update>{\"character\": {\"experience\": \"+5\"}}</state_update>\n"
+            "<choices>\n"
+            "[\"留在山门吐纳\", \"询问接引弟子\", \"观察灵气流向\"]\n"
+            "</choices>"
+        )
+        narrative, delta, choices = _parse_narrator_output(text)
+        assert narrative == "山门雾气渐开。"
+        assert delta["character"]["experience"] == "+5"
+        assert choices == ["留在山门吐纳", "询问接引弟子", "观察灵气流向"]
+
+    def test_choices_from_state_update_meta(self) -> None:
+        text = (
+            "山风吹过石阶。\n"
+            "<state_update>"
+            "{\"meta\": {\"choices\": [\"修炼\", \"交谈\", \"探索\"]}}"
+            "</state_update>"
+        )
+        narrative, _delta, choices = _parse_narrator_output(text)
+        assert narrative == "山风吹过石阶。"
+        assert choices == ["修炼", "交谈", "探索"]
+
     def test_narrative_without_tag(self) -> None:
         text = "你走在山间小路上，远处传来鸟鸣。"
         narrative, delta, choices = _parse_narrator_output(text)

@@ -165,7 +165,28 @@ def _parse_world_output(text: str) -> tuple[dict, str, str]:
             if isinstance(data, dict):
                 generated_data = data
                 opening_narrative = data.get("opening_narrative", "")
+                data["choices"] = _normalize_choices(data.get("choices"))
         except (json.JSONDecodeError, ValueError):
             log.warning("[world_builder] world_data JSON parse failed: %s", raw_json[:200])
 
     return generated_data, world_description, opening_narrative
+
+
+def _normalize_choices(value: Any) -> list[str]:
+    choices: list[str] = []
+    if not isinstance(value, list):
+        return choices
+    for item in value:
+        if isinstance(item, str):
+            text = item
+        elif isinstance(item, dict):
+            raw = item.get("action") or item.get("text") or item.get("label")
+            text = str(raw) if raw is not None else ""
+        else:
+            text = ""
+        text = text.strip()
+        if text:
+            choices.append(text)
+        if len(choices) == 3:
+            break
+    return choices

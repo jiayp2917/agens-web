@@ -28,6 +28,11 @@ dev = [
     "ruff>=0.4.0",
     "mypy>=1.10.0",
 ]
+# Enables BGM playback in the terminal REPL.
+# Install with:  pip install -e ".[repl]"
+repl = [
+    "pygame>=2.5.0",
+]
 
 [project.scripts]
 agens-novel = "agens_novel.cli:app"
