@@ -6,10 +6,9 @@ agents.  These are the "contract" between the REPL session and the LLM agents.
 
 from __future__ import annotations
 
-from typing import Any, TypedDict
+from typing import TypedDict
 
 from .reducers import Append
-
 
 # ─────────────────────────────────────────────────────────────────────────────
 # Nested sub-states
@@ -87,6 +86,13 @@ class CharacterState(TypedDict, total=False):
     mp_max: int
     spirit_root: str
     spirit_root_grade: str
+    age: int
+    talent: str
+    family_background: str
+    luck: str
+    difficulty: str
+    game_mode: str
+    attributes: dict
     techniques: list[Technique]
     inventory: list[InventoryItem]
     experience: int

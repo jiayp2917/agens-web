@@ -1,12 +1,11 @@
 """Scrollable narrative text display widget with streaming support."""
 
-from kivy.uix.scrollview import ScrollView
-from kivy.uix.label import Label
-from kivy.uix.boxlayout import BoxLayout
 from kivy.metrics import dp
 from kivy.properties import NumericProperty
-
-from theme import add_background, current_theme, rgba_to_hex
+from kivy.uix.boxlayout import BoxLayout
+from kivy.uix.label import Label
+from kivy.uix.scrollview import ScrollView
+from theme import add_background, current_theme, rgba_to_hex, themed_button
 
 
 class NarrativeView(ScrollView):
@@ -41,6 +40,8 @@ class NarrativeView(ScrollView):
         self._streaming_label: Label | None = None
         self._streaming_text: str = ""
         self._state_tag_seen: bool = False  # True once <state_update> appears
+        self.on_choice = None
+        self._choices_box: BoxLayout | None = None
 
     def add_narrative(self, text: str, turn: int = 0) -> None:
         """Append a narrative block.
@@ -88,6 +89,7 @@ class NarrativeView(ScrollView):
         # Clear streaming state.
         self._streaming_text = ""
         self._state_tag_seen = False
+        self.clear_choices()
 
         # Auto-scroll to bottom.
         self.scroll_y = 0
@@ -177,8 +179,43 @@ class NarrativeView(ScrollView):
         self._layout.add_widget(lbl)
         self.scroll_y = 0
 
+    def render_choices(self, choices: list[str]) -> None:
+        """Render suggested action choices below the current narrative."""
+        self.clear_choices()
+        if not choices:
+            return
+        box = BoxLayout(
+            orientation="vertical",
+            size_hint_y=None,
+            spacing=dp(6),
+            padding=[0, dp(8), 0, 0],
+        )
+        box.bind(minimum_height=box.setter("height"))
+        for index, choice in enumerate(choices, start=1):
+            label = choice if choice.strip().startswith(("①", "②", "③", "④")) else f"{index}. {choice}"
+            btn = themed_button(label, font_size=dp(12), size_hint_y=None, height=dp(38))
+            btn.bind(on_release=lambda _inst, c=choice: self._emit_choice(c))
+            box.add_widget(btn)
+        self._choices_box = box
+        self._layout.add_widget(box)
+        self.scroll_y = 0
+
+    def clear_choices(self) -> None:
+        """Remove the current choices block."""
+        if self._choices_box is not None:
+            try:
+                self._layout.remove_widget(self._choices_box)
+            except Exception:
+                pass
+            self._choices_box = None
+
+    def _emit_choice(self, choice: str) -> None:
+        if self.on_choice:
+            self.on_choice(choice)
+
     def clear(self) -> None:
         self._layout.clear_widgets()
         self._streaming_label = None
         self._streaming_text = ""
         self._state_tag_seen = False
+        self._choices_box = None

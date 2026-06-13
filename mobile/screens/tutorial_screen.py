@@ -2,14 +2,12 @@
 
 from __future__ import annotations
 
-from kivy.uix.screenmanager import Screen
+from kivy.metrics import dp
 from kivy.uix.boxlayout import BoxLayout
 from kivy.uix.label import Label
+from kivy.uix.screenmanager import Screen
 from kivy.uix.scrollview import ScrollView
-from kivy.metrics import dp
-
 from theme import add_background, current_theme, themed_button
-
 
 # Tutorial pages content.
 _TUTORIAL_PAGES = [
@@ -34,7 +32,7 @@ _TUTORIAL_PAGES = [
     {
         "title": "境界与灵根",
         "content": (
-            "· 修真境界：练气→筑基→金丹→元婴→化神→...\n"
+            "· 修真境界：练气→筑基→金丹→元婴→化神→合体→大乘→渡劫→飞升\n"
             "· 每个境界有多个层次，需逐步提升\n"
             "· 灵根决定修炼天赋：\n"
             "  - 天灵根(冰/雷/风)：修炼1.5倍速\n"

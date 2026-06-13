@@ -5,7 +5,7 @@ from __future__ import annotations
 import pytest
 
 from agens_novel.repl.game_session import GameSession
-from agens_novel.game.constants import DEFAULT_EQUIPMENT_SLOTS
+from agens_novel.game.constants import DEFAULT_ATTRIBUTES, DEFAULT_EQUIPMENT_SLOTS
 
 
 class TestGameSessionInit:
@@ -21,6 +21,14 @@ class TestGameSessionInit:
         assert s.mp_max == 50
         assert s.spirit_root == ""
         assert s.spirit_root_grade == ""
+        assert s.age == 16
+        assert s.talent == ""
+        assert s.family_background == ""
+        assert s.luck == "中上"
+        assert s.difficulty == "普通"
+        assert s.game_mode == "high"
+        assert s.attributes == DEFAULT_ATTRIBUTES
+        assert s.last_choices == []
         assert s.experience == 0
         assert s.experience_to_next == 100
         assert s.gold == 0
@@ -42,6 +50,29 @@ class TestGameSessionApplyDelta:
         s.apply_delta({"character": {"spirit_root": "火灵根", "spirit_root_grade": "地"}})
         assert s.spirit_root == "火灵根"
         assert s.spirit_root_grade == "地"
+
+    def test_apply_profile_fields(self):
+        s = GameSession()
+        s.apply_delta({
+            "character": {
+                "age": "+2",
+                "talent": "剑心微明",
+                "family_background": "寒门",
+                "luck": "平稳",
+                "difficulty": "困难",
+                "game_mode": "mid",
+                "attributes": {"root_bone": 75, "luck": 101, "bad": True},
+            }
+        })
+        assert s.age == 18
+        assert s.talent == "剑心微明"
+        assert s.family_background == "寒门"
+        assert s.luck == "平稳"
+        assert s.difficulty == "困难"
+        assert s.game_mode == "mid"
+        assert s.attributes["root_bone"] == 75
+        assert s.attributes["luck"] == 100
+        assert "bad" not in s.attributes
 
     def test_apply_combat_start(self):
         s = GameSession()
@@ -181,6 +212,14 @@ class TestGameSessionSerialization:
         s.mp_max = 100
         s.spirit_root = "火灵根"
         s.spirit_root_grade = "地"
+        s.age = 17
+        s.talent = "剑心微明"
+        s.family_background = "寒门"
+        s.luck = "中上"
+        s.difficulty = "困难"
+        s.game_mode = "mid"
+        s.attributes = {key: 66 for key in DEFAULT_ATTRIBUTES}
+        s.last_choices = ["探查异动", "通知同门"]
         s.experience = 500
         s.experience_to_next = 300
         s.gold = 50
@@ -213,6 +252,14 @@ class TestGameSessionSerialization:
         assert s2.mp_max == 100
         assert s2.spirit_root == "火灵根"
         assert s2.spirit_root_grade == "地"
+        assert s2.age == 17
+        assert s2.talent == "剑心微明"
+        assert s2.family_background == "寒门"
+        assert s2.luck == "中上"
+        assert s2.difficulty == "困难"
+        assert s2.game_mode == "mid"
+        assert s2.attributes == {key: 66 for key in DEFAULT_ATTRIBUTES}
+        assert s2.last_choices == ["探查异动", "通知同门"]
         assert s2.experience == 500
         assert s2.experience_to_next == 300
         assert s2.gold == 50
@@ -240,6 +287,20 @@ class TestGameSessionSerialization:
         data = s.to_save_dict()
         s2 = GameSession.from_save_dict(data)
         assert s2.equipment_slots == dict(DEFAULT_EQUIPMENT_SLOTS)
+
+    def test_old_save_uses_profile_defaults(self):
+        data = {
+            "turn_count": 3,
+            "game_started": True,
+            "character": {"name": "旧角色", "realm": "练气"},
+            "world": {},
+        }
+        s = GameSession.from_save_dict(data)
+        assert s.char_name == "旧角色"
+        assert s.age == 16
+        assert s.luck == "中上"
+        assert s.game_mode == "high"
+        assert s.attributes == DEFAULT_ATTRIBUTES
 
 
 class TestGameSessionReset:

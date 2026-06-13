@@ -6,11 +6,16 @@ world state, and turn history.  Supports serialization for save/load.
 
 from __future__ import annotations
 
+import logging
 from dataclasses import dataclass, field
 from typing import Any
-import logging
 
-from ..game.constants import REALM_ORDER, DEFAULT_EQUIPMENT_SLOTS
+from ..game.constants import (
+    DEFAULT_ATTRIBUTES,
+    DEFAULT_EQUIPMENT_SLOTS,
+    DEFAULT_GAME_MODE,
+    REALM_ORDER,
+)
 
 log = logging.getLogger(__name__)
 
@@ -35,6 +40,13 @@ class GameSession:
     mp_max: int = 50
     spirit_root: str = ""
     spirit_root_grade: str = ""
+    age: int = 16
+    talent: str = ""
+    family_background: str = ""
+    luck: str = "中上"
+    difficulty: str = "普通"
+    game_mode: str = DEFAULT_GAME_MODE
+    attributes: dict[str, int] = field(default_factory=lambda: dict(DEFAULT_ATTRIBUTES))
     experience: int = 0
     experience_to_next: int = 100
     gold: int = 0
@@ -60,6 +72,7 @@ class GameSession:
     # ── Turn history ──
     turn_history: list[dict] = field(default_factory=list)
     chat_history: list[dict] = field(default_factory=list)
+    last_choices: list[str] = field(default_factory=list)
 
     # ── Run metadata ──
     model: str = ""
@@ -92,6 +105,13 @@ class GameSession:
                 "mp_max": self.mp_max,
                 "spirit_root": self.spirit_root,
                 "spirit_root_grade": self.spirit_root_grade,
+                "age": self.age,
+                "talent": self.talent,
+                "family_background": self.family_background,
+                "luck": self.luck,
+                "difficulty": self.difficulty,
+                "game_mode": self.game_mode,
+                "attributes": self.attributes,
                 "experience": self.experience,
                 "experience_to_next": self.experience_to_next,
                 "gold": self.gold,
@@ -116,6 +136,7 @@ class GameSession:
             "model": self.model,
             "base_url": self.base_url,
             "api_key_set": self.api_key_set,
+            "choices": self.last_choices,
         }
 
     # ─────────────────────────────────────────────────────────────────────────
@@ -136,7 +157,7 @@ class GameSession:
         char_delta = delta.get("character", {})
         for key in (
             "hp", "mp", "experience", "gold", "lifespan", "realm_stage",
-            "experience_to_next", "hp_max", "mp_max",
+            "experience_to_next", "hp_max", "mp_max", "age",
         ):
             if key in char_delta:
                 val = char_delta[key]
@@ -165,6 +186,7 @@ class GameSession:
         self.experience = max(0, self.experience)
         self.gold = max(0, self.gold)
         self.lifespan = max(1, self.lifespan)
+        self.age = max(1, self.age)
 
         # Minimum guards for max stats.
         self.hp_max = max(1, self.hp_max)
@@ -190,6 +212,22 @@ class GameSession:
             self.spirit_root = char_delta["spirit_root"]
         if "spirit_root_grade" in char_delta:
             self.spirit_root_grade = char_delta["spirit_root_grade"]
+        if "talent" in char_delta and isinstance(char_delta["talent"], str):
+            self.talent = char_delta["talent"]
+        if "family_background" in char_delta and isinstance(char_delta["family_background"], str):
+            self.family_background = char_delta["family_background"]
+        if "luck" in char_delta and isinstance(char_delta["luck"], str):
+            self.luck = char_delta["luck"]
+        if "difficulty" in char_delta and isinstance(char_delta["difficulty"], str):
+            self.difficulty = char_delta["difficulty"]
+        if "game_mode" in char_delta and isinstance(char_delta["game_mode"], str):
+            self.game_mode = char_delta["game_mode"]
+        if "attributes" in char_delta and isinstance(char_delta["attributes"], dict):
+            merged = dict(self.attributes)
+            for key, value in char_delta["attributes"].items():
+                if isinstance(key, str) and isinstance(value, int) and not isinstance(value, bool):
+                    merged[key] = max(0, min(100, value))
+            self.attributes = merged
         if "techniques_add" in char_delta:
             add = char_delta["techniques_add"]
             if add is None:
@@ -333,6 +371,13 @@ class GameSession:
                 "hp_max": self.hp_max, "mp": self.mp, "mp_max": self.mp_max,
                 "spirit_root": self.spirit_root,
                 "spirit_root_grade": self.spirit_root_grade,
+                "age": self.age,
+                "talent": self.talent,
+                "family_background": self.family_background,
+                "luck": self.luck,
+                "difficulty": self.difficulty,
+                "game_mode": self.game_mode,
+                "attributes": self.attributes,
                 "experience": self.experience,
                 "experience_to_next": self.experience_to_next,
                 "gold": self.gold, "techniques": self.techniques,
@@ -352,6 +397,7 @@ class GameSession:
                 "lore_facts": self.lore_facts,
             },
             "turn_history": self.turn_history[-20:],
+            "last_choices": self.last_choices,
             "finale": self.finale,
         }
 
@@ -373,6 +419,19 @@ class GameSession:
         session.mp_max = char.get("mp_max", 50)
         session.spirit_root = char.get("spirit_root", "")
         session.spirit_root_grade = char.get("spirit_root_grade", "")
+        session.age = char.get("age", 16)
+        session.talent = char.get("talent", "")
+        session.family_background = char.get("family_background", "")
+        session.luck = char.get("luck", "中上")
+        session.difficulty = char.get("difficulty", "普通")
+        session.game_mode = char.get("game_mode", data.get("game_mode", DEFAULT_GAME_MODE))
+        attrs = char.get("attributes", {})
+        if isinstance(attrs, dict):
+            merged_attrs = dict(DEFAULT_ATTRIBUTES)
+            for key, value in attrs.items():
+                if isinstance(key, str) and isinstance(value, int) and not isinstance(value, bool):
+                    merged_attrs[key] = max(0, min(100, value))
+            session.attributes = merged_attrs
         session.experience = char.get("experience", 0)
         session.experience_to_next = char.get("experience_to_next", 100)
         session.gold = char.get("gold", 0)
@@ -393,6 +452,7 @@ class GameSession:
         session.discovered_locations = world.get("discovered_locations", [])
         session.lore_facts = world.get("lore_facts", [])
         session.turn_history = data.get("turn_history", [])
+        session.last_choices = data.get("last_choices", [])
         session.finale = data.get("finale", False)
         return session
 

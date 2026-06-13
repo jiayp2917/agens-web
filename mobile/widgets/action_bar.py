@@ -1,10 +1,9 @@
 """Bottom action bar — text input + quick-action buttons + combat mode."""
 
-from kivy.uix.boxlayout import BoxLayout
-from kivy.uix.textinput import TextInput
-from kivy.uix.button import Button
 from kivy.metrics import dp
-
+from kivy.uix.boxlayout import BoxLayout
+from kivy.uix.gridlayout import GridLayout
+from kivy.uix.textinput import TextInput
 from theme import add_background, current_theme, themed_button
 
 
@@ -22,23 +21,17 @@ class GameActionBar(BoxLayout):
         on_command(cmd)     — user tapped a quick-action button
     """
 
-    # Normal mode buttons: (label, command_name)
     BUTTONS = [
-        ("主页", "home"),
         ("新游戏", "new"),
-        ("状态", "status"),
-        ("背包", "inv"),
-        ("功法", "skills"),
+        ("重开", "restart"),
+        ("设置", "settings"),
         ("存档", "save"),
         ("读档", "load"),
-        ("突破", "breakthrough"),
-    ]
-
-    # Combat mode buttons.
-    COMBAT_BUTTONS = [
-        ("地图", "map"),
-        ("任务", "quest"),
+        ("状态", "status"),
         ("装备", "equipment"),
+        ("背包", "inv"),
+        ("功法", "skills"),
+        ("任务", "quest"),
     ]
 
     def __init__(self, **kwargs):
@@ -46,18 +39,18 @@ class GameActionBar(BoxLayout):
         super().__init__(
             orientation="vertical",
             size_hint_y=None,
-            height=dp(100),
+            height=dp(112),
             **kwargs,
         )
         add_background(self, color=theme.surface)
 
         # Button row inside a scroll view.
-        self._btn_row = BoxLayout(
-            orientation="horizontal",
+        self._btn_row = GridLayout(
+            cols=5,
             size_hint_y=None,
-            height=dp(36),
-            spacing=dp(2),
-            padding=[dp(2), 0],
+            height=dp(64),
+            spacing=[dp(4), dp(4)],
+            padding=[dp(2), dp(4)],
         )
         self._build_normal_buttons()
         self.add_widget(self._btn_row)
@@ -81,15 +74,16 @@ class GameActionBar(BoxLayout):
         )
         self.text_input.bind(on_text_validate=self._on_submit)
 
-        send_btn = themed_button("发送", font_size=dp(13), size_hint_x=None, width=dp(56))
-        send_btn.bind(on_release=lambda _: self._on_submit(None))
+        self.send_btn = themed_button("送", font_size=dp(13), size_hint_x=None, width=dp(56))
+        self.send_btn.bind(on_release=lambda _: self._on_submit(None))
 
         input_row.add_widget(self.text_input)
-        input_row.add_widget(send_btn)
+        input_row.add_widget(self.send_btn)
         self.add_widget(input_row)
 
         # State.
         self._combat_mode = False
+        self._game_mode = "high"
 
         # Callbacks.
         self.on_action = None
@@ -99,13 +93,7 @@ class GameActionBar(BoxLayout):
         """Build normal mode buttons."""
         self._btn_row.clear_widgets()
         for label, cmd in self.BUTTONS:
-            btn = themed_button(label, font_size=dp(11), size_hint_x=None, width=dp(52))
-            btn.bind(on_release=lambda instance, c=cmd: self._on_command(c))
-            self._btn_row.add_widget(btn)
-
-        # Add combat-mode buttons at the end.
-        for label, cmd in self.COMBAT_BUTTONS:
-            btn = themed_button(label, font_size=dp(11), size_hint_x=None, width=dp(52))
+            btn = themed_button(label, font_size=dp(10))
             btn.bind(on_release=lambda instance, c=cmd: self._on_command(c))
             self._btn_row.add_widget(btn)
 
@@ -117,13 +105,31 @@ class GameActionBar(BoxLayout):
             self.text_input.hint_text = "战斗中 — 使用战斗按钮操作"
             self.text_input.disabled = True
         else:
-            self.text_input.hint_text = "输入行动..."
-            self.text_input.disabled = False
+            self.apply_game_mode(self._game_mode)
         # Re-apply theme colors so hint change doesn't dim the input.
         self.text_input.background_color = theme.input_bg
         self.text_input.foreground_color = theme.text
         self.text_input.cursor_color = theme.primary
         self.text_input.hint_text_color = theme.text_hint
+
+    def apply_game_mode(self, mode: str) -> None:
+        """Apply high/mid/low freedom input behavior."""
+        self._game_mode = mode
+        if self._combat_mode:
+            return
+        if mode == "low":
+            self.text_input.text = ""
+            self.text_input.hint_text = "请选择上方行动"
+            self.text_input.disabled = True
+            self.send_btn.text = "定"
+        elif mode == "mid":
+            self.text_input.hint_text = "也可以自由输入行动..."
+            self.text_input.disabled = False
+            self.send_btn.text = "送"
+        else:
+            self.text_input.hint_text = "输入任意行动..."
+            self.text_input.disabled = False
+            self.send_btn.text = "送"
 
     def _on_submit(self, instance) -> None:
         text = self.text_input.text.strip()

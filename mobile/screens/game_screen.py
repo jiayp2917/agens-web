@@ -19,20 +19,19 @@ Layout:
 
 from __future__ import annotations
 
-from kivy.uix.screenmanager import Screen
+from kivy.metrics import dp
 from kivy.uix.boxlayout import BoxLayout
 from kivy.uix.label import Label
-from kivy.uix.textinput import TextInput
+from kivy.uix.screenmanager import Screen
 from kivy.uix.scrollview import ScrollView
-from kivy.metrics import dp
-
-from widgets.status_bar import StatusBar
-from widgets.narrative_view import NarrativeView
+from kivy.uix.textinput import TextInput
+from service.engine_adapter import EngineAdapter
+from theme import add_background, current_theme, themed_button, themed_popup
 from widgets.action_bar import GameActionBar
 from widgets.combat_bar import CombatBar
 from widgets.loading_overlay import LoadingOverlay
-from service.engine_adapter import EngineAdapter
-from theme import add_background, current_theme, themed_button, themed_popup
+from widgets.narrative_view import NarrativeView
+from widgets.status_bar import StatusBar
 
 
 class GameScreen(Screen):
@@ -66,6 +65,7 @@ class GameScreen(Screen):
 
         # Middle: narrative view
         self.narrative_view = NarrativeView()
+        self.narrative_view.on_choice = self._on_choice
         self.layout.add_widget(self.narrative_view)
 
         # Combat bar (hidden by default).
@@ -88,7 +88,7 @@ class GameScreen(Screen):
 
     def on_enter(self, *args):
         """Called when this screen becomes active."""
-        self.status_bar.update(self.adapter.game_session)
+        self._refresh_mode_ui()
         self.status_bar.update(self.adapter.game_session)
 
     # ─── Adapter callbacks (called on Kivy main thread) ────────────────
@@ -96,11 +96,10 @@ class GameScreen(Screen):
     def _on_narrative(self, text: str, turn: int) -> None:
         self.narrative_view.finalize_stream()
         self.narrative_view.add_narrative(text, turn)
-        self.status_bar.update(self.adapter.game_session)
+        self._refresh_mode_ui()
         self.status_bar.update(self.adapter.game_session)
 
     def _on_status_bar(self, text: str) -> None:
-        self.status_bar.update(self.adapter.game_session)
         self.status_bar.update(self.adapter.game_session)
 
     def _on_error(self, msg: str) -> None:
@@ -110,42 +109,22 @@ class GameScreen(Screen):
     def _on_info(self, msg: str) -> None:
         self.narrative_view.add_info(msg)
         self.status_bar.update(self.adapter.game_session)
-        self.status_bar.update(self.adapter.game_session)
 
     def _on_game_over(self, reason: str) -> None:
         self.loading_overlay.hide()
         self._hide_combat_bar()
         self.action_bar.set_combat_mode(False)
-
-        theme = current_theme()
-        content = BoxLayout(orientation="vertical", padding=dp(16), spacing=dp(12))
-        content.add_widget(Label(text=reason, font_size=dp(14), color=theme.text))
-        btn_row = BoxLayout(orientation="horizontal", size_hint_y=None, height=dp(40), spacing=dp(8))
-        new_btn = themed_button("重新开始", font_size=dp(14))
-        close_btn = themed_button("关闭", font_size=dp(14))
-        btn_row.add_widget(new_btn)
-        btn_row.add_widget(close_btn)
-        content.add_widget(btn_row)
-
-        popup = themed_popup("GAME OVER", content, size_hint=(0.85, 0.45), auto_dismiss=False)
-
-        def on_new(instance):
-            popup.dismiss()
-            self._show_new_game_dialog()
-
-        def on_close(instance):
-            popup.dismiss()
-
-        new_btn.bind(on_release=on_new)
-        close_btn.bind(on_release=on_close)
-        popup.open()
+        if self.manager:
+            death = self.manager.get_screen("death")
+            death.set_reason(reason)
+            self.manager.current = "death"
         self.status_bar.update(self.adapter.game_session)
 
     def _on_character_created(self, session) -> None:
         self.loading_overlay.hide()
         self.narrative_view.add_info("角色创建成功！输入行动开始游戏。")
         self.status_bar.update(session)
-        self.status_bar.update(session)
+        self._refresh_mode_ui()
 
     def _on_loading(self, msg: str) -> None:
         self.loading_overlay.show(msg)
@@ -163,7 +142,6 @@ class GameScreen(Screen):
             self._show_combat_bar()
             self.combat_bar.update_combat(combat_state)
             self.action_bar.set_combat_mode(True)
-            self.status_bar.update(self.adapter.game_session)
             self.status_bar.update(self.adapter.game_session)
 
     # ─── Combat bar management ────────────────────────────────────────
@@ -194,10 +172,17 @@ class GameScreen(Screen):
             cmd = self._parse_slash_command(stripped)
             if cmd is not None:
                 return
+        if not stripped:
+            return
 
         # Normal free-text action.
+        self.narrative_view.clear_choices()
         self.narrative_view.add_info(f"> {stripped}")
         self.adapter.handle_action(stripped)
+
+    def _on_choice(self, choice: str) -> None:
+        """Submit a suggested choice as the player's action."""
+        self._on_user_action(choice)
 
     # ─── Slash command parser ────────────────────────────────────────────
 
@@ -221,7 +206,6 @@ class GameScreen(Screen):
         """Parse a slash command and dispatch it. Returns the cmd name or None."""
         parts = text.split(None, 1)
         key = parts[0].lower()
-        arg = parts[1] if len(parts) > 1 else ""
 
         cmd = self._SLASH_COMMANDS.get(key)
         if cmd is None:
@@ -233,7 +217,8 @@ class GameScreen(Screen):
         # Navigation commands.
         if cmd == "_nav_settings":
             if self.manager:
-                self.manager.current = "settings"
+                self.manager.current = "home"
+                self.manager.get_screen("home")._show_settings_popup()
             return cmd
         if cmd == "_nav_home":
             if self.manager:
@@ -241,7 +226,8 @@ class GameScreen(Screen):
             return cmd
         if cmd == "_nav_saves":
             if self.manager:
-                self.manager.current = "save"
+                self.manager.current = "home"
+                self.manager.get_screen("home")._show_load_popup()
             return cmd
 
         # Delegate to the existing command handler.
@@ -251,7 +237,15 @@ class GameScreen(Screen):
     def _on_user_command(self, cmd: str) -> None:
         """User tapped a quick-action button."""
         if cmd == "new":
-            self._show_new_game_dialog()
+            if self.manager:
+                self.manager.current = "character_create"
+        elif cmd == "restart":
+            if self.manager:
+                self.manager.current = "character_create"
+        elif cmd == "settings":
+            if self.manager:
+                self.manager.current = "home"
+                self.manager.get_screen("home")._show_settings_popup()
         elif cmd == "status":
             self._show_text_popup("角色状态", self.adapter.get_status())
         elif cmd == "inv":
@@ -273,6 +267,22 @@ class GameScreen(Screen):
         elif cmd == "home":
             if self.manager:
                 self.manager.current = "home"
+
+    def _refresh_mode_ui(self) -> None:
+        """Apply freedom-mode behavior and render choices if needed."""
+        session = self.adapter.game_session
+        mode = getattr(session, "game_mode", "high") or "high"
+        try:
+            from service.settings_store import load_settings
+            mode = load_settings().get("game_mode", mode)
+            session.game_mode = mode
+        except Exception:
+            pass
+        self.action_bar.apply_game_mode(mode)
+        if mode == "high":
+            self.narrative_view.clear_choices()
+        else:
+            self.narrative_view.render_choices(getattr(session, "last_choices", []) or [])
 
     def _on_combat_action(self, action: str, target: str) -> None:
         """User tapped a combat action button."""
@@ -360,7 +370,6 @@ class GameScreen(Screen):
 
     def _show_save_slot_dialog(self) -> None:
         """Show a popup for choosing which slot to save into."""
-        theme = current_theme()
         content = BoxLayout(orientation="vertical", padding=dp(8), spacing=dp(6))
 
         from agens_novel.repl.save_manager import get_manual_save_slots
@@ -402,7 +411,7 @@ class GameScreen(Screen):
         theme = current_theme()
         content = BoxLayout(orientation="vertical", padding=dp(8), spacing=dp(6))
 
-        from agens_novel.repl.save_manager import get_manual_save_slots, AUTOSAVE_NAME, list_saves
+        from agens_novel.repl.save_manager import AUTOSAVE_NAME, get_manual_save_slots, list_saves
 
         # Auto-save entry.
         saves = list_saves()

@@ -13,21 +13,32 @@ from __future__ import annotations
 
 import logging
 import os
-from typing import Any, Callable
+from collections.abc import Callable
+from typing import Any
 
 from ..game.combat import CombatEngine
+from ..game.constants import (
+    DEFAULT_ATTRIBUTES,
+    DEFAULT_GAME_MODE,
+    DIFFICULTY_OPTIONS,
+    FAMILY_BACKGROUNDS,
+    SPECIAL_START_ATTRIBUTES,
+    SPECIAL_START_NAME,
+    SPIRIT_ROOTS,
+    TALENT_OPTIONS,
+)
 from ..game.realm import RealmSystem
 from ..repl.game_session import GameSession
-from ..repl.save_manager import load_game, save_game, list_saves, delete_save, rename_save
+from ..repl.save_manager import delete_save, list_saves, load_game, rename_save, save_game
 from ..repl.turn_runner import run_turn_sync
 from .render import (
     format_combat,
+    format_equipment,
     format_inventory,
     format_log,
     format_map,
     format_quests,
     format_realm,
-    format_equipment,
     format_skills,
     format_status_bar,
     format_status_card,
@@ -136,6 +147,19 @@ class GameEngine:
             self.game_session.mp_max = char_data.get("mp_max", 50)
             self.game_session.spirit_root = char_data.get("spirit_root", "")
             self.game_session.spirit_root_grade = char_data.get("spirit_root_grade", "")
+            self.game_session.age = char_data.get("age", self.game_session.age)
+            self.game_session.talent = char_data.get("talent", self.game_session.talent)
+            self.game_session.family_background = char_data.get("family_background", self.game_session.family_background)
+            self.game_session.luck = char_data.get("luck", self.game_session.luck)
+            self.game_session.difficulty = char_data.get("difficulty", self.game_session.difficulty)
+            self.game_session.game_mode = char_data.get("game_mode", self.game_session.game_mode)
+            attrs = char_data.get("attributes")
+            if isinstance(attrs, dict):
+                merged_attrs = dict(self.game_session.attributes)
+                for key, value in attrs.items():
+                    if isinstance(key, str) and isinstance(value, int) and not isinstance(value, bool):
+                        merged_attrs[key] = max(0, min(100, value))
+                self.game_session.attributes = merged_attrs
             self.game_session.experience = char_data.get("experience", 0)
             self.game_session.experience_to_next = char_data.get("experience_to_next", 100)
             self.game_session.gold = char_data.get("gold", 0)
@@ -168,6 +192,58 @@ class GameEngine:
             desc = result.get("world_description", "")
             opening = desc or "世界已生成。"
 
+        self.game_session.last_choices = _default_choices(self.game_session)
+        self._emit("on_narrative", opening, 0)
+        self._emit("on_character_created", self.game_session)
+        self._emit("on_status_bar", format_status_bar(self.game_session))
+        self._auto_save()
+
+    def start_from_profile(self, profile: dict[str, Any]) -> None:
+        """Create a deterministic mobile game from the character form.
+
+        This keeps the Kivy character-creation screen on the same engine path
+        as every other UI operation while avoiding an LLM call before the first
+        playable screen is available.
+        """
+        special = bool(profile.get("special_start"))
+        attrs = dict(SPECIAL_START_ATTRIBUTES if special else DEFAULT_ATTRIBUTES)
+        incoming_attrs = profile.get("attributes", {})
+        if isinstance(incoming_attrs, dict):
+            for key, value in incoming_attrs.items():
+                if isinstance(key, str) and isinstance(value, int) and not isinstance(value, bool):
+                    attrs[key] = max(0, min(100, value))
+
+        self.game_session.reset()
+        self.game_session.game_started = True
+        self.game_session.game_over = False
+        self.game_session.turn_count = 0
+        self.game_session.char_name = str(profile.get("char_name") or (SPECIAL_START_NAME if special else "无名"))
+        self.game_session.realm = "练气"
+        self.game_session.realm_stage = 1
+        self.game_session.age = int(profile.get("age") or 16)
+        self.game_session.talent = str(profile.get("talent") or TALENT_OPTIONS[0])
+        self.game_session.spirit_root = str(profile.get("spirit_root") or SPIRIT_ROOTS[0]["name"])
+        self.game_session.spirit_root_grade = str(profile.get("spirit_root_grade") or "")
+        self.game_session.family_background = str(profile.get("family_background") or FAMILY_BACKGROUNDS[0])
+        self.game_session.difficulty = str(profile.get("difficulty") or DIFFICULTY_OPTIONS[1])
+        self.game_session.luck = str(profile.get("luck") or _luck_from_attributes(attrs))
+        self.game_session.game_mode = str(profile.get("game_mode") or DEFAULT_GAME_MODE)
+        self.game_session.attributes = attrs
+        self.game_session.hp = int(profile.get("hp") or (999 if special else 100))
+        self.game_session.hp_max = int(profile.get("hp_max") or self.game_session.hp)
+        self.game_session.mp = int(profile.get("mp") or (999 if special else 50))
+        self.game_session.mp_max = int(profile.get("mp_max") or self.game_session.mp)
+        self.game_session.gold = int(profile.get("gold") or (9999 if special else 20))
+        self.game_session.techniques = list(profile.get("techniques") or [{"name": "基础吐纳术", "level": 1, "type": "内功"}])
+        self.game_session.inventory = list(profile.get("inventory") or [{"name": "粗布道袍", "quantity": 1, "type": "防具"}])
+        self.game_session.current_scene = str(profile.get("current_scene") or "青玄宗山门")
+        self.game_session.location = str(profile.get("location") or "青玄宗山门")
+        self.game_session.region = str(profile.get("region") or "东荒")
+        self.game_session.discovered_locations = [self.game_session.location]
+        self.game_session.lore_facts = ["青玄宗立于东荒云脉之上，山门深处常有灵雾不散。"]
+
+        opening = str(profile.get("opening_narrative") or _profile_opening(self.game_session, special))
+        self.game_session.last_choices = _default_choices(self.game_session)
         self._emit("on_narrative", opening, 0)
         self._emit("on_character_created", self.game_session)
         self._emit("on_status_bar", format_status_bar(self.game_session))
@@ -214,6 +290,7 @@ class GameEngine:
         narrative = narrator_result.get("narrative", "")
         state_delta = narrator_result.get("state_delta", {})
         choices = narrator_result.get("choices", [])
+        self.game_session.last_choices = choices or _default_choices(self.game_session)
 
         # Step 2: Run judge (if there is a delta to validate).
         if state_delta:
@@ -264,6 +341,7 @@ class GameEngine:
             "input": text,
             "narrative": narrative,
             "delta": state_delta,
+            "choices": self.game_session.last_choices,
         })
         self.game_session.chat_history.append({"role": "user", "content": text})
         self.game_session.chat_history.append({"role": "assistant", "content": narrative})
@@ -629,3 +707,43 @@ class GameEngine:
                 save_game(self.game_session, "autosave")
             except Exception:
                 log.warning("Auto-save failed", exc_info=True)
+
+
+def _luck_from_attributes(attributes: dict[str, int]) -> str:
+    """Map numeric creation luck to a compact display label."""
+    value = attributes.get("luck", DEFAULT_ATTRIBUTES["luck"])
+    if value >= 90:
+        return "天眷"
+    if value >= 70:
+        return "中上"
+    if value >= 45:
+        return "平稳"
+    if value >= 25:
+        return "起伏"
+    return "低迷"
+
+
+def _profile_opening(session: GameSession, special: bool = False) -> str:
+    """Opening text for deterministic character creation."""
+    if special:
+        return (
+            "云海倒悬，九峰钟声同时响起。你睁眼时，掌门与诸峰长老已经等在殿外，"
+            "无人敢高声言语。一枚无主仙令悬在你掌心，像是早已等了很多年。"
+        )
+    return (
+        f"晨雾漫过{session.location}，{session.char_name or '无名'}踏上山门石阶。"
+        f"{session.family_background or '凡俗出身'}的旧事仍在身后，"
+        f"{session.spirit_root or '未明灵根'}却已在丹田深处泛起微光。"
+    )
+
+
+def _default_choices(session: GameSession) -> list[str]:
+    """Generate grounded fallback choices for UI modes when the LLM omits them."""
+    location = session.location or "当前地点"
+    if session.combat:
+        return ["谨慎防守并观察敌人破绽", "施展最熟悉的功法", "寻找脱身路线"]
+    return [
+        f"在{location}静心修炼，稳固气息",
+        "寻找附近修士交谈，打听消息",
+        "检查随身物品与当前状态",
+    ]

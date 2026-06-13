@@ -9,7 +9,8 @@ in a background thread and post results back to Kivy via Clock.schedule_once.
 from __future__ import annotations
 
 import threading
-from typing import Any, Callable
+from collections.abc import Callable
+from typing import Any
 
 from kivy.clock import Clock
 
@@ -82,14 +83,18 @@ class EngineAdapter:
         def target():
             try:
                 fn(*args, **kwargs)
-            except Exception as e:
-                Clock.schedule_once(lambda dt: self._emit("on_error", str(e)))
+            except Exception as exc:
+                message = str(exc)
+                Clock.schedule_once(lambda dt: self._emit("on_error", message))
 
         self._thread = threading.Thread(target=target, daemon=True)
         self._thread.start()
 
     def new_game(self, concept: str) -> None:
         self._run_in_thread(self.engine.new_game, concept)
+
+    def start_from_profile(self, profile: dict[str, Any]) -> None:
+        self.engine.start_from_profile(profile)
 
     def handle_action(self, text: str) -> None:
         self._run_in_thread(self.engine.handle_action, text)

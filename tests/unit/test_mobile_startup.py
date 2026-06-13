@@ -65,6 +65,8 @@ def _install_kivy_stubs(monkeypatch):
         "kivy.uix": types.ModuleType("kivy.uix"),
         "kivy.uix.boxlayout": types.ModuleType("kivy.uix.boxlayout"),
         "kivy.uix.button": types.ModuleType("kivy.uix.button"),
+        "kivy.uix.floatlayout": types.ModuleType("kivy.uix.floatlayout"),
+        "kivy.uix.gridlayout": types.ModuleType("kivy.uix.gridlayout"),
         "kivy.uix.image": types.ModuleType("kivy.uix.image"),
         "kivy.uix.label": types.ModuleType("kivy.uix.label"),
         "kivy.uix.popup": types.ModuleType("kivy.uix.popup"),
@@ -82,6 +84,7 @@ def _install_kivy_stubs(monkeypatch):
     modules["kivy.core.text"].LabelBase = _KivyDummy
     modules["kivy.core.window"].Window = _KivyDummy
     modules["kivy.graphics"].Color = _KivyDummy
+    modules["kivy.graphics"].Line = _KivyDummy
     modules["kivy.graphics"].Rectangle = _KivyDummy
     modules["kivy.graphics"].RoundedRectangle = _KivyDummy
     modules["kivy.metrics"].dp = lambda value: value
@@ -90,6 +93,8 @@ def _install_kivy_stubs(monkeypatch):
     modules["kivy.properties"].StringProperty = _property
     modules["kivy.uix.boxlayout"].BoxLayout = _KivyDummy
     modules["kivy.uix.button"].Button = _KivyDummy
+    modules["kivy.uix.floatlayout"].FloatLayout = _KivyDummy
+    modules["kivy.uix.gridlayout"].GridLayout = _KivyDummy
     modules["kivy.uix.image"].Image = _KivyDummy
     modules["kivy.uix.label"].Label = _KivyDummy
     modules["kivy.uix.popup"].Popup = _KivyDummy

@@ -56,10 +56,14 @@ def format_status_card(session: GameSession) -> str:
 
     lines = [
         f"  姓名:   {session.char_name or '未命名'}",
+        f"  年龄:   {getattr(session, 'age', 16)}",
         f"  境界:   {realm_str}",
         f"  HP:     {hp_bar} {session.hp}/{session.hp_max}",
         f"  MP:     {mp_bar} {session.mp}/{session.mp_max}",
         f"  灵根:   {_spirit_root_str(session)}",
+        f"  天赋:   {getattr(session, 'talent', '') or '未显'}",
+        f"  家世:   {getattr(session, 'family_background', '') or '凡俗'}",
+        f"  气运:   {getattr(session, 'luck', '') or '平稳'}",
         f"  经验:   {xp_bar} {session.experience}/{session.experience_to_next}",
         f"  寿命:   {session.lifespan} 年",
         f"  灵石:   {session.gold}",
@@ -70,7 +74,12 @@ def format_status_card(session: GameSession) -> str:
         effects = ", ".join(session.status_effects) if isinstance(session.status_effects, list) else str(session.status_effects)
         lines.append(f"  状态:   {effects}")
     if session.combat:
-        lines.append(f"  ⚔ 战斗中")
+        lines.append("  ⚔ 战斗中")
+    attrs = getattr(session, "attributes", {})
+    if attrs:
+        from ..game.constants import ATTRIBUTE_LABELS
+        attr_text = " / ".join(f"{ATTRIBUTE_LABELS.get(k, k)}:{v}" for k, v in attrs.items())
+        lines.append(f"  属性:   {attr_text}")
     return "\n".join(lines)
 
 
@@ -178,7 +187,7 @@ def format_combat(session: GameSession) -> str:
         f"  │ HP: {_bar(player.get('hp', 0), player.get('hp_max', 1))} {player.get('hp', 0)}/{player.get('hp_max', 0)}",
         f"  │ MP: {_bar(player.get('mp', 0), player.get('mp_max', 1))} {player.get('mp', 0)}/{player.get('mp_max', 0)}",
         f"  └ 境界: {player.get('realm', '?')}",
-        f"  VS",
+        "  VS",
         f"  ┌ {enemy.get('name', '敌人')}",
         f"  │ HP: {_bar(enemy.get('hp', 0), enemy.get('hp_max', 1))} {enemy.get('hp', 0)}/{enemy.get('hp_max', 0)}",
         f"  │ MP: {_bar(enemy.get('mp', 0), enemy.get('mp_max', 1))} {enemy.get('mp', 0)}/{enemy.get('mp_max', 0)}",
@@ -221,7 +230,7 @@ def format_realm(session: GameSession) -> str:
             next_realm = REALM_ORDER[idx + 1]
             lines.append(f"  下一境界: {next_realm}")
             if idx >= 5:
-                lines.append(f"  (此境界尚未开放)")
+                lines.append("  (此境界尚未开放)")
     except ValueError:
         pass
 

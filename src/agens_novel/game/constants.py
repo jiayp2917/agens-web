@@ -6,7 +6,66 @@ slot configuration.  All constants are module-level for easy import.
 
 from __future__ import annotations
 
+from enum import StrEnum
 from typing import Any
+
+# ─────────────────────────────────────────────────────────────────────────────
+# Gameplay mode / character creation constants
+# ─────────────────────────────────────────────────────────────────────────────
+
+
+class GameMode(StrEnum):
+    """Mobile play-mode options used by the Android UI."""
+
+    HIGH = "high"
+    MID = "mid"
+    LOW = "low"
+
+
+GAME_MODE_LABELS: dict[str, str] = {
+    GameMode.HIGH.value: "高自由度",
+    GameMode.MID.value: "中自由度",
+    GameMode.LOW.value: "低自由度",
+}
+
+DEFAULT_GAME_MODE = GameMode.HIGH.value
+
+TALENT_OPTIONS: list[str] = [
+    "平平无奇",
+    "草木亲和",
+    "剑心微明",
+    "惊雷骨",
+    "天命道胎",
+]
+
+FAMILY_BACKGROUNDS: list[str] = [
+    "农家",
+    "寒门",
+    "小族",
+    "宗门旁支",
+    "隐世仙族",
+]
+
+DIFFICULTY_OPTIONS: list[str] = ["简单", "普通", "困难"]
+
+LUCK_LEVELS: list[str] = ["低迷", "平稳", "中上", "起伏", "天眷"]
+
+ATTRIBUTE_KEYS: list[str] = ["root_bone", "comprehension", "luck", "willpower", "physique", "spiritual_sense"]
+
+ATTRIBUTE_LABELS: dict[str, str] = {
+    "root_bone": "根骨",
+    "comprehension": "悟性",
+    "luck": "气运",
+    "willpower": "心性",
+    "physique": "体魄",
+    "spiritual_sense": "神识",
+}
+
+DEFAULT_ATTRIBUTES: dict[str, int] = {key: 50 for key in ATTRIBUTE_KEYS}
+
+SPECIAL_START_CODE = "2917"
+SPECIAL_START_NAME = "阿清"
+SPECIAL_START_ATTRIBUTES: dict[str, int] = {key: 99 for key in ATTRIBUTE_KEYS}
 
 # ─────────────────────────────────────────────────────────────────────────────
 # Realm system

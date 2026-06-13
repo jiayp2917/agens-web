@@ -59,7 +59,8 @@ from kivy.uix.label import Label
 from kivy.uix.button import Button
 from kivy.metrics import dp
 
-from service.settings_store import load_settings, apply_settings_to_env, is_using_builtin_key
+from audio_manager import AudioManager
+from service.settings_store import load_settings, apply_settings_to_env
 from service.save_manager_compat import set_mobile_save_dir
 from screens.game_screen import GameScreen
 from screens.settings_screen import SettingsScreen
@@ -67,6 +68,8 @@ from screens.save_screen import SaveScreen
 from screens.combat_screen import CombatScreen
 from screens.tutorial_screen import TutorialScreen
 from screens.home_screen import HomeScreen
+from screens.character_create_screen import CharacterCreateScreen
+from screens.death_screen import DeathScreen
 
 
 def _inject_builtin_key() -> None:
@@ -98,6 +101,7 @@ class XianxiaApp(App):
         # Load saved settings into env vars.
         data = load_settings()
         apply_settings_to_env(data)
+        AudioManager().apply_settings(data)
 
         # Set save directory to app's internal storage.
         set_mobile_save_dir(self)
@@ -116,6 +120,8 @@ class XianxiaApp(App):
         combat = CombatScreen(adapter=game.adapter, name="combat")
         tutorial = TutorialScreen(name="tutorial")
         home = HomeScreen(adapter=game.adapter, name="home")
+        character_create = CharacterCreateScreen(adapter=game.adapter, name="character_create")
+        death = DeathScreen(adapter=game.adapter, name="death")
 
         # Register screens.
         sm.add_widget(home)
@@ -124,14 +130,10 @@ class XianxiaApp(App):
         sm.add_widget(save_screen)
         sm.add_widget(combat)
         sm.add_widget(tutorial)
+        sm.add_widget(character_create)
+        sm.add_widget(death)
 
-        # Determine initial screen.
-        # First-time users see tutorial; otherwise go to home screen.
-        if not data.get("api_key") and not data.get("tutorial_done"):
-            # No API key and haven't done tutorial — show tutorial first.
-            sm.current = "tutorial"
-        else:
-            sm.current = "home"
+        sm.current = "home"
 
         return sm
 

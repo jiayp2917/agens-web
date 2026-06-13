@@ -1,8 +1,8 @@
 """Persistent settings storage for Android.
 
-Android has no environment variables. This module stores API key and other
-settings as JSON in the app's internal storage, and injects them into
-``os.environ`` at startup so the game engine can read them.
+Android has no shell-style environment configuration. This module stores
+non-secret settings as JSON in the app's internal storage, and injects them
+into ``os.environ`` at startup so the game engine can read them.
 
 Also supports model configuration persistence (user_model.json).
 """
@@ -50,10 +50,17 @@ def load_settings() -> dict:
 
 
 def save_settings(data: dict) -> None:
-    """Save settings to disk."""
+    """Save non-secret settings to disk.
+
+    API keys are intentionally not persisted. Call ``apply_settings_to_env``
+    with the in-memory form data before or after this function when a user
+    enters a key for the current process.
+    """
     p = _settings_path()
     p.parent.mkdir(parents=True, exist_ok=True)
-    p.write_text(json.dumps(data, ensure_ascii=False, indent=2), encoding="utf-8")
+    safe_data = dict(data)
+    safe_data.pop("api_key", None)
+    p.write_text(json.dumps(safe_data, ensure_ascii=False, indent=2), encoding="utf-8")
 
 
 def apply_settings_to_env(data: dict) -> None:
@@ -91,5 +98,4 @@ def save_model_config(data: dict) -> None:
 
 def is_using_builtin_key() -> bool:
     """Check whether the app is using the built-in API key (no user key set)."""
-    data = load_settings()
-    return not bool(data.get("api_key"))
+    return not bool(os.environ.get("AGNES_API_KEY"))

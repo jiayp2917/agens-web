@@ -4,26 +4,32 @@ from __future__ import annotations
 
 import os
 
-from kivy.uix.screenmanager import Screen
-from kivy.uix.boxlayout import BoxLayout
-from kivy.uix.label import Label
-from kivy.uix.textinput import TextInput
-from kivy.uix.spinner import Spinner
-from kivy.uix.widget import Widget
 from kivy.graphics import Color, Rectangle
 from kivy.metrics import dp
-
-from service.settings_store import load_settings, save_settings, apply_settings_to_env, load_model_config, save_model_config
+from kivy.uix.boxlayout import BoxLayout
+from kivy.uix.label import Label
+from kivy.uix.screenmanager import Screen
+from kivy.uix.spinner import Spinner
+from kivy.uix.textinput import TextInput
+from kivy.uix.widget import Widget
+from service.settings_store import (
+    apply_settings_to_env,
+    load_model_config,
+    load_settings,
+    save_model_config,
+    save_settings,
+)
 from theme import (
-    THEMES,
     THEME_KEY,
+    THEMES,
     add_background,
     current_theme,
     rgba_to_hex,
-    set_theme as set_active_theme,
     themed_button,
 )
-
+from theme import (
+    set_theme as set_active_theme,
+)
 
 # Preset providers: (display_name, base_url, default_model)
 PRESETS = [
@@ -44,14 +50,18 @@ PRESET_MAP = {p[0]: (p[1], p[2]) for p in PRESETS}
 
 # Theme picker entries: (display_name, theme_key, preview_color)
 THEME_CHOICES = [
-    ("明亮白", "white", (0.2, 0.4, 0.8, 1)),
-    ("暗夜黑", "black", (0.4, 0.65, 1.0, 1)),
-    ("清新绿", "green", (0.2, 0.6, 0.35, 1)),
+    ("宣纸白", "white", (0.322, 0.455, 0.427, 1)),
+    ("暗夜", "black", (0.478, 0.678, 0.620, 1)),
+    ("墨绿", "green", (0.227, 0.361, 0.259, 1)),
 ]
 
+GAME_MODE_CHOICES = [("高自由度", "high"), ("中自由度", "mid"), ("低自由度", "low")]
 
-def _color_swatch(color, size=dp(20)):
+
+def _color_swatch(color, size=None):
     """Small square filled with `color` — used as theme preview indicator."""
+    if size is None:
+        size = dp(20)
     sw = Widget(size_hint_x=None, width=size, size_hint_y=None, height=size)
     with sw.canvas.before:
         Color(*color)
@@ -121,7 +131,7 @@ class SettingsScreen(Screen):
 
         # API Key.
         layout.add_widget(Label(
-            text="API Key (留空则使用内置Key):",
+            text="API Key (本次启动临时使用，不写入磁盘):",
             font_size=dp(13),
             halign="left",
             size_hint_y=None,
@@ -216,7 +226,7 @@ class SettingsScreen(Screen):
             height=dp(44),
             spacing=dp(8),
         )
-        for label_text, theme_name, preview_color in THEME_CHOICES:
+        for label_text, theme_name, _preview_color in THEME_CHOICES:
             btn = themed_button(label_text, font_size=dp(13))
             btn.bind(
                 on_release=lambda _inst, tn=theme_name: self._on_theme_pick(tn)
@@ -224,6 +234,29 @@ class SettingsScreen(Screen):
             self._theme_buttons[theme_name] = btn
             theme_row.add_widget(btn)
         layout.add_widget(theme_row)
+
+        layout.add_widget(Label(
+            text="游玩模式:",
+            font_size=dp(13),
+            halign="left",
+            size_hint_y=None,
+            height=dp(24),
+            color=theme.text,
+        ))
+        self._selected_game_mode = "high"
+        self._mode_buttons: dict[str, object] = {}
+        mode_row = BoxLayout(
+            orientation="horizontal",
+            size_hint_y=None,
+            height=dp(40),
+            spacing=dp(8),
+        )
+        for label_text, mode in GAME_MODE_CHOICES:
+            btn = themed_button(label_text, font_size=dp(12))
+            btn.bind(on_release=lambda _inst, m=mode: self._on_mode_pick(m))
+            self._mode_buttons[mode] = btn
+            mode_row.add_widget(btn)
+        layout.add_widget(mode_row)
 
         # Spacer.
         layout.add_widget(Label(size_hint_y=None, height=dp(8)))
@@ -274,7 +307,7 @@ class SettingsScreen(Screen):
     def on_enter(self, *args):
         """Load current settings into form."""
         data = load_settings()
-        self.input_api_key.text = data.get("api_key", "")
+        self.input_api_key.text = ""
         self.input_base_url.text = data.get("base_url", "https://apihub.agnes-ai.com/v1")
 
         # Load model config.
@@ -290,7 +323,7 @@ class SettingsScreen(Screen):
         theme = current_theme()
         success_hex = rgba_to_hex(theme.success_color)
         warn_hex = rgba_to_hex(theme.accent)
-        has_user_key = bool(data.get("api_key"))
+        has_user_key = bool(os.environ.get("AGNES_API_KEY"))
         if has_user_key:
             self.lbl_key_status.text = f"[color={success_hex}]使用自定义 API Key[/color]"
         else:
@@ -298,7 +331,9 @@ class SettingsScreen(Screen):
 
         # Sync theme picker with current selection.
         self._selected_theme = data.get(THEME_KEY, "white")
+        self._selected_game_mode = data.get("game_mode", "high")
         self._refresh_theme_button_highlight()
+        self._refresh_mode_button_highlight()
 
     def _on_theme_pick(self, theme_name: str) -> None:
         """Update local selection — the actual save happens in _on_save."""
@@ -314,6 +349,16 @@ class SettingsScreen(Screen):
             target = theme.accent if name == self._selected_theme else theme.button_bg
             btn._bg_rect_color.rgba = target
 
+    def _on_mode_pick(self, mode: str) -> None:
+        self._selected_game_mode = mode
+        self._refresh_mode_button_highlight()
+
+    def _refresh_mode_button_highlight(self) -> None:
+        theme = current_theme()
+        for name, btn in self._mode_buttons.items():
+            target = theme.accent if name == self._selected_game_mode else theme.button_bg
+            btn._bg_rect_color.rgba = target
+
     def _on_save(self, instance) -> None:
         # Resolve effective model: custom input > preset default.
         custom_model = self.input_custom_model.text.strip()
@@ -327,9 +372,10 @@ class SettingsScreen(Screen):
             "base_url": self.input_base_url.text.strip() or "https://apihub.agnes-ai.com/v1",
             "model": effective_model,
             THEME_KEY: self._selected_theme,
+            "game_mode": self._selected_game_mode,
         }
-        save_settings(data)
         apply_settings_to_env(data)
+        save_settings(data)
 
         # Apply theme immediately so the user sees the change.
         set_active_theme(self._selected_theme)
@@ -346,7 +392,7 @@ class SettingsScreen(Screen):
         theme = current_theme()
         success_hex = rgba_to_hex(theme.success_color)
         warn_hex = rgba_to_hex(theme.accent)
-        if data["api_key"]:
+        if os.environ.get("AGNES_API_KEY"):
             self.lbl_key_status.text = f"[color={success_hex}]使用自定义 API Key[/color]"
         else:
             self.lbl_key_status.text = f"[color={warn_hex}]使用内置 API Key (可直接游玩)[/color]"

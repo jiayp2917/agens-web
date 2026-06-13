@@ -1,6 +1,6 @@
 """Theme system for the Kivy mobile app.
 
-Provides three switchable color palettes (明亮白 / 暗夜黑 / 清新绿)
+Provides three ink-wash palettes (宣纸白 / 墨绿 / 暗夜)
 plus themed widget factories (ThemedProgressBar, themed_button, themed_popup)
 so every screen and widget can share one consistent visual style.
 
@@ -12,15 +12,13 @@ from __future__ import annotations
 
 import os
 from dataclasses import dataclass
-from typing import Tuple
 
-from kivy.graphics import Color, Rectangle, RoundedRectangle
+from kivy.graphics import Color, Line, Rectangle, RoundedRectangle
 from kivy.metrics import dp
 from kivy.uix.button import Button
 from kivy.uix.popup import Popup
 from kivy.uix.progressbar import ProgressBar
 from kivy.uix.widget import Widget
-
 
 # ---------------------------------------------------------------------------
 # Color palettes
@@ -29,99 +27,98 @@ from kivy.uix.widget import Widget
 @dataclass(frozen=True)
 class ThemePalette:
     """Immutable color palette. All RGBA values are 0-1 floats."""
-    bg: Tuple[float, float, float, float]
-    surface: Tuple[float, float, float, float]
-    primary: Tuple[float, float, float, float]
-    accent: Tuple[float, float, float, float]
-    text: Tuple[float, float, float, float]
-    text_secondary: Tuple[float, float, float, float]
-    text_hint: Tuple[float, float, float, float]
-    hp_high: Tuple[float, float, float, float]
-    hp_low: Tuple[float, float, float, float]
-    mp_color: Tuple[float, float, float, float]
-    xp_color: Tuple[float, float, float, float]
-    bar_bg: Tuple[float, float, float, float]
-    button_bg: Tuple[float, float, float, float]
-    button_text: Tuple[float, float, float, float]
-    input_bg: Tuple[float, float, float, float]
-    combat_indicator: Tuple[float, float, float, float]
-    error_color: Tuple[float, float, float, float]
-    success_color: Tuple[float, float, float, float]
-    overlay_bg: Tuple[float, float, float, float]
-    border_color: Tuple[float, float, float, float]
+    bg: tuple[float, float, float, float]
+    surface: tuple[float, float, float, float]
+    primary: tuple[float, float, float, float]
+    accent: tuple[float, float, float, float]
+    text: tuple[float, float, float, float]
+    text_secondary: tuple[float, float, float, float]
+    text_hint: tuple[float, float, float, float]
+    hp_high: tuple[float, float, float, float]
+    hp_low: tuple[float, float, float, float]
+    mp_color: tuple[float, float, float, float]
+    xp_color: tuple[float, float, float, float]
+    bar_bg: tuple[float, float, float, float]
+    button_bg: tuple[float, float, float, float]
+    button_text: tuple[float, float, float, float]
+    input_bg: tuple[float, float, float, float]
+    combat_indicator: tuple[float, float, float, float]
+    error_color: tuple[float, float, float, float]
+    success_color: tuple[float, float, float, float]
+    overlay_bg: tuple[float, float, float, float]
+    border_color: tuple[float, float, float, float]
 
 
-# 明亮白 (White) — bright, clean, cheerful
-# text_secondary and text_hint tuned for WCAG AA contrast on light backgrounds.
+# 宣纸白 — aligned to docs/prototypes/prototype.css :root.
 WHITE = ThemePalette(
-    bg=(0.95, 0.95, 0.97, 1),
-    surface=(1.0, 1.0, 1.0, 1),
-    primary=(0.2, 0.4, 0.8, 1),
-    accent=(0.95, 0.6, 0.1, 1),
-    text=(0.13, 0.13, 0.13, 1),
-    text_secondary=(0.35, 0.35, 0.35, 1),   # ~5.6:1 on white — passes AA
-    text_hint=(0.45, 0.45, 0.45, 1),         # ~3.9:1 — acceptable for hints
-    hp_high=(0.2, 0.75, 0.3, 1),
-    hp_low=(0.85, 0.2, 0.2, 1),
-    mp_color=(0.25, 0.45, 0.85, 1),
-    xp_color=(0.6, 0.3, 0.8, 1),
-    bar_bg=(0.85, 0.85, 0.88, 1),
-    button_bg=(0.2, 0.4, 0.8, 1),
-    button_text=(1.0, 1.0, 1.0, 1),
-    input_bg=(1.0, 1.0, 1.0, 1),
-    combat_indicator=(0.85, 0.15, 0.15, 1),
-    error_color=(0.85, 0.2, 0.2, 1),
-    success_color=(0.2, 0.75, 0.3, 1),
-    overlay_bg=(0, 0, 0, 0.5),
-    border_color=(0.8, 0.8, 0.85, 1),
+    bg=(0.969, 0.953, 0.918, 1),            # #f7f3ea
+    surface=(1.0, 0.973, 0.941, 1),         # #fff8f0
+    primary=(0.322, 0.455, 0.427, 1),       # #52746d
+    accent=(0.655, 0.490, 0.220, 1),        # #a77d38
+    text=(0.125, 0.165, 0.153, 1),          # #202a27
+    text_secondary=(0.325, 0.380, 0.361, 1),
+    text_hint=(0.45, 0.46, 0.42, 1),
+    hp_high=(0.322, 0.455, 0.427, 1),
+    hp_low=(0.608, 0.267, 0.239, 1),
+    mp_color=(0.322, 0.455, 0.427, 1),
+    xp_color=(0.655, 0.490, 0.220, 1),
+    bar_bg=(0.875, 0.851, 0.800, 1),
+    button_bg=(0.322, 0.455, 0.427, 0.18),
+    button_text=(0.125, 0.165, 0.153, 1),
+    input_bg=(1.0, 1.0, 1.0, 0.45),
+    combat_indicator=(0.608, 0.267, 0.239, 1),
+    error_color=(0.608, 0.267, 0.239, 1),
+    success_color=(0.322, 0.455, 0.427, 1),
+    overlay_bg=(0.122, 0.149, 0.137, 0.22),
+    border_color=(0.125, 0.165, 0.153, 0.28),
 )
 
-# 暗夜黑 (Black) — dark, elegant
+# 暗夜 — ink-dark reading mode.
 BLACK = ThemePalette(
-    bg=(0.12, 0.12, 0.15, 1),
-    surface=(0.18, 0.18, 0.22, 1),
-    primary=(0.4, 0.65, 1.0, 1),
-    accent=(1.0, 0.75, 0.2, 1),
-    text=(0.9, 0.9, 0.92, 1),
-    text_secondary=(0.6, 0.6, 0.65, 1),
-    text_hint=(0.45, 0.45, 0.5, 1),
-    hp_high=(0.3, 0.8, 0.4, 1),
-    hp_low=(0.9, 0.25, 0.25, 1),
-    mp_color=(0.35, 0.55, 0.95, 1),
-    xp_color=(0.7, 0.4, 0.9, 1),
-    bar_bg=(0.25, 0.25, 0.3, 1),
-    button_bg=(0.3, 0.5, 0.85, 1),
-    button_text=(1.0, 1.0, 1.0, 1),
-    input_bg=(0.2, 0.2, 0.25, 1),
-    combat_indicator=(0.9, 0.2, 0.2, 1),
-    error_color=(0.9, 0.25, 0.25, 1),
-    success_color=(0.3, 0.8, 0.4, 1),
-    overlay_bg=(0, 0, 0, 0.7),
-    border_color=(0.3, 0.3, 0.35, 1),
+    bg=(0.125, 0.165, 0.153, 1),            # #202a27
+    surface=(0.176, 0.231, 0.212, 1),       # #2d3b36
+    primary=(0.478, 0.678, 0.620, 1),       # #7aad9e
+    accent=(0.831, 0.647, 0.290, 1),        # #d4a54a
+    text=(0.926, 0.902, 0.835, 1),
+    text_secondary=(0.700, 0.745, 0.702, 1),
+    text_hint=(0.580, 0.620, 0.590, 1),
+    hp_high=(0.478, 0.678, 0.620, 1),
+    hp_low=(0.780, 0.350, 0.310, 1),
+    mp_color=(0.478, 0.678, 0.620, 1),
+    xp_color=(0.831, 0.647, 0.290, 1),
+    bar_bg=(0.220, 0.290, 0.260, 1),
+    button_bg=(0.478, 0.678, 0.620, 0.22),
+    button_text=(0.926, 0.902, 0.835, 1),
+    input_bg=(0.176, 0.231, 0.212, 1),
+    combat_indicator=(0.780, 0.350, 0.310, 1),
+    error_color=(0.780, 0.350, 0.310, 1),
+    success_color=(0.478, 0.678, 0.620, 1),
+    overlay_bg=(0, 0, 0, 0.68),
+    border_color=(0.478, 0.678, 0.620, 0.28),
 )
 
-# 清新绿 (Green) — fresh, nature-inspired
+# 墨绿 — pale green paper variant.
 GREEN = ThemePalette(
-    bg=(0.92, 0.96, 0.92, 1),
-    surface=(1.0, 1.0, 0.98, 1),
-    primary=(0.2, 0.6, 0.35, 1),
-    accent=(0.9, 0.55, 0.15, 1),
-    text=(0.15, 0.2, 0.15, 1),
-    text_secondary=(0.4, 0.5, 0.4, 1),
-    text_hint=(0.55, 0.65, 0.55, 1),
-    hp_high=(0.2, 0.7, 0.35, 1),
-    hp_low=(0.85, 0.2, 0.2, 1),
-    mp_color=(0.2, 0.5, 0.8, 1),
-    xp_color=(0.5, 0.35, 0.7, 1),
-    bar_bg=(0.82, 0.88, 0.82, 1),
-    button_bg=(0.2, 0.6, 0.35, 1),
-    button_text=(1.0, 1.0, 1.0, 1),
-    input_bg=(1.0, 1.0, 0.98, 1),
-    combat_indicator=(0.8, 0.15, 0.15, 1),
-    error_color=(0.85, 0.2, 0.2, 1),
-    success_color=(0.2, 0.65, 0.35, 1),
-    overlay_bg=(0, 0, 0, 0.5),
-    border_color=(0.75, 0.85, 0.75, 1),
+    bg=(0.875, 0.914, 0.875, 1),            # #dfe9df
+    surface=(0.784, 0.847, 0.784, 1),       # #c8d8c8
+    primary=(0.227, 0.361, 0.259, 1),       # #3a5c42
+    accent=(0.541, 0.427, 0.169, 1),        # #8a6d2b
+    text=(0.125, 0.165, 0.153, 1),
+    text_secondary=(0.290, 0.380, 0.320, 1),
+    text_hint=(0.420, 0.500, 0.430, 1),
+    hp_high=(0.227, 0.361, 0.259, 1),
+    hp_low=(0.608, 0.267, 0.239, 1),
+    mp_color=(0.227, 0.361, 0.259, 1),
+    xp_color=(0.541, 0.427, 0.169, 1),
+    bar_bg=(0.737, 0.804, 0.737, 1),
+    button_bg=(0.227, 0.361, 0.259, 0.18),
+    button_text=(0.125, 0.165, 0.153, 1),
+    input_bg=(1.0, 1.0, 1.0, 0.42),
+    combat_indicator=(0.608, 0.267, 0.239, 1),
+    error_color=(0.608, 0.267, 0.239, 1),
+    success_color=(0.227, 0.361, 0.259, 1),
+    overlay_bg=(0.122, 0.149, 0.137, 0.24),
+    border_color=(0.125, 0.165, 0.153, 0.24),
 )
 
 
@@ -242,12 +239,22 @@ def add_card_background(widget: Widget, color=None) -> RoundedRectangle:
     """Same as add_background but with rounded corners (slightly raised card)."""
     if color is None:
         color = current_theme().surface
+    theme = current_theme()
     with widget.canvas.before:
         Color(*color)
         rect = RoundedRectangle(pos=widget.pos, size=widget.size, radius=[dp(6)])
+        Color(*theme.border_color)
+        border = Line(
+            rounded_rectangle=(widget.x, widget.y, widget.width, widget.height, dp(6)),
+            width=1,
+        )
     widget.bind(
         pos=lambda _w, _v, r=rect: setattr(r, "pos", _v),
         size=lambda _w, _v, r=rect: setattr(r, "size", _v),
+    )
+    widget.bind(
+        pos=lambda w, _v, b=border: setattr(b, "rounded_rectangle", (w.x, w.y, w.width, w.height, dp(6))),
+        size=lambda w, _v, b=border: setattr(b, "rounded_rectangle", (w.x, w.y, w.width, w.height, dp(6))),
     )
     return rect
 
@@ -312,14 +319,16 @@ class ThemedProgressBar(ProgressBar):
 # themed_button — Button with rounded background filled with primary color
 # ---------------------------------------------------------------------------
 
-def themed_button(text: str, font_size=dp(13), **kwargs) -> Button:
+def themed_button(text: str, font_size=None, **kwargs) -> Button:
     """Create a Button styled with the active theme.
 
     - background_color = (0,0,0,0) so Kivy's default gray square is hidden
-    - RoundedRectangle drawn on canvas.before, filled with primary color
-    - text color = button_text (white-ish for all three themes)
+    - RoundedRectangle drawn on canvas.before, filled with paper-ink color
+    - text color = button_text
     """
     theme = current_theme()
+    if font_size is None:
+        font_size = dp(13)
     btn = Button(text=text, font_size=font_size, **kwargs)
     btn.background_color = (0, 0, 0, 0)  # transparent default
     btn.color = theme.button_text
@@ -331,9 +340,18 @@ def themed_button(text: str, font_size=dp(13), **kwargs) -> Button:
         btn._bg_rect = RoundedRectangle(
             pos=btn.pos, size=btn.size, radius=[dp(4)]
         )
+        Color(*theme.border_color)
+        btn._border = Line(
+            rounded_rectangle=(btn.x, btn.y, btn.width, btn.height, dp(4)),
+            width=1,
+        )
     btn.bind(
         pos=lambda _w, _v, b=btn: setattr(b._bg_rect, "pos", _v),
         size=lambda _w, _v, b=btn: setattr(b._bg_rect, "size", _v),
+    )
+    btn.bind(
+        pos=lambda w, _v, b=btn: setattr(b._border, "rounded_rectangle", (w.x, w.y, w.width, w.height, dp(4))),
+        size=lambda w, _v, b=btn: setattr(b._border, "rounded_rectangle", (w.x, w.y, w.width, w.height, dp(4))),
     )
     return btn
 

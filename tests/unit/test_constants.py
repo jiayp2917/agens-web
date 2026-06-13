@@ -22,6 +22,17 @@ from agens_novel.game.constants import (
     QUEST_TYPES,
     ITEM_TYPES,
     TECHNIQUE_TYPES,
+    ATTRIBUTE_KEYS,
+    ATTRIBUTE_LABELS,
+    DEFAULT_ATTRIBUTES,
+    DIFFICULTY_OPTIONS,
+    FAMILY_BACKGROUNDS,
+    GAME_MODE_LABELS,
+    GameMode,
+    SPECIAL_START_ATTRIBUTES,
+    SPECIAL_START_CODE,
+    SPECIAL_START_NAME,
+    TALENT_OPTIONS,
 )
 
 
@@ -185,3 +196,29 @@ class TestCombatConstants:
 
     def test_technique_types(self):
         assert TECHNIQUE_TYPES == ["内功", "外功", "术法", "身法"]
+
+
+class TestPrototypeConstants:
+    """Validate Android prototype constants."""
+
+    def test_game_modes(self):
+        assert GameMode.HIGH.value == "high"
+        assert GameMode.MID.value == "mid"
+        assert GameMode.LOW.value == "low"
+        assert GAME_MODE_LABELS["mid"] == "中自由度"
+
+    def test_character_creation_options(self):
+        assert "天命道胎" in TALENT_OPTIONS
+        assert "隐世仙族" in FAMILY_BACKGROUNDS
+        assert DIFFICULTY_OPTIONS == ["简单", "普通", "困难"]
+
+    def test_attributes(self):
+        assert len(ATTRIBUTE_KEYS) == 6
+        assert set(DEFAULT_ATTRIBUTES) == set(ATTRIBUTE_KEYS)
+        assert ATTRIBUTE_LABELS["root_bone"] == "根骨"
+
+    def test_hidden_start_constants(self):
+        assert SPECIAL_START_CODE == "2917"
+        assert SPECIAL_START_NAME == "阿清"
+        assert set(SPECIAL_START_ATTRIBUTES) == set(ATTRIBUTE_KEYS)
+        assert all(value == 99 for value in SPECIAL_START_ATTRIBUTES.values())

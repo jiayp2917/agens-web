@@ -12,6 +12,20 @@
     "mp_max": 50,
     "spirit_root": "",
     "spirit_root_grade": "",
+    "age": 16,
+    "talent": "",
+    "family_background": "",
+    "luck": "中上",
+    "difficulty": "普通",
+    "game_mode": "high",
+    "attributes": {
+      "root_bone": 50,
+      "comprehension": 50,
+      "luck": 50,
+      "willpower": 50,
+      "physique": 50,
+      "spiritual_sense": 50
+    },
     "experience": 0,
     "experience_to_next": 100,
     "gold": 0,
@@ -37,5 +51,6 @@
     "lore_facts": []
   },
   "turn_history": [],
+  "last_choices": [],
   "finale": false
 }

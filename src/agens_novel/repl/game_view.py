@@ -4,9 +4,8 @@ from __future__ import annotations
 
 from rich.panel import Panel
 from rich.table import Table
-from rich.text import Text
 
-from .game_session import GameSession, REALM_ORDER
+from .game_session import GameSession
 
 
 def render_status_bar(session: GameSession) -> str:
@@ -27,10 +26,14 @@ def render_status_panel(session: GameSession) -> Panel:
 
     lines = [
         f"  姓名:   {session.char_name or '未命名'}",
+        f"  年龄:   {getattr(session, 'age', 16)}",
         f"  境界:   {realm_str}",
         f"  HP:     {hp_bar} {session.hp}/{session.hp_max}",
         f"  MP:     {mp_bar} {session.mp}/{session.mp_max}",
         f"  灵根:   {_spirit_root_str(session)}",
+        f"  天赋:   {getattr(session, 'talent', '') or '未显'}",
+        f"  家世:   {getattr(session, 'family_background', '') or '凡俗'}",
+        f"  气运:   {getattr(session, 'luck', '') or '平稳'}",
         f"  经验:   {xp_bar} {session.experience}/{session.experience_to_next}",
         f"  寿命:   {session.lifespan} 年",
         f"  灵石:   {session.gold}",
