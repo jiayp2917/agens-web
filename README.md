@@ -26,6 +26,17 @@ $env:AGNES_MODEL    = "agnes-2.0-flash"
 $env:AGNES_API_KEY  = "<your key>"
 ```
 
+## ZIP 迁移
+
+如果 GitHub 推送不可用，可以用 ZIP 迁移到另一台电脑测试。不要直接压缩整个 `D:\chat\agens` 工作目录；推荐生成干净源码包：
+
+```powershell
+cd D:\chat\agens
+git archive --format=zip --output D:\chat\agens-transfer.zip HEAD
+```
+
+新电脑上的环境重建、启动和验证步骤见 [docs/ZIP_TRANSFER.md](docs/ZIP_TRANSFER.md)。
+
 ## 当前流程
 
 1. 主页显示水墨背景、BGM 开关、新游戏、读档、教程、设置、退出。

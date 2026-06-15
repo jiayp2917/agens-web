@@ -40,6 +40,17 @@
 .\.venv311\Scripts\python.exe mobile\main.py
 ```
 
+## ZIP 迁移
+
+如果 GitHub 推送不可用，推荐在源电脑执行：
+
+```powershell
+cd D:\chat\agens
+git archive --format=zip --output D:\chat\agens-transfer.zip HEAD
+```
+
+不要直接压缩整个工作目录。`.venv/`、`.venv311/`、`.git/`、`mobile/.buildozer/`、`mobile/bin/`、`runtime/` 和缓存目录都属于本机产物或运行产物，新电脑应重新创建环境。完整迁移步骤见 `docs/ZIP_TRANSFER.md`。
+
 ## 开发约束
 
 - 不引用 `agens_novel.repl.*`。
