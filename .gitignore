@@ -32,3 +32,17 @@ runtime/saves/
 # Android build outputs
 mobile/.buildozer/
 mobile/bin/
+
+# Tool residues
+.workbuddy/
+
+# Demo artifacts
+demo_*.jsonl
+demo_screenshots/
+
+# Audio assets (remove if version control is needed)
+mobile/assets/audio/*.flac
+mobile/assets/audio/*.mp3
+mobile/assets/audio/*.ogg
+mobile/assets/fonts/*.ttf
+mobile/assets/fonts/*.otf

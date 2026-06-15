@@ -1,5 +1,26 @@
 # Changelog
 
+## [Unreleased]
+
+### Added
+- GitHub Actions CI pipeline (`.github/workflows/ci.yml`) — pytest + ruff on windows-latest
+- `ARCHITECTURE.md` describing module layering and data flow
+- Restructured test layout: `tests/{e2e,integration,unit,mobile,destructive}`
+
+### Changed
+- Test split: large test files broken into focused modules (1038 lines → 3 files)
+- Single Kivy entry: only `mobile/main.py`, root `main.py` removed
+- `AGENTS.md` and `CLAUDE.md` updated for Android-only workflow
+- `.gitignore` covers dev residues, demo artifacts, and audio assets
+
+### Removed
+- Terminal REPL/CLI entry points and old terminal UI modules
+- Stale demo screenshots (moved to `F:\Projects\test`)
+
+### Fixed
+- BGM file path resolution updated to `mobile/assets/audio/`
+- Test imports use `mobile.audio_manager` package path
+
 ## 2026-06-14
 
 ### Changed

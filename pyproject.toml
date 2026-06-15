@@ -23,6 +23,7 @@ dependencies = [
 dev = [
     "pytest>=8.0.0",
     "pytest-asyncio>=0.23.0",
+    "pytest-xdist>=3.5.0",
     "ruff>=0.4.0",
     "mypy>=1.10.0",
 ]
@@ -46,3 +47,23 @@ ignore_missing_imports = true
 asyncio_mode = "auto"
 testpaths = ["tests"]
 pythonpath = ["src"]
+markers = [
+    "slow: marks tests as slow (deselect with '-m \"not slow\"')",
+    "integration: cross-module integration tests (may need network or fixtures)",
+    "destructive: destructive/fuzz-style tests",
+    "e2e: end-to-end scenarios (may be slow/flaky)",
+    "mobile: tests that exercise Kivy/mobile-specific code",
+    "llm_real: tests that call real LLM APIs (require AGNES_API_KEY)",
+]
+addopts = [
+    "-ra",
+    "--strict-markers",
+    "--strict-config",
+    "-p no:cacheprovider",
+    "-n",
+    "auto",
+]
+filterwarnings = [
+    "ignore::DeprecationWarning:kivy.*",
+    "ignore::DeprecationWarning:jinja2.*",
+]

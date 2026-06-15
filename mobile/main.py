@@ -54,6 +54,7 @@ import theme as _theme
 _theme.register_cjk_font()
 
 from kivy.app import App
+from kivy.clock import Clock
 from kivy.core.window import Window
 from kivy.uix.screenmanager import ScreenManager, SlideTransition
 
@@ -64,6 +65,58 @@ from screens.game_screen import GameScreen
 from screens.home_screen import HomeScreen
 from screens.character_create_screen import CharacterCreateScreen
 from screens.death_screen import DeathScreen
+
+
+def _schedule_focus_restore() -> None:
+    """Force the Kivy window to the foreground so it receives real mouse events.
+
+    On Windows, Kivy's SDL2 window does not call ``SetForegroundWindow`` when
+    it appears. If a different window (e.g. terminal, IDE, browser) holds
+    focus, the real ``WM_LBUTTONDOWN`` / ``WM_MOUSEMOVE`` messages never reach
+    the Kivy HWND, so ``on_touch_down`` is never dispatched to the widget
+    tree and the UI looks frozen even though every widget, callback, and
+    ``adapter`` is wired correctly. The fix is to actively claim the
+    foreground for our HWND a moment after the window becomes visible. We
+    defer the call by ~300 ms so the system permits the focus change —
+    Windows only allows ``SetForegroundWindow`` after the launching thread
+    releases the foreground lock. We also use ``AllowSetForegroundWindow``
+    so other processes don't keep us out, and we re-assert for 3 seconds
+    in case a freshly-launched browser (Edge) races in immediately after.
+    On non-Windows platforms this is a no-op.
+    """
+    if sys.platform != "win32":
+        return
+    try:
+        import ctypes
+        import os as _os
+
+        def _raise_to_front(_dt=None):
+            try:
+                win_info = Window._win.get_window_info()
+            except Exception:
+                return
+            hwnd = getattr(win_info, "window", None)
+            if not hwnd:
+                return
+            user32 = ctypes.windll.user32
+            # Allow our process to set the foreground even if it didn't
+            # originate the input — without this, SetForegroundWindow is
+            # silently rejected by Windows when another process currently
+            # holds the foreground lock.
+            user32.AllowSetForegroundWindow(_os.getpid())
+            # SW_RESTORE = 9. If the window was minimised this brings it
+            # back into a normal state.
+            user32.ShowWindow(hwnd, 9)
+            user32.BringWindowToTop(hwnd)
+            user32.SetForegroundWindow(hwnd)
+
+        # Re-assert for 3 seconds in case a freshly-launched browser
+        # (Edge) races in immediately after our initial claim.
+        for delay in (0.3, 0.7, 1.2, 2.0, 3.0):
+            Clock.schedule_once(_raise_to_front, delay)
+    except Exception:
+        # Never let a focus-restore failure break the app.
+        pass
 
 
 class XianxiaApp(App):
@@ -101,6 +154,11 @@ class XianxiaApp(App):
         sm.add_widget(death)
 
         sm.current = "home"
+
+        # Defer the focus restore until after the EventLoop finishes its
+        # initial pass — the SDL window is fully created at that point and
+        # ``Window._win.get_window_info()`` returns a valid HWND.
+        _schedule_focus_restore()
 
         return sm
 

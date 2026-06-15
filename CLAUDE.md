@@ -27,6 +27,29 @@ cd D:\chat\agens
 - Agent 调用器位于 `src/agens_novel/engine/turn_runner.py`。
 - 不要引用 `agens_novel.repl.*`。
 
+## 架构图
+
+```mermaid
+graph TD
+    UI[mobile/main.py<br/>Kivy 入口] --> Adapter[mobile/service/engine_adapter.py<br/>UI → 引擎桥接]
+    Adapter --> Engine[src/agens_novel/engine/game_engine.py<br/>核心游戏循环]
+    Engine --> Session[src/agens_novel/session/game_session.py<br/>游戏会话]
+    Engine --> TurnRunner[src/agens_novel/engine/turn_runner.py<br/>Agent 调用]
+    TurnRunner --> Narrator[src/agens_novel/agents/narrator/<br/>叙事 Agent]
+    TurnRunner --> WorldBuilder[src/agens_novel/agents/world_builder/<br/>世界生成 Agent]
+    TurnRunner --> Judge[src/agens_novel/agents/judge/<br/>判定 Agent]
+    TurnRunner --> LLM[src/agens_novel/llm/client.py<br/>OpenAI 兼容 HTTP]
+    Engine --> Game[src/agens_novel/game/{combat,realm}<br/>游戏规则]
+    Session --> Persistence[src/agens_novel/persistence/save_manager.py<br/>存档系统]
+```
+
+## 入口说明
+
+**统一入口**：项目只保留 `mobile/main.py` 作为唯一入口。
+- **桌面调试**：直接运行 `python mobile/main.py`
+- **Android 打包**：Buildozer 从 `mobile/` 目录打包，使用 `mobile/main.py` 作为入口
+- 根目录不再有 `main.py`，所有入口统一到 `mobile/` 下
+
 ## UI 契约
 
 - A/B/C 是模型基于上下文生成的建议选项。

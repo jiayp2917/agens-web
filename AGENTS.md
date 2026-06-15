@@ -61,13 +61,36 @@ $env:AGNES_API_KEY  = "<你的 key>"
 
 ### 核心层
 
-- `src/agens_novel/engine/game_engine.py`：唯一游戏逻辑入口，通过 callbacks 解耦 UI。
-- `src/agens_novel/engine/turn_runner.py`：Agent 调用器。
-- `src/agens_novel/session/game_session.py`：会话状态、`apply_delta`、序列化。
-- `src/agens_novel/persistence/save_manager.py`：JSON 存读档。
-- `src/agens_novel/game/realm.py`：境界突破与资源/感悟门槛。
-- `src/agens_novel/game/combat.py`：回合制战斗逻辑。
-- `src/agens_novel/engine/render.py`：UI 无关的文本格式化。
+| 模块 | 关键文件 | 职责 |
+|------|---------|------|
+| Engine | `src/agens_novel/engine/game_engine.py` | 唯一游戏逻辑入口，通过 callbacks 解耦 UI |
+| | `src/agens_novel/engine/turn_runner.py` | Agent 调用器，每回合 LLM 调用 |
+| | `src/agens_novel/engine/render.py` | UI 无关的文本格式化 |
+| Session | `src/agens_novel/session/game_session.py` | 会话状态、`apply_delta`、序列化 |
+| Game | `src/agens_novel/game/realm.py` | 境界突破与资源/感悟门槛 |
+| | `src/agens_novel/game/combat.py` | 回合制战斗逻辑 |
+| | `src/agens_novel/game/constants.py` | 游戏常量配置 |
+| Persistence | `src/agens_novel/persistence/save_manager.py` | JSON 存读档 |
+| State | `src/agens_novel/state/game_schema.py` | 游戏状态数据模型 |
+| | `src/agens_novel/state/reducers.py` | 状态更新器 |
+| LLM | `src/agens_novel/llm/client.py` | OpenAI 兼容 HTTP 客户端 |
+| | `src/agens_novel/llm/sse.py` | SSE 流式响应解析 |
+
+### 测试分层
+
+| 层级 | 目录 | 内容 |
+|------|------|------|
+| E2E | `tests/e2e/` | 端到端测试（play_simulation） |
+| Integration | `tests/integration/` | 跨模块测试 |
+| Unit | `tests/unit/` | 单元测试，按模块分层 |
+| | `tests/unit/game/` | 游戏规则测试 |
+| | `tests/unit/engine/` | 引擎逻辑测试 |
+| | `tests/unit/state/` | 状态管理测试 |
+| | `tests/unit/llm/` | LLM 集成测试 |
+| | `tests/unit/agents/` | Agent 测试 |
+| | `tests/unit/settings/` | 配置测试 |
+| Mobile | `tests/mobile/` | 移动端测试 |
+| Destructive | `tests/destructive/` | 破坏性场景测试 |
 
 ### Android 层
 
