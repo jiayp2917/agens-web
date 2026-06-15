@@ -1,8 +1,8 @@
-"""agens-novel: AI 驱动的文字修仙模拟器.
+"""agens-novel: AI 驱动的 Android 文字修仙模拟器.
 
-文字修仙模拟器 — 基于多 Agent 架构的互动叙事引擎。
-玩家在 REPL 中用自然语言行动，三个 AI Agent（Narrator / World Builder / Judge）
-协作生成叙事、管理状态、审核合理性。
+核心引擎基于多 Agent 架构。玩家在 Android/Kivy 界面中通过 A/B/C
+模型选项和 D 自由输入推进回合，Narrator、World Builder、Judge
+协作生成叙事、管理状态并审核合理性。
 """
 
-__version__ = "0.2.0"
+__version__ = "0.4.0"

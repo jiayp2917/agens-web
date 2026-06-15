@@ -6,7 +6,7 @@ from kivy.metrics import dp
 from kivy.uix.boxlayout import BoxLayout
 from kivy.uix.gridlayout import GridLayout
 from kivy.uix.label import Label
-from theme import add_background, current_theme
+from theme import add_background, add_paper_background, current_theme
 
 # 感悟 threshold lookup — mirrors engine.render._insight_required without
 # importing the engine layer (mobile stays UI-only).
@@ -27,24 +27,24 @@ def _stage_label(stage: int) -> str:
 
 
 class StatusBar(BoxLayout):
-    """Top card: character name, turn count, and six stat cells."""
+    """Compact top card: character name, turn count, and key stat cells."""
 
     def __init__(self, **kwargs):
         super().__init__(
             orientation="vertical",
             size_hint_y=None,
-            height=dp(112),
-            padding=[dp(8), dp(6)],
-            spacing=dp(4),
+            height=dp(88),
+            padding=[dp(8), dp(5)],
+            spacing=dp(3),
             **kwargs,
         )
         theme = current_theme()
-        add_background(self, color=theme.surface)
+        add_paper_background(self, color=(1.0, 0.973, 0.941, 0.86))
 
-        row = BoxLayout(orientation="horizontal", size_hint_y=None, height=dp(24))
+        row = BoxLayout(orientation="horizontal", size_hint_y=None, height=dp(22))
         self.lbl_name = Label(
             text="文字修仙",
-            font_size=dp(17),
+            font_size=dp(16),
             bold=True,
             color=theme.text,
             halign="left",
@@ -68,7 +68,7 @@ class StatusBar(BoxLayout):
             row.add_widget(label)
         self.add_widget(row)
 
-        self.grid = GridLayout(cols=2, spacing=[dp(4), dp(4)], size_hint_y=None, height=dp(72))
+        self.grid = GridLayout(cols=3, spacing=[dp(4), dp(4)], size_hint_y=None, height=dp(56))
         self._cells: dict[str, Label] = {}
         for key, caption in [
             ("age", "年龄"),
@@ -80,7 +80,7 @@ class StatusBar(BoxLayout):
         ]:
             cell = Label(
                 text=f"{caption}  -",
-                font_size=dp(10),
+                font_size=dp(9),
                 color=theme.text_secondary,
                 halign="center",
                 valign="middle",

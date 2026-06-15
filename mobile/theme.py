@@ -213,6 +213,16 @@ def rgba_to_hex(rgba) -> str:
     return f"{int(r * 255):02x}{int(g * 255):02x}{int(b * 255):02x}"
 
 
+def asset_path(*parts: str) -> str:
+    """Return an absolute path under ``mobile/assets``."""
+    return os.path.join(os.path.dirname(os.path.abspath(__file__)), "assets", *parts)
+
+
+def image_asset(name: str) -> str:
+    """Return an absolute path for a generated UI image asset."""
+    return asset_path("images", name)
+
+
 # ---------------------------------------------------------------------------
 # Background helper — paint a solid-color rectangle behind a widget
 # ---------------------------------------------------------------------------
@@ -232,6 +242,68 @@ def add_background(widget: Widget, color=None) -> Rectangle:
         pos=lambda _w, _v, r=rect: setattr(r, "pos", _v),
         size=lambda _w, _v, r=rect: setattr(r, "size", _v),
     )
+    return rect
+
+
+def add_image_background(widget: Widget, filename: str, fallback_color=None) -> Rectangle:
+    """Draw an image behind a widget, falling back to a theme color."""
+    if fallback_color is None:
+        fallback_color = current_theme().bg
+    source = image_asset(filename)
+    with widget.canvas.before:
+        Color(1, 1, 1, 1)
+        if os.path.exists(source):
+            rect = Rectangle(source=source, pos=widget.pos, size=widget.size)
+        else:
+            Color(*fallback_color)
+            rect = Rectangle(pos=widget.pos, size=widget.size)
+    widget.bind(
+        pos=lambda _w, _v, r=rect: setattr(r, "pos", _v),
+        size=lambda _w, _v, r=rect: setattr(r, "size", _v),
+    )
+    return rect
+
+
+def add_scrim(widget: Widget, color=None) -> Rectangle:
+    """Draw a translucent readability layer over image backgrounds."""
+    if color is None:
+        color = current_theme().overlay_bg
+    with widget.canvas.before:
+        Color(*color)
+        rect = Rectangle(pos=widget.pos, size=widget.size)
+    widget.bind(
+        pos=lambda _w, _v, r=rect: setattr(r, "pos", _v),
+        size=lambda _w, _v, r=rect: setattr(r, "size", _v),
+    )
+    return rect
+
+
+def add_paper_background(widget: Widget, color=None, border: bool = True) -> Rectangle:
+    """Draw the generated paper texture with a subtle ink border."""
+    if color is None:
+        color = current_theme().surface
+    theme = current_theme()
+    source = image_asset("paper_texture.png")
+    with widget.canvas.before:
+        Color(*color)
+        if os.path.exists(source):
+            rect = Rectangle(source=source, pos=widget.pos, size=widget.size)
+        else:
+            rect = Rectangle(pos=widget.pos, size=widget.size)
+        if border:
+            Color(*theme.border_color)
+            line = Line(rectangle=(widget.x, widget.y, widget.width, widget.height), width=1)
+        else:
+            line = None
+    widget.bind(
+        pos=lambda _w, _v, r=rect: setattr(r, "pos", _v),
+        size=lambda _w, _v, r=rect: setattr(r, "size", _v),
+    )
+    if line is not None:
+        widget.bind(
+            pos=lambda w, _v, b=line: setattr(b, "rectangle", (w.x, w.y, w.width, w.height)),
+            size=lambda w, _v, b=line: setattr(b, "rectangle", (w.x, w.y, w.width, w.height)),
+        )
     return rect
 
 

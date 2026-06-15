@@ -1,32 +1,23 @@
-"""Main game screen — classic game panel layout with combat + streaming support.
-
-Layout:
-  ┌─────────────────────────────┐
-  │ Status Bar (HP/MP/Realm)    │
-  ├─────────────────────────────┤
-  │ Realm Card (optional)       │
-  ├─────────────────────────────┤
-  │                             │
-  │ Scrollable Narrative Area   │
-  │                             │
-  ├─────────────────────────────┤
-  │ Combat Status (during combat)│
-  ├─────────────────────────────┤
-  │ Utility Row + Text Input    │
-  └─────────────────────────────┘
-  + Loading Overlay (on top)
-"""
+"""Main Android game screen with status, narrative, A/B/C choices, and D input."""
 
 from __future__ import annotations
 
 from kivy.metrics import dp
 from kivy.uix.boxlayout import BoxLayout
 from kivy.uix.floatlayout import FloatLayout
+from kivy.uix.gridlayout import GridLayout
 from kivy.uix.label import Label
 from kivy.uix.screenmanager import Screen
 from kivy.uix.scrollview import ScrollView
 from service.engine_adapter import EngineAdapter
-from theme import add_background, current_theme, themed_button, themed_popup
+from theme import (
+    add_image_background,
+    add_paper_background,
+    add_scrim,
+    current_theme,
+    themed_button,
+    themed_popup,
+)
 from widgets.action_bar import GameActionBar
 from widgets.combat_bar import CombatBar
 from widgets.loading_overlay import LoadingOverlay
@@ -40,7 +31,8 @@ class GameScreen(Screen):
     def __init__(self, **kwargs):
         super().__init__(**kwargs)
         theme = current_theme()
-        add_background(self, color=theme.bg)
+        add_image_background(self, "ink_mountain_gate.png", fallback_color=theme.bg)
+        add_scrim(self, color=(0.969, 0.953, 0.918, 0.64))
 
         self.adapter = EngineAdapter()
 
@@ -57,6 +49,7 @@ class GameScreen(Screen):
         self.adapter.on_finale = self._on_finale
         self._save_popup = None
         self._load_popup = None
+        self._tools_popup = None
 
         # Build layout.
         self.root = FloatLayout()
@@ -179,22 +172,11 @@ class GameScreen(Screen):
     # ─── User input handlers ───────────────────────────────────────────
 
     def _on_user_action(self, text: str) -> None:
-        """User submitted free-text action.
-
-        Supports slash-command recognition: if the input starts with '/',
-        it is treated as a command rather than a game action.
-        """
+        """User submitted a D free-text action."""
         stripped = text.strip()
-
-        # Slash-command routing.
-        if stripped.startswith("/"):
-            cmd = self._parse_slash_command(stripped)
-            if cmd is not None:
-                return
         if not stripped:
             return
 
-        # Normal free-text action.
         self.narrative_view.clear_choices()
         self.narrative_view.add_info(f"> {stripped}")
         self.adapter.handle_action(stripped)
@@ -203,68 +185,11 @@ class GameScreen(Screen):
         """Submit a suggested choice as the player's action."""
         self._on_user_action(choice)
 
-    # ─── Slash command parser ────────────────────────────────────────────
-
-    _SLASH_COMMANDS: dict[str, str] = {
-        "/new": "new", "/新游戏": "new",
-        "/save": "save", "/存档": "save",
-        "/load": "load", "/读档": "load",
-        "/status": "status", "/状态": "status",
-        "/inv": "inv", "/背包": "inv",
-        "/skills": "skills", "/功法": "skills",
-        "/map": "map", "/地图": "map",
-        "/quest": "quest", "/任务": "quest",
-        "/breakthrough": "breakthrough", "/突破": "breakthrough",
-        "/equipment": "equipment", "/装备": "equipment",
-        "/settings": "_nav_settings", "/设置": "_nav_settings",
-        "/home": "_nav_home", "/主页": "_nav_home",
-        "/saves": "_nav_saves", "/存档管理": "_nav_saves",
-        "/attack": "_combat_attack", "/攻击": "_combat_attack",
-        "/defend": "_combat_defend", "/防御": "_combat_defend",
-        "/flee": "_combat_flee", "/逃跑": "_combat_flee",
-        "/technique": "_combat_technique", "/功法攻击": "_combat_technique",
-        "/item": "_combat_item", "/使用丹药": "_combat_item",
-    }
-
-    def _parse_slash_command(self, text: str) -> str | None:
-        """Parse a slash command and dispatch it. Returns the cmd name or None."""
-        parts = text.split(None, 1)
-        key = parts[0].lower()
-
-        cmd = self._SLASH_COMMANDS.get(key)
-        if cmd is None:
-            # Unknown command — let the caller submit it once as normal text.
-            return None
-
-        if cmd.startswith("_combat_"):
-            action = cmd.removeprefix("_combat_")
-            target = parts[1].strip() if len(parts) > 1 else ""
-            self.adapter.handle_combat_action(action, target)
-            return cmd
-
-        # Navigation commands.
-        if cmd == "_nav_settings":
-            if self.manager:
-                self.manager.current = "home"
-                self.manager.get_screen("home")._show_settings_popup()
-            return cmd
-        if cmd == "_nav_home":
-            if self.manager:
-                self.manager.current = "home"
-            return cmd
-        if cmd == "_nav_saves":
-            if self.manager:
-                self.manager.current = "home"
-                self.manager.get_screen("home")._show_load_popup()
-            return cmd
-
-        # Delegate to the existing command handler.
-        self._on_user_command(cmd)
-        return cmd
-
     def _on_user_command(self, cmd: str) -> None:
         """User tapped a quick-action button."""
-        if cmd == "new":
+        if cmd == "more":
+            self._show_tools_sheet()
+        elif cmd == "new":
             if self.manager:
                 self.manager.current = "character_create"
         elif cmd == "restart":
@@ -296,6 +221,62 @@ class GameScreen(Screen):
         elif cmd == "home":
             if self.manager:
                 self.manager.current = "home"
+
+    def _show_tools_sheet(self) -> None:
+        """Show secondary tools without permanently occupying narrative space."""
+        if self._tools_popup:
+            self._tools_popup.dismiss()
+        theme = current_theme()
+        content = BoxLayout(orientation="vertical", padding=dp(10), spacing=dp(8))
+        add_paper_background(content, color=theme.surface)
+
+        grid = GridLayout(cols=2, size_hint_y=None, spacing=[dp(8), dp(8)])
+        grid.bind(minimum_height=grid.setter("height"))
+        tools = [
+            ("新游戏", "new"),
+            ("重新开始", "restart"),
+            ("存档", "save"),
+            ("读档", "load"),
+            ("角色状态", "status"),
+            ("背包", "inv"),
+            ("装备", "equipment"),
+            ("功法", "skills"),
+            ("任务", "quest"),
+            ("地图", "map"),
+            ("尝试突破", "breakthrough"),
+            ("设置", "settings"),
+        ]
+        for label, command in tools:
+            btn = themed_button(label, font_size=dp(13), size_hint_y=None, height=dp(44))
+            btn.bind(on_release=lambda _inst, c=command: self._run_tool_command(c))
+            grid.add_widget(btn)
+        content.add_widget(grid)
+
+        hint = Label(
+            text="战斗与探索仍通过底部 D 输入框完成，可直接输入攻击、防御、逃跑、请教、探索等行动。",
+            font_size=dp(12),
+            color=theme.text_secondary,
+            size_hint_y=None,
+            height=dp(44),
+            halign="left",
+            valign="middle",
+        )
+        hint.bind(width=lambda *_a: setattr(hint, "text_size", (hint.width, None)))
+        content.add_widget(hint)
+
+        close_btn = themed_button("关闭", font_size=dp(13), size_hint_y=None, height=dp(42))
+        content.add_widget(close_btn)
+        popup = themed_popup("更多", content, size_hint=(0.88, 0.66), auto_dismiss=True)
+        close_btn.bind(on_release=lambda _: popup.dismiss())
+        popup.bind(on_dismiss=lambda *_: setattr(self, "_tools_popup", None))
+        self._tools_popup = popup
+        popup.open()
+
+    def _run_tool_command(self, cmd: str) -> None:
+        """Dismiss the tools sheet and dispatch a utility command."""
+        if self._tools_popup:
+            self._tools_popup.dismiss()
+        self._on_user_command(cmd)
 
     def _refresh_choices_ui(self) -> None:
         """Render the single A/B/C choices mode."""
@@ -336,6 +317,7 @@ class GameScreen(Screen):
 
         close_btn = themed_button("关闭", font_size=dp(13), size_hint_y=None, height=dp(36))
         box = BoxLayout(orientation="vertical")
+        add_paper_background(box, color=theme.surface)
         box.add_widget(scroll)
         box.add_widget(close_btn)
         popup = themed_popup(title, box, size_hint=(0.85, 0.6))
@@ -349,8 +331,9 @@ class GameScreen(Screen):
         if self._save_popup:
             self._save_popup.dismiss()
         content = BoxLayout(orientation="vertical", padding=dp(8), spacing=dp(6))
+        add_paper_background(content, color=current_theme().surface)
 
-        from agens_novel.repl.save_manager import get_manual_save_slots
+        from agens_novel.persistence.save_manager import get_manual_save_slots
         slots = get_manual_save_slots()
 
         for slot_info in slots:
@@ -389,8 +372,9 @@ class GameScreen(Screen):
             self._load_popup.dismiss()
         theme = current_theme()
         content = BoxLayout(orientation="vertical", padding=dp(8), spacing=dp(6))
+        add_paper_background(content, color=theme.surface)
 
-        from agens_novel.repl.save_manager import AUTOSAVE_NAME, get_manual_save_slots, list_saves
+        from agens_novel.persistence.save_manager import AUTOSAVE_NAME, get_manual_save_slots, list_saves
 
         # Auto-save entry.
         saves = list_saves()
@@ -441,7 +425,7 @@ class GameScreen(Screen):
 
     def _save_exists(self, slot_name: str) -> bool:
         """Return True when a concrete save slot exists."""
-        from agens_novel.repl.save_manager import list_saves
+        from agens_novel.persistence.save_manager import list_saves
 
         return any(
             item.get("name") == slot_name and not item.get("error")

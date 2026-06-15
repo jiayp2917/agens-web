@@ -1,7 +1,7 @@
 """Game state schemas for the xianxia cultivation simulator.
 
 Defines the TypedDict shapes used by the narrator, judge, and world_builder
-agents.  These are the "contract" between the REPL session and the LLM agents.
+agents. These are the contract between the core session and LLM agents.
 """
 
 from __future__ import annotations

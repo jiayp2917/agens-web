@@ -2,15 +2,11 @@
 
 from __future__ import annotations
 
-from pathlib import Path
-
 from audio_manager import AudioManager
 from kivy.core.window import Window
-from kivy.graphics import Color, Rectangle
 from kivy.metrics import dp
 from kivy.uix.boxlayout import BoxLayout
 from kivy.uix.floatlayout import FloatLayout
-from kivy.uix.image import Image
 from kivy.uix.label import Label
 from kivy.uix.screenmanager import Screen
 from kivy.uix.scrollview import ScrollView
@@ -25,7 +21,16 @@ from service.settings_store import (
     save_model_config,
     save_settings,
 )
-from theme import THEME_KEY, add_background, current_theme, set_theme, themed_button, themed_popup
+from theme import (
+    THEME_KEY,
+    add_image_background,
+    add_paper_background,
+    add_scrim,
+    current_theme,
+    set_theme,
+    themed_button,
+    themed_popup,
+)
 
 PRESETS = [
     ("Agens · agnes-2.0-flash", "https://apihub.agnes-ai.com/v1", "agnes-2.0-flash"),
@@ -66,27 +71,8 @@ class HomeScreen(Screen):
 
     def _paint_background(self) -> None:
         theme = current_theme()
-        bg_path = _asset_path("images", "ink_home_bg.png")
-        if bg_path.exists():
-            bg = Image(
-                source=str(bg_path),
-                allow_stretch=True,
-                keep_ratio=False,
-                size_hint=(1, 1),
-                pos_hint={"x": 0, "y": 0},
-            )
-            self.root.add_widget(bg)
-        else:
-            add_background(self.root, color=theme.bg)
-        mist = Widget(size_hint=(1, 1), pos_hint={"x": 0, "y": 0})
-        with mist.canvas.before:
-            Color(0.969, 0.953, 0.918, 0.48)
-            mist._mist_rect = Rectangle(pos=mist.pos, size=mist.size)
-        mist.bind(
-            pos=lambda _w, v: setattr(mist._mist_rect, "pos", v),
-            size=lambda _w, v: setattr(mist._mist_rect, "size", v),
-        )
-        self.root.add_widget(mist)
+        add_image_background(self.root, "ink_mountain_gate.png", fallback_color=theme.bg)
+        add_scrim(self.root, color=(0.969, 0.953, 0.918, 0.36))
 
     def _build_content(self) -> None:
         theme = current_theme()
@@ -100,7 +86,7 @@ class HomeScreen(Screen):
             orientation="vertical",
             size_hint=(0.74, None),
             height=dp(150),
-            pos_hint={"center_x": 0.5, "top": 0.78},
+            pos_hint={"center_x": 0.5, "top": 0.82},
             spacing=dp(8),
         )
         title = Label(
@@ -127,7 +113,7 @@ class HomeScreen(Screen):
             orientation="vertical",
             size_hint=(0.72, None),
             height=dp(292),
-            pos_hint={"center_x": 0.5, "y": 0.09},
+            pos_hint={"center_x": 0.5, "y": 0.07},
             spacing=dp(12),
         )
         buttons = [
@@ -150,6 +136,7 @@ class HomeScreen(Screen):
     def _show_load_popup(self) -> None:
         theme = current_theme()
         outer = BoxLayout(orientation="vertical", padding=dp(10), spacing=dp(8))
+        add_paper_background(outer, color=theme.surface)
         scroll = ScrollView(size_hint_y=1)
         slots = BoxLayout(orientation="vertical", size_hint_y=None, spacing=dp(7))
         slots.bind(minimum_height=slots.setter("height"))
@@ -212,6 +199,7 @@ class HomeScreen(Screen):
         theme = current_theme()
         page = _TUTORIAL_PAGES[self._tutorial_page]
         outer = BoxLayout(orientation="vertical", padding=dp(12), spacing=dp(10))
+        add_paper_background(outer, color=theme.surface)
         title = Label(
             text=f"[b]教程 · {self._tutorial_page + 1}[/b]",
             markup=True,
@@ -263,6 +251,7 @@ class HomeScreen(Screen):
         self._sfx_enabled = audio.sfx_enabled
 
         outer = BoxLayout(orientation="vertical", padding=dp(10), spacing=dp(8))
+        add_paper_background(outer, color=theme.surface)
         scroll = ScrollView()
         form = BoxLayout(orientation="vertical", size_hint_y=None, spacing=dp(8))
         form.bind(minimum_height=form.setter("height"))
@@ -387,10 +376,6 @@ class HomeScreen(Screen):
     def _on_quit(self) -> None:
         from kivy.app import App
         App.get_running_app().stop()
-
-
-def _asset_path(*parts: str) -> Path:
-    return Path(__file__).resolve().parents[1] / "assets" / Path(*parts)
 
 
 def _hex(rgba) -> str:

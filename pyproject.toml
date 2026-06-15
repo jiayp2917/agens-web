@@ -16,8 +16,6 @@ dependencies = [
     "langchain-core>=0.3.0",
     "langchain-openai>=0.2.0",
     "httpx>=0.27.0",
-    "typer>=0.12.0",
-    "rich>=13.7.0",
     "pyyaml>=6.0.1",
 ]
 
@@ -28,15 +26,6 @@ dev = [
     "ruff>=0.4.0",
     "mypy>=1.10.0",
 ]
-# Enables BGM playback in the terminal REPL.
-# Install with:  pip install -e ".[repl]"
-repl = [
-    "pygame>=2.5.0",
-]
-
-[project.scripts]
-agens-novel = "agens_novel.cli:app"
-
 [tool.setuptools.packages.find]
 where = ["src"]
 

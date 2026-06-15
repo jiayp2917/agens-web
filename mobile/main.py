@@ -9,7 +9,6 @@ Build APK with Buildozer (requires Linux/WSL2):
 
 from __future__ import annotations
 
-import base64
 import os
 import sys
 from pathlib import Path
@@ -26,11 +25,10 @@ from pathlib import Path
 _IS_ANDROID = "ANDROID_ARGUMENT" in os.environ or "ANDROID_PRIVATE" in os.environ
 _app_dir = Path(__file__).resolve().parent
 
-# On Android (buildozer source.dir=.), all packages live flat alongside main.py:
-#   screens/, widgets/, service/, agens_novel/, config/
-# On desktop, mobile/main.py's parent is mobile/; the project root is one level up.
+# With source.dir=.., root main.py imports this module from <app-root>/mobile.
+# On desktop, mobile/main.py's parent is also the project root.
 if _IS_ANDROID:
-    _project_root = _app_dir          # app dir IS the project root on Android
+    _project_root = _app_dir.parent
 else:
     # Desktop: project root = mobile/.. (contains src/agens_novel/)
     _project_root = _app_dir.parent if (_app_dir.parent / "src" / "agens_novel").exists() else _app_dir
@@ -43,6 +41,10 @@ if _IS_ANDROID:
 for _path in (_app_dir, _src_dir, _project_root):
     if _path.exists() and str(_path) not in sys.path:
         sys.path.insert(0, str(_path))
+
+from agens_novel.logging_setup import setup_logging
+
+setup_logging()
 
 # Register bundled CJK font BEFORE any Kivy widget import. This overrides
 # Kivy's four default font name slots (Roboto/DroidSans/DejaVuSans/FreeSans)
@@ -64,22 +66,6 @@ from screens.character_create_screen import CharacterCreateScreen
 from screens.death_screen import DeathScreen
 
 
-def _inject_builtin_key() -> None:
-    """Inject the built-in API key into environment if no user key is set.
-
-    This ensures the app works out-of-the-box on mobile without requiring
-    the user to configure an API key first.
-    """
-    if not os.environ.get("AGNES_API_KEY"):
-        # Decode the built-in key from client.py.
-        _DEFAULT_KEY_B64 = "c2stdkN2QlNJOGdsbGtyZTJrZktSR0UyZ25KU1BmYlJmSnVNY21CTnFITldMNGhZVzVY"
-        try:
-            key = base64.b64decode(_DEFAULT_KEY_B64).decode("utf-8")
-            os.environ["AGNES_API_KEY"] = key
-        except Exception:
-            pass  # If built-in key fails, user must configure manually.
-
-
 class XianxiaApp(App):
     """Main Kivy application."""
 
@@ -87,9 +73,6 @@ class XianxiaApp(App):
     icon = ""
 
     def build(self):
-        # Inject built-in key before anything else.
-        _inject_builtin_key()
-
         # Load saved settings into env vars.
         data = load_settings()
         apply_settings_to_env(data)

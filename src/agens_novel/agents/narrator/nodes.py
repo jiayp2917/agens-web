@@ -1,4 +1,4 @@
-"""Narrator Agent node functions.
+﻿"""Narrator Agent node functions.
 
 Takes the player's action + current game state, produces narrative text +
 a structured state delta wrapped in ``<state_update>`` tags.
@@ -116,7 +116,7 @@ async def call_agnes_llm(state: dict[str, Any]) -> dict[str, Any]:
     stream_callback: Callable[[str], None] | None = state.get("stream_callback")
     # Fallback: try thread-local context (avoids msgpack serialization issues).
     if stream_callback is None:
-        from ...repl._stream_context import get as _get_stream_cb
+        from ...engine._stream_context import get as _get_stream_cb
         stream_callback = _get_stream_cb()
 
     try:

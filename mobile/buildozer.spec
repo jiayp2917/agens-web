@@ -10,22 +10,22 @@ package.name = agensnovel
 package.domain = org.agens
 
 # (str) Source directory where the main application lives.
-# Use mobile/ itself as source root. Symlinks agens_novel/ and config/
-# are created by the build skill (ln -sfn ../src/agens_novel agens_novel).
-source.dir = .
+# Build from the repository root so the APK contains root main.py, mobile UI,
+# shared engine, prompts, and root BGM without relying on symlinks.
+source.dir = ..
 
 # (list) Source files to include
-source.include_exts = py,png,jpg,kv,atlas,json,yaml,md,txt,otf,ttf
+source.include_exts = py,png,jpg,kv,atlas,json,yaml,md,txt,otf,ttf,flac
 
-# (list) Extra directories to include — with source.dir=. everything under
-# mobile/ is included by default.  Symlinks (agens_novel, config) are followed.
-source.include_patterns = *
+# (list) Extra files/directories to include.
+# Keep this narrow because source.dir points at the repository root.
+source.include_patterns = main.py,bgm.flac,mobile/**/*,src/agens_novel/**/*,config/**/*
 
 # (list) List of directory to exclude from source
-source.exclude_dirs = __pycache__, .pytest_cache, .buildozer, bin
+source.exclude_dirs = __pycache__, .pytest_cache, .buildozer, bin, .git, .venv, .venv311, runtime, tests, docs
 
 # (list) List of exclusions using pattern matching
-source.exclude_patterns = .buildozer/*,bin/*
+source.exclude_patterns = mobile/.buildozer/*,mobile/bin/*,.buildozer/*,bin/*,runtime/*,tests/*,docs/*
 
 # (str) Application version
 version = 0.4.0

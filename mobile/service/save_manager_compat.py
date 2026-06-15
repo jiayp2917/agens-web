@@ -1,4 +1,4 @@
-"""Mobile-specific save manager setup.
+﻿"""Mobile-specific save manager setup.
 
 Configures the agens_novel save manager to use the app's internal storage
 directory instead of the default runtime/saves/ path.
@@ -20,5 +20,5 @@ def set_mobile_save_dir(app) -> None:
     except Exception:
         save_dir = Path.home() / ".agens_novel" / "saves"
 
-    from agens_novel.repl.save_manager import set_save_dir
+    from agens_novel.persistence.save_manager import set_save_dir
     set_save_dir(save_dir)

@@ -13,7 +13,7 @@ from kivy.uix.scrollview import ScrollView
 from kivy.uix.spinner import Spinner
 from kivy.uix.textinput import TextInput
 from service.engine_adapter import EngineAdapter
-from theme import add_background, current_theme, themed_button
+from theme import add_image_background, add_paper_background, add_scrim, current_theme, themed_button
 
 from agens_novel.game.constants import (
     ATTRIBUTE_KEYS,
@@ -44,8 +44,10 @@ class CharacterCreateScreen(Screen):
         self._attribute_widgets: dict[str, tuple[ProgressBar, Label]] = {}
 
         theme = current_theme()
-        add_background(self, color=theme.bg)
+        add_image_background(self, "ink_mountain_gate.png", fallback_color=theme.bg)
+        add_scrim(self, color=(0.969, 0.953, 0.918, 0.58))
         root = BoxLayout(orientation="vertical", padding=[dp(14), dp(12)], spacing=dp(8))
+        add_paper_background(root, color=(1.0, 0.973, 0.941, 0.86))
 
         top = BoxLayout(orientation="horizontal", size_hint_y=None, height=dp(40), spacing=dp(8))
         back_btn = themed_button("返回", font_size=dp(13), size_hint_x=0.28)
@@ -110,17 +112,17 @@ class CharacterCreateScreen(Screen):
         self.result_container = BoxLayout(orientation="vertical", size_hint_y=None, height=0)
         self.form.add_widget(self.result_container)
 
-        row = BoxLayout(orientation="horizontal", size_hint_y=None, height=dp(44), spacing=dp(8))
-        random_btn = themed_button("随机", font_size=dp(15))
-        start_btn = themed_button("开始", font_size=dp(15))
-        random_btn.bind(on_release=lambda _: self._randomize())
-        start_btn.bind(on_release=lambda _: self._start())
-        row.add_widget(random_btn)
-        row.add_widget(start_btn)
-        self.form.add_widget(row)
-
         scroll.add_widget(self.form)
         root.add_widget(scroll)
+
+        action_row = BoxLayout(orientation="horizontal", size_hint_y=None, height=dp(50), spacing=dp(8))
+        random_btn = themed_button("随机属性", font_size=dp(15))
+        start_btn = themed_button("开始修行", font_size=dp(15))
+        random_btn.bind(on_release=lambda _: self._randomize())
+        start_btn.bind(on_release=lambda _: self._start())
+        action_row.add_widget(random_btn)
+        action_row.add_widget(start_btn)
+        root.add_widget(action_row)
         self.add_widget(root)
 
     def on_enter(self, *args):

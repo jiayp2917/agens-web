@@ -13,11 +13,11 @@ format:
 	ruff format src tests
 
 run:
-	python -m agens_novel.cli run --input "$(INPUT)"
+	python mobile/main.py
 
 smoke:
-	python -m agens_novel.cli init
-	python -m agens_novel.cli status
+	python -m compileall -q src tests mobile/main.py mobile/audio_manager.py mobile/screens mobile/widgets mobile/service demo_full_flow.py
+	python -m pytest -q tests/unit/test_mobile_startup.py tests/unit/test_buildozer_spec.py
 
 clean:
 	rm -rf runtime/artifacts/* runtime/checkpoints/* runtime/logs/*

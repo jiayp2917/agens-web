@@ -15,9 +15,9 @@ $env:AGNES_BASE_URL = $BaseUrl
 $env:AGNES_MODEL    = $Model
 
 try {
-    # Pass through any args after `--` to the CLI.
-    # PowerShell's $args only captures positional args; we accept them as-is.
-    & python -m agens_novel.cli @args
+    # Launch the Android/Kivy product path. Extra args are passed through for
+    # local debugging helpers, but the app normally does not require them.
+    & python mobile\main.py @args
     exit $LASTEXITCODE
 }
 finally {

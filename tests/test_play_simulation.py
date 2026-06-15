@@ -1,4 +1,4 @@
-"""Play simulation tests: 3 player archetypes driving the GameEngine.
+﻿"""Play simulation tests: 3 player archetypes driving the GameEngine.
 
 Mocks run_turn_sync to simulate LLM responses.  Exercises:
 - Normal player: proper game flow, save/load, state progression.
@@ -22,8 +22,8 @@ import pytest
 
 from agens_novel.engine.game_engine import GameEngine
 from agens_novel.game.constants import REALM_ORDER, REALM_CONFIGS
-from agens_novel.repl.game_session import GameSession
-from agens_novel.repl import save_manager
+from agens_novel.session.game_session import GameSession
+from agens_novel.persistence import save_manager
 
 log = logging.getLogger(__name__)
 

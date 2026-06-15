@@ -1,15 +1,14 @@
-"""Pure-text rendering functions for game state.
+﻿"""Pure-text rendering functions for game state.
 
 These produce plain strings (with Unicode progress bars) suitable for any
-display — terminal, mobile UI, web.  No dependency on Rich or any UI library.
+display — Android/mobile UI.  No dependency on Kivy or any UI library.
 
-The logic mirrors ``repl/game_view.py`` but outputs plain text instead of
-Rich widgets.
+Used by Android popups and tests without depending on a terminal UI.
 """
 
 from __future__ import annotations
 
-from ..repl.game_session import GameSession
+from ..session.game_session import GameSession
 
 # Chinese stage suffixes for realm display.
 _STAGE_CN = ["", "一层", "二层", "三层", "四层", "五层", "六层", "七层", "八层", "九层"]

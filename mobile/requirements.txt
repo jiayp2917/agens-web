@@ -22,7 +22,5 @@ langchain-openai>=0.2.0
 # YAML config parsing (pure Python fallback)
 pyyaml>=6.0.1
 
-# NOTE: The following agens_novel deps are NOT needed on mobile:
-# - rich     (terminal only)
-# - typer    (terminal only)
-# - pydantic (removed from direct deps; may come via langgraph)
+# NOTE: pydantic is not a direct dependency; it may still arrive through
+# langgraph transitive dependencies.

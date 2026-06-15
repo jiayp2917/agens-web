@@ -1,8 +1,7 @@
 """UI-agnostic game engine for the xianxia cultivation simulator.
 
-Extracts all game logic from ``repl.loop.Repl`` into a class that emits events
-via callbacks.  Any UI (terminal Rich, Kivy mobile, web) can register callbacks
-and drive the game without knowing about the other layers.
+The class emits events via callbacks. Android or desktop Kivy UI can register
+callbacks and drive the game without knowing about the other layers.
 
 All agent calls go through ``run_turn_sync`` which internally uses
 ``asyncio.run()`` — this must be called from a thread that has no running
@@ -28,9 +27,9 @@ from ..game.constants import (
     TALENT_OPTIONS,
 )
 from ..game.realm import RealmSystem
-from ..repl.game_session import GameSession
-from ..repl.save_manager import delete_save, list_saves, load_game, rename_save, save_game
-from ..repl.turn_runner import run_turn_sync
+from ..session.game_session import GameSession
+from ..persistence.save_manager import delete_save, list_saves, load_game, rename_save, save_game
+from .turn_runner import run_turn_sync
 from .render import (
     format_combat,
     format_equipment,
@@ -332,11 +331,11 @@ class GameEngine:
             return
 
         if not self.game_session.game_started:
-            self._emit("on_info", "尚未开始游戏。输入 /new 开始新游戏。")
+            self._emit("on_info", "尚未开始游戏。请返回主页选择新游戏。")
             return
 
         if self.game_session.game_over:
-            self._emit("on_info", f"游戏已结束: {self.game_session.error}\n输入 /new 开始新游戏，或 /reset 重置。")
+            self._emit("on_info", f"游戏已结束: {self.game_session.error}\n请使用重新开始或读取存档继续。")
             return
 
         selected_choice = self._resolve_choice_input(text)
@@ -528,7 +527,7 @@ class GameEngine:
         """Detect natural-language breakthrough intent.
 
         Allows players to type "突破", "尝试突破", "冲击筑基",
-        "准备渡劫飞升", etc. instead of always using /breakthrough.
+        "准备渡劫飞升", etc. instead of relying on a command syntax.
         """
         if self.game_session.combat:
             return False  # can't attempt breakthrough during combat
@@ -994,7 +993,7 @@ class GameEngine:
     def reset(self) -> None:
         """Reset the game session."""
         self.game_session.reset()
-        self._emit("on_info", "游戏已重置。输入 /new 开始新游戏。")
+        self._emit("on_info", "游戏已重置。请返回角色创建重新开始。")
         self._emit("on_combat_update", None)
 
     # ─── Multi-slot save management ──────────────────────────────────
@@ -1026,7 +1025,7 @@ class GameEngine:
     def expand(self, gen_type: str = "new_region") -> None:
         """Request world expansion from the World Builder."""
         if not self.game_session.game_started:
-            self._emit("on_info", "请先输入 /new 开始游戏。")
+            self._emit("on_info", "请先从主页创建角色并开始游戏。")
             return
 
         if gen_type not in ("new_region", "new_encounter", "new_technique"):

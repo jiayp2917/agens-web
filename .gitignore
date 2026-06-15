@@ -18,6 +18,7 @@ dist/
 .mypy_cache/
 .pytest_cache/
 .ruff_cache/
+.tmp/
 htmlcov/
 .coverage
 
@@ -27,3 +28,7 @@ runtime/checkpoints/
 runtime/logs/
 runtime/backups/
 runtime/saves/
+
+# Android build outputs
+mobile/.buildozer/
+mobile/bin/

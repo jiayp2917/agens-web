@@ -1,4 +1,4 @@
-"""Tests for the engine render functions (pure-text, no Rich)."""
+﻿"""Tests for UI-agnostic engine render functions."""
 
 from __future__ import annotations
 
@@ -11,7 +11,7 @@ from agens_novel.engine.render import (
     format_status_bar,
     format_status_card,
 )
-from agens_novel.repl.game_session import GameSession
+from agens_novel.session.game_session import GameSession
 
 
 class TestFormatStatusBar:

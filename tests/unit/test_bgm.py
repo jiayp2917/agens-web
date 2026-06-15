@@ -45,6 +45,25 @@ def test_alias_lookup_helpers():
     assert is_alias("/some/absolute/path.flac") is False
 
 
+def test_resolve_track_prefers_project_root_bgm():
+    from agens_novel.bgm import _resolve_track
+
+    assert _resolve_track("default") == ROOT / "bgm.flac"
+
+
+def test_resolve_track_supports_mobile_asset_fallback(monkeypatch, tmp_path):
+    from agens_novel import bgm
+    from agens_novel import paths
+
+    asset = tmp_path / "mobile" / "assets" / "audio" / "bgm.flac"
+    asset.parent.mkdir(parents=True)
+    asset.write_bytes(b"fake")
+
+    monkeypatch.setattr(paths, "PROJECT_ROOT", tmp_path)
+
+    assert bgm._resolve_track("default") == asset
+
+
 def test_load_returns_bool_without_raising():
     """Loading a known alias must return a bool, never raise."""
     from agens_novel.bgm import get_service

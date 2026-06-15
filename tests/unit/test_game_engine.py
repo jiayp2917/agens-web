@@ -1,4 +1,4 @@
-"""Tests for GameEngine — UI-agnostic game logic service."""
+﻿"""Tests for GameEngine — UI-agnostic game logic service."""
 
 from __future__ import annotations
 
@@ -8,7 +8,7 @@ from unittest.mock import patch
 import pytest
 
 from agens_novel.engine.game_engine import GameEngine, fallback_choices
-from agens_novel.repl.game_session import GameSession
+from agens_novel.session.game_session import GameSession
 
 
 # ═══════════════════════════════════════════════════════════════════════════════

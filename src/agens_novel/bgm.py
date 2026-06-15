@@ -1,14 +1,13 @@
 """Background music (BGM) service — cross-environment playback.
 
-Single entry point used by the Kivy mobile app, the REPL loop, and the
-demo script. The service picks the best available backend at runtime and
+Single entry point used by the Kivy mobile app and demo scripts. The
+service picks the best available backend at runtime and
 falls back to a no-op if no audio device is available, so importing or
 calling into this module never breaks the host application.
 
 Backends, in preference order:
   1. ``kivy.core.audio.SoundLoader`` — used inside the Kivy app and demo.
-  2. ``pygame.mixer`` — used by the terminal REPL (SDL-based, plays in
-     background while the prompt is being read).
+  2. ``pygame.mixer`` — optional desktop fallback for local visual demos.
   3. ``None`` — silent stub used when neither backend is importable or
      when audio initialisation fails. The game still runs.
 
@@ -47,9 +46,18 @@ def _resolve_track(name: str) -> Path:
 
     filename = _TRACK_ALIASES.get(name, name)
     candidate = Path(filename)
-    if not candidate.is_absolute():
-        candidate = PROJECT_ROOT / candidate
-    return candidate
+    if candidate.is_absolute():
+        return candidate
+
+    search_paths = (
+        PROJECT_ROOT / candidate,
+        PROJECT_ROOT / "assets" / "audio" / candidate,
+        PROJECT_ROOT / "mobile" / "assets" / "audio" / candidate,
+    )
+    for path in search_paths:
+        if path.exists():
+            return path
+    return search_paths[0]
 
 
 def is_alias(name: str) -> bool:
@@ -180,7 +188,7 @@ class _KivyBackend(_BgmBackend):
 
 
 class _PygameBackend(_BgmBackend):
-    """``pygame.mixer`` backend — used by the terminal REPL."""
+    """``pygame.mixer`` backend used as a desktop fallback."""
 
     def __init__(self) -> None:
         self._mixer = None
@@ -273,7 +281,7 @@ def _select_backend() -> _BgmBackend:
         if in_kivy:
             logger.info("BGM: Kivy present but unusable, falling back")
 
-    # 2. Try pygame for the REPL.
+    # 2. Try pygame for local desktop demos.
     try:
         import pygame  # type: ignore  # noqa: F401
 

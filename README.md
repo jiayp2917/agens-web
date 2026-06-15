@@ -1,168 +1,68 @@
 # agens-novel
 
-> **文字修仙模拟器** — AI 驱动的互动叙事，基于 LangGraph 多 Agent 架构。
-> 支持终端 REPL（Rich）和 Android APK（Kivy/Buildozer）。
+Android-only 文字修仙模拟器。产品入口是 Kivy/Buildozer 移动端，核心玩法由 LangGraph Agent、GameEngine、Session、存档和规则系统驱动。
 
-## 安全提示
+## 启动
 
-🔒 **API key 永远不要写入任何文件。** 本项目只从环境变量读取 `AGNES_API_KEY`、`AGNES_BASE_URL`、`AGNES_MODEL`，并通过 `SecretRedactor` 在日志/输出中屏蔽任何形如 `sk-...` 的字符串。
+```powershell
+cd D:\chat\agens
+.\.venv311\Scripts\python.exe mobile\main.py
+```
 
----
-
-## 快速开始
-
-### 1. 安装依赖
+开发测试环境：
 
 ```powershell
 cd D:\chat\agens
 python -m venv .venv
-.venv\Scripts\activate
+.\.venv\Scripts\activate
 pip install -e ".[dev]"
 ```
 
-### 2. 设置环境变量
-
-在当前终端中注入（关闭终端后失效）：
+可选模型配置只通过当前进程环境变量或应用内设置注入，不把密钥写入仓库：
 
 ```powershell
 $env:AGNES_BASE_URL = "https://apihub.agnes-ai.com/v1"
 $env:AGNES_MODEL    = "agnes-2.0-flash"
-$env:AGNES_API_KEY  = "<你的 key>"
-$env:PYTHONPATH     = "src"
+$env:AGNES_API_KEY  = "<your key>"
 ```
 
-### 3. 启动模拟器
+## 当前流程
 
-```powershell
-python -m agens_novel repl
-```
+1. 主页显示水墨背景、BGM 开关、新游戏、读档、教程、设置、退出。
+2. 新游戏进入角色创建，填写游戏名称、角色名，选择天赋、灵根、家世、难度，可随机基础属性。
+3. 开局优先调用 World Builder 生成天道背景和 A/B/C 三个上下文选项；失败时显示“天道紊乱”兜底提示。
+4. 游戏主界面顶部显示角色状态，中部展示叙事和 A/B/C，底部固定 D 自由输入。
+5. 存档、读档、状态、背包、装备、功法、任务、突破、设置都收在“更多”工具弹窗，不常驻挤占叙事空间。
+6. 战斗不提供常驻按钮，玩家通过 D 输入框键入攻击、防御、逃跑、施展功法等自然语言行动。
+7. 死亡进入重开/读档/主页流程；飞升进入独立“飞升成仙”终局。
 
-你会看到欢迎面板：
+## 关键模块
 
-```
-┌─────────────────────────────────────────────────────┐
-│ 文字修仙 - AI 驱动的修仙世界模拟器                      │
-│ 输入行动探索世界，或用命令管理游戏。                       │
-│ 输入 /new 开始新游戏，/help 查看所有命令。               │
-└─────────────────────────────────────────────────────┘
-修仙>
-```
-
----
-
-## 玩法
-
-### 创建角色
-
-```
-修仙> /new 我叫许满，火灵根，出身农家
-```
-
-AI 会生成你的初始角色（境界、灵根、HP/MP）、起始地点和开场叙事。
-
-### 自由行动
-
-输入任何文字作为你的行动：
-
-```
-修仙> 修炼吐纳功法
-修仙> 去后山采药
-修仙> 和陈师兄切磋
-```
-
-AI 叙述者会描述你的行动后果，并更新状态（HP/MP/经验等）。
-
-### 境界突破
-
-```
-修仙> /breakthrough
-```
-
-9 重境界（练气 → 筑基 → 金丹 → 元婴 → 化神 → 合体 → 大乘 → 渡劫 → 飞升），突破成功率和灵根品质相关。
-
-### 战斗系统
-
-触发战斗后可用命令：
-
-```
-修仙> /attack              # 普通攻击
-修仙> /technique 引剑诀     # 使用功法
-修仙> /item 回灵丹          # 使用丹药
-修仙> /defend              # 防御
-修仙> /flee                # 逃跑
-```
-
-### 游戏命令
-
-| 命令 | 说明 |
-|------|------|
-| `/new` | 开始新游戏 |
-| `/status` | 显示角色状态 |
-| `/inv` | 显示背包 |
-| `/skills` | 显示功法 |
-| `/map` | 显示已探索地点 |
-| `/quest` | 显示当前任务 |
-| `/log` | 显示最近回合 |
-| `/breakthrough` | 尝试突破境界 |
-| `/attack` | 战斗：普通攻击 |
-| `/technique <名>` | 战斗：使用功法 |
-| `/item <名>` | 战斗：使用丹药 |
-| `/defend` | 战斗：防御 |
-| `/flee` | 战斗：逃跑 |
-| `/expand` | 请求世界扩展 |
-| `/save` | 保存进度 |
-| `/load` | 加载存档 |
-| `/reset` | 重置游戏 |
-| `/config` | 显示配置 |
-| `/history` | 命令历史 |
-| `/clear` | 清屏 |
-| `/help` | 显示所有命令 |
-
----
-
-## 架构
-
-```
-玩家输入
-    │
-    ├── /new → [World Builder] → 初始化角色 + 世界
-    │
-    ├── 行动 → [Narrator] → 叙事 + 状态变化
-    │              │
-    │              ▼
-    │         [Judge] → 审核通过/修正
-    │              │
-    │              ▼
-    │         更新状态 → 显示 → 自动存档
-    │
-    ├── /breakthrough → [RealmSystem] → 突破判定
-    │
-    ├── /attack /defend ... → [CombatEngine] → 战斗回合
-    │
-    └── /save /load /status → 存档管理
-```
-
-- **Narrator Agent**: 天道叙述者，根据玩家行动生成叙事和状态变化
-- **World Builder Agent**: 世界设计师，创建角色和世界内容
-- **Judge Agent**: 规则仲裁者，审核状态变化的合理性
-- **RealmSystem**: 9 境界突破 + 8 灵根加成 + 飞升大结局
-- **CombatEngine**: 回合制战斗（攻击/功法/丹药/防御/逃跑）
-
-## 移动端
-
-可通过 Buildozer 打包为 Android APK（arm64-v8a，API 34）：
-
-```powershell
-/build-apk              # 增量打包
-/build-apk --clean      # 清缓存重打包
-```
-
-详细说明见 [`.claude/skills/build-apk/SKILL.md`](.claude/skills/build-apk/SKILL.md)。
+- `mobile/main.py`：Android/Kivy 应用入口。
+- `mobile/screens/`：主页、游戏页、角色创建、死亡/飞升页。
+- `mobile/widgets/`：输入栏、叙事区、状态栏、战斗提示、加载层。
+- `mobile/assets/images/`：沉浸水墨背景、宣纸纹理、死亡/飞升终局背景。
+- `mobile/service/`：Kivy 与核心引擎之间的适配层。
+- `src/agens_novel/engine/game_engine.py`：唯一游戏逻辑入口。
+- `src/agens_novel/session/game_session.py`：游戏会话状态和序列化。
+- `src/agens_novel/persistence/save_manager.py`：存读档。
+- `src/agens_novel/engine/turn_runner.py`：Agent 调用器。
+- `src/agens_novel/game/`：境界、战斗、常量等规则。
+- `config/prompts/system/`：Narrator、World Builder、Judge 系统提示词。
 
 ## 测试
 
 ```powershell
-python -m pytest -q                          # 全部测试（445 passed）
-python -m pytest tests/unit/test_destructive.py -v  # 破坏性测试
-python -m pytest tests/integration/ -v       # 真 LLM 集成测试（需 AGNES_API_KEY）
+.\.venv\Scripts\python.exe -m compileall -q src tests mobile\main.py mobile\audio_manager.py mobile\screens mobile\widgets mobile\service demo_full_flow.py
+.\.venv\Scripts\python.exe -m pytest -q
 ```
+
+## 打包
+
+```powershell
+/build-apk
+/build-apk --clean
+/build-apk --release
+```
+
+Buildozer 配置在 `mobile/buildozer.spec`，产品方向固定为 Android 竖屏。

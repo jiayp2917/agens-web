@@ -7,7 +7,7 @@ from kivy.uix.label import Label
 from kivy.metrics import dp
 
 from theme import (
-    add_background,
+    add_paper_background,
     current_theme,
 )
 
@@ -28,7 +28,7 @@ class CombatBar(BoxLayout):
             height=dp(46),
             **kwargs,
         )
-        add_background(self, color=theme.surface)
+        add_paper_background(self, color=(1.0, 0.973, 0.941, 0.84))
 
         # Enemy info row.
         self.lbl_enemy = Label(

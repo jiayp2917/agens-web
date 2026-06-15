@@ -1,11 +1,11 @@
-"""Tests for full 9-realm breakthrough support + ascension finale."""
+﻿"""Tests for full 9-realm breakthrough support + ascension finale."""
 
 from __future__ import annotations
 
 from unittest.mock import patch
 
 from agens_novel.game.realm import RealmSystem
-from agens_novel.repl.game_session import GameSession
+from agens_novel.session.game_session import GameSession
 
 
 def _make_session_at_final_stage(realm: str, **overrides) -> GameSession:

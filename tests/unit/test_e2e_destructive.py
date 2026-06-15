@@ -1,4 +1,4 @@
-"""Comprehensive e2e destructive / fuzz tests.
+﻿"""Comprehensive e2e destructive / fuzz tests.
 
 Purpose: simulate adversarial user behavior to verify the game engine
 never crashes regardless of input. All LLM calls are mocked.
@@ -25,8 +25,8 @@ from pathlib import Path
 from unittest.mock import patch, MagicMock
 
 from agens_novel.engine.game_engine import GameEngine
-from agens_novel.repl.game_session import GameSession
-from agens_novel.repl.save_manager import (
+from agens_novel.session.game_session import GameSession
+from agens_novel.persistence.save_manager import (
     save_game, load_game, list_saves, delete_save, get_manual_save_slots,
     set_save_dir, AUTOSAVE_NAME,
 )
@@ -462,7 +462,7 @@ class TestTurnRunnerStreamIsolation:
     def test_stream_callback_not_in_kwargs(self):
         """Verify that run_turn_sync never passes stream_callback in **kwargs."""
         import inspect
-        from agens_novel.repl import turn_runner
+        from agens_novel.engine import turn_runner
 
         source = inspect.getsource(turn_runner.run_turn_sync)
         # Old bug: state["stream_callback"] = stream_callback
@@ -471,7 +471,7 @@ class TestTurnRunnerStreamIsolation:
 
     def test_stream_context_isolation(self):
         """Thread-local context should not leak between calls."""
-        from agens_novel.repl._stream_context import set, get
+        from agens_novel.engine._stream_context import set, get
         import threading
 
         set(lambda x: None)

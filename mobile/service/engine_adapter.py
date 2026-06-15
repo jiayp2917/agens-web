@@ -9,12 +9,15 @@ in a background thread and post results back to Kivy via Clock.schedule_once.
 from __future__ import annotations
 
 import threading
+import logging
 from collections.abc import Callable
 from typing import Any
 
 from kivy.clock import Clock
 
 from agens_novel.engine.game_engine import GameEngine
+
+log = logging.getLogger(__name__)
 
 
 class EngineAdapter:
@@ -87,7 +90,10 @@ class EngineAdapter:
             try:
                 fn(*args, **kwargs)
             except Exception as exc:
+                log.exception("Game engine worker failed")
                 message = str(exc)
+                if "maximum recursion depth exceeded" in message:
+                    message = "内部日志系统异常，请重试或查看运行日志。"
                 Clock.schedule_once(lambda dt: self._emit("on_error", message))
 
         self._thread = threading.Thread(target=target, daemon=True)

@@ -3,7 +3,7 @@
 Covers:
 - stream_callback no longer in LangGraph state (msgpack fix)
 - NarrativeView filters <state_update> from streaming chunks
-- Slash command parsing in GameScreen
+- Android D input remains free text, not slash-command routing
 - apply_delta defensive guards
 - Game session serialization roundtrip
 """
@@ -13,8 +13,8 @@ from __future__ import annotations
 import json
 import pytest
 
-from agens_novel.repl.game_session import GameSession
-from agens_novel.repl.turn_runner import run_turn_sync
+from agens_novel.session.game_session import GameSession
+from agens_novel.engine.turn_runner import run_turn_sync
 from agens_novel.game.constants import REALM_ORDER
 
 
@@ -42,7 +42,7 @@ class TestStreamCallbackNotInState:
 
         # Verify callback is popped from kwargs and not in the state built.
         # We do this by inspecting what run_turn_sync would pass.
-        import agens_novel.repl.turn_runner as tr
+        import agens_novel.engine.turn_runner as tr
         import inspect
 
         source = inspect.getsource(tr.run_turn_sync)
@@ -53,7 +53,7 @@ class TestStreamCallbackNotInState:
 
     def test_stream_context_module_importable(self):
         """The _stream_context module should be importable."""
-        from agens_novel.repl import _stream_context
+        from agens_novel.engine import _stream_context
         assert hasattr(_stream_context, 'get')
         assert hasattr(_stream_context, 'set')
         # Clean up from any prior test.
@@ -62,7 +62,7 @@ class TestStreamCallbackNotInState:
 
     def test_stream_context_thread_local(self):
         """set/get should work in the current thread."""
-        from agens_novel.repl import _stream_context
+        from agens_novel.engine import _stream_context
         cb = lambda text: None
         _stream_context.set(cb)
         assert _stream_context.get() is cb
@@ -147,38 +147,29 @@ class TestNarrativeViewStreamFilter:
         assert delta == {}  # Failed parse → empty delta
 
 
-# ─── Fix 3: Slash command parsing ─────────────────────────────────────────
+# ─── Fix 3: Android D input stays free text ───────────────────────────────
 
-class TestSlashCommandParsing:
-    """Test the _SLASH_COMMANDS mapping and parse logic."""
+class TestAndroidFreeTextInput:
+    """Test that Android does not expose terminal-style command routing."""
 
-    def test_command_map_has_expected_keys(self):
-        """Verify all expected slash commands exist."""
-        # Import game_screen to check the mapping.
-        # Since it requires Kivy, we test the data structure directly.
-        expected = {
-            "/new", "/save", "/load", "/status", "/inv",
-            "/skills", "/map", "/quest", "/breakthrough", "/equipment",
-            "/settings", "/home", "/saves",
-        }
-        # These Chinese aliases should also exist.
-        chinese = {
-            "/新游戏", "/存档", "/读档", "/状态", "/背包",
-            "/功法", "/地图", "/任务", "/突破", "/装备",
-            "/设置", "/主页", "/存档管理",
-        }
-
-        # Read the source file and verify the mapping exists.
+    def test_game_screen_has_no_slash_command_router(self):
         import pathlib
+
         source = pathlib.Path("mobile/screens/game_screen.py").read_text(encoding="utf-8")
-        for cmd in expected | chinese:
-            assert f'"{cmd}"' in source, f"Missing slash command: {cmd}"
+
+        assert "_SLASH_COMMANDS" not in source
+        assert "_parse_slash_command" not in source
+        assert "startswith(\"/\")" not in source
+        assert "handle_combat_action(action, target)" not in source
 
     def test_choices_ui_is_compact_and_keeps_d_input_hint(self):
         import pathlib
         source = pathlib.Path("mobile/widgets/narrative_view.py").read_text(encoding="utf-8")
-        assert 'height=dp(32)' in source
+        assert 'height=dp(44)' in source
         assert 'D. 自行键入行动' in source
+        action_bar = pathlib.Path("mobile/widgets/action_bar.py").read_text(encoding="utf-8")
+        assert "BUTTONS =" not in action_bar
+        assert '"更多"' in action_bar
 
     def test_normal_game_over_resets_finale_flag(self):
         import pathlib

@@ -4,10 +4,11 @@ from __future__ import annotations
 
 from kivy.metrics import dp
 from kivy.uix.boxlayout import BoxLayout
+from kivy.uix.floatlayout import FloatLayout
 from kivy.uix.label import Label
 from kivy.uix.screenmanager import Screen
 from service.engine_adapter import EngineAdapter
-from theme import add_background, current_theme, themed_button
+from theme import add_image_background, add_paper_background, add_scrim, current_theme, themed_button
 
 
 class DeathScreen(Screen):
@@ -19,9 +20,19 @@ class DeathScreen(Screen):
         self.reason = "修行路无常，仍可从此处重开一世。"
         self.is_finale = False
         theme = current_theme()
-        add_background(self, color=theme.bg)
 
-        outer = BoxLayout(orientation="vertical", padding=[dp(36), dp(150)], spacing=dp(18))
+        self.root = FloatLayout()
+        self._bg_layer = FloatLayout(size_hint=(1, 1), pos_hint={"x": 0, "y": 0})
+        self.root.add_widget(self._bg_layer)
+
+        outer = BoxLayout(
+            orientation="vertical",
+            padding=[dp(34), dp(132)],
+            spacing=dp(18),
+            size_hint=(0.92, 0.82),
+            pos_hint={"center_x": 0.5, "center_y": 0.48},
+        )
+        add_paper_background(outer, color=(1.0, 0.973, 0.941, 0.72))
 
         self.title_label = Label(
             text="[b]道途已断[/b]",
@@ -54,7 +65,9 @@ class DeathScreen(Screen):
         actions.add_widget(load_btn)
         actions.add_widget(home_btn)
         outer.add_widget(actions)
-        self.add_widget(outer)
+        self.root.add_widget(outer)
+        self.add_widget(self.root)
+        self._refresh_background()
 
     def set_reason(self, reason: str) -> None:
         self.reason = reason or self.reason
@@ -62,6 +75,7 @@ class DeathScreen(Screen):
     def on_enter(self, *args):
         """Apply finale or death styling when the screen becomes active."""
         theme = current_theme()
+        self._refresh_background()
         if self.is_finale:
             self.title_label.text = "[b]飞升成仙[/b]"
             self.title_label.color = theme.success_color
@@ -77,6 +91,18 @@ class DeathScreen(Screen):
             self.restart_btn.text = "重新开始"
             self.copy.text = self._copy_text()
         super().on_enter(*args)
+
+    def _refresh_background(self) -> None:
+        theme = current_theme()
+        if not hasattr(self, "_bg_layer"):
+            return
+        self._bg_layer.canvas.before.clear()
+        filename = "ascension_gate.png" if self.is_finale else "death_mist_path.png"
+        add_image_background(self._bg_layer, filename, fallback_color=theme.bg)
+        if self.is_finale:
+            add_scrim(self._bg_layer, color=(1.0, 0.973, 0.941, 0.24))
+        else:
+            add_scrim(self._bg_layer, color=(0.04, 0.04, 0.04, 0.34))
 
     def _copy_text(self) -> str:
         return (

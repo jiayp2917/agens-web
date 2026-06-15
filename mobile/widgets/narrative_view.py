@@ -5,7 +5,7 @@ from kivy.properties import NumericProperty
 from kivy.uix.boxlayout import BoxLayout
 from kivy.uix.label import Label
 from kivy.uix.scrollview import ScrollView
-from theme import add_background, current_theme, rgba_to_hex, themed_button
+from theme import add_paper_background, current_theme, rgba_to_hex, themed_button
 
 
 def _bind_wrapped_height(widget, min_height: float = 0) -> None:
@@ -60,10 +60,10 @@ class NarrativeView(ScrollView):
             orientation="vertical",
             size_hint_x=1,
             size_hint_y=None,
-            padding=[dp(8), dp(4)],
-            spacing=dp(4),
+            padding=[dp(12), dp(10)],
+            spacing=dp(6),
         )
-        add_background(self._layout, color=theme.bg)
+        add_paper_background(self._layout, color=(1.0, 0.973, 0.941, 0.80))
         self._layout.bind(minimum_height=self._layout.setter("height"))
         self.bind(width=lambda _inst, width: setattr(self._layout, "width", width))
         self.add_widget(self._layout)
@@ -108,7 +108,7 @@ class NarrativeView(ScrollView):
             lbl = Label(
                 text=_soft_wrap_cjk(text),
                 markup=False,
-                font_size=dp(14),
+                font_size=dp(15),
                 size_hint_y=None,
                 halign="left",
                 valign="top",
@@ -164,7 +164,7 @@ class NarrativeView(ScrollView):
             self._streaming_label = Label(
                 text="",
                 markup=False,
-                font_size=dp(14),
+                font_size=dp(15),
                 size_hint_y=None,
                 halign="left",
                 valign="top",
@@ -214,31 +214,31 @@ class NarrativeView(ScrollView):
         box = BoxLayout(
             orientation="vertical",
             size_hint_y=None,
-            spacing=dp(3),
-            padding=[0, dp(5), 0, 0],
+            spacing=dp(5),
+            padding=[0, dp(8), 0, 0],
         )
         box.bind(minimum_height=box.setter("height"))
         labels = ("A", "B", "C")
         for index, choice in enumerate(choices[:3]):
             label = f"{labels[index]}. {choice}"
-            label = _soft_wrap_cjk(label, columns=30)
-            btn = themed_button(label, font_size=dp(11), size_hint_y=None, height=dp(32))
+            label = _soft_wrap_cjk(label, columns=34)
+            btn = themed_button(label, font_size=dp(12), size_hint_y=None, height=dp(44))
             btn.halign = "left"
             btn.valign = "middle"
-            _bind_wrapped_height(btn, dp(32))
+            _bind_wrapped_height(btn, dp(44))
             btn.bind(on_release=lambda _inst, c=choice: self._emit_choice(c))
             box.add_widget(btn)
         hint = Label(
-            text="[color={}]D. 自行键入行动[/color]".format(rgba_to_hex(theme.text_hint)),
+            text="[color={}]D. 自行键入行动，或点底部“更多”查看工具[/color]".format(rgba_to_hex(theme.text_hint)),
             markup=True,
             font_size=dp(11),
             size_hint_y=None,
-            height=dp(18),
+            height=dp(20),
             halign="left",
             valign="middle",
             color=theme.text_hint,
         )
-        _bind_wrapped_height(hint, dp(18))
+        _bind_wrapped_height(hint, dp(20))
         box.add_widget(hint)
         self._choices_box = box
         self._layout.add_widget(box)

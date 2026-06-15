@@ -1,8 +1,7 @@
-"""Buildozer entry point for the Android app.
+"""Buildozer entry point for the Android/Kivy app.
 
-The desktop CLI remains ``python -m agens_novel``. This file exists so
-Buildozer can use the repository root as ``source.dir`` and package both the
-mobile Kivy shell and the shared ``src/agens_novel`` engine.
+The product path is Android-only. This file lets Buildozer use the repository
+root as ``source.dir`` while packaging the mobile shell and shared engine.
 """
 
 from __future__ import annotations

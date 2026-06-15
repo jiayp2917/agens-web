@@ -1,10 +1,10 @@
-"""Tests for GameSession — new fields, delta application, serialization."""
+﻿"""Tests for GameSession — new fields, delta application, serialization."""
 
 from __future__ import annotations
 
 import pytest
 
-from agens_novel.repl.game_session import GameSession
+from agens_novel.session.game_session import GameSession
 from agens_novel.game.constants import DEFAULT_ATTRIBUTES, DEFAULT_EQUIPMENT_SLOTS
 
 

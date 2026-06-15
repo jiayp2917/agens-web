@@ -10,6 +10,7 @@ from __future__ import annotations
 import logging
 import re
 import sys
+from typing import IO
 from typing import Final
 
 # Matches: sk-XXXX (any non-whitespace chars, common API key shape)
@@ -47,14 +48,34 @@ class SecretRedactor(logging.Filter):
 _DEFAULT_FORMAT = "%(asctime)s | %(levelname)-7s | %(name)s | %(message)s"
 
 
-def setup_logging(level: int = logging.INFO) -> None:
+class SafeStreamHandler(logging.StreamHandler):
+    """Stream handler that never lets a broken stderr/stdout break gameplay."""
+
+    def handleError(self, record: logging.LogRecord) -> None:  # noqa: N802
+        # Python's default handleError writes another traceback to sys.stderr
+        # when logging.raiseExceptions is true. In Kivy on Windows that can
+        # recurse if stderr itself is the broken stream, so this is deliberately
+        # silent.
+        return None
+
+
+def _default_stream() -> IO[str] | None:
+    return sys.__stderr__ or sys.stderr
+
+
+def setup_logging(
+    level: int = logging.INFO,
+    *,
+    stream: IO[str] | None = None,
+) -> None:
     """Configure the root logger once. Idempotent."""
+    logging.raiseExceptions = False
     root = logging.getLogger()
     # Remove any pre-existing handlers to avoid double-logging.
     for h in list(root.handlers):
         root.removeHandler(h)
 
-    handler = logging.StreamHandler(sys.stderr)
+    handler = SafeStreamHandler(stream if stream is not None else _default_stream())
     handler.setFormatter(logging.Formatter(_DEFAULT_FORMAT))
     handler.addFilter(SecretRedactor())
     root.addHandler(handler)
