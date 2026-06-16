@@ -14,7 +14,7 @@ cd D:\chat\agens
 测试：
 
 ```powershell
-.\.venv\Scripts\python.exe -m compileall -q src tests mobile\main.py mobile\audio_manager.py mobile\screens mobile\widgets mobile\service demo_full_flow.py
+.\.venv\Scripts\python.exe -m compileall -q src tests mobile\main.py mobile\audio_manager.py mobile\screens mobile\widgets mobile\service demos/full_flow/demo_full_flow.py
 .\.venv\Scripts\python.exe -m pytest -q
 ```
 
@@ -25,23 +25,11 @@ cd D:\chat\agens
 - `GameSession` 位于 `src/agens_novel/session/game_session.py`。
 - 存档位于 `src/agens_novel/persistence/save_manager.py`。
 - Agent 调用器位于 `src/agens_novel/engine/turn_runner.py`。
-- 不要引用 `agens_novel.repl.*`。
+- REPL/CLI/终端入口已于历史版本移除，仅保留 `mobile/main.py` 单一入口。
 
 ## 架构图
 
-```mermaid
-graph TD
-    UI[mobile/main.py<br/>Kivy 入口] --> Adapter[mobile/service/engine_adapter.py<br/>UI → 引擎桥接]
-    Adapter --> Engine[src/agens_novel/engine/game_engine.py<br/>核心游戏循环]
-    Engine --> Session[src/agens_novel/session/game_session.py<br/>游戏会话]
-    Engine --> TurnRunner[src/agens_novel/engine/turn_runner.py<br/>Agent 调用]
-    TurnRunner --> Narrator[src/agens_novel/agents/narrator/<br/>叙事 Agent]
-    TurnRunner --> WorldBuilder[src/agens_novel/agents/world_builder/<br/>世界生成 Agent]
-    TurnRunner --> Judge[src/agens_novel/agents/judge/<br/>判定 Agent]
-    TurnRunner --> LLM[src/agens_novel/llm/client.py<br/>OpenAI 兼容 HTTP]
-    Engine --> Game[src/agens_novel/game/{combat,realm}<br/>游戏规则]
-    Session --> Persistence[src/agens_novel/persistence/save_manager.py<br/>存档系统]
-```
+详细架构与模块职责见 [src/agens_novel/ARCHITECTURE.md](src/agens_novel/ARCHITECTURE.md)。
 
 ## 入口说明
 
