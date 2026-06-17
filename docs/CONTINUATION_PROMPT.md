@@ -35,7 +35,7 @@
 ## 验证命令
 
 ```powershell
-.\.venv\Scripts\python.exe -m compileall -q src tests mobile\main.py mobile\audio_manager.py mobile\screens mobile\widgets mobile\service demo_full_flow.py
+.\.venv\Scripts\python.exe -m compileall -q src tests mobile\main.py mobile\audio_manager.py mobile\screens mobile\widgets mobile\service demos\full_flow\demo_full_flow.py
 .\.venv\Scripts\python.exe -m pytest -q
 .\.venv311\Scripts\python.exe mobile\main.py
 ```
@@ -50,6 +50,10 @@ git archive --format=zip --output D:\chat\agens-transfer.zip HEAD
 ```
 
 不要直接压缩整个工作目录。`.venv/`、`.venv311/`、`.git/`、`mobile/.buildozer/`、`mobile/bin/`、`runtime/` 和缓存目录都属于本机产物或运行产物，新电脑应重新创建环境。完整迁移步骤见 `docs/ZIP_TRANSFER.md`。
+
+## 复盘入口
+
+项目深度复盘、USB 真机 ADB 验证经验、冗余清理记录和后续风险队列见 `docs/PROJECT_RETRO_2026-06-17.md`。
 
 ## 开发约束
 

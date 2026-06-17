@@ -86,6 +86,27 @@ class LoadingOverlay(BoxLayout):
             self._anim_event.cancel()
             self._anim_event = None
 
+    def on_touch_down(self, touch):
+        """Let touches pass through when the overlay is hidden.
+
+        Kivy consumes touches on disabled widgets that collide with the touch
+        area. This overlay is full-screen and sits above the game page, so the
+        hidden state must explicitly opt out of touch handling.
+        """
+        if not self.visible or self.opacity <= 0:
+            return False
+        return super().on_touch_down(touch)
+
+    def on_touch_move(self, touch):
+        if not self.visible or self.opacity <= 0:
+            return False
+        return super().on_touch_move(touch)
+
+    def on_touch_up(self, touch):
+        if not self.visible or self.opacity <= 0:
+            return False
+        return super().on_touch_up(touch)
+
     def _animate_dots(self, dt: float) -> None:
         """Append dots to the loading message for animation effect."""
         self._dot_count = (self._dot_count + 1) % 4

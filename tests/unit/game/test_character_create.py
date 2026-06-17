@@ -149,6 +149,25 @@ def test_start_from_profile_model_failure_uses_tiandao_fallback(tmp_path, monkey
     assert any("天道紊乱" in msg for msg in infos)
 
 
+def test_start_from_profile_model_failure_can_end_run(tmp_path, monkeypatch):
+    from agens_novel import paths
+    monkeypatch.setattr(paths, "SAVE_DIR", tmp_path)
+    engine = GameEngine()
+    game_overs: list[str] = []
+    engine.on_model_failure_choice = lambda source, reason: "end"
+    engine.on_game_over = lambda reason: game_overs.append(reason)
+
+    def runner(agent_name, user_input, session, **kwargs):
+        return {"generated_data": {}, "llm_error": "timeout"}
+
+    with patch("agens_novel.engine.game_engine.run_turn_sync", side_effect=runner):
+        engine.start_from_profile({"char_name": "许满"})
+
+    assert engine.game_session.game_over is True
+    assert game_overs == ["模型不可用导致本局结束。"]
+    assert engine.game_session.last_choices == []
+
+
 def test_start_from_profile_uses_profile_choices_only_after_model_failure(tmp_path, monkeypatch):
     from agens_novel import paths
     monkeypatch.setattr(paths, "SAVE_DIR", tmp_path)

@@ -57,4 +57,4 @@ flowchart TD
 
 - Android portrait is the only supported product target.
 - `mobile/buildozer.spec` must include Python, image, font, JSON/YAML/text, and audio asset extensions used by `mobile/assets/` and project root BGM.
-- API keys are runtime configuration only and must not be written to source files or docs.
+- API keys must not be written to source files, docs, logs, or ordinary settings. Mobile saves non-secret settings to `settings.json` / `user_model.json`, while user-entered API keys are stored only in app-private `secrets.json` and shown back only as a masked summary.

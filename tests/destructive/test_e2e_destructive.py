@@ -658,8 +658,9 @@ class TestGameSessionStress:
 
 class TestApiKeyEdgeCases:
 
-    def test_has_api_key_always_true(self):
-        """GameEngine._has_api_key should always return True (built-in key)."""
+    def test_has_api_key_allows_agent_fallback_path(self, monkeypatch):
+        """Missing keys are handled by agent llm_error branches, not preflight."""
+        monkeypatch.delenv("AGNES_API_KEY", raising=False)
         eng = GameEngine()
         assert eng._has_api_key() is True
 

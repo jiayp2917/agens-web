@@ -7,7 +7,7 @@ UI chain and logs whenever mock LLM or deterministic random is used.
 
 Usage:
     cd D:\chat\agens
-    .venv311\Scripts\python.exe demo_full_flow.py
+    .venv311\Scripts\python.exe demos\full_flow\demo_full_flow.py
 """
 
 from __future__ import annotations
@@ -32,10 +32,11 @@ from kivy.core.window import Window
 from kivy.metrics import dp
 
 # ── Project paths ────────────────────────────────────────────────────────
-PROJECT_ROOT = Path(__file__).resolve().parent
-SCREENSHOTS_DIR = PROJECT_ROOT / "demo_screenshots"
+PROJECT_ROOT = Path(__file__).resolve().parents[2]
+DEMO_DIR = Path(__file__).resolve().parent
+SCREENSHOTS_DIR = DEMO_DIR / "demo_screenshots"
 SCREENSHOTS_DIR.mkdir(exist_ok=True)
-DEMO_LOG_PATH = PROJECT_ROOT / "demo_full_flow_log.jsonl"
+DEMO_LOG_PATH = DEMO_DIR / "demo_full_flow_log.jsonl"
 
 sys.path.insert(0, str(PROJECT_ROOT / "src"))
 

@@ -109,7 +109,7 @@ class TestParserDestructive:
 class TestSaveLoadDestructive:
     """Save/load must stay constrained to the configured save directory."""
 
-    def test_load_corrupt_save_raises(self, tmp_path, monkeypatch) -> None:
+    def test_load_corrupt_save_returns_none(self, tmp_path, monkeypatch) -> None:
         from agens_novel import paths
 
         monkeypatch.setattr(paths, "SAVE_DIR", tmp_path / "saves")
@@ -117,8 +117,7 @@ class TestSaveLoadDestructive:
         save_dir.mkdir(parents=True, exist_ok=True)
         (save_dir / "corrupt.json").write_text("NOT JSON AT ALL{{{{", encoding="utf-8")
 
-        with pytest.raises(Exception):
-            load_game("corrupt")
+        assert load_game("corrupt") is None
 
     def test_load_nonexistent_save_raises(self, tmp_path, monkeypatch) -> None:
         from agens_novel import paths

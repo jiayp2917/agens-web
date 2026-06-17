@@ -46,3 +46,14 @@ class TestAndroidFreeTextInput:
         )
         assert "death.is_finale = False" in source
         assert "death.is_finale = True" in source
+
+    def test_settings_keeps_agens_default_and_deepseek_test_preset(self):
+        source = (REPO_ROOT / "mobile" / "screens" / "home_screen.py").read_text(
+            encoding="utf-8"
+        )
+        agens_index = source.index('"Agens · agnes-2.0-flash"')
+        deepseek_index = source.index('"DeepSeek"')
+
+        assert agens_index < deepseek_index
+        assert '"https://apihub.agnes-ai.com/v1", "agnes-2.0-flash"' in source
+        assert '"https://api.deepseek.com/v1", "deepseek-chat"' in source

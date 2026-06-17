@@ -56,6 +56,9 @@ Callback = Callable[..., None]
 INSIGHT_BASE_GAIN = 8
 CHOICE_LABELS = ("A", "B", "C")
 CHOICE_FALLBACK_NOTICE = "天道紊乱，暂以因果残影指引。"
+MODEL_FAILURE_PROMPT = "天道紊乱，是否以因果残影继续推演？"
+MODEL_FAILURE_CONTINUE = "fallback"
+MODEL_FAILURE_END = "end"
 
 
 class GameEngine:
@@ -91,6 +94,7 @@ class GameEngine:
         self.on_stream_chunk: Callback | None = None
         self.on_combat_update: Callback | None = None
         self.on_finale: Callback | None = None
+        self.on_model_failure_choice: Callable[[str, str], str] | None = None
 
     # ─── Helper to emit callbacks safely ───────────────────────────────
 
@@ -100,8 +104,8 @@ class GameEngine:
             cb(*args)
 
     def _has_api_key(self) -> bool:
-        """Always returns True — built-in key is the fallback."""
-        return bool(os.environ.get("AGNES_API_KEY", "")) or True
+        """Let agent nodes report missing API keys as normal LLM failures."""
+        return True
 
     # ─── Stream callback wrapper ──────────────────────────────────────
 
@@ -115,6 +119,8 @@ class GameEngine:
         *,
         source: str,
         fallback_notice: bool = False,
+        require_choice: bool = False,
+        reason: str = "",
     ) -> bool:
         """Set current choices from model output, falling back only when empty."""
         choices = normalize_choices(raw_choices)
@@ -122,11 +128,35 @@ class GameEngine:
             self.game_session.last_choices = choices
             return False
 
+        if require_choice and not self._confirm_local_fallback(source, reason):
+            self._end_model_failure_run(reason or "模型未返回可用选项。")
+            return False
+
         self.game_session.last_choices = fallback_choices(self.game_session)
         log.info("choice fallback used: source=%s", source)
         if fallback_notice:
             self._emit("on_info", CHOICE_FALLBACK_NOTICE)
         return True
+
+    def _confirm_local_fallback(self, source: str, reason: str = "") -> bool:
+        """Ask the UI whether model failure should continue with local fallback."""
+        callback = self.on_model_failure_choice
+        if callback is None:
+            return True
+        try:
+            decision = callback(source, reason or "模型输出不可用。")
+        except Exception:
+            log.exception("model failure choice callback failed")
+            return True
+        return decision != MODEL_FAILURE_END
+
+    def _end_model_failure_run(self, reason: str) -> None:
+        """End the current run after the user declines local model fallback."""
+        self.game_session.game_over = True
+        self.game_session.finale = False
+        self.game_session.error = "模型不可用导致本局结束。"
+        log.warning("model failure ended run: %s", reason)
+        self._emit("on_game_over", self.game_session.error)
 
     # ─── Game commands ─────────────────────────────────────────────────
 
@@ -149,11 +179,21 @@ class GameEngine:
             )
         except Exception:
             log.exception("world_builder error")
-            self._emit("on_error", "世界生成失败（详见日志）")
+            reason = "世界生成失败（详见日志）"
+            self._emit("on_error", reason)
+            if self._confirm_local_fallback("world_builder_exception", reason):
+                self._set_choices(None, source="world_builder_exception", fallback_notice=True)
+            else:
+                self._end_model_failure_run(reason)
             return
 
         if result.get("llm_error"):
-            self._emit("on_error", f"世界生成失败: {result['llm_error']}")
+            reason = f"世界生成失败: {result['llm_error']}"
+            self._emit("on_error", reason)
+            if self._confirm_local_fallback("world_builder_error", reason):
+                self._set_choices(None, source="world_builder_error", fallback_notice=True)
+            else:
+                self._end_model_failure_run(reason)
             return
 
         # Extract generated data.
@@ -219,7 +259,14 @@ class GameEngine:
             desc = result.get("world_description", "")
             opening = desc or "世界已生成。"
 
-        self._set_choices(generated.get("choices"), source="world_builder", fallback_notice=True)
+        if self._set_choices(
+            generated.get("choices"),
+            source="world_builder",
+            fallback_notice=True,
+            require_choice=True,
+            reason="世界生成未返回可用选项。",
+        ) is False and self.game_session.game_over:
+            return
         self._emit("on_narrative", opening, 0)
         self._emit("on_character_created", self.game_session)
         self._emit("on_status_bar", format_status_bar(self.game_session))
@@ -274,8 +321,17 @@ class GameEngine:
         profile_choices = normalize_choices(profile.get("choices"))
         self._emit("on_loading", "天道推演开局中...")
         generated_opening, generated_choices = self._generate_profile_opening(profile, special)
+        if self.game_session.game_over:
+            return
         opening = str(profile.get("opening_narrative") or generated_opening or _profile_opening(self.game_session, special))
-        self._set_choices(generated_choices or profile_choices, source="profile_opening", fallback_notice=True)
+        if self._set_choices(
+            generated_choices or profile_choices,
+            source="profile_opening",
+            fallback_notice=True,
+            require_choice=True,
+            reason="开场推演未返回可用选项。",
+        ) is False and self.game_session.game_over:
+            return
         self._emit("on_narrative", opening, 0)
         self._emit("on_character_created", self.game_session)
         self._emit("on_status_bar", format_status_bar(self.game_session))
@@ -284,6 +340,14 @@ class GameEngine:
 
     def _generate_profile_opening(self, profile: dict[str, Any], special: bool) -> tuple[str, list[str]]:
         """Ask World Builder for the first mobile scene after form creation."""
+        if not os.environ.get("AGNES_API_KEY"):
+            reason = "AGNES_API_KEY 未设置。"
+            if self._confirm_local_fallback("profile_opening_missing_key", reason):
+                self._emit("on_info", CHOICE_FALLBACK_NOTICE)
+                return "", normalize_choices(profile.get("choices")) or fallback_choices(self.game_session)
+            self._end_model_failure_run(reason)
+            return "", []
+
         concept = _profile_concept(profile, special)
         try:
             result = run_turn_sync(
@@ -292,17 +356,30 @@ class GameEngine:
             )
         except Exception:
             log.exception("profile opening world_builder error")
-            self._emit("on_info", CHOICE_FALLBACK_NOTICE)
+            if self._confirm_local_fallback("profile_opening_exception", "开场推演失败（详见日志）。"):
+                self._emit("on_info", CHOICE_FALLBACK_NOTICE)
+                return "", normalize_choices(profile.get("choices")) or fallback_choices(self.game_session)
+            else:
+                self._end_model_failure_run("开场推演失败（详见日志）。")
             return "", []
 
         if result.get("llm_error"):
             log.warning("profile opening world_builder failed: %s", result["llm_error"])
-            self._emit("on_info", CHOICE_FALLBACK_NOTICE)
+            reason = f"开场推演失败: {result['llm_error']}"
+            if self._confirm_local_fallback("profile_opening_error", reason):
+                self._emit("on_info", CHOICE_FALLBACK_NOTICE)
+                return "", normalize_choices(profile.get("choices")) or fallback_choices(self.game_session)
+            else:
+                self._end_model_failure_run(reason)
             return "", []
 
         generated = result.get("generated_data", {})
         if not isinstance(generated, dict):
-            self._emit("on_info", CHOICE_FALLBACK_NOTICE)
+            if self._confirm_local_fallback("profile_opening_empty", "开场推演数据不可用。"):
+                self._emit("on_info", CHOICE_FALLBACK_NOTICE)
+                return "", normalize_choices(profile.get("choices")) or fallback_choices(self.game_session)
+            else:
+                self._end_model_failure_run("开场推演数据不可用。")
             return "", []
 
         world = generated.get("world", {})
@@ -366,21 +443,43 @@ class GameEngine:
             )
         except Exception:
             log.exception("narrator error")
-            self._emit("on_error", "叙述失败（详见日志）")
-            self._set_choices(None, source="narrator_exception", fallback_notice=True)
+            reason = "叙述失败（详见日志）"
+            self._emit("on_error", reason)
+            self._set_choices(
+                None,
+                source="narrator_exception",
+                fallback_notice=True,
+                require_choice=True,
+                reason=reason,
+            )
             self.game_session.turn_count -= 1
             return
 
         if narrator_result.get("llm_error"):
-            self._emit("on_error", f"叙述失败: {narrator_result['llm_error']}")
-            self._set_choices(None, source="narrator_error", fallback_notice=True)
+            reason = f"叙述失败: {narrator_result['llm_error']}"
+            self._emit("on_error", reason)
+            self._set_choices(
+                None,
+                source="narrator_error",
+                fallback_notice=True,
+                require_choice=True,
+                reason=reason,
+            )
             self.game_session.turn_count -= 1
             return
 
         narrative = narrator_result.get("narrative", "")
         state_delta = narrator_result.get("state_delta", {})
         choices = narrator_result.get("choices", [])
-        self._set_choices(choices, source="narrator", fallback_notice=True)
+        if self._set_choices(
+            choices,
+            source="narrator",
+            fallback_notice=True,
+            require_choice=True,
+            reason="叙事模型未返回可用选项。",
+        ) is False and self.game_session.game_over:
+            self.game_session.turn_count -= 1
+            return
 
         # Step 2: Run judge (if there is a delta to validate).
         if state_delta:
@@ -393,8 +492,21 @@ class GameEngine:
                 )
             except Exception:
                 log.exception("judge error")
+                reason = "天道审判失败（详见日志）"
+                if not self._confirm_local_fallback("judge_exception", reason):
+                    self.game_session.turn_count -= 1
+                    self._end_model_failure_run(reason)
+                    return
                 # On judge error, default to NOT approving (safe default).
-                judge_result = {"approved": False, "corrected_delta": {}}
+                judge_result = {"approved": False, "corrected_delta": {}, "judgment_note": reason}
+
+            if judge_result.get("llm_error"):
+                reason = f"天道审判失败: {judge_result['llm_error']}"
+                if not self._confirm_local_fallback("judge_error", reason):
+                    self.game_session.turn_count -= 1
+                    self._end_model_failure_run(reason)
+                    return
+                judge_result = {"approved": False, "corrected_delta": {}, "judgment_note": reason}
 
             if judge_result.get("approved") is False:
                 corrected = judge_result.get("corrected_delta", {})
@@ -863,18 +975,39 @@ class GameEngine:
             )
         except Exception:
             log.exception("breakthrough narrator error")
-            self._emit("on_error", "突破叙事失败")
-            self._set_choices(None, source="breakthrough_narrator_exception", fallback_notice=True)
+            reason = "突破叙事失败"
+            self._emit("on_error", reason)
+            self._set_choices(
+                None,
+                source="breakthrough_narrator_exception",
+                fallback_notice=True,
+                require_choice=True,
+                reason=reason,
+            )
             return
 
         if result.get("llm_error"):
-            self._emit("on_error", f"突破叙事失败: {result['llm_error']}")
-            self._set_choices(None, source="breakthrough_narrator_error", fallback_notice=True)
+            reason = f"突破叙事失败: {result['llm_error']}"
+            self._emit("on_error", reason)
+            self._set_choices(
+                None,
+                source="breakthrough_narrator_error",
+                fallback_notice=True,
+                require_choice=True,
+                reason=reason,
+            )
             return
 
         narrative = result.get("narrative", "")
         state_delta = result.get("state_delta", {})
-        self._set_choices(result.get("choices"), source="breakthrough_narrator", fallback_notice=True)
+        if self._set_choices(
+            result.get("choices"),
+            source="breakthrough_narrator",
+            fallback_notice=True,
+            require_choice=True,
+            reason="突破叙事未返回可用选项。",
+        ) is False and self.game_session.game_over:
+            return
 
         # Apply realm system breakthrough logic.
         breakthrough_delta = self.realm_system.attempt_breakthrough(self.game_session)
@@ -901,12 +1034,22 @@ class GameEngine:
                     narrative=narrative,
                     state_delta=state_delta,
                 )
+                if judge_result.get("llm_error"):
+                    reason = f"突破审判失败: {judge_result['llm_error']}"
+                    if not self._confirm_local_fallback("breakthrough_judge_error", reason):
+                        self._end_model_failure_run(reason)
+                        return
+                    judge_result = {"approved": False, "corrected_delta": {}}
                 if judge_result.get("approved") is False:
                     corrected = judge_result.get("corrected_delta", {})
                     if corrected:
                         state_delta = corrected
             except Exception:
                 log.exception("breakthrough judge error")
+                reason = "突破审判失败（详见日志）"
+                if not self._confirm_local_fallback("breakthrough_judge_exception", reason):
+                    self._end_model_failure_run(reason)
+                    return
 
         self.game_session.apply_delta(state_delta)
 
@@ -979,7 +1122,11 @@ class GameEngine:
         """Load a saved game."""
         name = name.strip() or "autosave"
         try:
-            self.game_session = load_game(name)
+            loaded = load_game(name)
+            if loaded is None:
+                self._emit("on_info", f"存档已损坏，无法加载: {name}")
+                return
+            self.game_session = loaded
             self._emit("on_info", f"已加载存档: {name}")
             self._emit("on_status_bar", format_status_bar(self.game_session))
             # If combat was active, notify UI.

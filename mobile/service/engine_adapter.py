@@ -58,6 +58,7 @@ class EngineAdapter:
             lambda dt: self._emit("on_stream_chunk", text))
         self.engine.on_combat_update = lambda combat_state: Clock.schedule_once(
             lambda dt: self._emit("on_combat_update", combat_state))
+        self.engine.on_model_failure_choice = self._choose_model_failure
 
         # UI callbacks — set by the screen.
         self.on_narrative: Callable | None = None
@@ -70,11 +71,39 @@ class EngineAdapter:
         self.on_stream_chunk: Callable | None = None
         self.on_combat_update: Callable | None = None
         self.on_finale: Callable | None = None
+        self.on_model_failure_choice: Callable | None = None
 
     def _emit(self, event: str, *args: Any) -> None:
         cb = getattr(self, event, None)
         if cb is not None:
             cb(*args)
+
+    def _choose_model_failure(self, source: str, reason: str) -> str:
+        """Synchronously ask Kivy UI how to handle a model failure."""
+        cb = self.on_model_failure_choice
+        if cb is None:
+            return "fallback"
+
+        event = threading.Event()
+        result = {"decision": "fallback"}
+
+        def ask(_dt):
+            try:
+                cb(source, reason, lambda decision: self._finish_model_failure_choice(event, result, decision))
+            except Exception:
+                log.exception("model failure choice UI callback failed")
+                self._finish_model_failure_choice(event, result, "fallback")
+
+        Clock.schedule_once(ask)
+        if not event.wait(timeout=300):
+            log.warning("model failure choice timed out; using local fallback")
+            return "fallback"
+        return result["decision"]
+
+    @staticmethod
+    def _finish_model_failure_choice(event: threading.Event, result: dict[str, str], decision: str) -> None:
+        result["decision"] = "end" if decision == "end" else "fallback"
+        event.set()
 
     @property
     def game_session(self):

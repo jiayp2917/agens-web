@@ -37,6 +37,10 @@ git archive --format=zip --output D:\chat\agens-transfer.zip HEAD
 
 新电脑上的环境重建、启动和验证步骤见 [docs/ZIP_TRANSFER.md](docs/ZIP_TRANSFER.md)。
 
+## 复盘与真机验证
+
+当前项目复盘、冗余清理记录、USB 真机 ADB 验证经验和后续风险队列见 [docs/PROJECT_RETRO_2026-06-17.md](docs/PROJECT_RETRO_2026-06-17.md)。
+
 ## 当前流程
 
 1. 主页显示水墨背景、BGM 开关、新游戏、读档、教程、设置、退出。
@@ -64,7 +68,7 @@ git archive --format=zip --output D:\chat\agens-transfer.zip HEAD
 ## 测试
 
 ```powershell
-.\.venv\Scripts\python.exe -m compileall -q src tests mobile\main.py mobile\audio_manager.py mobile\screens mobile\widgets mobile\service demo_full_flow.py
+.\.venv\Scripts\python.exe -m compileall -q src tests mobile\main.py mobile\audio_manager.py mobile\screens mobile\widgets mobile\service demos\full_flow\demo_full_flow.py
 .\.venv\Scripts\python.exe -m pytest -q
 ```
 

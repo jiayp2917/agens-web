@@ -37,6 +37,8 @@ _src_dir = _project_root / "src"
 
 if _IS_ANDROID:
     os.environ["AGENS_NOVEL_ROOT"] = str(_project_root)
+    os.environ.setdefault("AGNES_REQUEST_TIMEOUT_SECONDS", "75")
+    os.environ.setdefault("AGNES_MAX_RETRIES", "1")
 
 for _path in (_app_dir, _src_dir, _project_root):
     if _path.exists() and str(_path) not in sys.path:
@@ -84,6 +86,8 @@ def _schedule_focus_restore() -> None:
     in case a freshly-launched browser (Edge) races in immediately after.
     On non-Windows platforms this is a no-op.
     """
+    if os.environ.get("AGENS_SKIP_FOCUS_RESTORE") == "1":
+        return
     if sys.platform != "win32":
         return
     try:

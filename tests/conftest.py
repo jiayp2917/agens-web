@@ -1,6 +1,6 @@
 """Pytest fixtures.
 
-- ``fake_narrator_llm``  : stub for narrator agent's call_llm.
+- ``fake_narrator_llm``  : stub for narrator agent's call_llm_stream.
 - ``fake_judge_llm``     : stub for judge agent's call_llm.
 - ``fake_world_builder_llm``: stub for world_builder agent's call_llm.
 - ``temp_project_root``  : an isolated runtime/ tree under tmp_path.
@@ -58,7 +58,7 @@ def set_api_key(monkeypatch: pytest.MonkeyPatch) -> str:
 
 @pytest.fixture
 def fake_narrator_llm() -> AsyncMock:
-    """Stub for narrator agent's call_llm."""
+    """Stub for narrator agent's call_llm_stream."""
     canned = (
         "你感受到体内灵气涌动，丹田中一团温热的力量缓缓凝聚。\n"
         "周围的灵气向你汇聚，树叶微微颤动。\n"
@@ -75,7 +75,7 @@ def fake_narrator_llm() -> AsyncMock:
         "elapsed_ms": 1500,
         "raw": {"stub": True},
     })
-    with patch("agens_novel.agents.narrator.nodes.call_llm", mock):
+    with patch("agens_novel.agents.narrator.nodes.call_llm_stream", mock):
         yield mock, canned
 
 

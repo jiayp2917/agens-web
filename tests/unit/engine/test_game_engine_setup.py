@@ -162,20 +162,15 @@ class TestGameEngineNewGame:
         assert len(engine.game_session.last_choices) == 3
         assert any("天道紊乱" in msg for msg in infos)
 
-    def test_new_game_without_api_key(self, monkeypatch) -> None:
-        """Built-in key is always the fallback, so _has_api_key always True.
-        Without AGNES_API_KEY env, the game still tries to run but will fail
-        at the turn_runner level because build_graph doesn't exist.
-        """
+    def test_new_game_without_api_key_uses_agent_error(self, monkeypatch) -> None:
+        """World Builder reports a config error when no API key is set."""
         monkeypatch.delenv("AGNES_API_KEY", raising=False)
         engine = GameEngine()
         errors: list[str] = []
         engine.on_error = lambda msg: errors.append(msg)
         engine.new_game("test")
-        # _has_api_key() always returns True (built-in key fallback)
-        # So the error comes from the world_builder agent failing, not from API key check
         assert len(errors) == 1
-        assert "失败" in errors[0]  # "世界生成失败"
+        assert "AGNES_API_KEY" in errors[0]
 
     def test_new_game_empty_concept(self, monkeypatch) -> None:
         monkeypatch.setenv("AGNES_API_KEY", "sk-test-1234567890")

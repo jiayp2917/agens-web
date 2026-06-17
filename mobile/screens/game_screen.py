@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+import os
+
 from kivy.metrics import dp
 from kivy.uix.boxlayout import BoxLayout
 from kivy.uix.floatlayout import FloatLayout
@@ -12,6 +14,7 @@ from kivy.uix.scrollview import ScrollView
 from service.engine_adapter import EngineAdapter
 from theme import (
     add_image_background,
+    add_background,
     add_paper_background,
     add_scrim,
     current_theme,
@@ -25,14 +28,28 @@ from widgets.narrative_view import NarrativeView
 from widgets.status_bar import StatusBar
 
 
+def _safe_failure_reason(reason: str) -> str:
+    """Return a short, non-secret model failure reason for UI display."""
+    text = (reason or "模型输出不可用。").strip().replace("\n", " ")
+    if not text:
+        return "模型输出不可用。"
+    secret_markers = ("sk-", "api_key", "apikey", "AGNES_API_KEY", "Authorization")
+    if any(marker.lower() in text.lower() for marker in secret_markers):
+        return "模型服务暂不可用，请检查本次启动的模型配置。"
+    return text[:120]
+
+
 class GameScreen(Screen):
     """Main game screen with panel layout, combat, and streaming support."""
 
     def __init__(self, **kwargs):
         super().__init__(**kwargs)
         theme = current_theme()
-        add_image_background(self, "ink_mountain_gate.png", fallback_color=theme.bg)
-        add_scrim(self, color=(0.969, 0.953, 0.918, 0.64))
+        if os.environ.get("AGENS_REAL_CLICK_SIMPLE_RENDER") == "1":
+            add_background(self, color=theme.bg)
+        else:
+            add_image_background(self, "ink_mountain_gate.png", fallback_color=theme.bg)
+            add_scrim(self, color=(0.969, 0.953, 0.918, 0.64))
 
         self.adapter = EngineAdapter()
 
@@ -47,9 +64,11 @@ class GameScreen(Screen):
         self.adapter.on_stream_chunk = self._on_stream_chunk
         self.adapter.on_combat_update = self._on_combat_update
         self.adapter.on_finale = self._on_finale
+        self.adapter.on_model_failure_choice = self._on_model_failure_choice
         self._save_popup = None
         self._load_popup = None
         self._tools_popup = None
+        self._model_failure_popup = None
 
         # Build layout.
         self.root = FloatLayout()
@@ -151,6 +170,47 @@ class GameScreen(Screen):
             self.combat_bar.update_combat(combat_state)
             self.action_bar.set_combat_mode(True)
             self.status_bar.update(self.adapter.game_session)
+
+    def _on_model_failure_choice(self, source: str, reason: str, done) -> None:
+        """Ask the player whether to continue with local fallback."""
+        if self._model_failure_popup:
+            self._model_failure_popup.dismiss()
+        self.loading_overlay.hide()
+        theme = current_theme()
+        content = BoxLayout(orientation="vertical", padding=dp(12), spacing=dp(10))
+        add_paper_background(content, color=theme.surface)
+        message = Label(
+            text=(
+                "天道紊乱，是否以因果残影继续推演？\n\n"
+                f"{_safe_failure_reason(reason)}"
+            ),
+            font_size=dp(14),
+            color=theme.text,
+            halign="left",
+            valign="middle",
+        )
+        message.bind(width=lambda *_a: message.setter("text_size")(message, (message.width, None)))
+        content.add_widget(message)
+
+        buttons = BoxLayout(orientation="horizontal", size_hint_y=None, height=dp(46), spacing=dp(8))
+        fallback_btn = themed_button("本地兜底继续", font_size=dp(13))
+        end_btn = themed_button("结束本局", font_size=dp(13))
+        buttons.add_widget(fallback_btn)
+        buttons.add_widget(end_btn)
+        content.add_widget(buttons)
+
+        popup = themed_popup("天道紊乱", content, size_hint=(0.86, 0.36), auto_dismiss=False)
+
+        def choose(decision: str) -> None:
+            if self._model_failure_popup:
+                self._model_failure_popup.dismiss()
+            done(decision)
+
+        fallback_btn.bind(on_release=lambda _inst: choose("fallback"))
+        end_btn.bind(on_release=lambda _inst: choose("end"))
+        popup.bind(on_dismiss=lambda *_: setattr(self, "_model_failure_popup", None))
+        self._model_failure_popup = popup
+        popup.open()
 
     # ─── Combat bar management ────────────────────────────────────────
 

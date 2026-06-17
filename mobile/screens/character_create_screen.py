@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import os
 import random
 
 from kivy.metrics import dp
@@ -13,7 +14,7 @@ from kivy.uix.scrollview import ScrollView
 from kivy.uix.spinner import Spinner
 from kivy.uix.textinput import TextInput
 from service.engine_adapter import EngineAdapter
-from theme import add_image_background, add_paper_background, add_scrim, current_theme, themed_button
+from theme import add_background, add_image_background, add_paper_background, add_scrim, current_theme, themed_button
 
 from agens_novel.game.constants import (
     ATTRIBUTE_KEYS,
@@ -44,8 +45,11 @@ class CharacterCreateScreen(Screen):
         self._attribute_widgets: dict[str, tuple[ProgressBar, Label]] = {}
 
         theme = current_theme()
-        add_image_background(self, "ink_mountain_gate.png", fallback_color=theme.bg)
-        add_scrim(self, color=(0.969, 0.953, 0.918, 0.58))
+        if os.environ.get("AGENS_REAL_CLICK_SIMPLE_RENDER") == "1":
+            add_background(self, color=theme.bg)
+        else:
+            add_image_background(self, "ink_mountain_gate.png", fallback_color=theme.bg)
+            add_scrim(self, color=(0.969, 0.953, 0.918, 0.58))
         root = BoxLayout(orientation="vertical", padding=[dp(14), dp(12)], spacing=dp(8))
         add_paper_background(root, color=(1.0, 0.973, 0.941, 0.86))
 
@@ -211,12 +215,12 @@ class CharacterCreateScreen(Screen):
                     "无人敢高声言语。一枚无主仙令悬在你掌心，像是早已等了很多年。"
                 ),
             })
-        if self.adapter:
-            self.adapter.start_from_profile(profile)
         if self.manager:
             game = self.manager.get_screen("game")
             game.narrative_view.clear()
             self.manager.current = "game"
+        if self.adapter:
+            self.adapter.start_from_profile(profile)
 
     def _go_home(self) -> None:
         if self.manager:

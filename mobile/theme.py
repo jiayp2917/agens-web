@@ -127,6 +127,7 @@ THEME_KEY = "theme"
 
 # Default theme name; loaded from settings on first call to current_theme().
 _DEFAULT_THEME = "white"
+_THEME_INITIALIZED = False
 
 
 def current_theme() -> ThemePalette:
@@ -138,6 +139,8 @@ def current_theme() -> ThemePalette:
     Importing settings_store is deferred to keep theme.py importable before
     Kivy's app is built (some screens import theme in module-level code).
     """
+    if _THEME_INITIALIZED:
+        return THEMES.get(_DEFAULT_THEME, WHITE)
     try:
         from service.settings_store import load_settings
         data = load_settings()
@@ -155,9 +158,10 @@ def set_theme(name: str) -> None:
     Does NOT call save_settings here — the caller is expected to save the
     whole settings dict in one go (the home settings popup does this).
     """
-    global _DEFAULT_THEME
+    global _DEFAULT_THEME, _THEME_INITIALIZED
     if name in THEMES:
         _DEFAULT_THEME = name
+        _THEME_INITIALIZED = True
 
 
 # ---------------------------------------------------------------------------

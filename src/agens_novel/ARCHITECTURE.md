@@ -85,7 +85,7 @@ src/agens_novel/state/{game_schema,reducers}.py (类型 schema + reducer)
 
 | 文件 | 职责 | 关键入口 |
 |------|------|---------|
-| `client.py` | OpenAI 兼容 HTTP 客户端：`POST {base}/chat/completions`，SSE 流式 + 非流式两路；`_resolve_config` 读 `AGNES_BASE_URL`/`AGNES_API_KEY`/`AGNES_MODEL`（优先级：显式参数 > 环境变量 > 内置默认值） | `LLMClient.chat` / `.stream_chat` |
+| `client.py` | OpenAI 兼容 HTTP 客户端：`POST {base}/chat/completions`，SSE 流式 + 非流式两路；`_resolve_config` 读 `AGNES_BASE_URL`/`AGNES_API_KEY`/`AGNES_MODEL`（优先级：显式参数 > 环境变量；API key 无内置默认值） | `LLMClient.chat` / `.stream_chat` |
 | `sse.py` | SSE 流式响应解析 | `parse_sse` |
 | `retry.py` | 重试逻辑 | — |
 | `types.py` | LLM 相关类型定义 | — |
@@ -132,7 +132,7 @@ src/agens_novel/state/{game_schema,reducers}.py (类型 schema + reducer)
 | `main.py::XianxiaApp` | Kivy 入口：平台 bootstrap（设 `AGENS_NOVEL_ROOT`/`sys.path`、CJK 字体注册）、加载设置、设存档目录、组装 4 个 Screen、Windows 焦点修复、`on_stop` 关闭 BGM | 桌面调试：`python mobile/main.py` |
 | `service/engine_adapter.py::EngineAdapter` | **UI ↔ 引擎唯一桥**：持有 `GameEngine()` 实例；引擎回调经 `Clock.schedule_once`→Kivy 主线程；阻塞调用放 daemon thread | 全 mobile 仅此处直接 import `GameEngine` |
 | `service/save_manager_compat.py` | 把 `SaveManager` 存档目录改指到 Kivy `app.user_data_dir/saves` | `set_mobile_save_dir` |
-| `service/settings_store.py` | 非密钥设置持久化 JSON（`settings.json` / `user_model.json`），启动时注入 `os.environ` | **API key 不落盘**（`save_settings` pop 掉） |
+| `service/settings_store.py` | 非密钥设置持久化 JSON（`settings.json` / `user_model.json`），API key 单独存入 app-private `secrets.json`，启动时注入 `os.environ` | 普通设置文件不含 key，UI 只显示掩码摘要 |
 | `audio_manager.py::AudioManager` | 单例 BGM/SFX 门面：别名（如 `"default"`）走 `agens_novel.bgm`，绝对路径走 Kivy SoundLoader；缺文件即 no-op | |
 | `screens/home_screen.py` | 主菜单：新游戏 / 读档 / 设置；设置弹窗含 API Key 输入框（hint "本次启动临时使用，不写入磁盘"） | |
 | `screens/character_create_screen.py` | 角色创建：游戏名/角色名/天赋/灵根/家世/难度/6 属性/随机属性；"开始修行"→`adapter.start_from_profile` | |
@@ -156,9 +156,10 @@ src/agens_novel/state/{game_schema,reducers}.py (类型 schema + reducer)
 |--------|------|
 | 1（最高）| 显式传参 `base_url` / `api_key` / `model` |
 | 2 | 环境变量 `AGNES_BASE_URL` / `AGNES_API_KEY` / `AGNES_MODEL` |
-| 3（最低）| 内置默认值：`base_url=https://apihub.agnes-ai.com/v1`、`model=agnes-2.0-flash`、`api_key` 为内置 base64 混淆值 |
 
-移动端：HomeScreen 设置弹窗填入的 key → `apply_settings_to_env` 注入 `os.environ`（settings_store.py），API key 不持久化到磁盘。
+`base_url` 和 `model` 有非密钥默认值；`api_key` 没有内置默认值。
+
+移动端：HomeScreen 设置弹窗填入的 key → `save_api_key` 写入 app-private `secrets.json` → `apply_settings_to_env` 注入 `os.environ`（settings_store.py）。`settings.json` / `user_model.json` 不保存 key，UI 不回显明文，只显示 provider/model/key 掩码摘要。
 
 ### Agent 层闸门（关键）
 
@@ -170,7 +171,7 @@ if not api_key_set:
     return {"output_text": "", "llm_error": "AGNES_API_KEY 未设置。"}
 ```
 
-**这意味着**：若不设 `AGNES_API_KEY` 环境变量，agent 层直接短路返回空文本 + `llm_error`，**根本不会发起 HTTP 请求**。`client.py` 的内置 default key 在此闸门之前被架空（设计与实现落差）。
+**这意味着**：若不设 `AGNES_API_KEY` 环境变量或当前启动内的用户设置，agent 层直接短路返回空文本 + `llm_error`，**根本不会发起 HTTP 请求**。项目不再提供内置 API key。
 
 若设了无效 `AGNES_API_KEY`：闸门放行 → HTTP 401 → `LLMAuthError` → `except LLMError` 捕获 → 同样落 llm_error 分支。
 
@@ -185,7 +186,7 @@ if not api_key_set:
 
 兜底选项（`fallback_choices`）：3 条固定文案（如"在{location}稳住气息，观察灵气与地势变化"），伴随提示 `CHOICE_FALLBACK_NOTICE = "天道紊乱，暂以因果残影指引。"`。
 
-**结论**：无有效 `AGNES_API_KEY` 时——核心路径（UI→引擎→存档→境界→突破→飞升/死亡终态）均为纯本地逻辑，可完整跑通；但每回合 AI 叙事为空，A/B/C 仅为固定兜底文案。
+**结论**：无有效 `AGNES_API_KEY` 时——核心路径（UI→引擎→存档→境界→突破→飞升/死亡终态）均为纯本地逻辑，可完整跑通；但每回合 AI 叙事为空，A/B/C 仅为带“天道紊乱”提示的兜底文案。
 
 ## 存档机制
 
@@ -221,7 +222,7 @@ if not api_key_set:
 
 **9 境界**（`REALM_ORDER`）：练气 → 筑基 → 金丹 → 元婴 → 化神 → 合体 → 大乘 → 渡劫 → 飞升
 
-无"练虚"等其他境界。
+不包含任何旧版已删除境界。
 
 `REALM_CONFIGS` 为每个境界配置：`stages`（小层数）、`experience_required`、`insight_required`（突破所需感悟）、`breakthrough_items`（突破道具需求）、`base_success_rate`（基础成功率）、`realm_bonus` 等。飞升为终态（stages=1, experience_required=999999, rate=0.0）。
 

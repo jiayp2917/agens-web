@@ -1,16 +1,12 @@
-"""Tests for LLM client — config priority and base64 key handling."""
+"""Tests for LLM client config priority and key masking."""
 
 from __future__ import annotations
 
-import base64
-import os
-import pytest
-
-from agens_novel.llm.client import _resolve_config, _DEFAULT_KEY_B64, _DEFAULT_KEY, mask_key
+from agens_novel.llm.client import _resolve_config, _resolve_request_options, mask_key
 
 
 class TestResolveConfig:
-    """Test three-level priority: user custom > env var > built-in default."""
+    """Test config priority: explicit args > env var > non-secret defaults."""
 
     def test_explicit_args_highest_priority(self, monkeypatch):
         monkeypatch.setenv("AGNES_BASE_URL", "https://env-url.com/v1")
@@ -26,14 +22,14 @@ class TestResolveConfig:
         assert key == "sk-custom-key"
         assert mdl == "custom-model"
 
-    def test_env_vars_second_priority(self, monkeypatch):
+    def test_defaults_without_api_key(self, monkeypatch):
         monkeypatch.delenv("AGNES_BASE_URL", raising=False)
         monkeypatch.delenv("AGNES_API_KEY", raising=False)
         monkeypatch.delenv("AGNES_MODEL", raising=False)
 
         base, key, mdl = _resolve_config(None, None, None)
         assert base == "https://apihub.agnes-ai.com/v1"
-        assert key == _DEFAULT_KEY
+        assert key == ""
         assert mdl == "agnes-2.0-flash"
 
     def test_env_vars_override_defaults(self, monkeypatch):
@@ -56,29 +52,16 @@ class TestResolveConfig:
         assert key == "sk-partial-key"  # env
         assert mdl == "agnes-2.0-flash"  # default
 
-    def test_empty_env_uses_default(self, monkeypatch):
-        """Empty string env var should fall through to default."""
+    def test_empty_env_keeps_key_empty(self, monkeypatch):
+        """Empty API key env var stays empty; no built-in key is used."""
         monkeypatch.setenv("AGNES_API_KEY", "")
         monkeypatch.delenv("AGNES_BASE_URL", raising=False)
         monkeypatch.delenv("AGNES_MODEL", raising=False)
 
         base, key, mdl = _resolve_config(None, None, None)
-        assert key == _DEFAULT_KEY  # empty string falls through
-
-
-class TestBuiltinKey:
-    """Test base64 encode/decode of built-in key."""
-
-    def test_default_key_decodes_correctly(self):
-        decoded = base64.b64decode(_DEFAULT_KEY_B64).decode("utf-8")
-        assert decoded == _DEFAULT_KEY
-
-    def test_default_key_is_not_empty(self):
-        assert len(_DEFAULT_KEY) > 0
-
-    def test_default_key_b64_is_valid_base64(self):
-        # Should not raise
-        base64.b64decode(_DEFAULT_KEY_B64)
+        assert base == "https://apihub.agnes-ai.com/v1"
+        assert key == ""
+        assert mdl == "agnes-2.0-flash"
 
 
 class TestMaskKey:
@@ -104,3 +87,23 @@ class TestMaskKey:
 
     def test_empty_key(self):
         assert mask_key("") == "****"
+
+
+class TestResolveRequestOptions:
+    def test_env_timeout_and_retries(self, monkeypatch):
+        monkeypatch.setenv("AGNES_REQUEST_TIMEOUT_SECONDS", "12")
+        monkeypatch.setenv("AGNES_MAX_RETRIES", "0")
+
+        timeout, retries = _resolve_request_options(None, None)
+
+        assert timeout == 12.0
+        assert retries == 0
+
+    def test_explicit_options_override_env(self, monkeypatch):
+        monkeypatch.setenv("AGNES_REQUEST_TIMEOUT_SECONDS", "12")
+        monkeypatch.setenv("AGNES_MAX_RETRIES", "0")
+
+        timeout, retries = _resolve_request_options(30.0, 2)
+
+        assert timeout == 30.0
+        assert retries == 2

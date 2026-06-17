@@ -201,6 +201,44 @@ class TestGameEngineHandleAction:
         assert len(engine.game_session.last_choices) == 3
         assert any("天道紊乱" in msg for msg in infos)
 
+    def test_narrator_exception_can_end_run_from_ui_choice(self, monkeypatch) -> None:
+        monkeypatch.setenv("AGNES_API_KEY", "sk-test-1234567890")
+        engine = GameEngine()
+        engine.game_session.game_started = True
+        choices: list[tuple[str, str]] = []
+        game_overs: list[str] = []
+        engine.on_model_failure_choice = lambda source, reason: choices.append((source, reason)) or "end"
+        engine.on_game_over = lambda reason: game_overs.append(reason)
+
+        def fake_runner(agent_name, user_input, session, **kw):
+            raise RuntimeError("LLM exploded")
+
+        with patch("agens_novel.engine.game_engine.run_turn_sync", side_effect=fake_runner):
+            engine.handle_action("修炼")
+
+        assert choices and choices[0][0] == "narrator_exception"
+        assert engine.game_session.turn_count == 0
+        assert engine.game_session.game_over is True
+        assert game_overs == ["模型不可用导致本局结束。"]
+
+    def test_empty_model_choices_can_continue_with_local_fallback(self, monkeypatch) -> None:
+        monkeypatch.setenv("AGNES_API_KEY", "sk-test-1234567890")
+        engine = GameEngine()
+        engine.game_session.game_started = True
+        engine.on_model_failure_choice = lambda source, reason: "fallback"
+
+        def runner(agent_name, user_input, session, **kw):
+            if agent_name == "narrator":
+                return {"narrative": "山风拂过。", "state_delta": {}, "choices": [], "llm_error": ""}
+            return {"approved": True, "corrected_delta": {}, "llm_error": ""}
+
+        with patch("agens_novel.engine.game_engine.run_turn_sync", side_effect=runner):
+            engine.handle_action("修炼")
+
+        assert engine.game_session.game_over is False
+        assert engine.game_session.turn_count == 1
+        assert len(engine.game_session.last_choices) == 3
+
     def test_judge_exception_fallback(self, monkeypatch) -> None:
         """Judge crashes — default to NOT approving (safe default)."""
         monkeypatch.setenv("AGNES_API_KEY", "sk-test-1234567890")

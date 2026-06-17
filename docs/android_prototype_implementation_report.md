@@ -31,7 +31,7 @@
 实现：
 - `mobile/screens/home_screen.py` 重构为水墨主页和三类内嵌弹窗。
 - 设置弹窗默认提供 Agens 模型配置入口，可添加 OpenAI 兼容模型。
-- API key 只注入当前进程环境变量，不写入 `settings.json`。
+- API key 不写入普通 `settings.json`；用户保存后仅写入应用私有 `secrets.json`，并注入当前进程环境变量。
 
 ### Phase 3：自由度模式
 
@@ -103,7 +103,7 @@
 - 未修改 `src/agens_novel/llm/` 通用 LLM 组件。
 - 移动端仍通过 `EngineAdapter -> GameEngine` 调用游戏逻辑。
 - 新增字段已进入 `GameSession.as_game_state()`、`to_save_dict()` 和 `from_save_dict()`。
-- API key 不写入移动端设置文件；`save_settings()` 会剔除 `api_key`。
+- API key 不写入移动端普通设置文件；`save_settings()` 会剔除 `api_key`，`save_api_key()` 仅写入 app-private `secrets.json`。
 - 所有 screen/widget 文件均低于 500 行。
 
 ## 代码权重

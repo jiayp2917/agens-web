@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+import os
+
 from audio_manager import AudioManager
 from kivy.core.window import Window
 from kivy.metrics import dp
@@ -15,14 +17,18 @@ from kivy.uix.textinput import TextInput
 from kivy.uix.widget import Widget
 from service.engine_adapter import EngineAdapter
 from service.settings_store import (
+    active_model_summary,
     apply_settings_to_env,
+    has_saved_api_key,
     load_model_config,
     load_settings,
+    save_api_key,
     save_model_config,
     save_settings,
 )
 from theme import (
     THEME_KEY,
+    add_background,
     add_image_background,
     add_paper_background,
     add_scrim,
@@ -55,6 +61,9 @@ class HomeScreen(Screen):
         self._bgm_enabled = True
         self._sfx_enabled = True
         self._popup = None
+        self._settings_feedback = None
+        self._theme_buttons = {}
+        self._audio_buttons = {}
 
         self.root = FloatLayout()
         self._paint_background()
@@ -71,8 +80,11 @@ class HomeScreen(Screen):
 
     def _paint_background(self) -> None:
         theme = current_theme()
-        add_image_background(self.root, "ink_mountain_gate.png", fallback_color=theme.bg)
-        add_scrim(self.root, color=(0.969, 0.953, 0.918, 0.36))
+        if os.environ.get("AGENS_REAL_CLICK_SIMPLE_RENDER") == "1":
+            add_background(self.root, color=theme.bg)
+        else:
+            add_image_background(self.root, "ink_mountain_gate.png", fallback_color=theme.bg)
+            add_scrim(self.root, color=(0.969, 0.953, 0.918, 0.36))
 
     def _build_content(self) -> None:
         theme = current_theme()
@@ -261,15 +273,41 @@ class HomeScreen(Screen):
         self.spinner_preset = _spinner(preset if preset in preset_names else preset_names[0], preset_names, theme)
         self.input_base_url = _input(data.get("base_url", PRESETS[0][1]), theme)
         self.input_model = _input(data.get("model", model_cfg.get("custom_model", PRESETS[0][2])), theme)
-        self.input_api_key = _input("", theme, password=True, hint="本次启动临时使用，不写入磁盘")
+        key_hint = "留空保留已保存的 Key" if has_saved_api_key() else "输入后保存到应用私有目录"
+        self.input_api_key = _input("", theme, password=True, hint=key_hint)
         self.spinner_preset.bind(text=self._on_preset_changed)
 
         _add_field(form, "大模型连接", self.spinner_preset, theme)
         _add_field(form, "API Base URL", self.input_base_url, theme)
         _add_field(form, "Model", self.input_model, theme)
         _add_field(form, "API Key", self.input_api_key, theme)
-        _add_field(form, "主题色", self._segmented(THEME_CHOICES, self._selected_theme, self._pick_theme), theme)
+        _add_field(
+            form,
+            "主题色",
+            self._segmented(
+                THEME_CHOICES,
+                self._selected_theme,
+                self._pick_theme,
+                button_store=self._theme_buttons,
+            ),
+            theme,
+        )
         _add_field(form, "音频", self._audio_segments(), theme)
+        self._settings_feedback = Label(
+            text=active_model_summary(data),
+            font_size=dp(12),
+            color=theme.success_color,
+            size_hint_y=None,
+            height=dp(42),
+            halign="left",
+            valign="middle",
+        )
+        self._settings_feedback.bind(
+            width=lambda *_a: self._settings_feedback.setter("text_size")(
+                self._settings_feedback, (self._settings_feedback.width, None),
+            ),
+        )
+        form.add_widget(self._settings_feedback)
         scroll.add_widget(form)
         outer.add_widget(scroll)
 
@@ -284,11 +322,21 @@ class HomeScreen(Screen):
         self._popup = themed_popup("设置", outer, size_hint=(0.88, 0.78), auto_dismiss=False)
         self._popup.open()
 
-    def _segmented(self, choices: list[tuple[str, str]], selected: str, callback) -> BoxLayout:
+    def _segmented(
+        self,
+        choices: list[tuple[str, str]],
+        selected: str,
+        callback,
+        button_store: dict[str, object] | None = None,
+    ) -> BoxLayout:
         row = BoxLayout(orientation="horizontal", size_hint_y=None, height=dp(36), spacing=dp(6))
         theme = current_theme()
+        if button_store is not None:
+            button_store.clear()
         for label, value in choices:
             btn = themed_button(label, font_size=dp(11))
+            if button_store is not None:
+                button_store[value] = btn
             if value == selected:
                 btn._bg_rect_color.rgba = theme.primary[0], theme.primary[1], theme.primary[2], 0.28
             btn.bind(on_release=lambda _inst, v=value: callback(v))
@@ -301,13 +349,14 @@ class HomeScreen(Screen):
             (f"音效 {'开' if self._sfx_enabled else '关'}", "sfx"),
             ("静音", "mute"),
         ]
-        return self._segmented(choices, "", self._pick_audio)
+        return self._segmented(choices, "", self._pick_audio, button_store=self._audio_buttons)
 
     def _pick_theme(self, value: str) -> None:
         self._selected_theme = value
-        if self._popup:
-            self._popup.dismiss()
-        self._show_settings_popup()
+        set_theme(value)
+        Window.clearcolor = current_theme().bg
+        self._refresh_settings_controls()
+        self._set_settings_feedback("主题已切换，保存后下次启动继续使用。")
 
     def _pick_audio(self, value: str) -> None:
         if value == "bgm":
@@ -317,9 +366,41 @@ class HomeScreen(Screen):
         elif value == "mute":
             self._bgm_enabled = False
             self._sfx_enabled = False
-        if self._popup:
-            self._popup.dismiss()
-        self._show_settings_popup()
+        self.audio.bgm_enabled = self._bgm_enabled
+        self.audio.sfx_enabled = self._sfx_enabled
+        if self._bgm_enabled:
+            self._play_menu_bgm()
+        else:
+            self.audio.stop_bgm()
+        self._refresh_settings_controls()
+        self._refresh_audio_button()
+        self._set_settings_feedback("音频设置已应用，保存后下次启动继续使用。")
+
+    def _refresh_settings_controls(self) -> None:
+        theme = current_theme()
+        for value, btn in self._theme_buttons.items():
+            btn.color = theme.button_text
+            if value == self._selected_theme:
+                btn._bg_rect_color.rgba = theme.primary[0], theme.primary[1], theme.primary[2], 0.28
+            else:
+                btn._bg_rect_color.rgba = theme.button_bg
+        labels = {
+            "bgm": f"BGM {'开' if self._bgm_enabled else '关'}",
+            "sfx": f"音效 {'开' if self._sfx_enabled else '关'}",
+            "mute": "静音",
+        }
+        for value, btn in self._audio_buttons.items():
+            btn.text = labels[value]
+            btn.color = theme.button_text
+            btn._bg_rect_color.rgba = theme.button_bg
+        if not self._bgm_enabled and not self._sfx_enabled and "mute" in self._audio_buttons:
+            self._audio_buttons["mute"]._bg_rect_color.rgba = theme.primary[0], theme.primary[1], theme.primary[2], 0.28
+        elif "bgm" in self._audio_buttons and self._bgm_enabled:
+            self._audio_buttons["bgm"]._bg_rect_color.rgba = theme.primary[0], theme.primary[1], theme.primary[2], 0.20
+
+    def _set_settings_feedback(self, text: str) -> None:
+        if self._settings_feedback is not None:
+            self._settings_feedback.text = text
 
     def _on_preset_changed(self, spinner, text: str) -> None:
         for name, base_url, model in PRESETS:
@@ -332,14 +413,17 @@ class HomeScreen(Screen):
 
     def _save_settings_popup(self) -> None:
         data = load_settings()
+        entered_key = self.input_api_key.text.strip()
         data.update({
-            "api_key": self.input_api_key.text.strip(),
             "base_url": self.input_base_url.text.strip() or PRESETS[0][1],
             "model": self.input_model.text.strip() or PRESETS[0][2],
             THEME_KEY: self._selected_theme,
             "bgm_enabled": self._bgm_enabled,
             "sfx_enabled": self._sfx_enabled,
         })
+        if entered_key:
+            save_api_key(entered_key)
+            data["api_key"] = entered_key
         save_settings(data)
         save_model_config({
             "selected_preset": self.spinner_preset.text,
@@ -349,9 +433,16 @@ class HomeScreen(Screen):
         set_theme(self._selected_theme)
         Window.clearcolor = current_theme().bg
         self.audio.apply_settings(data)
-        if self._popup:
-            self._popup.dismiss()
         self._refresh_audio_button()
+        msg = "设置已保存。"
+        if entered_key:
+            msg += " API Key 已保存到应用私有目录并在本次运行生效。"
+        elif has_saved_api_key():
+            msg += " 已保留现有 API Key。"
+        else:
+            msg += " 当前仍未配置 API Key。"
+        msg += "\n" + active_model_summary(data)
+        self._set_settings_feedback(msg)
 
     def _toggle_bgm(self) -> None:
         enabled = self.audio.toggle_bgm()

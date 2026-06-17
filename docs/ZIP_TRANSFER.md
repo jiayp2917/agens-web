@@ -86,7 +86,7 @@ cd D:\chat\agens
 
 ```powershell
 cd D:\chat\agens
-.\.venv\Scripts\python.exe -m compileall -q src tests mobile\main.py mobile\audio_manager.py mobile\screens mobile\widgets mobile\service demo_full_flow.py
+.\.venv\Scripts\python.exe -m compileall -q src tests mobile\main.py mobile\audio_manager.py mobile\screens mobile\widgets mobile\service demos\full_flow\demo_full_flow.py
 .\.venv\Scripts\python.exe -m pytest -q
 ```
 

@@ -31,9 +31,8 @@ source.exclude_patterns = mobile/.buildozer/*,mobile/bin/*,.buildozer/*,bin/*,ru
 version = 0.4.0
 
 # (list) Application requirements
-# NOTE: pydantic is NOT listed — the project no longer depends on it directly.
-# langgraph pulls it transitively; if that fails, use requirements.txt with --no-deps.
-requirements = python3==3.11.9,hostpython3==3.11.9,kivy==2.3.0,httpx,langgraph,langchain-core,langchain-openai,pyyaml
+# Agent orchestration is implemented in-repo; Android only needs UI, HTTP, and YAML.
+requirements = python3==3.11.9,hostpython3==3.11.9,kivy==2.3.0,httpx
 
 # (str) Presplash image
 #presplash.filename = %(source.dir)s/assets/presplash.png

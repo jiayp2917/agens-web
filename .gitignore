@@ -28,10 +28,14 @@ runtime/checkpoints/
 runtime/logs/
 runtime/backups/
 runtime/saves/
+runtime/**/*.json
+runtime/**/*.jsonl
+runtime/**/*.log
 
 # Android build outputs
 mobile/.buildozer/
 mobile/bin/
+*.apk
 
 # Tool residues
 .workbuddy/
@@ -39,6 +43,10 @@ mobile/bin/
 # Demo artifacts
 demo_*.jsonl
 demo_screenshots/
+demos/validation/*.jsonl
+demos/validation/screenshots/
+demos/validation/real_click/
+demos/validation/**/__pycache__/
 
 # Audio assets (remove if version control is needed)
 mobile/assets/audio/*.flac

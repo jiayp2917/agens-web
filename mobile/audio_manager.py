@@ -83,6 +83,12 @@ class AudioManager:
 
     def stop_bgm(self) -> None:
         """Stop current BGM if one is loaded."""
+        try:
+            from agens_novel.bgm import get_service
+
+            get_service().stop()
+        except Exception:
+            pass
         if self._current_bgm is not None:
             try:
                 self._current_bgm.stop()

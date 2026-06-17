@@ -1,29 +1,26 @@
 """OpenAI-compatible async LLM client.
 
-This client is intentionally minimal — it wraps ``httpx.AsyncClient`` and
+This client is intentionally minimal: it wraps synchronous ``httpx.Client`` and
 exposes ``call_llm`` and ``call_llm_stream`` functions. It supports both
 streaming and non-streaming responses, both parsed via the SSE parser in
 ``llm/sse.py``.
 
-The auth header and base URL are read from env (via ``Settings``) or passed
-explicitly. The api key is never logged.
-
-Priority: user custom (settings.json) > env var (AGNES_API_KEY) > built-in default.
+The auth header and base URL are read from env or passed explicitly. The API
+key is never logged, and the repository does not ship a built-in key.
 """
 
 from __future__ import annotations
 
-import base64
+import json
 import logging
 import os
 import time
-from collections.abc import AsyncIterator
 from typing import Any, Callable
 
 import httpx
 
 from .retry import with_retry
-from .sse import extract_delta_text, iter_sse_events
+from .sse import extract_delta_text
 from .types import LLMResponse, Message, Usage
 
 log = logging.getLogger(__name__)
@@ -41,26 +38,18 @@ class LLMBadRequest(LLMError):
     """4xx other than auth."""
 
 
-# ─────────────────────────────────────────────────────────────────────────────
-# Built-in default API key (base64 obfuscated)
-# ─────────────────────────────────────────────────────────────────────────────
-
-# Production key (replaced at packaging time).
-_DEFAULT_KEY_B64 = "c2stdkN2QlNJOGdsbGtyZTJrZktSR0UyZ25KU1BmYlJmSnVNY21CTnFITldMNGhZVzVY"
-_DEFAULT_KEY = base64.b64decode(_DEFAULT_KEY_B64).decode("utf-8")
-
-
 def _resolve_config(
     base_url: str | None,
     api_key: str | None,
     model: str | None,
 ) -> tuple[str, str, str]:
-    """Resolve config from explicit args, env, or built-in default.
+    """Resolve config from explicit args or env.
 
-    Priority: user custom (explicit arg) > env var > built-in default.
+    Base URL and model keep safe defaults; API key must be supplied by
+    explicit arg or ``AGNES_API_KEY``.
     """
     base = base_url or os.environ.get("AGNES_BASE_URL") or "https://apihub.agnes-ai.com/v1"
-    key = api_key or os.environ.get("AGNES_API_KEY", "") or _DEFAULT_KEY
+    key = api_key or os.environ.get("AGNES_API_KEY", "")
     mdl = model or os.environ.get("AGNES_MODEL", "agnes-2.0-flash")
     return base, key, mdl
 
@@ -96,6 +85,24 @@ def mask_key(key: str) -> str:
     return key[:4] + "****" + key[-4:]
 
 
+def _resolve_request_options(
+    timeout_seconds: float | None,
+    max_retries: int | None,
+) -> tuple[float, int]:
+    """Resolve request timeout/retries from args or environment."""
+    if timeout_seconds is None:
+        try:
+            timeout_seconds = float(os.environ.get("AGNES_REQUEST_TIMEOUT_SECONDS", "60.0"))
+        except ValueError:
+            timeout_seconds = 60.0
+    if max_retries is None:
+        try:
+            max_retries = int(os.environ.get("AGNES_MAX_RETRIES", "3"))
+        except ValueError:
+            max_retries = 3
+    return max(1.0, timeout_seconds), max(0, max_retries)
+
+
 async def call_llm(
     messages: list[Message],
     *,
@@ -105,8 +112,8 @@ async def call_llm(
     temperature: float = 0.7,
     max_tokens: int = 4096,
     stream: bool = False,
-    timeout_seconds: float = 60.0,
-    max_retries: int = 3,
+    timeout_seconds: float | None = None,
+    max_retries: int | None = None,
 ) -> LLMResponse:
     """Call the OpenAI-compatible /v1/chat/completions endpoint.
 
@@ -114,6 +121,7 @@ async def call_llm(
     Raises :class:`LLMError` subclasses on transport / HTTP failures.
     """
     base, key, mdl = _resolve_config(base_url, api_key, model)
+    timeout_seconds, max_retries = _resolve_request_options(timeout_seconds, max_retries)
     log.debug("call_llm: base=%s model=%s key=%s", base, mdl, mask_key(key))
     payload = _build_payload(
         messages,
@@ -139,8 +147,8 @@ async def call_llm_stream(
     model: str | None = None,
     temperature: float = 0.7,
     max_tokens: int = 4096,
-    timeout_seconds: float = 60.0,
-    max_retries: int = 3,
+    timeout_seconds: float | None = None,
+    max_retries: int | None = None,
     on_chunk: Callable[[str], None] | None = None,
 ) -> LLMResponse:
     """Stream LLM response with per-chunk callback.
@@ -150,6 +158,7 @@ async def call_llm_stream(
     final accumulated text is still returned in the LLMResponse.
     """
     base, key, mdl = _resolve_config(base_url, api_key, model)
+    timeout_seconds, max_retries = _resolve_request_options(timeout_seconds, max_retries)
     log.debug("call_llm_stream: base=%s model=%s key=%s", base, mdl, mask_key(key))
     payload = _build_payload(
         messages,
@@ -161,47 +170,15 @@ async def call_llm_stream(
     headers = _headers(key)
     url = f"{base.rstrip('/')}/chat/completions"
     started = time.monotonic()
-
-    async def _do() -> LLMResponse:
-        accumulated: list[str] = []
-        model_name = mdl
-        finish_reason = "stop"
-        usage: Usage = {}
-        async with httpx.AsyncClient(timeout=timeout_seconds) as client:
-            async with client.stream("POST", url, headers=headers, json=payload) as resp:
-                if resp.status_code == 401 or resp.status_code == 403:
-                    body = (await resp.aread()).decode("utf-8", "replace")
-                    raise LLMAuthError(f"HTTP {resp.status_code}: {body[:300]}")
-                if resp.status_code >= 400:
-                    body = (await resp.aread()).decode("utf-8", "replace")
-                    raise LLMBadRequest(f"HTTP {resp.status_code}: {body[:300]}")
-                resp.raise_for_status()
-
-                async for event in iter_sse_events(resp.aiter_bytes()):
-                    text = extract_delta_text(event)
-                    if text:
-                        accumulated.append(text)
-                        if on_chunk is not None:
-                            on_chunk(text)
-                    if "model" in event:
-                        model_name = event["model"]
-                    choices = event.get("choices") or []
-                    if choices and "finish_reason" in choices[0]:
-                        finish_reason = choices[0]["finish_reason"] or "stop"
-                    if "usage" in event and event["usage"]:
-                        usage = event["usage"]  # type: ignore[assignment]
-
-        elapsed_ms = int((time.monotonic() - started) * 1000)
-        return LLMResponse(
-            text="".join(accumulated),
-            model=model_name,
-            usage=usage,
-            finish_reason=finish_reason,
-            elapsed_ms=elapsed_ms,
-            raw={"streamed": True},
-        )
-
-    return await with_retry(_do, max_retries=max_retries, label="llm_stream")
+    return await _call_stream(
+        url,
+        headers,
+        payload,
+        timeout_seconds,
+        max_retries,
+        started,
+        on_chunk=on_chunk,
+    )
 
 
 async def _call_non_stream(
@@ -213,8 +190,8 @@ async def _call_non_stream(
     started: float,
 ) -> LLMResponse:
     async def _do() -> LLMResponse:
-        async with httpx.AsyncClient(timeout=timeout_seconds) as client:
-            resp = await client.post(url, headers=headers, json=payload)
+        with httpx.Client(timeout=timeout_seconds) as client:
+            resp = client.post(url, headers=headers, json=payload)
             return _handle_non_stream_response(resp, started)
 
     return await with_retry(_do, max_retries=max_retries, label="llm_call")
@@ -227,43 +204,12 @@ async def _call_stream(
     timeout_seconds: float,
     max_retries: int,
     started: float,
+    on_chunk: Callable[[str], None] | None = None,
 ) -> LLMResponse:
     async def _do() -> LLMResponse:
-        accumulated: list[str] = []
-        model_name = payload["model"]
-        finish_reason = "stop"
-        usage: Usage = {}
-        async with httpx.AsyncClient(timeout=timeout_seconds) as client:
-            async with client.stream("POST", url, headers=headers, json=payload) as resp:
-                if resp.status_code == 401 or resp.status_code == 403:
-                    body = (await resp.aread()).decode("utf-8", "replace")
-                    raise LLMAuthError(f"HTTP {resp.status_code}: {body[:300]}")
-                if resp.status_code >= 400:
-                    body = (await resp.aread()).decode("utf-8", "replace")
-                    raise LLMBadRequest(f"HTTP {resp.status_code}: {body[:300]}")
-                resp.raise_for_status()
-
-                async for event in iter_sse_events(resp.aiter_bytes()):
-                    text = extract_delta_text(event)
-                    if text:
-                        accumulated.append(text)
-                    if "model" in event:
-                        model_name = event["model"]
-                    choices = event.get("choices") or []
-                    if choices and "finish_reason" in choices[0]:
-                        finish_reason = choices[0]["finish_reason"] or "stop"
-                    if "usage" in event and event["usage"]:
-                        usage = event["usage"]  # type: ignore[assignment]
-
-        elapsed_ms = int((time.monotonic() - started) * 1000)
-        return LLMResponse(
-            text="".join(accumulated),
-            model=model_name,
-            usage=usage,
-            finish_reason=finish_reason,
-            elapsed_ms=elapsed_ms,
-            raw={"streamed": True},
-        )
+        with httpx.Client(timeout=timeout_seconds) as client:
+            with client.stream("POST", url, headers=headers, json=payload) as resp:
+                return _handle_stream_response(resp, payload["model"], started, on_chunk)
 
     return await with_retry(_do, max_retries=max_retries, label="llm_stream")
 
@@ -293,3 +239,88 @@ def _handle_non_stream_response(resp: httpx.Response, started: float) -> LLMResp
         elapsed_ms=elapsed_ms,
         raw=body,
     )
+
+
+def _handle_stream_response(
+    resp: httpx.Response,
+    default_model: str,
+    started: float,
+    on_chunk: Callable[[str], None] | None = None,
+) -> LLMResponse:
+    if resp.status_code == 401 or resp.status_code == 403:
+        raise LLMAuthError(f"HTTP {resp.status_code}: {_read_response_text(resp)[:300]}")
+    if resp.status_code >= 400:
+        raise LLMBadRequest(f"HTTP {resp.status_code}: {_read_response_text(resp)[:300]}")
+    resp.raise_for_status()
+
+    accumulated: list[str] = []
+    model_name = default_model
+    finish_reason = "stop"
+    usage: Usage = {}
+    buffer = ""
+
+    for raw in resp.iter_bytes():
+        buffer += raw.decode("utf-8", errors="replace")
+        *lines, buffer = buffer.split("\n")
+        for event in _parse_sse_lines(lines):
+            text = extract_delta_text(event)
+            if text:
+                accumulated.append(text)
+                if on_chunk is not None:
+                    on_chunk(text)
+            if "model" in event:
+                model_name = event["model"]
+            choices = event.get("choices") or []
+            if choices and "finish_reason" in choices[0]:
+                finish_reason = choices[0]["finish_reason"] or "stop"
+            if "usage" in event and event["usage"]:
+                usage = event["usage"]  # type: ignore[assignment]
+
+    for event in _parse_sse_lines([buffer]):
+        text = extract_delta_text(event)
+        if text:
+            accumulated.append(text)
+            if on_chunk is not None:
+                on_chunk(text)
+        if "model" in event:
+            model_name = event["model"]
+        choices = event.get("choices") or []
+        if choices and "finish_reason" in choices[0]:
+            finish_reason = choices[0]["finish_reason"] or "stop"
+        if "usage" in event and event["usage"]:
+            usage = event["usage"]  # type: ignore[assignment]
+
+    elapsed_ms = int((time.monotonic() - started) * 1000)
+    return LLMResponse(
+        text="".join(accumulated),
+        model=model_name,
+        usage=usage,
+        finish_reason=finish_reason,
+        elapsed_ms=elapsed_ms,
+        raw={"streamed": True},
+    )
+
+
+def _read_response_text(resp: httpx.Response) -> str:
+    try:
+        return resp.read().decode("utf-8", "replace")
+    except Exception:
+        return resp.text
+
+
+def _parse_sse_lines(lines: list[str]) -> list[dict[str, Any]]:
+    events: list[dict[str, Any]] = []
+    for line in lines:
+        line = line.rstrip("\r").strip()
+        if not line.startswith("data:"):
+            continue
+        payload = line[len("data:"):].strip()
+        if not payload or payload == "[DONE]":
+            continue
+        try:
+            event = json.loads(payload)
+        except json.JSONDecodeError:
+            continue
+        if isinstance(event, dict):
+            events.append(event)
+    return events

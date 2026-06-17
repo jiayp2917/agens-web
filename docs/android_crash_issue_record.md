@@ -21,13 +21,13 @@
 
 - Android 下 `AGENS_NOVEL_ROOT` 指向仓库根目录，保证提示词、运行目录和根目录 BGM 可解析。
 - BGM 打包扩展名包含 `flac`。
-- 移动端入口不再额外注入内置 API key；用户设置只在当前进程写入环境变量，不落盘。
+- 移动端入口不再额外注入内置 API key；用户设置中的 API key 仅写入应用私有 `secrets.json`，普通 `settings.json` 不保存 key，UI 只显示掩码摘要。
 - 主页、读档、教程、设置、游戏页都走 Kivy 移动端 UI。
 
 ## 仍需真机验证
 
 ```powershell
-.\.venv\Scripts\python.exe -m compileall -q src tests mobile\main.py mobile\audio_manager.py mobile\screens mobile\widgets mobile\service demo_full_flow.py
+.\.venv\Scripts\python.exe -m compileall -q src tests mobile\main.py mobile\audio_manager.py mobile\screens mobile\widgets mobile\service demos\full_flow\demo_full_flow.py
 .\.venv\Scripts\python.exe -m pytest -q
 ```
 

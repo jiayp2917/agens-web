@@ -51,13 +51,21 @@ def save_game(session: GameSession, name: str = "autosave") -> str:
     return str(path)
 
 
-def load_game(name: str = "autosave") -> GameSession:
-    """Load a GameSession from disk. Raises FileNotFoundError if missing."""
+def load_game(name: str = "autosave") -> GameSession | None:
+    """Load a GameSession from disk.
+
+    Raises FileNotFoundError if missing. Returns None when the save file is
+    present but corrupt.
+    """
     path = _save_path(name)
     if not path.exists():
         raise FileNotFoundError(f"存档不存在: {path}")
-    data = json.loads(path.read_text(encoding="utf-8"))
-    session = GameSession.from_save_dict(data)
+    try:
+        data = json.loads(path.read_text(encoding="utf-8"))
+        session = GameSession.from_save_dict(data)
+    except (json.JSONDecodeError, ValueError, TypeError) as exc:
+        log.warning("Corrupt save ignored: %s (%s)", path, exc)
+        return None
     session.save_file = str(path)
     log.info("Game loaded from %s", path)
     return session
