@@ -129,7 +129,7 @@ src/agens_novel/state/{game_schema,reducers}.py (类型 schema + reducer)
 
 | 文件/目录 | 职责 | 关键说明 |
 |-----------|------|---------|
-| `main.py::XianxiaApp` | Kivy 入口：平台 bootstrap（设 `AGENS_NOVEL_ROOT`/`sys.path`、CJK 字体注册）、加载设置、设存档目录、组装 4 个 Screen、Windows 焦点修复、`on_stop` 关闭 BGM | 桌面调试：`python mobile/main.py` |
+| `main.py::XianxiaApp` | Kivy 入口：平台 bootstrap（设 `AGENS_NOVEL_ROOT`/`sys.path`、CJK 字体注册）、加载设置、设存档目录、组装 4 个 Screen、`on_stop` 关闭 BGM | 产品验证：Android APK + USB 真机 |
 | `service/engine_adapter.py::EngineAdapter` | **UI ↔ 引擎唯一桥**：持有 `GameEngine()` 实例；引擎回调经 `Clock.schedule_once`→Kivy 主线程；阻塞调用放 daemon thread | 全 mobile 仅此处直接 import `GameEngine` |
 | `service/save_manager_compat.py` | 把 `SaveManager` 存档目录改指到 Kivy `app.user_data_dir/saves` | `set_mobile_save_dir` |
 | `service/settings_store.py` | 非密钥设置持久化 JSON（`settings.json` / `user_model.json`），API key 单独存入 app-private `secrets.json`，启动时注入 `os.environ` | 普通设置文件不含 key，UI 只显示掩码摘要 |

@@ -187,3 +187,43 @@ def test_start_from_profile_uses_profile_choices_only_after_model_failure(tmp_pa
 
     assert engine.game_session.last_choices == ["退回山门", "询问执事"]
     assert any("天道紊乱" in msg for msg in infos)
+
+
+def test_game_name_is_sent_to_world_builder_prompt(tmp_path, monkeypatch):
+    from agens_novel import paths
+    monkeypatch.setattr(paths, "SAVE_DIR", tmp_path)
+    engine = GameEngine()
+    seen_inputs: list[str] = []
+
+    def runner(agent_name, user_input, session, **kwargs):
+        assert agent_name == "world_builder"
+        seen_inputs.append(user_input)
+        return {
+            "generated_data": {
+                "world": {"location": "星河剑宗山门", "current_scene": "星河接引台"},
+                "opening_narrative": "星河剑宗钟声响起。",
+                "choices": ["拜见接引弟子", "观察星河灵脉", "整理行囊"],
+            },
+            "llm_error": "",
+        }
+
+    with patch("agens_novel.engine.game_engine.run_turn_sync", side_effect=runner):
+        engine.start_from_profile({"game_name": "星河剑宗", "char_name": "许满"})
+
+    assert seen_inputs and "星河剑宗" in seen_inputs[0]
+    assert engine.game_session.location == "星河剑宗山门"
+
+
+def test_game_name_changes_local_fallback_opening(tmp_path, monkeypatch):
+    from agens_novel import paths
+    monkeypatch.setattr(paths, "SAVE_DIR", tmp_path)
+    monkeypatch.delenv("AGNES_API_KEY", raising=False)
+
+    first = GameEngine()
+    first.start_from_profile({"game_name": "云海纪", "char_name": "许满"})
+    second = GameEngine()
+    second.start_from_profile({"game_name": "赤霄录", "char_name": "许满"})
+
+    assert first.game_session.location != second.game_session.location
+    assert "云海纪" in first.game_session.location or "云海纪" in first.game_session.lore_facts[0]
+    assert "赤霄录" in second.game_session.location or "赤霄录" in second.game_session.lore_facts[0]

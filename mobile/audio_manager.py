@@ -37,7 +37,7 @@ class AudioManager:
 
         ``path`` can be an absolute filesystem path (legacy) or an alias
         resolved through :mod:`agens_novel.bgm` (e.g. ``"default"``).
-        Aliases allow the same call site to work on desktop, mobile, and
+        Aliases allow the same call site to work on Android, local tests, and
         in tests without hard-coding file paths.
         """
         if not self.bgm_enabled:

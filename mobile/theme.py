@@ -49,7 +49,7 @@ class ThemePalette:
     border_color: tuple[float, float, float, float]
 
 
-# 宣纸白 — aligned to docs/prototypes/prototype.css :root.
+# 宣纸白 — main paper palette.
 WHITE = ThemePalette(
     bg=(0.969, 0.953, 0.918, 1),            # #f7f3ea
     surface=(1.0, 0.973, 0.941, 1),         # #fff8f0

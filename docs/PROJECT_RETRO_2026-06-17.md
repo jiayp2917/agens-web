@@ -2,7 +2,7 @@
 
 ## 结论
 
-- 产品通路保持 Android-only：Kivy/Buildozer 是唯一对外入口，桌面 Kivy 只用于调试。
+- 产品通路保持 Android-only：Kivy/Buildozer 是唯一对外入口，后续流程验证只走 USB 真机。
 - 当前玩法契约保持单一 A/B/C/D：A/B/C 由模型按上下文生成，D 为玩家自由键入。
 - USB 真机验证路线已证明比 Windows 桌面真实点击路线稳定；后续需要真实点击、截图、日志时优先走 ADB。
 - 默认模型仍为 Agens；DeepSeek 作为可选测试预设。手机端已确认 DeepSeek 可用，但设置页必须通过脱敏摘要确认当前生效配置。
@@ -12,8 +12,9 @@
 
 - 移出 git 跟踪的验证产物：`demos/validation/screenshots/*` 和 `demos/validation/auto_validate_v040.jsonl`。
 - 删除失败的 Windows 桌面真实点击方案残留：`demos/validation/real_click*`、`capture_region_win.py`、`kivy_minimal_probe.py`。
+- 删除旧桌面演示/自动验证路线：`demos/full_flow/`、`demos/validation/auto_validate_v040.py`、`docs/validation_report_v0.4.0.md`。
 - 清理本地运行产物：`runtime/artifacts/`、`runtime/logs/`、`runtime/saves/`、`demos/validation/__pycache__/`。
-- 保留 `runtime/.gitkeep`，保留 `demos/validation/auto_validate_v040.py` 作为历史可复跑的程序化验证脚本。
+- 保留 `runtime/.gitkeep`。
 - `.gitignore` 已补充验证截图、JSONL、APK、runtime 日志/存档等规则，避免产物再次入库。
 - `D:\chat\plan` 是外部证据目录，本轮不删除；后续如要压缩迁移，应先筛选最新 APK、截图和日志。
 

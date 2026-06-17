@@ -16,7 +16,7 @@ run:
 	python mobile/main.py
 
 smoke:
-	python -m compileall -q src tests mobile/main.py mobile/audio_manager.py mobile/screens mobile/widgets mobile/service demos/full_flow/demo_full_flow.py
+	python -m compileall -q src tests mobile/main.py mobile/audio_manager.py mobile/screens mobile/widgets mobile/service
 	python -m pytest -q tests/mobile/test_mobile_startup.py tests/mobile/test_buildozer_spec.py
 
 clean:

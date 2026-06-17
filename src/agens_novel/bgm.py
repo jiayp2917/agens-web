@@ -7,7 +7,7 @@ calling into this module never breaks the host application.
 
 Backends, in preference order:
   1. ``kivy.core.audio.SoundLoader`` — used inside the Kivy app and demo.
-  2. ``pygame.mixer`` — optional desktop fallback for local visual demos.
+  2. ``pygame.mixer`` — optional fallback for local audio checks.
   3. ``None`` — silent stub used when neither backend is importable or
      when audio initialisation fails. The game still runs.
 
@@ -188,7 +188,7 @@ class _KivyBackend(_BgmBackend):
 
 
 class _PygameBackend(_BgmBackend):
-    """``pygame.mixer`` backend used as a desktop fallback."""
+    """``pygame.mixer`` backend used as a local fallback."""
 
     def __init__(self) -> None:
         self._mixer = None
@@ -281,7 +281,7 @@ def _select_backend() -> _BgmBackend:
         if in_kivy:
             logger.info("BGM: Kivy present but unusable, falling back")
 
-    # 2. Try pygame for local desktop demos.
+    # 2. Try pygame for local audio checks.
     try:
         import pygame  # type: ignore  # noqa: F401
 

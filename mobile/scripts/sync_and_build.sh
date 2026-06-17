@@ -6,6 +6,12 @@ DEST=/home/jia/agens-build
 
 echo "=== SYNC START ==="
 mkdir -p "$DEST/mobile" "$DEST/src" "$DEST/config"
+find "$DEST" -mindepth 1 -maxdepth 1 \
+  ! -name "mobile" \
+  ! -name "src" \
+  ! -name "config" \
+  -exec rm -rf {} +
+rm -f "$DEST/mobile/bin"/*.apk 2>/dev/null || true
 
 rsync -a --delete \
   --exclude ".buildozer/" \
@@ -17,7 +23,6 @@ rsync -a --delete \
 rsync -a --delete "$ROOT/src/agens_novel/" "$DEST/src/agens_novel/"
 rsync -a --delete "$ROOT/config/" "$DEST/config/"
 cp -v "$ROOT/main.py" "$DEST/main.py"
-cp -v "$ROOT/bgm.flac" "$DEST/bgm.flac"
 
 echo "=== SYNC DONE ==="
 echo "=== Starting buildozer ==="

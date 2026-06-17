@@ -19,7 +19,7 @@ DEFAULT_MODEL = "agnes-2.0-flash"
 
 
 def _settings_path() -> Path:
-    """Return the settings JSON path. Works on both desktop and Android."""
+    """Return the settings JSON path. Works in Android and local tests."""
     try:
         from kivy.app import App
         app = App.get_running_app()

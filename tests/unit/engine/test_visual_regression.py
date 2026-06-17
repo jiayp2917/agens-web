@@ -1,8 +1,7 @@
-"""Visual constants aligned with the static Android prototype."""
+"""Visual constants for the Android ink-wash UI."""
 
 from __future__ import annotations
 
-import re
 import sys
 import types
 
@@ -46,17 +45,15 @@ def _assert_close(actual, expected, tolerance=0.05):
         assert abs(a - e) <= tolerance
 
 
-def test_paper_theme_matches_prototype_css(monkeypatch):
+def test_paper_theme_matches_current_plan_values(monkeypatch):
     _install_kivy_stubs(monkeypatch)
     from mobile.theme import WHITE
 
-    css = open("docs/prototypes/prototype.css", encoding="utf-8").read()
-    values = dict(re.findall(r"--([a-z-]+):\s*(#[0-9a-fA-F]{6})", css))
-
-    _assert_close(WHITE.bg, _hex_to_rgb(values["paper"]))
-    _assert_close(WHITE.primary, _hex_to_rgb(values["cyan"]))
-    _assert_close(WHITE.accent, _hex_to_rgb(values["gold"]))
-    _assert_close(WHITE.text, _hex_to_rgb(values["ink"]))
+    _assert_close(WHITE.bg, _hex_to_rgb("#f7f3ea"))
+    _assert_close(WHITE.surface, _hex_to_rgb("#fff8f0"))
+    _assert_close(WHITE.primary, _hex_to_rgb("#52746d"))
+    _assert_close(WHITE.accent, _hex_to_rgb("#a77d38"))
+    _assert_close(WHITE.text, _hex_to_rgb("#202a27"))
 
 
 def test_additional_ink_themes_match_plan_values(monkeypatch):

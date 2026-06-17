@@ -41,6 +41,9 @@ class CharacterCreateScreen(Screen):
         super().__init__(**kwargs)
         self.adapter = adapter
         self.attributes = dict(DEFAULT_ATTRIBUTES)
+        self.talent = TALENT_OPTIONS[0]
+        self.spirit_root = SPIRIT_ROOTS[0]["name"]
+        self.family_background = FAMILY_BACKGROUNDS[0]
         self._result_panel = None
         self._attribute_widgets: dict[str, tuple[ProgressBar, Label]] = {}
 
@@ -77,14 +80,18 @@ class CharacterCreateScreen(Screen):
 
         grid = BoxLayout(orientation="vertical", size_hint_y=None, spacing=dp(8))
         grid.bind(minimum_height=grid.setter("height"))
-        self.spinner_talent = _spinner("剑心微明", TALENT_OPTIONS, theme)
-        roots = [item["name"] for item in SPIRIT_ROOTS] + [SPECIAL_ROOT]
-        self.spinner_root = _spinner("火灵根", roots, theme)
-        self.spinner_family = _spinner("寒门", FAMILY_BACKGROUNDS, theme)
+        self.random_summary = Label(
+            text=self._random_summary_text(),
+            font_size=dp(12),
+            color=theme.text,
+            size_hint_y=None,
+            height=dp(70),
+            halign="left",
+            valign="middle",
+        )
+        self.random_summary.bind(width=lambda *_a: self.random_summary.setter("text_size")(self.random_summary, (self.random_summary.width, None)))
+        _field(grid, "随机角色", self.random_summary, theme, height=dp(90))
         self.spinner_difficulty = _spinner("普通", DIFFICULTY_OPTIONS, theme)
-        _field(grid, "天赋", self.spinner_talent, theme)
-        _field(grid, "灵根", self.spinner_root, theme)
-        _field(grid, "家世", self.spinner_family, theme)
         _field(grid, "难度", self.spinner_difficulty, theme)
         self.form.add_widget(grid)
 
@@ -120,7 +127,7 @@ class CharacterCreateScreen(Screen):
         root.add_widget(scroll)
 
         action_row = BoxLayout(orientation="horizontal", size_hint_y=None, height=dp(50), spacing=dp(8))
-        random_btn = themed_button("随机属性", font_size=dp(15))
+        random_btn = themed_button("随机角色", font_size=dp(15))
         start_btn = themed_button("开始修行", font_size=dp(15))
         random_btn.bind(on_release=lambda _: self._randomize())
         start_btn.bind(on_release=lambda _: self._start())
@@ -144,11 +151,18 @@ class CharacterCreateScreen(Screen):
         return row
 
     def _randomize(self) -> None:
+        self.talent = random.choice(TALENT_OPTIONS)
+        self.spirit_root = random.choice(SPIRIT_ROOTS)["name"]
+        self.family_background = random.choice(FAMILY_BACKGROUNDS)
         self.attributes = {key: random.randint(35, 88) for key in ATTRIBUTE_KEYS}
         if random.random() < 0.18:
             boost = random.choice(ATTRIBUTE_KEYS)
             self.attributes[boost] = random.randint(89, 96)
+        self.random_summary.text = self._random_summary_text()
         self._refresh_attributes()
+
+    def _random_summary_text(self) -> str:
+        return f"天赋：{self.talent}\n灵根：{self.spirit_root}\n家世：{self.family_background}"
 
     def _sync_special_state(self) -> None:
         if self.input_game_name.text.strip() == SPECIAL_START_CODE:
@@ -193,10 +207,10 @@ class CharacterCreateScreen(Screen):
         profile = {
             "game_name": self.input_game_name.text.strip(),
             "char_name": SPECIAL_START_NAME if special else (self.input_char_name.text.strip() or "无名"),
-            "talent": SPECIAL_TALENT if special else self.spinner_talent.text,
-            "spirit_root": SPECIAL_ROOT if special else self.spinner_root.text,
-            "spirit_root_grade": "天" if special or self.spinner_root.text in {"冰灵根", "雷灵根", "风灵根", SPECIAL_ROOT} else "地",
-            "family_background": SPECIAL_FAMILY if special else self.spinner_family.text,
+            "talent": SPECIAL_TALENT if special else self.talent,
+            "spirit_root": SPECIAL_ROOT if special else self.spirit_root,
+            "spirit_root_grade": "天" if special or self.spirit_root in {"冰灵根", "雷灵根", "风灵根", SPECIAL_ROOT} else "地",
+            "family_background": SPECIAL_FAMILY if special else self.family_background,
             "difficulty": self.spinner_difficulty.text,
             "attributes": attributes,
             "special_start": special,
@@ -253,8 +267,8 @@ def _spinner(text: str, values: list[str], theme) -> Spinner:
     )
 
 
-def _field(parent, label: str, widget, theme) -> None:
-    box = BoxLayout(orientation="vertical", size_hint_y=None, height=dp(58), spacing=dp(3))
+def _field(parent, label: str, widget, theme, height=None) -> None:
+    box = BoxLayout(orientation="vertical", size_hint_y=None, height=height or dp(58), spacing=dp(3))
     lbl = Label(text=label, font_size=dp(11), color=theme.text_secondary, size_hint_y=None, height=dp(18), halign="left")
     lbl.bind(width=lambda *_a: lbl.setter("text_size")(lbl, (lbl.width, None)))
     box.add_widget(lbl)

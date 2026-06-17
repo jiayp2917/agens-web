@@ -19,7 +19,7 @@ AI 驱动的 Android 竖屏文字修仙模拟器。产品入口只保留 Kivy/Bu
 
 ## 技术栈
 
-- **Kivy**：Android UI 与桌面调试窗口。
+- **Kivy**：Android UI。
 - **Buildozer**：Android APK 打包。
 - **LangGraph**：Agent 调用图。
 - **httpx**：OpenAI 兼容 API 调用。
@@ -27,10 +27,7 @@ AI 驱动的 Android 竖屏文字修仙模拟器。产品入口只保留 Kivy/Bu
 
 ## 开发入口
 
-```powershell
-cd D:\chat\agens
-.\.venv311\Scripts\python.exe mobile\main.py
-```
+产品验证只走 Android APK + USB 真机调试；Windows 桌面 Kivy 窗口不再作为流程验证方式。
 
 测试环境：
 
@@ -41,6 +38,16 @@ python -m venv .venv
 pip install -e ".[dev]"
 ```
 
+USB 真机调试：
+
+```powershell
+$adb = 'C:\Users\29176\adb\platform-tools\adb.exe'
+& $adb devices -l
+& $adb install -r D:\chat\plan\<apk-name>.apk
+& $adb shell am force-stop org.agens.agensnovel
+& $adb shell am start -n org.agens.agensnovel/org.kivy.android.PythonActivity
+```
+
 可选模型环境变量：
 
 ```powershell
@@ -48,6 +55,10 @@ $env:AGNES_BASE_URL = "https://apihub.agnes-ai.com/v1"
 $env:AGNES_MODEL    = "agnes-2.0-flash"
 $env:AGNES_API_KEY  = "<你的 key>"
 ```
+
+## 文档索引
+
+后续智能体先读 `docs/INDEX.md`。APK 打包、USB 真机验证、成功与失败经验见 `docs/LESSONS_LEARNED_2026-06-17.md`。
 
 ## 关键文件
 
@@ -120,13 +131,10 @@ $env:AGNES_API_KEY  = "<你的 key>"
 
 ```powershell
 # 编译检查
-.\.venv\Scripts\python.exe -m compileall -q src tests mobile\main.py mobile\audio_manager.py mobile\screens mobile\widgets mobile\service demos\full_flow\demo_full_flow.py
+.\.venv\Scripts\python.exe -m compileall -q src tests mobile\main.py mobile\audio_manager.py mobile\screens mobile\widgets mobile\service
 
 # 运行测试
 .\.venv\Scripts\python.exe -m pytest -q
-
-# 桌面调试 Android/Kivy 窗口
-.\.venv311\Scripts\python.exe mobile\main.py
 
 # APK 打包
 /build-apk

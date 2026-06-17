@@ -1,7 +1,6 @@
 """文字修仙 — AI-driven Xianxia Cultivation Simulator.
 
-Kivy app entry point. Run on desktop with:
-    python mobile/main.py
+Kivy app entry point for Android packaging.
 
 Build APK with Buildozer (requires Linux/WSL2):
     cd mobile && buildozer android debug
@@ -26,11 +25,11 @@ _IS_ANDROID = "ANDROID_ARGUMENT" in os.environ or "ANDROID_PRIVATE" in os.enviro
 _app_dir = Path(__file__).resolve().parent
 
 # With source.dir=.., root main.py imports this module from <app-root>/mobile.
-# On desktop, mobile/main.py's parent is also the project root.
+# In local imports, mobile/main.py's parent is also the project root.
 if _IS_ANDROID:
     _project_root = _app_dir.parent
 else:
-    # Desktop: project root = mobile/.. (contains src/agens_novel/)
+    # Local source tree: project root = mobile/.. (contains src/agens_novel/)
     _project_root = _app_dir.parent if (_app_dir.parent / "src" / "agens_novel").exists() else _app_dir
 
 _src_dir = _project_root / "src"
@@ -67,6 +66,8 @@ from screens.game_screen import GameScreen
 from screens.home_screen import HomeScreen
 from screens.character_create_screen import CharacterCreateScreen
 from screens.death_screen import DeathScreen
+
+Window.softinput_mode = "resize"
 
 
 def _schedule_focus_restore() -> None:

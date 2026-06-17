@@ -157,6 +157,12 @@ NPC好感度范围: -100~100
 9. 列表追加用 xxx_add 键(如 techniques_add, inventory_add, status_effects_add)。
 10. <当前状态>是唯一权威事实。普通行动不得重开局、不得把场景改回混沌/虚空/未开世界,不得重置角色姓名、境界、灵根、天赋、家世、背包或功法。
 11. 如果玩家行动为空、乱码或语义不清,在当前地点内给出轻微失败、犹豫或无事发生的结果,不要生成新的开局。
+12. 叙事与 state_update 必须一致:
+   - 叙事写“获得/拾得/购买/奖励/得到”物品时,必须在 `character.inventory_add` 同步追加。
+   - 叙事写“习得/学会/领悟/传授”功法时,必须在 `character.techniques_add` 同步追加。
+   - 叙事写“发现地点/发现秘境/发现洞府/新地图/抵达新地点”时,必须在 `world.discovered_add`、`world.location` 或 `world.current_scene` 同步更新。
+   - 叙事写“接取/领取任务/委托”时,必须在 `world.active_quests_add` 同步追加。
+   - 叙事写升层、破境或突破成功时,必须有合法的 `character.experience`、`realm_stage` 或突破流程字段支撑;不要只在文本里宣布状态变化。
 
 ## 约束
 - 保持世界观一致,不引入现代元素(手机、网络等)。

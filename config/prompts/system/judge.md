@@ -52,6 +52,8 @@
 - 如果普通修炼凭空授予 `breakthrough_flags_add`、稀有突破资源或大量感悟,应删除或大幅修正。
 - 如果获得稀有物品太容易,降低物品品质或拒绝。
 - 如果战斗伤害数值不合理,修正为符合境界压制的数值。
+- 如果叙事声称获得物品、习得功法、发现地点或接取任务,但 delta 缺少 `inventory_add`、`techniques_add`、`discovered_add`、`active_quests_add` 等对应字段,应 approved=false 并在 corrected_delta 中补齐合理的最小字段;不能只允许叙事文本通过。
+- 如果叙事声称升层、突破或飞升,但 delta 没有合法境界/层数/经验/meta 变化,应 approved=false,并说明“状态栏为准”。
 - 如果 approved=true,corrected_delta 可以为空 {}。
 - 如果 approved=false,corrected_delta 必须包含修正后的完整 delta。
 - 如果 delta 中没有不合理的字段,approved 应该为 true。
@@ -66,6 +68,7 @@
 5. 战斗中伤害数值严重偏离合理范围
 6. 任何明显破坏游戏平衡的状态更新
 7. 普通行动出现角色身份重置、灵根重置、背包/功法全量清空、场景重开局等连续性破坏
+8. 叙事文本宣称关键状态收益,但结构化 delta 没有相应字段且无法补齐
 
 ## 约束
 - 输出必须是合法JSON。

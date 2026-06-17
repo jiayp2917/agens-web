@@ -2,12 +2,9 @@
 
 Android-only 文字修仙模拟器。产品入口是 Kivy/Buildozer 移动端，核心玩法由 LangGraph Agent、GameEngine、Session、存档和规则系统驱动。
 
-## 启动
+## 启动与验证
 
-```powershell
-cd D:\chat\agens
-.\.venv311\Scripts\python.exe mobile\main.py
-```
+产品以 Android APK + USB 真机为准，不再使用 Windows 桌面 Kivy 窗口做流程验证。
 
 开发测试环境：
 
@@ -36,6 +33,10 @@ git archive --format=zip --output D:\chat\agens-transfer.zip HEAD
 ```
 
 新电脑上的环境重建、启动和验证步骤见 [docs/ZIP_TRANSFER.md](docs/ZIP_TRANSFER.md)。
+
+## 运行流程
+
+当前业务逻辑和代码调用链见 [docs/RUNTIME_FLOW.md](docs/RUNTIME_FLOW.md)。
 
 ## 复盘与真机验证
 
@@ -68,7 +69,7 @@ git archive --format=zip --output D:\chat\agens-transfer.zip HEAD
 ## 测试
 
 ```powershell
-.\.venv\Scripts\python.exe -m compileall -q src tests mobile\main.py mobile\audio_manager.py mobile\screens mobile\widgets mobile\service demos\full_flow\demo_full_flow.py
+.\.venv\Scripts\python.exe -m compileall -q src tests mobile\main.py mobile\audio_manager.py mobile\screens mobile\widgets mobile\service
 .\.venv\Scripts\python.exe -m pytest -q
 ```
 
@@ -81,3 +82,7 @@ git archive --format=zip --output D:\chat\agens-transfer.zip HEAD
 ```
 
 Buildozer 配置在 `mobile/buildozer.spec`，产品方向固定为 Android 竖屏。
+
+## 文档索引
+
+后续智能体先读 [docs/INDEX.md](docs/INDEX.md)。APK 打包、USB 真机验证、成功与失败经验见 [docs/LESSONS_LEARNED_2026-06-17.md](docs/LESSONS_LEARNED_2026-06-17.md)。

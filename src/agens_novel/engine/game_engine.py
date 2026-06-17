@@ -1,6 +1,6 @@
 """UI-agnostic game engine for the xianxia cultivation simulator.
 
-The class emits events via callbacks. Android or desktop Kivy UI can register
+The class emits events via callbacks. Android/Kivy UI can register
 callbacks and drive the game without knowing about the other layers.
 
 All agent calls go through ``run_turn_sync`` which internally uses
@@ -29,6 +29,31 @@ from ..game.constants import (
 from ..game.realm import RealmSystem
 from ..session.game_session import GameSession
 from ..persistence.save_manager import delete_save, list_saves, load_game, rename_save, save_game
+from .action_delta_policy import (
+    INSIGHT_BASE_GAIN,
+    apply_breakthrough_flag_rule,
+    apply_cultivation_limit,
+    apply_insight_rule,
+    is_pure_cultivation,
+    validate_narrative_delta_consistency,
+)
+from .choices import (
+    CHOICE_FALLBACK_NOTICE,
+    fallback_choices,
+    normalize_choices,
+)
+from .model_result import (
+    ModelResultKind,
+    classify_judge_result,
+    classify_narrator_result,
+    classify_world_builder_result,
+)
+from .profile_opening import (
+    luck_from_attributes,
+    profile_concept,
+    profile_default_world,
+    profile_opening,
+)
 from .turn_runner import run_turn_sync
 from .render import (
     format_combat,
@@ -48,14 +73,6 @@ log = logging.getLogger(__name__)
 # Type aliases for callbacks.
 Callback = Callable[..., None]
 
-# Baseline 感悟 (insight) granted per non-cultivation action, on top of any
-# LLM-granted insight. Pure-cultivation actions (闭关/打坐/吐纳…) grant none —
-# see ``_is_pure_cultivation``. This enforces the "闭门造车难成大道" rule: major
-# breakthroughs require insight, which only real deeds (explore/combat/comprehend)
-# can build, never silent meditation.
-INSIGHT_BASE_GAIN = 8
-CHOICE_LABELS = ("A", "B", "C")
-CHOICE_FALLBACK_NOTICE = "天道紊乱，暂以因果残影指引。"
 MODEL_FAILURE_PROMPT = "天道紊乱，是否以因果残影继续推演？"
 MODEL_FAILURE_CONTINUE = "fallback"
 MODEL_FAILURE_END = "end"
@@ -135,8 +152,15 @@ class GameEngine:
         self.game_session.last_choices = fallback_choices(self.game_session)
         log.info("choice fallback used: source=%s", source)
         if fallback_notice:
-            self._emit("on_info", CHOICE_FALLBACK_NOTICE)
+            self._emit("on_info", self._fallback_notice_for(reason))
         return True
+
+    def _fallback_notice_for(self, reason: str = "") -> str:
+        """Return a player-visible fallback message without exposing secrets."""
+        reason = (reason or "").strip()
+        if "不完整" in reason or "未返回" in reason or "格式" in reason:
+            return reason
+        return CHOICE_FALLBACK_NOTICE
 
     def _confirm_local_fallback(self, source: str, reason: str = "") -> bool:
         """Ask the UI whether model failure should continue with local fallback."""
@@ -302,7 +326,7 @@ class GameEngine:
         self.game_session.spirit_root_grade = str(profile.get("spirit_root_grade") or "")
         self.game_session.family_background = str(profile.get("family_background") or FAMILY_BACKGROUNDS[0])
         self.game_session.difficulty = str(profile.get("difficulty") or DIFFICULTY_OPTIONS[1])
-        self.game_session.luck = str(profile.get("luck") or _luck_from_attributes(attrs))
+        self.game_session.luck = str(profile.get("luck") or luck_from_attributes(attrs))
         self.game_session.game_mode = DEFAULT_GAME_MODE
         self.game_session.attributes = attrs
         self.game_session.hp = int(profile.get("hp") or (999 if special else 100))
@@ -312,18 +336,27 @@ class GameEngine:
         self.game_session.gold = int(profile.get("gold") or (9999 if special else 20))
         self.game_session.techniques = list(profile.get("techniques") or [{"name": "基础吐纳术", "level": 1, "type": "内功"}])
         self.game_session.inventory = list(profile.get("inventory") or [{"name": "粗布道袍", "quantity": 1, "type": "防具"}])
-        self.game_session.current_scene = str(profile.get("current_scene") or "青玄宗山门")
-        self.game_session.location = str(profile.get("location") or "青玄宗山门")
-        self.game_session.region = str(profile.get("region") or "东荒")
+        default_scene, default_location, default_region, default_lore = profile_default_world(profile)
+        self.game_session.current_scene = str(profile.get("current_scene") or default_scene)
+        self.game_session.location = str(profile.get("location") or default_location)
+        self.game_session.region = str(profile.get("region") or default_region)
         self.game_session.discovered_locations = [self.game_session.location]
-        self.game_session.lore_facts = ["青玄宗立于东荒云脉之上，山门深处常有灵雾不散。"]
+        self.game_session.lore_facts = [default_lore]
 
         profile_choices = normalize_choices(profile.get("choices"))
         self._emit("on_loading", "天道推演开局中...")
         generated_opening, generated_choices = self._generate_profile_opening(profile, special)
         if self.game_session.game_over:
             return
-        opening = str(profile.get("opening_narrative") or generated_opening or _profile_opening(self.game_session, special))
+        opening = str(
+            profile.get("opening_narrative")
+            or generated_opening
+            or profile_opening(
+                self.game_session,
+                special=special,
+                game_name=str(profile.get("game_name") or "").strip(),
+            )
+        )
         if self._set_choices(
             generated_choices or profile_choices,
             source="profile_opening",
@@ -348,7 +381,7 @@ class GameEngine:
             self._end_model_failure_run(reason)
             return "", []
 
-        concept = _profile_concept(profile, special)
+        concept = profile_concept(profile, special=special)
         try:
             result = run_turn_sync(
                 "world_builder", concept, self.game_session,
@@ -363,9 +396,10 @@ class GameEngine:
                 self._end_model_failure_run("开场推演失败（详见日志）。")
             return "", []
 
-        if result.get("llm_error"):
+        world_status = classify_world_builder_result(result)
+        if world_status.kind == ModelResultKind.REQUEST_FAILED:
             log.warning("profile opening world_builder failed: %s", result["llm_error"])
-            reason = f"开场推演失败: {result['llm_error']}"
+            reason = world_status.reason.replace("世界生成失败", "开场推演失败", 1)
             if self._confirm_local_fallback("profile_opening_error", reason):
                 self._emit("on_info", CHOICE_FALLBACK_NOTICE)
                 return "", normalize_choices(profile.get("choices")) or fallback_choices(self.game_session)
@@ -374,12 +408,13 @@ class GameEngine:
             return "", []
 
         generated = result.get("generated_data", {})
-        if not isinstance(generated, dict):
-            if self._confirm_local_fallback("profile_opening_empty", "开场推演数据不可用。"):
+        if world_status.kind == ModelResultKind.INCOMPLETE_OUTPUT or not isinstance(generated, dict):
+            reason = world_status.reason or "开场推演数据不可用。"
+            if self._confirm_local_fallback("profile_opening_empty", reason):
                 self._emit("on_info", CHOICE_FALLBACK_NOTICE)
                 return "", normalize_choices(profile.get("choices")) or fallback_choices(self.game_session)
             else:
-                self._end_model_failure_run("开场推演数据不可用。")
+                self._end_model_failure_run(reason)
             return "", []
 
         world = generated.get("world", {})
@@ -455,8 +490,9 @@ class GameEngine:
             self.game_session.turn_count -= 1
             return
 
-        if narrator_result.get("llm_error"):
-            reason = f"叙述失败: {narrator_result['llm_error']}"
+        narrator_status = classify_narrator_result(narrator_result)
+        if narrator_status.kind == ModelResultKind.REQUEST_FAILED:
+            reason = narrator_status.reason
             self._emit("on_error", reason)
             self._set_choices(
                 None,
@@ -470,13 +506,17 @@ class GameEngine:
 
         narrative = narrator_result.get("narrative", "")
         state_delta = narrator_result.get("state_delta", {})
+        if not isinstance(state_delta, dict):
+            state_delta = {}
         choices = narrator_result.get("choices", [])
+        if narrator_status.kind == ModelResultKind.INCOMPLETE_OUTPUT:
+            self._emit("on_info", narrator_status.reason)
         if self._set_choices(
             choices,
             source="narrator",
             fallback_notice=True,
             require_choice=True,
-            reason="叙事模型未返回可用选项。",
+            reason=narrator_status.reason if narrator_status.kind == ModelResultKind.INCOMPLETE_OUTPUT else "叙事模型未返回可用选项。",
         ) is False and self.game_session.game_over:
             self.game_session.turn_count -= 1
             return
@@ -500,8 +540,9 @@ class GameEngine:
                 # On judge error, default to NOT approving (safe default).
                 judge_result = {"approved": False, "corrected_delta": {}, "judgment_note": reason}
 
-            if judge_result.get("llm_error"):
-                reason = f"天道审判失败: {judge_result['llm_error']}"
+            judge_status = classify_judge_result(judge_result)
+            if judge_status.kind == ModelResultKind.JUDGE_FAILED:
+                reason = judge_status.reason
                 if not self._confirm_local_fallback("judge_error", reason):
                     self.game_session.turn_count -= 1
                     self._end_model_failure_run(reason)
@@ -523,6 +564,14 @@ class GameEngine:
                 note = judge_result.get("judgment_note", "")
                 if note:
                     log.info("Judge corrected: %s", note)
+
+        consistent, consistency_reason = validate_narrative_delta_consistency(narrative, state_delta)
+        if not consistent:
+            log.info("Narrative/state mismatch rejected: %s", consistency_reason)
+            self._emit("on_info", consistency_reason)
+            self._emit("on_status_bar", format_status_bar(self.game_session))
+            self._auto_save()
+            return
 
         state_delta = self._sanitize_action_delta(state_delta)
 
@@ -679,96 +728,22 @@ class GameEngine:
 
         return None
 
-    # ─── 感悟 (insight) rule ──────────────────────────────────────────
-
-    # Meditation verbs: their presence means the action *could* be pure cultivation.
-    _MEDITATION_KEYWORDS: tuple[str, ...] = (
-        "闭关", "打坐", "吐纳", "静坐", "冥想", "静修", "参禅", "盘膝",
-        "闭目", "运功", "运转", "吐故纳新", "吸纳", "静心", "修炼", "修行",
-        "入定", "凝神", "冥思",
-    )
-    # Activity verbs: if any appear alongside meditation verbs, the action is
-    # NOT pure cultivation (e.g. "修炼剑法" practices the sword, "打坐参悟"
-    # contemplates) and therefore grants 感悟.
-    _ACTIVITY_KEYWORDS: tuple[str, ...] = (
-        "剑法", "剑诀", "剑术", "刀法", "拳法", "掌法", "法术", "术法",
-        "战斗", "杀敌", "攻击", "防御", "施展", "催动", "历练", "探索",
-        "寻宝", "寻药", "买药", "购买", "交易", "谈话", "询问", "请教",
-        "救人", "帮助", "炼丹", "炼器", "制符", "破阵", "师父", "师兄",
-        "师姐", "长老", "掌门", "外出", "出门", "离开", "行走", "入城",
-        "进入", "任务", "秘境", "坊市", "参悟", "悟道",
-        # Unambiguous single-char activity markers.
-        "战", "斗", "敌", "妖", "兽", "寻", "药", "宝", "丹", "阵", "符",
-    )
-
     def _is_pure_cultivation(self, text: str) -> bool:
-        """Return True if the typed action is pure meditation/cultivation.
-
-        Pure cultivation (闭关、打坐、吐纳、静坐…) accumulates 修为 but grants
-        NO 感悟 — so it cannot, by itself, enable a major-realm breakthrough.
-        """
-        compact = "".join(text.strip().lower().split())
-        if not compact:
-            return False
-        has_meditation = any(kw in compact for kw in self._MEDITATION_KEYWORDS)
-        if not has_meditation:
-            return False
-        has_activity = any(kw in compact for kw in self._ACTIVITY_KEYWORDS)
-        return not has_activity
+        """Return True if the typed action is pure meditation/cultivation."""
+        return is_pure_cultivation(text)
 
     def _apply_insight_rule(self, text: str, delta: dict[str, Any]) -> dict[str, Any]:
-        """Enforce the 感悟 gate on an action's state delta.
-
-        - Pure cultivation: drop any insight the LLM may have granted (it grants none).
-        - Any other action: grant a baseline plus the LLM-granted insight.
-        """
-        if not isinstance(delta, dict):
-            return delta
-        char = delta.get("character")
-        char = dict(char) if isinstance(char, dict) else {}
-        llm_insight = _parse_delta_int(char.get("insight", 0))
-
-        if self._is_pure_cultivation(text):
-            char.pop("insight", None)
-        else:
-            total = INSIGHT_BASE_GAIN + max(0, llm_insight)
-            char["insight"] = f"+{total}"
-
-        delta["character"] = char
-        return delta
+        """Enforce the 感悟 gate on an action's state delta."""
+        return apply_insight_rule(text, delta)
 
     def _apply_cultivation_limit(self, delta: dict[str, Any], is_cultivation: bool) -> dict[str, Any]:
         """Cap pure-cultivation XP so one meditation turn cannot skip the journey."""
-        if not is_cultivation or not isinstance(delta, dict):
-            return delta
-        char = delta.get("character")
-        if not isinstance(char, dict) or "experience" not in char:
-            return delta
-        cfg = self.realm_system.get_realm_config(self.game_session.realm)
-        cap = max(5, min(self.game_session.experience_to_next, (cfg.experience_required if cfg else 100)))
-        gained = _parse_delta_int(char.get("experience", 0))
-        if gained > cap:
-            char = dict(char)
-            char["experience"] = f"+{cap}"
-            delta["character"] = char
-        return delta
-
-    _BREAKTHROUGH_FLAG_TRIGGERS: tuple[str, ...] = (
-        "历练", "探索", "秘境", "机缘", "请教", "任务", "战斗", "切磋",
-        "寻药", "炼丹", "炼器", "制符", "阵法", "法宝", "顿悟", "悟道",
-        "雷劫", "渡劫", "护法", "护持", "丹", "药", "阵", "符", "宝",
-    )
-
-    _REALM_BREAKTHROUGH_FLAGS: dict[str, tuple[str, ...]] = {
-        "练气": ("foundation_aid",),
-        "筑基": ("golden_core_aid",),
-        "金丹": ("nascent_soul_aid",),
-        "元婴": ("spirit_transformation_aid",),
-        "化神": ("unity_law_aid",),
-        "合体": ("mahayana_vow_aid",),
-        "大乘": ("tribulation_preparation",),
-        "渡劫": ("tribulation_elixir", "ascension_protection"),
-    }
+        return apply_cultivation_limit(
+            delta,
+            is_cultivation=is_cultivation,
+            session=self.game_session,
+            realm_system=self.realm_system,
+        )
 
     def _apply_breakthrough_flag_rule(
         self,
@@ -777,35 +752,12 @@ class GameEngine:
         is_cultivation: bool,
     ) -> dict[str, Any]:
         """Let meaningful deeds earn lightweight breakthrough preparation flags."""
-        if is_cultivation or not isinstance(delta, dict):
-            return delta
-        compact = "".join(text.strip().lower().split())
-        if not any(keyword in compact for keyword in self._BREAKTHROUGH_FLAG_TRIGGERS):
-            return delta
-        flags = list(self._REALM_BREAKTHROUGH_FLAGS.get(self.game_session.realm, ()))
-        if not flags:
-            return delta
-
-        # 渡劫 -> 飞升 needs both elixir and protection; infer the most relevant
-        # flag from the action, but allow major opportunities to satisfy both.
-        if self.game_session.realm == "渡劫":
-            if any(word in compact for word in ("丹", "药", "寻药", "炼丹", "续命")):
-                flags = ["tribulation_elixir"]
-            elif any(word in compact for word in ("法宝", "阵", "符", "护身", "炼器", "制符", "阵法")):
-                flags = ["ascension_protection"]
-
-        char = delta.get("character")
-        char = dict(char) if isinstance(char, dict) else {}
-        existing = char.get("breakthrough_flags_add")
-        merged: list[str] = []
-        if isinstance(existing, str):
-            merged.append(existing)
-        elif isinstance(existing, list):
-            merged.extend(item for item in existing if isinstance(item, str))
-        merged.extend(flags)
-        char["breakthrough_flags_add"] = _dedupe_strings(merged)
-        delta["character"] = char
-        return delta
+        return apply_breakthrough_flag_rule(
+            text,
+            delta,
+            is_cultivation=is_cultivation,
+            session=self.game_session,
+        )
 
     def _maybe_emit_insight_hint(self, is_cultivation: bool) -> None:
         """Nudge the player when stuck at max layer — only after pure cultivation."""
@@ -1310,108 +1262,6 @@ class GameEngine:
         return any(marker in lowered for marker in reset_markers)
 
 
-def _parse_delta_int(value: Any) -> int:
-    """Parse a delta int value that may be ``int`` or a ``"+N"``/``"-N"``/``"N"`` string."""
-    if isinstance(value, bool):
-        return 0
-    if isinstance(value, int):
-        return value
-    if isinstance(value, str):
-        try:
-            return int(value)
-        except ValueError:
-            return 0
-    return 0
-
-
-def _luck_from_attributes(attributes: dict[str, int]) -> str:
-    """Map numeric creation luck to a compact display label."""
-    value = attributes.get("luck", DEFAULT_ATTRIBUTES["luck"])
-    if value >= 90:
-        return "天眷"
-    if value >= 70:
-        return "中上"
-    if value >= 45:
-        return "平稳"
-    if value >= 25:
-        return "起伏"
-    return "低迷"
-
-
-def _profile_opening(session: GameSession, special: bool = False) -> str:
-    """Opening text for deterministic character creation."""
-    if special:
-        return (
-            "云海倒悬，九峰钟声同时响起。你睁眼时，掌门与诸峰长老已经等在殿外，"
-            "无人敢高声言语。一枚无主仙令悬在你掌心，像是早已等了很多年。"
-        )
-    return (
-        f"晨雾漫过{session.location}，{session.char_name or '无名'}踏上山门石阶。"
-        f"{session.family_background or '凡俗出身'}的旧事仍在身后，"
-        f"{session.spirit_root or '未明灵根'}却已在丹田深处泛起微光。"
-    )
-
-
-def _profile_concept(profile: dict[str, Any], special: bool = False) -> str:
-    """Build a compact World Builder concept from the mobile creation form."""
-    if special:
-        return "生成隐藏开局的第一幕，保持界面不明示隐藏机制。"
-    return (
-        f"角色名:{profile.get('char_name') or '无名'};"
-        f"天赋:{profile.get('talent') or '平平无奇'};"
-        f"灵根:{profile.get('spirit_root') or '未明'};"
-        f"家世:{profile.get('family_background') or '凡俗'};"
-        f"难度:{profile.get('difficulty') or '普通'}。"
-        "生成首次进入游戏的天道背景描述和贴合当前处境的A/B/C行动。"
-    )
-
-
-def normalize_choices(raw_choices: Any) -> list[str]:
-    """Return clean model-choice texts without adding system fallback choices."""
-    choices: list[str] = []
-    if isinstance(raw_choices, list):
-        for item in raw_choices:
-            text = _choice_text(item)
-            if text:
-                choices.append(text)
-            if len(choices) == len(CHOICE_LABELS):
-                break
-    return _dedupe_strings(choices)[: len(CHOICE_LABELS)]
-
-
-def _choice_text(item: Any) -> str:
-    """Extract display/action text from a model choice object."""
-    if isinstance(item, str):
-        text = item
-    elif isinstance(item, dict):
-        value = item.get("action") or item.get("text") or item.get("label")
-        text = str(value) if value is not None else ""
-    else:
-        text = ""
-    text = text.strip()
-    for prefix in ("A.", "B.", "C.", "A、", "B、", "C、", "A:", "B:", "C:"):
-        if text.upper().startswith(prefix):
-            text = text[len(prefix):].strip()
-            break
-    return text
-
-
-def fallback_choices(session: GameSession) -> list[str]:
-    """Generate grounded fallback choices when model choices are unavailable."""
-    location = session.location or "当前地点"
-    if session.combat:
-        return ["谨慎防守并观察敌人破绽", "施展最熟悉的功法", "寻找脱身路线"]
-    return [
-        f"在{location}稳住气息，观察灵气与地势变化",
-        "寻找附近修士交谈，打听当前机缘与风险",
-        "检查随身物品、功法与破境准备",
-    ]
-
-
-def _dedupe_strings(values: list[str]) -> list[str]:
-    out: list[str] = []
-    for value in values:
-        text = value.strip() if isinstance(value, str) else ""
-        if text and text not in out:
-            out.append(text)
-    return out
+_luck_from_attributes = luck_from_attributes
+_profile_opening = profile_opening
+_profile_concept = profile_concept

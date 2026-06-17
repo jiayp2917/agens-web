@@ -48,12 +48,51 @@ class TestAndroidFreeTextInput:
         assert "death.is_finale = True" in source
 
     def test_settings_keeps_agens_default_and_deepseek_test_preset(self):
-        source = (REPO_ROOT / "mobile" / "screens" / "home_screen.py").read_text(
+        source = (REPO_ROOT / "mobile" / "service" / "model_presets.py").read_text(
             encoding="utf-8"
         )
-        agens_index = source.index('"Agens · agnes-2.0-flash"')
+        agens_index = source.index('"Agens / agnes-2.0-flash"')
         deepseek_index = source.index('"DeepSeek"')
 
         assert agens_index < deepseek_index
         assert '"https://apihub.agnes-ai.com/v1", "agnes-2.0-flash"' in source
         assert '"https://api.deepseek.com/v1", "deepseek-chat"' in source
+
+    def test_home_screen_delegates_settings_popup(self):
+        source = (REPO_ROOT / "mobile" / "screens" / "home_screen.py").read_text(
+            encoding="utf-8"
+        )
+
+        assert "from screens.settings_popup import SettingsPopup" in source
+        assert "SettingsPopup(self.audio" in source
+        assert "input_api_key" not in source
+
+    def test_settings_popup_keeps_key_out_of_plain_settings(self):
+        source = (REPO_ROOT / "mobile" / "screens" / "settings_popup.py").read_text(
+            encoding="utf-8"
+        )
+
+        assert "save_api_key(entered_key)" in source
+        assert 'runtime_data = {**data, "api_key": entered_key}' in source
+        assert "save_settings(data)" in source
+        assert "save_settings(runtime_data)" not in source
+
+    def test_action_bar_has_input_preview_and_keyboard_resize(self):
+        action_bar = (REPO_ROOT / "mobile" / "widgets" / "action_bar.py").read_text(
+            encoding="utf-8"
+        )
+        startup = (REPO_ROOT / "mobile" / "main.py").read_text(encoding="utf-8")
+
+        assert "preview_label" in action_bar
+        assert "当前输入预览" in action_bar
+        assert 'Window.softinput_mode = "resize"' in startup
+
+    def test_character_creation_uses_random_profile_summary(self):
+        source = (REPO_ROOT / "mobile" / "screens" / "character_create_screen.py").read_text(
+            encoding="utf-8"
+        )
+
+        assert "random_summary" in source
+        assert "self.spinner_talent" not in source
+        assert "self.spinner_root" not in source
+        assert "self.spinner_family" not in source

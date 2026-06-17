@@ -58,16 +58,7 @@ python -m venv .venv
 pip install -e ".[dev]"
 ```
 
-4. 如果要运行 Kivy 桌面调试窗口，创建或准备带 Kivy 的运行环境：
-
-```powershell
-cd D:\chat\agens
-python -m venv .venv311
-.\.venv311\Scripts\activate
-pip install -r mobile\requirements.txt
-```
-
-5. 配置模型环境变量。密钥只放在当前 PowerShell 会话或应用内设置，不写入仓库：
+4. 配置模型环境变量。密钥只放在当前 PowerShell 会话或应用内设置，不写入仓库：
 
 ```powershell
 $env:AGNES_BASE_URL = "https://apihub.agnes-ai.com/v1"
@@ -75,18 +66,13 @@ $env:AGNES_MODEL    = "agnes-2.0-flash"
 $env:AGNES_API_KEY  = "<your key>"
 ```
 
-6. 启动桌面调试窗口：
-
-```powershell
-cd D:\chat\agens
-.\.venv311\Scripts\python.exe mobile\main.py
-```
+5. 构建 APK 后通过 USB 真机验证。ADB 命令模板见 `docs/RUNTIME_FLOW.md`。
 
 ## 新电脑验证
 
 ```powershell
 cd D:\chat\agens
-.\.venv\Scripts\python.exe -m compileall -q src tests mobile\main.py mobile\audio_manager.py mobile\screens mobile\widgets mobile\service demos\full_flow\demo_full_flow.py
+.\.venv\Scripts\python.exe -m compileall -q src tests mobile\main.py mobile\audio_manager.py mobile\screens mobile\widgets mobile\service
 .\.venv\Scripts\python.exe -m pytest -q
 ```
 
@@ -103,4 +89,4 @@ cd D:\chat\agens
 - GitHub 推送失败不影响 ZIP 迁移；只要本地提交存在，`git archive HEAD` 就能生成迁移包。
 - 如果新电脑启动时没有真实模型密钥，游戏会进入模型失败/兜底路径，不能代表真实体验。
 - 如果只复制源码、不复制 `runtime/saves/`，旧电脑上的本地存档不会随包迁移。
-- 如果手动复制整个目录，虚拟环境通常不能跨机器可靠复用，建议在新电脑重新创建 `.venv` 和 `.venv311`。
+- 如果手动复制整个目录，虚拟环境通常不能跨机器可靠复用，建议在新电脑重新创建 `.venv`。

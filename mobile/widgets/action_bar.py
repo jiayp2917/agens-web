@@ -2,6 +2,7 @@
 
 from kivy.metrics import dp
 from kivy.uix.boxlayout import BoxLayout
+from kivy.uix.label import Label
 from kivy.uix.textinput import TextInput
 from theme import add_paper_background, current_theme, themed_button
 
@@ -21,14 +22,28 @@ class GameActionBar(BoxLayout):
     def __init__(self, **kwargs):
         theme = current_theme()
         super().__init__(
-            orientation="horizontal",
+            orientation="vertical",
             size_hint_y=None,
-            height=dp(58),
-            spacing=dp(6),
-            padding=[dp(8), dp(7)],
+            height=dp(82),
+            spacing=dp(4),
+            padding=[dp(8), dp(6)],
             **kwargs,
         )
         add_paper_background(self, color=(1.0, 0.973, 0.941, 0.90))
+
+        self.preview_label = Label(
+            text="当前输入预览：",
+            font_size=dp(11),
+            color=theme.text_secondary,
+            size_hint_y=None,
+            height=dp(18),
+            halign="left",
+            valign="middle",
+        )
+        self.preview_label.bind(width=lambda *_a: self.preview_label.setter("text_size")(self.preview_label, (self.preview_label.width, None)))
+        self.add_widget(self.preview_label)
+
+        row = BoxLayout(orientation="horizontal", size_hint_y=None, height=dp(48), spacing=dp(6))
 
         self.more_btn = themed_button(
             "更多",
@@ -38,7 +53,7 @@ class GameActionBar(BoxLayout):
             height=dp(44),
         )
         self.more_btn.bind(on_release=lambda _: self._on_command("more"))
-        self.add_widget(self.more_btn)
+        row.add_widget(self.more_btn)
 
         self.text_input = TextInput(
             hint_text="D. 自行键入行动...",
@@ -49,8 +64,9 @@ class GameActionBar(BoxLayout):
             cursor_color=theme.primary,
             hint_text_color=theme.text_hint,
         )
+        self.text_input.bind(text=self._on_text_changed)
         self.text_input.bind(on_text_validate=self._on_submit)
-        self.add_widget(self.text_input)
+        row.add_widget(self.text_input)
 
         self.send_btn = themed_button(
             "发送",
@@ -60,7 +76,8 @@ class GameActionBar(BoxLayout):
             height=dp(44),
         )
         self.send_btn.bind(on_release=lambda _: self._on_submit(None))
-        self.add_widget(self.send_btn)
+        row.add_widget(self.send_btn)
+        self.add_widget(row)
 
         # State.
         self._combat_mode = False
@@ -92,6 +109,10 @@ class GameActionBar(BoxLayout):
         self.text_input.hint_text = "D. 自行键入行动..."
         self.text_input.disabled = False
         self.send_btn.text = "发送"
+
+    def _on_text_changed(self, instance, text: str) -> None:
+        preview = text.strip()
+        self.preview_label.text = f"当前输入预览：{preview[:48]}" if preview else "当前输入预览："
 
     def _on_submit(self, instance) -> None:
         text = self.text_input.text.strip()

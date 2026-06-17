@@ -4,17 +4,12 @@
 
 本项目只保留 Android/Kivy 产品入口。不要恢复终端交互入口、CLI 命令或旧 REPL UI。
 
-桌面调试启动：
-
-```powershell
-cd D:\chat\agens
-.\.venv311\Scripts\python.exe mobile\main.py
-```
+流程验证固定使用 Android APK + USB 真机，不再使用 Windows 桌面 Kivy 窗口。
 
 测试：
 
 ```powershell
-.\.venv\Scripts\python.exe -m compileall -q src tests mobile\main.py mobile\audio_manager.py mobile\screens mobile\widgets mobile\service demos/full_flow/demo_full_flow.py
+.\.venv\Scripts\python.exe -m compileall -q src tests mobile\main.py mobile\audio_manager.py mobile\screens mobile\widgets mobile\service
 .\.venv\Scripts\python.exe -m pytest -q
 ```
 
@@ -33,10 +28,7 @@ cd D:\chat\agens
 
 ## 入口说明
 
-**统一入口**：项目只保留 `mobile/main.py` 作为唯一入口。
-- **桌面调试**：直接运行 `python mobile/main.py`
-- **Android 打包**：Buildozer 从 `mobile/` 目录打包，使用 `mobile/main.py` 作为入口
-- 根目录不再有 `main.py`，所有入口统一到 `mobile/` 下
+**统一入口**：APK 通过仓库根目录 `main.py` 导入 `mobile.main`，产品运行和流程验证以 Android 真机为准。
 
 ## UI 契约
 

@@ -3,7 +3,7 @@
 ## Hard Rules
 
 1. API key 不写入仓库、日志、运行产物或文档。
-2. 运行时只从当前进程环境变量、应用内临时输入或内置兜底读取。
+2. 运行时只从当前进程环境变量、应用内设置或本地兜底读取。
 3. `SecretRedactor` 必须继续屏蔽 `sk-...` 形态的密钥。
 4. 存档路径必须经过 sanitizer，禁止路径穿越。
 
@@ -15,11 +15,7 @@
 .\scripts\run_with_key.ps1 -ApiKey "<your key>"
 ```
 
-该脚本启动 Android/Kivy 产品入口：
-
-```powershell
-python mobile\main.py
-```
+该脚本仅用于本地环境变量注入验证；流程验证以 USB 真机 APK 为准。
 
 ## Verify
 

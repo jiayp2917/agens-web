@@ -35,10 +35,11 @@
 ## 验证命令
 
 ```powershell
-.\.venv\Scripts\python.exe -m compileall -q src tests mobile\main.py mobile\audio_manager.py mobile\screens mobile\widgets mobile\service demos\full_flow\demo_full_flow.py
+.\.venv\Scripts\python.exe -m compileall -q src tests mobile\main.py mobile\audio_manager.py mobile\screens mobile\widgets mobile\service
 .\.venv\Scripts\python.exe -m pytest -q
-.\.venv311\Scripts\python.exe mobile\main.py
 ```
+
+流程验证只走 USB 真机：打包 APK 后用 ADB 安装、启动、截图和拉取 logcat。
 
 ## ZIP 迁移
 
@@ -54,6 +55,11 @@ git archive --format=zip --output D:\chat\agens-transfer.zip HEAD
 ## 复盘入口
 
 项目深度复盘、USB 真机 ADB 验证经验、冗余清理记录和后续风险队列见 `docs/PROJECT_RETRO_2026-06-17.md`。
+当前业务逻辑和代码调用链见 `docs/RUNTIME_FLOW.md`。
+
+## 文档索引
+
+后续智能体先读 `docs/INDEX.md`。APK 打包、USB 真机验证、成功与失败经验见 `docs/LESSONS_LEARNED_2026-06-17.md`。
 
 ## 开发约束
 

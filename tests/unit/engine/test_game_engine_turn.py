@@ -239,6 +239,95 @@ class TestGameEngineHandleAction:
         assert engine.game_session.turn_count == 1
         assert len(engine.game_session.last_choices) == 3
 
+    def test_incomplete_model_output_is_reported_separately_from_request_failure(self, monkeypatch) -> None:
+        monkeypatch.setenv("AGNES_API_KEY", "sk-test-1234567890")
+        engine = GameEngine()
+        engine.game_session.game_started = True
+        infos: list[str] = []
+        errors: list[str] = []
+        engine.on_info = lambda msg: infos.append(msg)
+        engine.on_error = lambda msg: errors.append(msg)
+        engine.on_model_failure_choice = lambda source, reason: "fallback"
+
+        def runner(agent_name, user_input, session, **kw):
+            if agent_name == "narrator":
+                return {"narrative": "山风拂过。", "state_delta": {}, "choices": [], "llm_error": ""}
+            return {"approved": True, "corrected_delta": {}, "llm_error": ""}
+
+        with patch("agens_novel.engine.game_engine.run_turn_sync", side_effect=runner):
+            engine.handle_action("观察山门")
+
+        assert errors == []
+        assert any("不完整" in msg or "未返回可用 A/B/C" in msg for msg in infos)
+        assert not any("天道紊乱" in msg for msg in infos)
+        assert len(engine.game_session.last_choices) == 3
+
+    def test_narrative_claim_without_structured_delta_is_rejected(self, monkeypatch) -> None:
+        monkeypatch.setenv("AGNES_API_KEY", "sk-test-1234567890")
+        engine = GameEngine()
+        engine.game_session.game_started = True
+        engine.game_session.inventory = []
+        engine.game_session.techniques = []
+        infos: list[str] = []
+        narratives: list[tuple[str, int]] = []
+        engine.on_info = lambda msg: infos.append(msg)
+        engine.on_narrative = lambda text, turn: narratives.append((text, turn))
+
+        def runner(agent_name, user_input, session, **kw):
+            if agent_name == "narrator":
+                return {
+                    "narrative": "你获得一枚清灵丹，又习得云水诀。",
+                    "state_delta": {"character": {"mp": "-5"}},
+                    "choices": ["查看丹药", "演练功法", "拜谢师兄"],
+                    "llm_error": "",
+                }
+            if agent_name == "judge":
+                return _canned_judge()
+            return {}
+
+        with patch("agens_novel.engine.game_engine.run_turn_sync", side_effect=runner):
+            engine.handle_action("接受师兄指点")
+
+        assert engine.game_session.inventory == []
+        assert engine.game_session.techniques == []
+        assert engine.game_session.mp == 50
+        assert narratives == []
+        assert any("状态栏为准" in msg for msg in infos)
+
+    def test_structured_delta_updates_inventory_skills_quests_and_map(self, monkeypatch) -> None:
+        monkeypatch.setenv("AGNES_API_KEY", "sk-test-1234567890")
+        engine = GameEngine()
+        engine.game_session.game_started = True
+
+        def runner(agent_name, user_input, session, **kw):
+            if agent_name == "narrator":
+                return {
+                    "narrative": "你获得清灵丹，习得云水诀，发现后山药谷，并接取采药任务。",
+                    "state_delta": {
+                        "character": {
+                            "inventory_add": [{"name": "清灵丹", "quantity": 1, "type": "丹药"}],
+                            "techniques_add": [{"name": "云水诀", "level": 1, "type": "术法"}],
+                        },
+                        "world": {
+                            "discovered_add": ["后山药谷"],
+                            "active_quests_add": [{"name": "采药任务", "status": "active"}],
+                        },
+                    },
+                    "choices": ["去药谷", "修习云水诀", "查看丹药"],
+                    "llm_error": "",
+                }
+            if agent_name == "judge":
+                return _canned_judge()
+            return {}
+
+        with patch("agens_novel.engine.game_engine.run_turn_sync", side_effect=runner):
+            engine.handle_action("接受师兄赠丹并请教功法")
+
+        assert any(item.get("name") == "清灵丹" for item in engine.game_session.inventory)
+        assert any(item.get("name") == "云水诀" for item in engine.game_session.techniques)
+        assert "后山药谷" in engine.game_session.discovered_locations
+        assert any(item.get("name") == "采药任务" for item in engine.game_session.active_quests)
+
     def test_judge_exception_fallback(self, monkeypatch) -> None:
         """Judge crashes — default to NOT approving (safe default)."""
         monkeypatch.setenv("AGNES_API_KEY", "sk-test-1234567890")
@@ -409,6 +498,7 @@ class TestGameEngineHandleAction:
         from agens_novel import paths
 
         monkeypatch.setattr(paths, "SAVE_DIR", tmp_path)
+        monkeypatch.delenv("AGNES_API_KEY", raising=False)
         engine = GameEngine()
         engine.start_from_profile({
             "char_name": "许满",
@@ -431,10 +521,11 @@ class TestGameEngineHandleAction:
         monkeypatch.setattr(combat_mod.random, "uniform", lambda _a, _b: 1.0)
 
         engine = GameEngine()
-        engine.start_from_profile({
-            "char_name": "许满",
-            "techniques": [{"name": "基础吐纳术", "level": 1, "type": "内功", "mp_cost": 10}],
-        })
+        with _patch_turn_runner():
+            engine.start_from_profile({
+                "char_name": "许满",
+                "techniques": [{"name": "基础吐纳术", "level": 1, "type": "内功", "mp_cost": 10}],
+            })
         engine.game_session.combat = engine.combat_engine.start_combat(
             engine.game_session,
             {"name": "妖兽", "hp": 80, "hp_max": 80, "realm": "练气"},
@@ -455,7 +546,8 @@ class TestGameEngineHandleAction:
         monkeypatch.setenv("AGNES_API_KEY", "sk-test-1234567890")
 
         engine = GameEngine()
-        engine.start_from_profile({"char_name": "许满"})
+        with _patch_turn_runner():
+            engine.start_from_profile({"char_name": "许满"})
         combat_updates: list[dict | None] = []
         engine.on_combat_update = lambda state: combat_updates.append(state)
 

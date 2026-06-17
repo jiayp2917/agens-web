@@ -16,6 +16,7 @@
 ### Removed
 - Terminal REPL/CLI entry points and old terminal UI modules
 - Stale demo screenshots (moved to `F:\Projects\test`)
+- Old desktop/Kivy validation demos and reports; future flow validation uses USB Android devices only.
 
 ### Fixed
 - BGM file path resolution updated to `mobile/assets/audio/`
@@ -45,7 +46,7 @@
 
 ### Verification
 
-- Use `python mobile/main.py` for desktop Kivy debugging.
+- Use USB Android devices for flow validation.
 - Use `buildozer android debug` from `mobile/` for APK builds.
-- Run `python -m compileall -q src tests mobile/main.py mobile/audio_manager.py mobile/screens mobile/widgets mobile/service demo_full_flow.py`.
+- Run `python -m compileall -q src tests mobile/main.py mobile/audio_manager.py mobile/screens mobile/widgets mobile/service`.
 - Run `python -m pytest -q`.
