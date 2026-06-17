@@ -244,6 +244,7 @@ class TestGameSessionSerialization:
         s.active_quests = [{"name": "入门修行"}]
         s.discovered_locations = ["青云山"]
         s.lore_facts = ["东荒三宗之一"]
+        s.chat_history = [{"role": "user", "content": f"行动{i}"} for i in range(25)]
         s.game_started = True
         s.turn_count = 10
 
@@ -283,6 +284,8 @@ class TestGameSessionSerialization:
         assert s2.day_count == 5
         assert s2.game_started is True
         assert s2.turn_count == 10
+        assert len(s2.chat_history) == 20
+        assert s2.chat_history[0]["content"] == "行动5"
 
     def test_round_trip_preserves_none_combat(self):
         s = GameSession()
@@ -310,6 +313,7 @@ class TestGameSessionSerialization:
         assert s.luck == "中上"
         assert s.game_mode == "abcd"
         assert s.attributes == DEFAULT_ATTRIBUTES
+        assert s.chat_history == []
 
 
 class TestGameSessionReset:

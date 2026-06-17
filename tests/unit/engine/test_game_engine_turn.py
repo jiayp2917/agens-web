@@ -47,7 +47,7 @@ def _canned_narrator() -> dict[str, Any]:
     return {
         "narrative": "你静坐吐纳，灵气缓缓涌入。",
         "state_delta": {"character": {"mp": "-10", "experience": "+15"}},
-        "choices": [],
+        "choices": ["继续吐纳", "请教师兄", "观察灵气流向"],
         "output_path": "", "audit_path": "", "finished_at": "", "llm_error": "",
     }
 
@@ -219,10 +219,16 @@ class TestGameEngineHandleAction:
         engine = GameEngine()
         engine.game_session.game_started = True
         engine.on_model_failure_choice = lambda source, reason: "fallback"
+        narratives: list[tuple[str, int]] = []
+        engine.on_narrative = lambda text, turn: narratives.append((text, turn))
+        infos: list[str] = []
+        engine.on_info = lambda msg: infos.append(msg)
+        calls: list[str] = []
 
         def runner(agent_name, user_input, session, **kw):
+            calls.append(agent_name)
             if agent_name == "narrator":
-                return {"narrative": "山风拂过。", "state_delta": {}, "choices": [], "llm_error": ""}
+                return {"narrative": "你获得一枚清灵丹。", "state_delta": {}, "choices": [], "llm_error": ""}
             return {"approved": True, "corrected_delta": {}, "llm_error": ""}
 
         with patch("agens_novel.engine.game_engine.run_turn_sync", side_effect=runner):
@@ -232,6 +238,9 @@ class TestGameEngineHandleAction:
         assert engine.game_session.turn_count == 1
         assert engine.game_session.local_story_active is True
         assert len(engine.game_session.last_choices) == 3
+        assert calls == ["narrator"]
+        assert narratives and "因果残影" in narratives[-1][0]
+        assert not any("状态栏为准" in msg for msg in infos)
 
     def test_incomplete_model_output_is_reported_separately_from_request_failure(self, monkeypatch) -> None:
         monkeypatch.setenv("AGNES_API_KEY", "sk-test-1234567890")
@@ -288,6 +297,45 @@ class TestGameEngineHandleAction:
         assert engine.game_session.mp == 50
         assert narratives == []
         assert any("状态栏为准" in msg for msg in infos)
+
+    def test_notice_board_description_is_not_treated_as_claimed_reward(self, monkeypatch) -> None:
+        monkeypatch.setenv("AGNES_API_KEY", "sk-test-1234567890")
+        engine = GameEngine()
+        engine.game_session.game_started = True
+        infos: list[str] = []
+        narratives: list[tuple[str, int]] = []
+        engine.on_info = lambda msg: infos.append(msg)
+        engine.on_narrative = lambda text, turn: narratives.append((text, turn))
+
+        board_text = (
+            "你步入悬赏榜广场，墙上贴满各色任务。采集凝露草十株，报酬二十块下品灵石，"
+            "建议练气三层以上接取；灵田驱鼠任务练气一层即可。你只是阅读条目，尚未登记。"
+        )
+
+        def runner(agent_name, user_input, session, **kw):
+            if agent_name == "narrator":
+                return {
+                    "narrative": board_text,
+                    "state_delta": {
+                        "world": {
+                            "current_scene": "悬赏榜前广场，一面青石墙壁上贴满各色悬赏",
+                            "location": "青云小传宗·悬赏榜广场",
+                        }
+                    },
+                    "choices": ["接下采集凝露草的任务", "接下驱赶噬灵鼠的任务", "先向周围弟子打听"],
+                    "llm_error": "",
+                }
+            if agent_name == "judge":
+                return _canned_judge()
+            return {}
+
+        with patch("agens_novel.engine.game_engine.run_turn_sync", side_effect=runner):
+            engine.handle_action("去悬赏榜看看")
+
+        assert narratives and narratives[-1][0] == board_text
+        assert engine.game_session.location == "青云小传宗·悬赏榜广场"
+        assert engine.game_session.active_quests == []
+        assert not any("状态栏为准" in msg for msg in infos)
 
     def test_structured_delta_updates_inventory_skills_quests_and_map(self, monkeypatch) -> None:
         monkeypatch.setenv("AGNES_API_KEY", "sk-test-1234567890")
@@ -390,7 +438,7 @@ class TestGameEngineHandleAction:
                 return {
                     "narrative": "虚空之中，混沌未开。",
                     "state_delta": {"world": {"current_scene": "混沌虚空"}},
-                    "choices": [],
+                    "choices": ["退回山门", "询问执事", "静观其变"],
                     "llm_error": "",
                 }
             if agent_name == "judge":
@@ -468,7 +516,7 @@ class TestGameEngineHandleAction:
                         },
                         "world": {"current_scene": "混沌虚空", "day_count": 2},
                     },
-                    "choices": [],
+                    "choices": ["继续吐纳", "请教师兄", "观察灵气流向"],
                     "llm_error": "",
                 }
             if agent_name == "judge":
@@ -562,7 +610,7 @@ class TestGameEngineHandleAction:
                             }
                         }
                     },
-                    "choices": [],
+                    "choices": ["观察妖兽", "后退防备", "呼喊同门"],
                     "llm_error": "",
                 }
             if agent_name == "judge":
@@ -627,7 +675,7 @@ class TestStageAdvancement:
                     "state_delta": {
                         "character": {"mp": "-5", "experience": "+500"},
                     },
-                    "choices": [],
+                    "choices": ["继续吐纳", "检查瓶颈", "出门历练"],
                     "output_path": "", "audit_path": "", "finished_at": "", "llm_error": "",
                 }
             if agent_name == "judge":
@@ -712,7 +760,7 @@ class TestInsightGate:
                 return {
                     "narrative": "你闭关吐纳。",
                     "state_delta": {"character": {"experience": "+20", "insight": "+50"}},
-                    "choices": [],
+                    "choices": ["继续吐纳", "检查瓶颈", "出门历练"],
                 }
             if agent_name == "judge":
                 return _canned_judge()
@@ -789,7 +837,7 @@ class TestInsightGate:
 
         assert engine.game_session.realm == "筑基", \
             f"Breakthrough should reach 筑基, got {engine.game_session.realm}"
-        assert engine.game_session.local_story_active is True
+        assert engine.game_session.local_story_active is False
         assert len(engine.game_session.last_choices) == 3
 
     def test_breakthrough_updates_model_choices(self, monkeypatch) -> None:

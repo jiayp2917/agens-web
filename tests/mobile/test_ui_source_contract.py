@@ -103,9 +103,11 @@ class TestAndroidFreeTextInput:
         )
 
         assert "self.selected_mode = \"guided\"" in source
-        assert "(\"guided\", \"引导模式\", \"A/B/C + D键入\", True)" in source
+        assert "(\"guided\", \"引导模式\", \"\", True)" in source
         assert "(\"novel\", \"小说模式\", \"暂未开放\", False)" in source
         assert "(\"game\", \"游戏模式\", \"暂未开放\", False)" in source
+        assert "text = label if enabled else f\"{label}\\n{desc}\"" in source
+        assert "card.color = theme.text_secondary" in source
         assert '"game_mode": "abcd"' in source
         assert '"ui_mode": self.selected_mode' in source
         assert "adapter.start_from_profile(profile)" in source

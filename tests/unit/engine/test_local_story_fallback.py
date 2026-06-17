@@ -5,7 +5,7 @@ from __future__ import annotations
 from unittest.mock import patch
 
 from agens_novel.engine.game_engine import GameEngine
-from agens_novel.engine.local_story import DEFAULT_STORY_ID, NO_MATCH_NOTICE
+from agens_novel.engine.local_story import DEFAULT_STORY_ID, NO_MATCH_NOTICE, validate_local_story_graph
 from agens_novel.session.game_session import GameSession
 
 
@@ -52,6 +52,10 @@ def test_local_story_choice_advances_node_and_delta(monkeypatch, tmp_path) -> No
     assert engine.game_session.insight >= 6
     assert len(engine.game_session.last_choices) == 3
     assert any(quest.get("name") == "外门入门试炼" for quest in engine.game_session.active_quests)
+
+
+def test_local_story_graph_has_no_dead_nodes() -> None:
+    assert validate_local_story_graph(DEFAULT_STORY_ID) == []
 
 
 def test_local_story_d_keyword_match_and_no_match_keep_choices(monkeypatch, tmp_path) -> None:

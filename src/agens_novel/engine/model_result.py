@@ -96,6 +96,7 @@ def result_diagnostics(result: dict[str, Any]) -> dict[str, Any]:
         "state_delta_ok": isinstance(state_delta, dict),
         "choices_count": len(normalize_choices(raw_choices)),
         "generated_ok": isinstance(generated, dict) and bool(generated),
+        "repaired_output": bool(result.get("repaired_output")),
         "judge_approved": result.get("approved") if "approved" in result else None,
         "has_corrected_delta": bool(result.get("corrected_delta")),
     }

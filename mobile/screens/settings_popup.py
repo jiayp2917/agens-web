@@ -77,11 +77,11 @@ class SettingsPopup:
         )
         _add_field(form, "音频", self._audio_segments(), theme)
         self._feedback = Label(
-            text=active_model_summary(data),
+            text="当前配置\n" + active_model_summary(data),
             font_size=dp(12),
             color=theme.success_color,
             size_hint_y=None,
-            height=dp(48),
+            height=dp(70),
             halign="left",
             valign="middle",
         )
@@ -212,7 +212,7 @@ class SettingsPopup:
         self.audio.apply_settings(runtime_data)
         if self.on_audio_changed:
             self.on_audio_changed()
-        self._set_feedback("设置已保存。\n" + active_model_summary(runtime_data))
+        self._set_feedback("设置已保存\n" + active_model_summary(runtime_data))
 
 
 def _input(text: str, theme, password: bool = False, hint: str = "") -> TextInput:
@@ -253,4 +253,3 @@ def _add_field(form: BoxLayout, label: str, widget: Widget, theme) -> None:
         height=dp(20),
     ))
     form.add_widget(widget)
-

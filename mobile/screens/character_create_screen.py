@@ -168,18 +168,22 @@ class CharacterCreateScreen(Screen):
         row = BoxLayout(orientation="horizontal", size_hint_y=None, height=dp(96), spacing=dp(6))
         self.mode_cards = {}
         for mode_id, label, desc, enabled in (
-            ("guided", "引导模式", "A/B/C + D键入", True),
+            ("guided", "引导模式", "", True),
             ("novel", "小说模式", "暂未开放", False),
             ("game", "游戏模式", "暂未开放", False),
         ):
+            text = label if enabled else f"{label}\n{desc}"
             card = themed_button(
-                f"{label}\n{desc}",
-                font_size=dp(11),
+                text,
+                font_size=dp(13 if enabled else 11),
                 size_hint_y=None,
                 height=dp(88),
             )
             card.disabled = not enabled
-            card.opacity = 1 if enabled else 0.48
+            card.opacity = 1
+            if not enabled:
+                card.color = theme.text_secondary
+                card._bg_rect_color.rgba = theme.surface
             if enabled:
                 card.bind(on_release=lambda _inst, value=mode_id: self._select_mode(value))
             row.add_widget(card)
@@ -196,7 +200,7 @@ class CharacterCreateScreen(Screen):
             if key == mode_id:
                 card.opacity = 1
             elif card.disabled:
-                card.opacity = 0.48
+                card.opacity = 1
             else:
                 card.opacity = 0.74
 

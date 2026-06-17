@@ -433,6 +433,7 @@ class GameSession:
                 "lore_facts": self.lore_facts,
             },
             "turn_history": self.turn_history[-20:],
+            "chat_history": self.chat_history[-20:],
             "last_choices": self.last_choices,
             "local_story": {
                 "active": self.local_story_active,
@@ -496,6 +497,8 @@ class GameSession:
         session.discovered_locations = world.get("discovered_locations", [])
         session.lore_facts = world.get("lore_facts", [])
         session.turn_history = data.get("turn_history", [])
+        chat_history = data.get("chat_history", [])
+        session.chat_history = chat_history if isinstance(chat_history, list) else []
         session.last_choices = data.get("last_choices", [])
         local_story = data.get("local_story", {})
         if isinstance(local_story, dict):

@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+import asyncio
+
 from agens_novel.agents.narrator.nodes import _parse_narrator_output
 
 
@@ -57,6 +59,62 @@ class TestNarratorParse:
         narrative, delta, choices = _parse_narrator_output(text)
         assert narrative == text
         assert delta == {}
+        assert choices == []
+
+    def test_bare_abc_lines_are_parsed_as_choices(self) -> None:
+        text = (
+            "山门前风声渐紧。\n"
+            "<state_update>{\"character\": {}, \"world\": {}, \"meta\": {}}</state_update>\n"
+            "A. 跟随弟子前往演武堂\n"
+            "B. 向守门弟子道谢\n"
+            "C. 留意石阶上的阵纹"
+        )
+        narrative, delta, choices = _parse_narrator_output(text)
+
+        assert narrative == "山门前风声渐紧。"
+        assert delta == {"character": {}, "world": {}, "meta": {}}
+        assert choices == ["跟随弟子前往演武堂", "向守门弟子道谢", "留意石阶上的阵纹"]
+
+    def test_repair_incomplete_output_adds_choices(self, monkeypatch) -> None:
+        from agens_novel.agents.narrator import nodes
+
+        calls = []
+
+        async def fake_call_llm_stream(*_args, **_kwargs):
+            calls.append(_kwargs)
+            return {"text": "山门前风声渐紧。", "elapsed_ms": 10, "usage": {}}
+
+        async def fake_call_llm(*_args, **_kwargs):
+            calls.append(_kwargs)
+            if len(calls) == 1:
+                return {"text": "山门前风声渐紧。", "elapsed_ms": 10, "usage": {}}
+            return {
+                "text": (
+                    "山门前风声渐紧。\n"
+                    "<state_update>{\"character\": {}, \"world\": {}, \"meta\": {}}</state_update>\n"
+                    "<choices>[\"前往演武堂\", \"向弟子道谢\", \"观察阵纹\"]</choices>"
+                ),
+                "elapsed_ms": 12,
+                "usage": {},
+            }
+
+        monkeypatch.setattr(nodes, "call_llm_stream", fake_call_llm_stream)
+        monkeypatch.setattr(nodes, "call_llm", fake_call_llm)
+        result = asyncio.run(nodes.call_agnes_llm({
+            "api_key_set": True,
+            "messages": [{"role": "user", "content": "test"}],
+            "model": "deepseek-chat",
+            "base_url": "https://api.deepseek.com/v1",
+            "repair_incomplete_output": True,
+            "output_text": "",
+        }))
+
+        narrative, delta, choices = _parse_narrator_output(result["output_text"])
+        assert len(calls) == 2
+        assert result["repaired_output"] is True
+        assert narrative == "山门前风声渐紧。"
+        assert delta == {"character": {}, "world": {}, "meta": {}}
+        assert choices == ["前往演武堂", "向弟子道谢", "观察阵纹"]
 
     def test_empty_delta_tag(self) -> None:
         text = "一些文字<state_update>\n{}\n</state_update>"

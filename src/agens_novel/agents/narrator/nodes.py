@@ -18,7 +18,7 @@ import re
 from typing import Any, Callable
 
 from ...artifacts import store
-from ...llm.client import LLMError, call_llm_stream
+from ...llm.client import LLMError, call_llm, call_llm_stream
 from ...llm.types import Message
 from ... import paths
 from ...utils.timing import utcnow_iso
@@ -132,7 +132,6 @@ async def call_agnes_llm(state: dict[str, Any]) -> dict[str, Any]:
             )
         else:
             # Non-streaming fallback.
-            from ...llm.client import call_llm
             resp = await call_llm(
                 messages,
                 model=state.get("model"),
@@ -141,11 +140,23 @@ async def call_agnes_llm(state: dict[str, Any]) -> dict[str, Any]:
                 max_tokens=1536,
                 stream=False,
             )
+        output_text = resp.get("text", "")
+        repaired_output = False
+        if state.get("repair_incomplete_output"):
+            narrative, state_delta, choices = _parse_narrator_output(output_text)
+            if narrative and not choices:
+                repaired_text = await _repair_incomplete_output(state, output_text, narrative, state_delta)
+                if repaired_text:
+                    _, _, repaired_choices = _parse_narrator_output(repaired_text)
+                    if repaired_choices:
+                        output_text = repaired_text
+                        repaired_output = True
         return {
-            "output_text": resp.get("text", ""),
+            "output_text": output_text,
             "usage": dict(resp.get("usage") or {}),
             "elapsed_ms": int(resp.get("elapsed_ms", 0)),
             "llm_error": "",
+            "repaired_output": repaired_output,
         }
     except LLMError as e:
         log.error("[narrator.call_agnes_llm] failed: %s", e)
@@ -186,6 +197,7 @@ def save_artifact(state: dict[str, Any]) -> dict[str, Any]:
         "narrative": narrative,
         "state_delta": state_delta,
         "choices": choices,
+        "repaired_output": bool(state.get("repaired_output")),
         "output_path": str(out_path),
         "audit_path": str(audit_path),
         "finished_at": audit["finished_at"],
@@ -198,6 +210,9 @@ def save_artifact(state: dict[str, Any]) -> dict[str, Any]:
 
 _TAG_RE = re.compile(r"<state_update>(.*?)</state_update>", re.DOTALL)
 _CHOICES_RE = re.compile(r"<choices>(.*?)</choices>", re.DOTALL)
+_ABC_LINE_RE = re.compile(
+    r"(?im)^\s*(?:[-*]\s*)?(?:[ABC]|[123])[\.、:：]\s*(?P<text>.+?)\s*$"
+)
 
 
 def _parse_narrator_output(text: str) -> tuple[str, dict, list[str]]:
@@ -226,6 +241,8 @@ def _parse_narrator_output(text: str) -> tuple[str, dict, list[str]]:
     choices_match = _CHOICES_RE.search(text)
     if choices_match:
         choices = _normalize_choices(_parse_choices_payload(choices_match.group(1).strip())) or choices
+    if not choices:
+        choices = _parse_inline_abc_choices(text)
 
     tag_starts = [match.start() for match in (m, choices_match) if match]
     if tag_starts:
@@ -240,6 +257,18 @@ def _parse_choices_payload(raw: str) -> Any:
     except (json.JSONDecodeError, ValueError):
         lines = [line.strip(" \t-0123456789.ABCabc、.：:") for line in raw.splitlines()]
         return [line for line in lines if line]
+
+
+def _parse_inline_abc_choices(text: str) -> list[str]:
+    """Parse explicit bare A/B/C lines without inventing choices from prose."""
+    found: list[str] = []
+    for match in _ABC_LINE_RE.finditer(text):
+        choice = match.group("text").strip()
+        if choice:
+            found.append(choice)
+        if len(found) == 3:
+            break
+    return _normalize_choices(found) if len(found) >= 3 else []
 
 
 def _normalize_choices(value: Any) -> list[str]:
@@ -260,3 +289,59 @@ def _normalize_choices(value: Any) -> list[str]:
         if len(choices) == 3:
             break
     return choices
+
+
+async def _repair_incomplete_output(
+    state: dict[str, Any],
+    original_text: str,
+    narrative: str,
+    state_delta: dict[str, Any],
+) -> str | None:
+    """Ask the same model once to reformat a pure narrative into the contract."""
+    if not state.get("api_key_set"):
+        return None
+    game_state_json = state.get("game_state_json", "{}")
+    user_input = state.get("user_input", "")
+    repair_prompt = (
+        "上一轮输出缺少结构化标签，不能继续游戏。请只根据下面内容补齐格式，不要重写剧情，"
+        "不要输出解释或 Markdown 围栏。\n\n"
+        "必须输出：\n"
+        "1. 原叙事正文。\n"
+        "2. <state_update>...</state_update>，JSON 对象；没有状态变化时用 {\"character\": {}, \"world\": {}, \"meta\": {}}。\n"
+        "3. <choices>...</choices>，JSON 字符串数组，必须恰好 3 条，分别作为 A/B/C 行动选项。\n\n"
+        "一致性硬规则：\n"
+        "- 如果原叙事已经写明玩家实际获得物品、灵石或奖励，必须在 character.inventory_add 或 character.gold 中补齐最小状态变化。\n"
+        "- 如果原叙事已经写明玩家实际习得功法、法术、心法或剑诀，必须在 character.techniques_add 中补齐。\n"
+        "- 如果原叙事已经写明玩家实际发现新地点、抵达新区域或开启新地图，必须在 world.discovered_add、world.location 或 world.current_scene 中补齐。\n"
+        "- 如果原叙事已经写明玩家实际接取、领取或登记任务，必须在 world.active_quests_add 中补齐。\n"
+        "- 如果只是介绍悬赏榜、报酬、NPC 境界或可选任务，还没有实际到账或接取，不要补奖励/任务；保持 delta 为空或只更新当前地点/场景。\n"
+        "- 如果无法安全补齐状态变化，请把相关句子改成“尚未落定/尚未入册/尚未领取”，不要让叙事宣称已获得而 state_update 为空。\n\n"
+        f"<当前状态>\n{game_state_json}\n</当前状态>\n\n"
+        f"<玩家行动>\n{user_input}\n</玩家行动>\n\n"
+        f"<原叙事>\n{narrative or original_text}\n</原叙事>\n\n"
+        f"<已解析状态更新>\n{json.dumps(state_delta if isinstance(state_delta, dict) else {}, ensure_ascii=False)}\n</已解析状态更新>"
+    )
+    messages = [
+        Message(
+            role="system",
+            content="你是输出格式修复器。只补齐 state_update 和 choices 标签，保持世界观和叙事连续。",
+        ),
+        Message(role="user", content=repair_prompt),
+    ]
+    try:
+        resp = await call_llm(
+            messages,
+            model=state.get("model"),
+            base_url=state.get("base_url"),
+            temperature=0.2,
+            max_tokens=900,
+            stream=False,
+        )
+    except LLMError as exc:
+        log.warning("[narrator.repair] failed: %s", exc)
+        return None
+    repaired_text = str(resp.get("text") or "").strip()
+    if not repaired_text:
+        return None
+    log.info("[narrator.repair] repaired incomplete output")
+    return repaired_text

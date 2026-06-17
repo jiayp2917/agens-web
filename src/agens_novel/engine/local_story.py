@@ -275,9 +275,10 @@ def advance_local_story(session: GameSession, action_text: str) -> LocalStoryRes
     node = _node(story_key, node_key)
     option = _match_option(node, action_text)
     if option is None:
+        session.last_choices = [choice.text for choice in node.options]
         return LocalStoryResult(
             narrative=NO_MATCH_NOTICE,
-            choices=[choice.text for choice in node.options],
+            choices=list(session.last_choices),
             delta={},
             matched=False,
         )
@@ -327,3 +328,21 @@ def _match_option(node: LocalStoryNode, action_text: str) -> LocalStoryOption | 
         if any(keyword.lower().replace(" ", "") in compact for keyword in option.keywords):
             return option
     return None
+
+
+def validate_local_story_graph(story_id: str | None = None) -> list[str]:
+    """Return structural problems in local stories; empty means playable graph."""
+    story_key = story_id or DEFAULT_STORY_ID
+    story = _STORIES.get(story_key)
+    if not story:
+        return [f"missing story: {story_key}"]
+    problems: list[str] = []
+    for node_id, node in story.items():
+        if len(node.options) != 3:
+            problems.append(f"{node_id}: expected 3 options, got {len(node.options)}")
+        for option in node.options:
+            if option.next_node not in story:
+                problems.append(f"{node_id}: option '{option.text}' points to missing node {option.next_node}")
+            if not option.text.strip():
+                problems.append(f"{node_id}: empty option text")
+    return problems

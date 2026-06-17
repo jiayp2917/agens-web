@@ -110,6 +110,7 @@ def _new_game_result(**overrides):
                 "lore_facts": [], "day_count": 1,
             },
             "opening_narrative": "你踏入了青云山。",
+            "choices": ["静坐吐纳", "询问路人", "观察山门"],
         },
         "llm_error": "",
     }
@@ -119,10 +120,13 @@ def _new_game_result(**overrides):
 
 def _narrator_result(narrative="你静坐吐纳。", state_delta=None):
     """Standard narrator result."""
+    state_delta = state_delta or {}
+    meta = state_delta.get("meta") if isinstance(state_delta, dict) else {}
+    terminal = isinstance(meta, dict) and bool(meta.get("game_over") or meta.get("finale"))
     return {
         "narrative": narrative,
-        "state_delta": state_delta or {},
-        "choices": [],
+        "state_delta": state_delta,
+        "choices": [] if terminal else ["继续吐纳", "查看状态", "观察周围"],
         "llm_error": "",
     }
 

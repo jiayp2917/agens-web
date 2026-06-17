@@ -46,25 +46,41 @@ _REALM_BREAKTHROUGH_FLAGS: dict[str, tuple[str, ...]] = {
     "渡劫": ("tribulation_elixir", "ascension_protection"),
 }
 
-_CLAIM_RULES: tuple[tuple[tuple[str, ...], tuple[tuple[str, str], ...]], ...] = (
+_CLAIM_RULES: tuple[tuple[tuple[re.Pattern[str], ...], tuple[tuple[str, str], ...]], ...] = (
     (
-        ("练气", "筑基", "金丹", "元婴", "化神", "合体", "大乘", "渡劫", "飞升", "突破成功", "升至", "晋入", "踏入"),
+        (
+            re.compile(r"(?:成功)?(?:突破|晋入|升至|迈入)(?:练气|筑基|金丹|元婴|化神|合体|大乘|渡劫|飞升)"),
+            re.compile(r"踏入(?:练气|筑基|金丹|元婴|化神|合体|大乘|渡劫|飞升)"),
+            re.compile(r"(?:修为|境界).{0,8}(?:提升|突破|精进|晋升)"),
+            re.compile(r"(?:结成|凝成)金丹|元婴出窍|化神成功|飞升成仙"),
+        ),
         (("character", "realm"), ("character", "realm_stage"), ("character", "experience")),
     ),
     (
-        ("获得", "拾得", "捡到", "购买", "奖励", "收下", "得到"),
+        (
+            re.compile(r"(?:你|玩家|弟子)?(?:获得|拾得|捡到|购买|收下|得到|领到|领取)(?:了)?[^，。；\n]{0,24}"),
+            re.compile(r"(?:奖励|发放|交给)(?:你|玩家|弟子)[^，。；\n]{0,24}"),
+        ),
         (("character", "inventory_add"), ("character", "inventory"), ("character", "gold")),
     ),
     (
-        ("习得", "学会", "领悟功法", "传授功法", "参悟出"),
+        (
+            re.compile(r"(?:你|玩家|弟子)?(?:习得|学会|参悟出)[^，。；\n]{0,24}"),
+            re.compile(r"(?:领悟|传授)(?:了|你)?[^，。；\n]{0,24}(?:功法|术|诀|心法|剑法|法门)"),
+        ),
         (("character", "techniques_add"), ("character", "techniques")),
     ),
     (
-        ("发现地点", "发现秘境", "发现洞府", "发现遗迹", "新地点", "新地图", "抵达", "来到"),
+        (
+            re.compile(r"发现(?:了)?(?:地点|秘境|洞府|遗迹|新地点|新地图|一处|一座)[^，。；\n]{0,24}"),
+            re.compile(r"(?:抵达|来到)[^，。；\n]{0,24}(?:广场|殿|山门|药谷|秘境|洞府|遗迹|坊市|药圃)"),
+        ),
         (("world", "discovered_add"), ("world", "location"), ("world", "current_scene")),
     ),
     (
-        ("接取", "领取任务", "委托", "任务"),
+        (
+            re.compile(r"(?<!想)(?:接取|领取|接受|登记)(?:了|下)?[^，。；\n]{0,30}(?:任务|委托|悬赏)"),
+        ),
         (("world", "active_quests_add"), ("world", "active_quests")),
     ),
 )
@@ -182,8 +198,8 @@ def validate_narrative_delta_consistency(narrative: str, delta: dict[str, Any]) 
         return False, INCONSISTENT_NARRATIVE_NOTICE
 
     text = re.sub(r"\s+", "", narrative)
-    for keywords, required_paths in _CLAIM_RULES:
-        if not any(keyword in text for keyword in keywords):
+    for patterns, required_paths in _CLAIM_RULES:
+        if not any(pattern.search(text) for pattern in patterns):
             continue
         if any(_has_path(delta, section, key) for section, key in required_paths):
             continue

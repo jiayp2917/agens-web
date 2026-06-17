@@ -78,6 +78,8 @@ class GameActionBar(BoxLayout):
         self.send_btn.bind(on_release=lambda _: self._on_submit(None))
         row.add_widget(self.send_btn)
         self.add_widget(row)
+        self.bottom_spacer = BoxLayout(size_hint_y=None, height=0)
+        self.add_widget(self.bottom_spacer)
 
         # State.
         self._combat_mode = False

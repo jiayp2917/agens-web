@@ -153,6 +153,7 @@ class GameEngine:
         fallback_notice: bool = False,
         require_choice: bool = False,
         reason: str = "",
+        emit_local_story_narrative: bool = False,
     ) -> bool:
         """Set current choices from model output, falling back only when empty."""
         choices = normalize_choices(raw_choices)
@@ -165,7 +166,7 @@ class GameEngine:
             return False
 
         if require_choice:
-            self._enter_local_story(reason, emit_narrative=False)
+            self._enter_local_story(reason, emit_narrative=emit_local_story_narrative)
         else:
             self.game_session.last_choices = fallback_choices(self.game_session)
         log.info(
@@ -563,6 +564,7 @@ class GameEngine:
             narrator_result = run_turn_sync(
                 "narrator", text, self.game_session,
                 stream_callback=self._stream_callback if self.on_stream_chunk else None,
+                repair_incomplete_output=True,
             )
         except Exception:
             log.exception("narrator error")
@@ -604,17 +606,30 @@ class GameEngine:
         if not isinstance(state_delta, dict):
             state_delta = {}
         choices = narrator_result.get("choices", [])
+        meta_delta = state_delta.get("meta") if isinstance(state_delta, dict) else {}
+        is_terminal_delta = isinstance(meta_delta, dict) and bool(
+            meta_delta.get("game_over") or meta_delta.get("finale")
+        )
         if narrator_status.kind == ModelResultKind.INCOMPLETE_OUTPUT:
             self._emit("on_info", narrator_status.reason)
-        if self._set_choices(
-            choices,
-            source="narrator",
-            fallback_notice=True,
-            require_choice=True,
-            reason=narrator_status.reason if narrator_status.kind == ModelResultKind.INCOMPLETE_OUTPUT else "叙事模型未返回可用选项。",
-        ) is False and self.game_session.game_over:
-            self.game_session.turn_count -= 1
-            return
+        if is_terminal_delta:
+            self.game_session.last_choices = []
+        else:
+            fallback_used = self._set_choices(
+                choices,
+                source="narrator",
+                fallback_notice=True,
+                require_choice=True,
+                reason=narrator_status.reason if narrator_status.kind == ModelResultKind.INCOMPLETE_OUTPUT else "叙事模型未返回可用选项。",
+                emit_local_story_narrative=True,
+            )
+            if fallback_used:
+                self._emit("on_status_bar", format_status_bar(self.game_session))
+                self._auto_save()
+                return
+            if self.game_session.game_over:
+                self.game_session.turn_count -= 1
+                return
 
         # Step 2: Run judge (if there is a delta to validate).
         if state_delta:

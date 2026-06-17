@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import os
 
+from kivy.core.window import Window
 from kivy.metrics import dp
 from kivy.uix.boxlayout import BoxLayout
 from kivy.uix.floatlayout import FloatLayout
@@ -92,6 +93,9 @@ class GameScreen(Screen):
         self._load_popup = None
         self._tools_popup = None
         self._model_failure_popup = None
+        self._keyboard_padding = None
+        self._default_action_bar_height = dp(82)
+        self._keyboard_extra_height = dp(0)
 
         # Build layout.
         self.root = FloatLayout()
@@ -123,6 +127,7 @@ class GameScreen(Screen):
         self.action_bar = GameActionBar()
         self.action_bar.on_action = self._on_user_action
         self.action_bar.on_command = self._on_user_command
+        self.action_bar.text_input.bind(focus=self._on_action_input_focus)
         self.layout.add_widget(self.action_bar)
 
         self.root.add_widget(self.layout)
@@ -132,11 +137,16 @@ class GameScreen(Screen):
         self.loading_overlay.hide()
         self.root.add_widget(self.loading_overlay)
         self.add_widget(self.root)
+        Window.bind(keyboard_height=self._on_keyboard_height)
 
     def on_enter(self, *args):
         """Called when this screen becomes active."""
         self._refresh_choices_ui()
         self.status_bar.update(self.adapter.game_session)
+
+    def on_leave(self, *args):
+        """Reset temporary keyboard padding when the game screen is hidden."""
+        self._set_keyboard_padding(0)
 
     # ─── Adapter callbacks (called on Kivy main thread) ────────────────
 
@@ -377,6 +387,29 @@ class GameScreen(Screen):
             death.is_finale = True
             self.manager.current = "death"
 
+    def _on_action_input_focus(self, _instance, focused: bool) -> None:
+        """Keep the D input visible on devices where softinput resize is weak."""
+        if focused:
+            self._set_keyboard_padding(self._keyboard_extra_height or dp(210))
+        else:
+            self._set_keyboard_padding(0)
+
+    def _on_keyboard_height(self, _window, height: int) -> None:
+        """Mirror Android IME height into bottom padding around the action bar."""
+        padding = max(0, int(height or 0))
+        self._keyboard_extra_height = min(padding, dp(260))
+        if self.action_bar.text_input.focus:
+            self._set_keyboard_padding(self._keyboard_extra_height or dp(210))
+
+    def _set_keyboard_padding(self, height: float) -> None:
+        """Increase the action-bar area so preview/input sit above the keyboard."""
+        target = max(0, height)
+        if self._keyboard_padding == target:
+            return
+        self._keyboard_padding = target
+        self.action_bar.height = self._default_action_bar_height + target
+        self.action_bar.bottom_spacer.height = target
+
     def _on_breakthrough(self) -> None:
         """User tapped breakthrough button."""
         self.adapter.attempt_breakthrough()
@@ -502,6 +535,7 @@ class GameScreen(Screen):
         self.action_bar.set_combat_mode(False)
         self.adapter.load(slot_name)
         self.status_bar.update(self.adapter.game_session)
+        self._refresh_choices_ui()
         if self._load_popup:
             self._load_popup.dismiss()
 

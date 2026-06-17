@@ -90,6 +90,8 @@ def run_turn_sync(
     # Pass chat history for narrator.
     if agent_name == "narrator" and session.chat_history:
         state["chat_history"] = list(session.chat_history)
+    if agent_name == "narrator":
+        state["repair_incomplete_output"] = bool(kwargs.pop("repair_incomplete_output", False))
 
     # Judge needs additional context.
     if agent_name == "judge":

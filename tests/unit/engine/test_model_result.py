@@ -63,6 +63,7 @@ def test_result_diagnostics_are_non_secret_shape_facts() -> None:
         "state_delta_ok": True,
         "choices_count": 3,
         "generated_ok": False,
+        "repaired_output": False,
         "judge_approved": None,
         "has_corrected_delta": False,
     }
