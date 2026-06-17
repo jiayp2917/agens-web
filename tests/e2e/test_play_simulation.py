@@ -140,6 +140,7 @@ def _world_builder_result(concept: str = "云天") -> dict[str, Any]:
                 "day_count": 1,
             },
             "opening_narrative": "晨曦微露，你盘膝而坐，感受到体内灵气的流转。",
+            "choices": ["继续吐纳", "请教师兄", "查看任务"],
         },
         "world_description": "",
         "opening_narrative": "",
@@ -159,7 +160,7 @@ def _narrator_result(
     return {
         "narrative": narrative,
         "state_delta": delta,
-        "choices": [],
+        "choices": ["继续修炼", "外出历练", "整理所得"],
     }
 
 

@@ -30,6 +30,11 @@ class ModelResultStatus:
     def ok(self) -> bool:
         return self.kind == ModelResultKind.OK
 
+    @property
+    def label(self) -> str:
+        """Stable short label for logs and UI routing."""
+        return self.kind.value
+
 
 def classify_narrator_result(result: dict[str, Any]) -> ModelResultStatus:
     """Classify a narrator result without mutating it."""
@@ -73,3 +78,24 @@ def classify_judge_result(result: dict[str, Any]) -> ModelResultStatus:
             f"天道审判失败: {result['llm_error']}",
         )
     return ModelResultStatus(ModelResultKind.OK)
+
+
+def result_diagnostics(result: dict[str, Any]) -> dict[str, Any]:
+    """Return non-secret model result facts suitable for logcat diagnostics."""
+    generated = result.get("generated_data")
+    narrative = result.get("narrative") or result.get("opening_narrative") or result.get("world_description") or ""
+    state_delta = result.get("state_delta")
+    raw_choices = result.get("choices")
+    if isinstance(generated, dict):
+        raw_choices = generated.get("choices", raw_choices)
+        narrative = generated.get("opening_narrative") or narrative
+    return {
+        "elapsed_ms": int(result.get("elapsed_ms") or 0),
+        "has_error": bool(result.get("llm_error")),
+        "has_narrative": bool(str(narrative).strip()),
+        "state_delta_ok": isinstance(state_delta, dict),
+        "choices_count": len(normalize_choices(raw_choices)),
+        "generated_ok": isinstance(generated, dict) and bool(generated),
+        "judge_approved": result.get("approved") if "approved" in result else None,
+        "has_corrected_delta": bool(result.get("corrected_delta")),
+    }

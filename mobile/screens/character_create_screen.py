@@ -44,6 +44,7 @@ class CharacterCreateScreen(Screen):
         self.talent = TALENT_OPTIONS[0]
         self.spirit_root = SPIRIT_ROOTS[0]["name"]
         self.family_background = FAMILY_BACKGROUNDS[0]
+        self.selected_mode = "guided"
         self._result_panel = None
         self._attribute_widgets: dict[str, tuple[ProgressBar, Label]] = {}
 
@@ -77,6 +78,7 @@ class CharacterCreateScreen(Screen):
         self.input_game_name.bind(text=lambda _inst, _text: self._sync_special_state())
         _field(self.form, "游戏名称", self.input_game_name, theme)
         _field(self.form, "角色名", self.input_char_name, theme)
+        self.form.add_widget(self._mode_cards(theme))
 
         grid = BoxLayout(orientation="vertical", size_hint_y=None, spacing=dp(8))
         grid.bind(minimum_height=grid.setter("height"))
@@ -150,6 +152,54 @@ class CharacterCreateScreen(Screen):
         row.add_widget(value)
         return row
 
+    def _mode_cards(self, theme) -> BoxLayout:
+        box = BoxLayout(orientation="vertical", size_hint_y=None, height=dp(126), spacing=dp(6))
+        title = Label(
+            text="游玩模式",
+            font_size=dp(11),
+            color=theme.text_secondary,
+            size_hint_y=None,
+            height=dp(18),
+            halign="left",
+        )
+        title.bind(width=lambda *_a: title.setter("text_size")(title, (title.width, None)))
+        box.add_widget(title)
+
+        row = BoxLayout(orientation="horizontal", size_hint_y=None, height=dp(96), spacing=dp(6))
+        self.mode_cards = {}
+        for mode_id, label, desc, enabled in (
+            ("guided", "引导模式", "A/B/C + D键入", True),
+            ("novel", "小说模式", "暂未开放", False),
+            ("game", "游戏模式", "暂未开放", False),
+        ):
+            card = themed_button(
+                f"{label}\n{desc}",
+                font_size=dp(11),
+                size_hint_y=None,
+                height=dp(88),
+            )
+            card.disabled = not enabled
+            card.opacity = 1 if enabled else 0.48
+            if enabled:
+                card.bind(on_release=lambda _inst, value=mode_id: self._select_mode(value))
+            row.add_widget(card)
+            self.mode_cards[mode_id] = card
+        box.add_widget(row)
+        self._select_mode("guided")
+        return box
+
+    def _select_mode(self, mode_id: str) -> None:
+        if mode_id != "guided":
+            return
+        self.selected_mode = mode_id
+        for key, card in getattr(self, "mode_cards", {}).items():
+            if key == mode_id:
+                card.opacity = 1
+            elif card.disabled:
+                card.opacity = 0.48
+            else:
+                card.opacity = 0.74
+
     def _randomize(self) -> None:
         self.talent = random.choice(TALENT_OPTIONS)
         self.spirit_root = random.choice(SPIRIT_ROOTS)["name"]
@@ -214,6 +264,8 @@ class CharacterCreateScreen(Screen):
             "difficulty": self.spinner_difficulty.text,
             "attributes": attributes,
             "special_start": special,
+            "game_mode": "abcd",
+            "ui_mode": self.selected_mode,
         }
         if special:
             profile.update({

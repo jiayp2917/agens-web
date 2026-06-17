@@ -39,6 +39,29 @@ def _safe_failure_reason(reason: str) -> str:
     return text[:120]
 
 
+def _failure_prompt(source: str, reason: str) -> tuple[str, str]:
+    """Classify model failure copy without exposing provider secrets."""
+    raw_reason = reason or ""
+    safe_reason = _safe_failure_reason(reason)
+    source_text = (source or "").lower()
+    if "judge" in source_text or "审判" in safe_reason or "审核" in safe_reason:
+        title = "天道审判受阻"
+        lead = "模型叙事已进入审核阶段，但状态变化未能通过本回合校验。"
+    elif "不完整" in safe_reason or "未返回可用 A/B/C" in safe_reason or "格式" in safe_reason:
+        title = "推演输出不完整"
+        lead = "模型已返回部分内容，但缺少可用于继续游玩的结构化选项或状态。"
+    elif "AGNES_API_KEY" in raw_reason or "未设置" in raw_reason:
+        title = "模型配置未完成"
+        lead = "当前没有可用模型密钥，无法继续在线推演。"
+    elif "exception" in source_text or "失败" in safe_reason or "timeout" in safe_reason.lower():
+        title = "模型请求失败"
+        lead = "本回合模型请求未完成，可能是网络、超时或服务错误。"
+    else:
+        title = "天道紊乱"
+        lead = "本回合模型结果暂不可用。"
+    return title, f"{lead}\n\n{safe_reason}\n\n是否以因果残影继续本局？"
+
+
 class GameScreen(Screen):
     """Main game screen with panel layout, combat, and streaming support."""
 
@@ -134,6 +157,7 @@ class GameScreen(Screen):
     def _on_info(self, msg: str) -> None:
         self.loading_overlay.hide()
         self.narrative_view.add_info(msg)
+        self._refresh_choices_ui()
         self.status_bar.update(self.adapter.game_session)
 
     def _on_game_over(self, reason: str) -> None:
@@ -179,11 +203,9 @@ class GameScreen(Screen):
         theme = current_theme()
         content = BoxLayout(orientation="vertical", padding=dp(12), spacing=dp(10))
         add_paper_background(content, color=theme.surface)
+        title, body = _failure_prompt(source, reason)
         message = Label(
-            text=(
-                "天道紊乱，是否以因果残影继续推演？\n\n"
-                f"{_safe_failure_reason(reason)}"
-            ),
+            text=body,
             font_size=dp(14),
             color=theme.text,
             halign="left",
@@ -199,7 +221,7 @@ class GameScreen(Screen):
         buttons.add_widget(end_btn)
         content.add_widget(buttons)
 
-        popup = themed_popup("天道紊乱", content, size_hint=(0.86, 0.36), auto_dismiss=False)
+        popup = themed_popup(title, content, size_hint=(0.86, 0.40), auto_dismiss=False)
 
         def choose(decision: str) -> None:
             if self._model_failure_popup:

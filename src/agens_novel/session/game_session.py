@@ -76,6 +76,11 @@ class GameSession:
     chat_history: list[dict] = field(default_factory=list)
     last_choices: list[str] = field(default_factory=list)
 
+    # Local preset story fallback state.
+    local_story_active: bool = False
+    local_story_id: str = ""
+    local_story_node_id: str = ""
+
     # ── Run metadata ──
     model: str = ""
     base_url: str = ""
@@ -141,6 +146,11 @@ class GameSession:
             "base_url": self.base_url,
             "api_key_set": self.api_key_set,
             "choices": self.last_choices,
+            "local_story": {
+                "active": self.local_story_active,
+                "story_id": self.local_story_id,
+                "node_id": self.local_story_node_id,
+            },
         }
 
     # ─────────────────────────────────────────────────────────────────────────
@@ -424,6 +434,11 @@ class GameSession:
             },
             "turn_history": self.turn_history[-20:],
             "last_choices": self.last_choices,
+            "local_story": {
+                "active": self.local_story_active,
+                "story_id": self.local_story_id,
+                "node_id": self.local_story_node_id,
+            },
             "finale": self.finale,
         }
 
@@ -482,6 +497,11 @@ class GameSession:
         session.lore_facts = world.get("lore_facts", [])
         session.turn_history = data.get("turn_history", [])
         session.last_choices = data.get("last_choices", [])
+        local_story = data.get("local_story", {})
+        if isinstance(local_story, dict):
+            session.local_story_active = bool(local_story.get("active", False))
+            session.local_story_id = str(local_story.get("story_id") or "")
+            session.local_story_node_id = str(local_story.get("node_id") or "")
         session.finale = data.get("finale", False)
         return session
 

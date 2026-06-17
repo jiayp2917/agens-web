@@ -42,11 +42,17 @@ from .choices import (
     fallback_choices,
     normalize_choices,
 )
+from .local_story import (
+    advance_local_story,
+    current_local_story_choices,
+    start_local_story,
+)
 from .model_result import (
     ModelResultKind,
     classify_judge_result,
     classify_narrator_result,
     classify_world_builder_result,
+    result_diagnostics,
 )
 from .profile_opening import (
     luck_from_attributes,
@@ -76,6 +82,15 @@ Callback = Callable[..., None]
 MODEL_FAILURE_PROMPT = "天道紊乱，是否以因果残影继续推演？"
 MODEL_FAILURE_CONTINUE = "fallback"
 MODEL_FAILURE_END = "end"
+
+
+def _safe_log_reason(reason: str, limit: int = 220) -> str:
+    """Trim and redact failure text before it reaches logcat."""
+    text = (reason or "").replace("\n", " ").strip()
+    lowered = text.lower()
+    if any(marker in lowered for marker in ("sk-", "api_key", "apikey", "authorization")):
+        return "redacted model configuration error"
+    return text[:limit]
 
 
 class GameEngine:
@@ -149,11 +164,32 @@ class GameEngine:
             self._end_model_failure_run(reason or "模型未返回可用选项。")
             return False
 
-        self.game_session.last_choices = fallback_choices(self.game_session)
-        log.info("choice fallback used: source=%s", source)
+        if require_choice:
+            self._enter_local_story(reason, emit_narrative=False)
+        else:
+            self.game_session.last_choices = fallback_choices(self.game_session)
+        log.info(
+            "choice fallback used: source=%s reason=%s local_story=%s",
+            source,
+            _safe_log_reason(reason),
+            self.game_session.local_story_active,
+        )
         if fallback_notice:
             self._emit("on_info", self._fallback_notice_for(reason))
         return True
+
+    def _enter_local_story(self, reason: str = "", *, emit_narrative: bool = True) -> tuple[str, list[str]]:
+        """Switch the current run to a preset local story and emit its state."""
+        if self.game_session.local_story_active:
+            self.game_session.last_choices = current_local_story_choices(self.game_session)
+            return "", list(self.game_session.last_choices)
+        result = start_local_story(self.game_session)
+        self.game_session.last_choices = result.choices
+        if emit_narrative and result.narrative:
+            self._emit("on_narrative", result.narrative, self.game_session.turn_count)
+        if reason:
+            log.info("entered local story fallback: reason=%s story=%s node=%s", _safe_log_reason(reason), self.game_session.local_story_id, self.game_session.local_story_node_id)
+        return result.narrative, result.choices
 
     def _fallback_notice_for(self, reason: str = "") -> str:
         """Return a player-visible fallback message without exposing secrets."""
@@ -161,6 +197,30 @@ class GameEngine:
         if "不完整" in reason or "未返回" in reason or "格式" in reason:
             return reason
         return CHOICE_FALLBACK_NOTICE
+
+    def _log_model_result(
+        self,
+        *,
+        agent: str,
+        source: str,
+        status: ModelResultKind | str,
+        reason: str,
+        result: dict[str, Any],
+    ) -> None:
+        """Write a non-secret model diagnostic line for USB logcat triage."""
+        model = os.environ.get("AGNES_MODEL", "agnes-2.0-flash")
+        base_url = os.environ.get("AGNES_BASE_URL", "https://apihub.agnes-ai.com/v1")
+        log.info(
+            "model_result agent=%s source=%s status=%s model=%s base_url=%s key_set=%s reason=%s diagnostics=%s",
+            agent,
+            source,
+            getattr(status, "value", status),
+            model,
+            base_url,
+            bool(os.environ.get("AGNES_API_KEY")),
+            _safe_log_reason(reason),
+            result_diagnostics(result),
+        )
 
     def _confirm_local_fallback(self, source: str, reason: str = "") -> bool:
         """Ask the UI whether model failure should continue with local fallback."""
@@ -172,6 +232,7 @@ class GameEngine:
         except Exception:
             log.exception("model failure choice callback failed")
             return True
+        log.info("model failure decision: source=%s decision=%s reason=%s", source, decision, _safe_log_reason(reason))
         return decision != MODEL_FAILURE_END
 
     def _end_model_failure_run(self, reason: str) -> None:
@@ -213,6 +274,13 @@ class GameEngine:
 
         if result.get("llm_error"):
             reason = f"世界生成失败: {result['llm_error']}"
+            self._log_model_result(
+                agent="world_builder",
+                source="new_game_error",
+                status=ModelResultKind.REQUEST_FAILED,
+                reason=reason,
+                result=result,
+            )
             self._emit("on_error", reason)
             if self._confirm_local_fallback("world_builder_error", reason):
                 self._set_choices(None, source="world_builder_error", fallback_notice=True)
@@ -222,6 +290,14 @@ class GameEngine:
 
         # Extract generated data.
         generated = result.get("generated_data", {})
+        world_status = classify_world_builder_result(result)
+        self._log_model_result(
+            agent="world_builder",
+            source="new_game",
+            status=world_status.kind,
+            reason=world_status.reason,
+            result=result,
+        )
         if not generated:
             self._emit("on_info", "世界数据为空，请重试。")
             return
@@ -377,7 +453,7 @@ class GameEngine:
             reason = "AGNES_API_KEY 未设置。"
             if self._confirm_local_fallback("profile_opening_missing_key", reason):
                 self._emit("on_info", CHOICE_FALLBACK_NOTICE)
-                return "", normalize_choices(profile.get("choices")) or fallback_choices(self.game_session)
+                return self._enter_local_story(reason, emit_narrative=False)
             self._end_model_failure_run(reason)
             return "", []
 
@@ -389,20 +465,28 @@ class GameEngine:
             )
         except Exception:
             log.exception("profile opening world_builder error")
-            if self._confirm_local_fallback("profile_opening_exception", "开场推演失败（详见日志）。"):
+            reason = "开场推演失败（详见日志）。"
+            if self._confirm_local_fallback("profile_opening_exception", reason):
                 self._emit("on_info", CHOICE_FALLBACK_NOTICE)
-                return "", normalize_choices(profile.get("choices")) or fallback_choices(self.game_session)
+                return self._enter_local_story(reason, emit_narrative=False)
             else:
-                self._end_model_failure_run("开场推演失败（详见日志）。")
+                self._end_model_failure_run(reason)
             return "", []
 
         world_status = classify_world_builder_result(result)
+        self._log_model_result(
+            agent="world_builder",
+            source="profile_opening",
+            status=world_status.kind,
+            reason=world_status.reason,
+            result=result,
+        )
         if world_status.kind == ModelResultKind.REQUEST_FAILED:
             log.warning("profile opening world_builder failed: %s", result["llm_error"])
             reason = world_status.reason.replace("世界生成失败", "开场推演失败", 1)
             if self._confirm_local_fallback("profile_opening_error", reason):
                 self._emit("on_info", CHOICE_FALLBACK_NOTICE)
-                return "", normalize_choices(profile.get("choices")) or fallback_choices(self.game_session)
+                return self._enter_local_story(reason, emit_narrative=False)
             else:
                 self._end_model_failure_run(reason)
             return "", []
@@ -412,7 +496,7 @@ class GameEngine:
             reason = world_status.reason or "开场推演数据不可用。"
             if self._confirm_local_fallback("profile_opening_empty", reason):
                 self._emit("on_info", CHOICE_FALLBACK_NOTICE)
-                return "", normalize_choices(profile.get("choices")) or fallback_choices(self.game_session)
+                return self._enter_local_story(reason, emit_narrative=False)
             else:
                 self._end_model_failure_run(reason)
             return "", []
@@ -454,6 +538,10 @@ class GameEngine:
         if selected_choice is not None:
             text = selected_choice
 
+        if self.game_session.local_story_active:
+            self._handle_local_story_action(text)
+            return
+
         # Route natural-language breakthrough intent before combat check
         # so "突破" during combat is still treated as breakthrough.
         if self._parse_breakthrough_action(text):
@@ -491,6 +579,13 @@ class GameEngine:
             return
 
         narrator_status = classify_narrator_result(narrator_result)
+        self._log_model_result(
+            agent="narrator",
+            source="turn",
+            status=narrator_status.kind,
+            reason=narrator_status.reason,
+            result=narrator_result,
+        )
         if narrator_status.kind == ModelResultKind.REQUEST_FAILED:
             reason = narrator_status.reason
             self._emit("on_error", reason)
@@ -541,6 +636,13 @@ class GameEngine:
                 judge_result = {"approved": False, "corrected_delta": {}, "judgment_note": reason}
 
             judge_status = classify_judge_result(judge_result)
+            self._log_model_result(
+                agent="judge",
+                source="turn",
+                status=judge_status.kind,
+                reason=judge_status.reason,
+                result=judge_result,
+            )
             if judge_status.kind == ModelResultKind.JUDGE_FAILED:
                 reason = judge_status.reason
                 if not self._confirm_local_fallback("judge_error", reason):
@@ -641,6 +743,65 @@ class GameEngine:
         # Final game over check after all updates.
         if self.game_session.game_over:
             self._emit("on_game_over", self.game_session.error or "游戏结束。")
+
+    def _handle_local_story_action(self, text: str) -> None:
+        """Process one turn in the local preset story fallback."""
+        self.game_session.turn_count += 1
+        result = advance_local_story(self.game_session, text)
+        self.game_session.last_choices = result.choices
+
+        if result.delta:
+            self.game_session.apply_delta(result.delta)
+            while True:
+                stage_delta = self.realm_system.try_advance_stage(self.game_session)
+                if stage_delta is None:
+                    break
+                self.game_session.apply_delta(stage_delta)
+                new_stage = stage_delta.get("meta", {}).get("new_stage", 0)
+                max_stage = stage_delta.get("meta", {}).get("max_stage", 0)
+                self._emit("on_info", f"修为精进！{self.game_session.realm}第{new_stage}层（{new_stage}/{max_stage}）")
+
+        if result.breakthrough:
+            self._attempt_local_story_breakthrough()
+
+        if not result.matched:
+            self._emit("on_info", result.narrative)
+        elif result.narrative:
+            self._emit("on_narrative", result.narrative, self.game_session.turn_count)
+
+        self.game_session.turn_history.append({
+            "turn": self.game_session.turn_count,
+            "input": text,
+            "narrative": result.narrative,
+            "delta": result.delta,
+            "choices": self.game_session.last_choices,
+            "local_story": {
+                "story_id": self.game_session.local_story_id,
+                "node_id": self.game_session.local_story_node_id,
+            },
+        })
+        self._emit("on_status_bar", format_status_bar(self.game_session))
+        self._auto_save()
+
+        if self._check_game_over():
+            return
+
+    def _attempt_local_story_breakthrough(self) -> None:
+        """Use the existing realm rules for a local-story breakthrough."""
+        can, reason = self.realm_system.can_attempt_breakthrough(self.game_session)
+        if not can:
+            self._emit("on_info", reason)
+            return
+        delta = self.realm_system.attempt_breakthrough(self.game_session)
+        self.game_session.apply_delta(delta)
+        result = delta.get("meta", {}).get("breakthrough_result", "")
+        if result == "success":
+            if self.game_session.finale:
+                self._emit("on_finale", self.game_session.error or "飞升成仙，修真之路圆满。")
+            else:
+                self._emit("on_info", format_realm(self.game_session))
+        elif result == "failure":
+            self._emit("on_info", "突破失败，受到反噬。")
 
     # ─── Combat handling ──────────────────────────────────────────────
 
@@ -1079,6 +1240,8 @@ class GameEngine:
                 self._emit("on_info", f"存档已损坏，无法加载: {name}")
                 return
             self.game_session = loaded
+            if self.game_session.local_story_active:
+                self.game_session.last_choices = current_local_story_choices(self.game_session)
             self._emit("on_info", f"已加载存档: {name}")
             self._emit("on_status_bar", format_status_bar(self.game_session))
             # If combat was active, notify UI.

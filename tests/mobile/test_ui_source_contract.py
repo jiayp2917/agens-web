@@ -96,3 +96,38 @@ class TestAndroidFreeTextInput:
         assert "self.spinner_talent" not in source
         assert "self.spinner_root" not in source
         assert "self.spinner_family" not in source
+
+    def test_character_creation_shows_only_guided_mode_enabled(self):
+        source = (REPO_ROOT / "mobile" / "screens" / "character_create_screen.py").read_text(
+            encoding="utf-8"
+        )
+
+        assert "self.selected_mode = \"guided\"" in source
+        assert "(\"guided\", \"引导模式\", \"A/B/C + D键入\", True)" in source
+        assert "(\"novel\", \"小说模式\", \"暂未开放\", False)" in source
+        assert "(\"game\", \"游戏模式\", \"暂未开放\", False)" in source
+        assert '"game_mode": "abcd"' in source
+        assert '"ui_mode": self.selected_mode' in source
+        assert "adapter.start_from_profile(profile)" in source
+
+    def test_model_failure_popup_distinguishes_failure_types_and_redacts_keys(self):
+        source = (REPO_ROOT / "mobile" / "screens" / "game_screen.py").read_text(
+            encoding="utf-8"
+        )
+
+        assert "def _failure_prompt" in source
+        assert "推演输出不完整" in source
+        assert "天道审判受阻" in source
+        assert "模型配置未完成" in source
+        assert "模型请求失败" in source
+        assert "secret_markers" in source
+        assert "sk-" in source
+
+    def test_model_failure_prompt_classifies_missing_key_before_redaction(self):
+        source = (REPO_ROOT / "mobile" / "screens" / "game_screen.py").read_text(
+            encoding="utf-8"
+        )
+
+        assert "raw_reason = reason or \"\"" in source
+        assert 'elif "AGNES_API_KEY" in raw_reason or "未设置" in raw_reason:' in source
+        assert "safe_reason = _safe_failure_reason(reason)" in source

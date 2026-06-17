@@ -102,10 +102,11 @@ class TestGameEngineHandleAction:
         monkeypatch.setenv("AGNES_API_KEY", "sk-test-1234567890")
         seen_inputs: list[str] = []
         engine = GameEngine()
-        engine.start_from_profile({
-            "char_name": "许满",
-            "choices": ["留在山门吐纳", "询问接引弟子", "观察灵气流向"],
-        })
+        with _patch_turn_runner():
+            engine.start_from_profile({
+                "char_name": "许满",
+                "choices": ["留在山门吐纳", "询问接引弟子", "观察灵气流向"],
+            })
 
         def runner(agent_name, user_input, session, **kw):
             if agent_name == "narrator":
@@ -128,18 +129,8 @@ class TestGameEngineHandleAction:
 
     def test_choice_letter_ignores_missing_slot(self, monkeypatch) -> None:
         engine = GameEngine()
-
-        def runner(agent_name, user_input, session, **kw):
-            if agent_name == "world_builder":
-                return {"generated_data": {}, "llm_error": "timeout"}
-            return {}
-
-        with patch("agens_novel.engine.game_engine.run_turn_sync", side_effect=runner):
-            engine.start_from_profile({
-                "char_name": "许满",
-                "opening_narrative": "山门初开。",
-                "choices": ["只给一条"],
-            })
+        engine.game_session.game_started = True
+        engine.game_session.last_choices = ["只给一条"]
 
         assert engine._resolve_choice_input("C") is None
 
@@ -147,10 +138,11 @@ class TestGameEngineHandleAction:
         monkeypatch.setenv("AGNES_API_KEY", "sk-test-1234567890")
         seen_inputs: list[str] = []
         engine = GameEngine()
-        engine.start_from_profile({
-            "char_name": "许满",
-            "choices": ["留在山门吐纳", "询问接引弟子", "观察灵气流向"],
-        })
+        with _patch_turn_runner():
+            engine.start_from_profile({
+                "char_name": "许满",
+                "choices": ["留在山门吐纳", "询问接引弟子", "观察灵气流向"],
+            })
 
         def runner(agent_name, user_input, session, **kw):
             if agent_name == "narrator":
@@ -198,6 +190,7 @@ class TestGameEngineHandleAction:
             engine.handle_action("修炼")
 
         assert engine.game_session.turn_count == 0
+        assert engine.game_session.local_story_active is True
         assert len(engine.game_session.last_choices) == 3
         assert any("天道紊乱" in msg for msg in infos)
 
@@ -237,6 +230,7 @@ class TestGameEngineHandleAction:
 
         assert engine.game_session.game_over is False
         assert engine.game_session.turn_count == 1
+        assert engine.game_session.local_story_active is True
         assert len(engine.game_session.last_choices) == 3
 
     def test_incomplete_model_output_is_reported_separately_from_request_failure(self, monkeypatch) -> None:
@@ -260,6 +254,7 @@ class TestGameEngineHandleAction:
         assert errors == []
         assert any("不完整" in msg or "未返回可用 A/B/C" in msg for msg in infos)
         assert not any("天道紊乱" in msg for msg in infos)
+        assert engine.game_session.local_story_active is True
         assert len(engine.game_session.last_choices) == 3
 
     def test_narrative_claim_without_structured_delta_is_rejected(self, monkeypatch) -> None:
@@ -794,7 +789,8 @@ class TestInsightGate:
 
         assert engine.game_session.realm == "筑基", \
             f"Breakthrough should reach 筑基, got {engine.game_session.realm}"
-        assert engine.game_session.last_choices == fallback_choices(engine.game_session)
+        assert engine.game_session.local_story_active is True
+        assert len(engine.game_session.last_choices) == 3
 
     def test_breakthrough_updates_model_choices(self, monkeypatch) -> None:
         monkeypatch.setenv("AGNES_API_KEY", "sk-test-1234567890")

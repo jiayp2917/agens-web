@@ -145,6 +145,7 @@ def test_start_from_profile_model_failure_uses_tiandao_fallback(tmp_path, monkey
     with patch("agens_novel.engine.game_engine.run_turn_sync", side_effect=runner):
         engine.start_from_profile({"char_name": "许满"})
 
+    assert engine.game_session.local_story_active is True
     assert len(engine.game_session.last_choices) == 3
     assert any("天道紊乱" in msg for msg in infos)
 
@@ -168,7 +169,7 @@ def test_start_from_profile_model_failure_can_end_run(tmp_path, monkeypatch):
     assert engine.game_session.last_choices == []
 
 
-def test_start_from_profile_uses_profile_choices_only_after_model_failure(tmp_path, monkeypatch):
+def test_start_from_profile_model_failure_enters_local_story_not_profile_choices(tmp_path, monkeypatch):
     from agens_novel import paths
     monkeypatch.setattr(paths, "SAVE_DIR", tmp_path)
     engine = GameEngine()
@@ -185,7 +186,9 @@ def test_start_from_profile_uses_profile_choices_only_after_model_failure(tmp_pa
             "choices": ["退回山门", "询问执事"],
         })
 
-    assert engine.game_session.last_choices == ["退回山门", "询问执事"]
+    assert engine.game_session.local_story_active is True
+    assert engine.game_session.last_choices != ["退回山门", "询问执事"]
+    assert len(engine.game_session.last_choices) == 3
     assert any("天道紊乱" in msg for msg in infos)
 
 
