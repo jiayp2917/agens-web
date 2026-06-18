@@ -58,7 +58,7 @@ $env:AGNES_API_KEY  = "<你的 key>"
 
 ## 文档索引
 
-后续智能体先读 `docs/INDEX.md`。非玩法类执行细则见 `docs/AGENT_OPERATION_RULES.md`。APK 打包、USB 真机验证、成功与失败经验见 `docs/LESSONS_LEARNED_2026-06-17.md`。
+后续智能体先读 `docs/INDEX.md`。项目结构边界、冗余清理和技术债见 `docs/PROJECT_AUDIT.md`。非玩法类执行细则见 `docs/AGENT_OPERATION_RULES.md`。
 
 ## 关键文件
 

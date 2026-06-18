@@ -5,9 +5,10 @@
 ## 读取顺序
 
 1. 先读 `AGENTS.md` 和 `docs/INDEX.md`，确认本次任务属于哪一类。
-2. 涉及 APK 打包、真机验证、ADB、logcat 时，必须读 `docs/LESSONS_LEARNED_2026-06-17.md`。
+2. 涉及结构审核、冗余清理或技术债时，先读 `docs/PROJECT_AUDIT.md`。
 3. 涉及跨电脑迁移或交付源码包时，必须读 `docs/ZIP_TRANSFER.md`。
-4. 修改代码前先执行 `git status --short`，理解脏工作区，不回退用户已有改动。
+4. 涉及 APK 打包、真机验证、ADB、logcat 时，以本文的 Buildozer 与 ADB 模板为准。
+5. 修改代码前先执行 `git status --short`，理解脏工作区，不回退用户已有改动。
 
 ## PowerShell 与编码
 

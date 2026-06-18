@@ -54,12 +54,12 @@ git archive --format=zip --output D:\chat\agens-transfer.zip HEAD
 
 ## 复盘入口
 
-项目深度复盘、USB 真机 ADB 验证经验、冗余清理记录和后续风险队列见 `docs/PROJECT_RETRO_2026-06-17.md`。
+项目结构边界、USB 真机 ADB 验证入口、冗余清理记录和后续风险队列见 `docs/PROJECT_AUDIT.md`。
 当前业务逻辑和代码调用链见 `docs/RUNTIME_FLOW.md`。
 
 ## 文档索引
 
-后续智能体先读 `docs/INDEX.md`。APK 打包、USB 真机验证、成功与失败经验见 `docs/LESSONS_LEARNED_2026-06-17.md`。
+后续智能体先读 `docs/INDEX.md`。项目结构边界和技术债见 `docs/PROJECT_AUDIT.md`。
 
 ## 开发约束
 
