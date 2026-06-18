@@ -1,4 +1,4 @@
-"""Secret masking utilities — used in repr, logging, and CLI display."""
+"""Secret masking utilities used in repr, logging, and JSON display."""
 
 from __future__ import annotations
 

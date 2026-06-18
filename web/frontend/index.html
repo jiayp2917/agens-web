@@ -1,0 +1,208 @@
+<!doctype html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>文字修仙模拟器</title>
+    <link rel="icon" href='data:image/svg+xml,<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64"><rect width="64" height="64" rx="8" fill="%23a64b16"/><path d="M18 42c13-1 20-8 25-22 3 13 0 24-11 29-6 3-11 1-14-7Z" fill="%23fffaf0"/></svg>' />
+    <link rel="stylesheet" href="/static/styles.css" />
+  </head>
+  <body>
+    <a class="skip-link" href="#app">跳到游戏内容</a>
+    <main id="app" class="app-shell" aria-live="polite">
+      <section id="homeView" class="view view-home is-active" aria-labelledby="homeTitle">
+        <div class="home-topbar">
+          <span class="brand-mark">agens</span>
+          <button id="soundToggle" class="icon-button" type="button" aria-pressed="false" aria-label="切换背景音乐">
+            <svg viewBox="0 0 24 24" aria-hidden="true">
+              <path d="M4 9v6h4l5 4V5L8 9H4Z"></path>
+              <path d="M16 8.5a4 4 0 0 1 0 7"></path>
+              <path d="M18.5 6a7 7 0 0 1 0 12"></path>
+            </svg>
+          </button>
+        </div>
+        <div class="home-content">
+          <p class="eyebrow">Web 文字修仙模拟器</p>
+          <h1 id="homeTitle">文字修仙模拟器</h1>
+          <p class="home-copy">从山门晨雾开始，以 A/B/C 推进天道选项，以 D 写下自己的行动。</p>
+          <div class="home-actions" aria-label="主页操作">
+            <button id="newGameButton" class="command-button primary" type="button">新游戏</button>
+            <button id="loadHomeButton" class="command-button" type="button">读档</button>
+            <button id="tutorialButton" class="command-button" type="button">教程</button>
+            <button id="settingsButton" class="command-button" type="button">设置</button>
+            <button id="exitButton" class="command-button danger" type="button">结束</button>
+          </div>
+        </div>
+      </section>
+
+      <section id="characterView" class="view view-character" aria-labelledby="characterTitle">
+        <header class="screen-header">
+          <button class="text-button" data-nav="home" type="button">返回</button>
+          <div>
+            <p class="eyebrow">开局设定</p>
+            <h2 id="characterTitle">角色信息</h2>
+          </div>
+        </header>
+        <form id="characterForm" class="character-form">
+          <label>
+            <span>游戏名称</span>
+            <input name="game_name" type="text" autocomplete="off" placeholder="可作为本局世界种子" />
+          </label>
+          <label>
+            <span>角色名</span>
+            <input name="char_name" type="text" autocomplete="off" placeholder="留空则由开局生成" />
+          </label>
+          <div class="form-grid">
+            <label>
+              <span>天赋</span>
+              <select name="talent">
+                <option>平平无奇</option>
+                <option>草木亲和</option>
+                <option>剑心微明</option>
+                <option>惊雷骨</option>
+                <option>天命道胎</option>
+              </select>
+            </label>
+            <label>
+              <span>灵根</span>
+              <select name="spirit_root">
+                <option>金灵根</option>
+                <option>木灵根</option>
+                <option>水灵根</option>
+                <option>火灵根</option>
+                <option>土灵根</option>
+                <option>冰灵根</option>
+                <option>雷灵根</option>
+                <option>风灵根</option>
+              </select>
+            </label>
+            <label>
+              <span>家世</span>
+              <select name="family_background">
+                <option>农家</option>
+                <option>寒门</option>
+                <option>小族</option>
+                <option>宗门旁支</option>
+                <option>隐世仙族</option>
+              </select>
+            </label>
+            <label>
+              <span>难度</span>
+              <select name="difficulty">
+                <option>简单</option>
+                <option selected>普通</option>
+                <option>困难</option>
+              </select>
+            </label>
+          </div>
+          <fieldset class="mode-fieldset">
+            <legend>游玩模式</legend>
+            <label class="mode-option selected">
+              <input type="radio" name="mode" checked />
+              <span>引导模式</span>
+            </label>
+            <label class="mode-option disabled">
+              <input type="radio" name="mode" disabled />
+              <span>小说模式</span>
+            </label>
+            <label class="mode-option disabled">
+              <input type="radio" name="mode" disabled />
+              <span>游戏模式</span>
+            </label>
+          </fieldset>
+          <section class="attributes-panel" aria-labelledby="attributesTitle">
+            <div class="panel-heading">
+              <h3 id="attributesTitle">基础属性</h3>
+              <label class="checkbox-line">
+                <input id="randomAttributes" name="randomize_attributes" type="checkbox" checked />
+                <span>随机属性</span>
+              </label>
+            </div>
+            <div id="attributeInputs" class="attribute-grid" aria-disabled="true">
+              <label><span>根骨</span><input name="root_bone" type="number" min="0" max="100" value="50" /></label>
+              <label><span>悟性</span><input name="comprehension" type="number" min="0" max="100" value="50" /></label>
+              <label><span>气运</span><input name="luck" type="number" min="0" max="100" value="50" /></label>
+              <label><span>心性</span><input name="willpower" type="number" min="0" max="100" value="50" /></label>
+              <label><span>体魄</span><input name="physique" type="number" min="0" max="100" value="50" /></label>
+              <label><span>神识</span><input name="spiritual_sense" type="number" min="0" max="100" value="50" /></label>
+            </div>
+          </section>
+          <button id="startGameButton" class="command-button primary wide" type="submit">开始修行</button>
+        </form>
+      </section>
+
+      <section id="gameView" class="view view-game" aria-labelledby="gameTitle">
+        <header class="game-header">
+          <div>
+            <p class="eyebrow">当前角色</p>
+            <h2 id="gameTitle">尚未开局</h2>
+            <p id="characterSummary" class="muted-line">等待角色创建</p>
+          </div>
+          <div class="turn-counter">
+            <span>回合</span>
+            <strong id="turnCount">0</strong>
+          </div>
+        </header>
+        <div class="game-layout">
+          <aside class="status-column" aria-label="角色状态">
+            <section class="panel">
+              <h3>状态</h3>
+              <dl id="statusList" class="stat-list"></dl>
+            </section>
+            <section class="panel">
+              <h3>工具</h3>
+              <div class="tool-grid">
+                <button data-panel="inventory" type="button">背包</button>
+                <button data-panel="skills" type="button">功法</button>
+                <button data-panel="quests" type="button">任务</button>
+                <button data-panel="map" type="button">地图</button>
+                <button id="saveGameButton" type="button">存档</button>
+                <button id="loadGameButton" type="button">读档</button>
+                <button id="gameSettingsButton" type="button">设置</button>
+                <button id="restartButton" type="button">重新开始</button>
+              </div>
+            </section>
+          </aside>
+          <section class="narrative-panel" aria-label="叙事内容">
+            <div id="narrativeLog" class="narrative-log"></div>
+            <div id="choices" class="choices" aria-label="A B C 选项"></div>
+          </section>
+        </div>
+        <form id="actionForm" class="action-bar">
+          <label for="actionInput">D 自由行动</label>
+          <input id="actionInput" name="action" type="text" autocomplete="off" placeholder="例如：询问师兄、前往悬赏榜、尝试突破" />
+          <button class="command-button primary" type="submit">发送</button>
+        </form>
+      </section>
+
+      <section id="endingView" class="view view-ending" aria-labelledby="endingTitle">
+        <div class="ending-content">
+          <p class="eyebrow">本局结束</p>
+          <h2 id="endingTitle">尘埃落定</h2>
+          <p id="endingReason" class="home-copy"></p>
+          <div class="home-actions">
+            <button class="command-button primary" data-nav="character" type="button">重新开始</button>
+            <button class="command-button" data-nav="home" type="button">返回首页</button>
+          </div>
+        </div>
+      </section>
+    </main>
+
+    <dialog id="modal" class="modal">
+      <div class="modal-frame">
+        <header class="modal-header">
+          <h2 id="modalTitle">标题</h2>
+          <button id="modalCloseButton" class="icon-button small" aria-label="关闭" type="button">
+            <svg viewBox="0 0 24 24" aria-hidden="true">
+              <path d="M6 6l12 12M18 6L6 18"></path>
+            </svg>
+          </button>
+        </header>
+        <div id="modalBody" class="modal-body"></div>
+      </div>
+    </dialog>
+
+    <div id="toast" class="toast" role="status" aria-live="polite"></div>
+    <script src="/static/app.js" defer></script>
+  </body>
+</html>

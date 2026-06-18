@@ -1,9 +1,9 @@
 ﻿"""Pure-text rendering functions for game state.
 
 These produce plain strings (with Unicode progress bars) suitable for any
-display — Android/mobile UI.  No dependency on Kivy or any UI library.
+display. No dependency on any UI library.
 
-Used by Android popups and tests without depending on a terminal UI.
+Used by the web adapter and tests.
 """
 
 from __future__ import annotations

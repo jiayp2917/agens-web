@@ -12,10 +12,12 @@ license = { text = "MIT" }
 authors = [{ name = "agens-novel authors" }]
 
 dependencies = [
+    "fastapi>=0.115.0",
     "langgraph>=0.2.0",
     "langchain-core>=0.3.0",
     "langchain-openai>=0.2.0",
     "httpx>=0.27.0",
+    "uvicorn[standard]>=0.30.0",
     "pyyaml>=6.0.1",
 ]
 
@@ -26,6 +28,7 @@ dev = [
     "pytest-xdist>=3.5.0",
     "ruff>=0.4.0",
     "mypy>=1.10.0",
+    "beautifulsoup4>=4.12.0",
 ]
 [tool.setuptools.packages.find]
 where = ["src"]
@@ -52,7 +55,7 @@ markers = [
     "integration: cross-module integration tests (may need network or fixtures)",
     "destructive: destructive/fuzz-style tests",
     "e2e: end-to-end scenarios (may be slow/flaky)",
-    "mobile: tests that exercise Kivy/mobile-specific code",
+    "web: tests that exercise the FastAPI/browser web adapter",
     "llm_real: tests that call real LLM APIs (require AGNES_API_KEY)",
 ]
 addopts = [
@@ -64,6 +67,5 @@ addopts = [
     "auto",
 ]
 filterwarnings = [
-    "ignore::DeprecationWarning:kivy.*",
     "ignore::DeprecationWarning:jinja2.*",
 ]

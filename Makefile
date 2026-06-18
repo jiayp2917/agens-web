@@ -13,12 +13,12 @@ format:
 	ruff format src tests
 
 run:
-	python mobile/main.py
+	uvicorn web.backend.app:app --host 127.0.0.1 --port 8000 --reload
 
 smoke:
-	python -m compileall -q src tests mobile/main.py mobile/audio_manager.py mobile/screens mobile/widgets mobile/service
-	python -m pytest -q tests/mobile/test_mobile_startup.py tests/mobile/test_buildozer_spec.py
+	python -m compileall -q src tests web
+	python -m pytest -q tests/web
 
 clean:
-	rm -rf runtime/artifacts/* runtime/checkpoints/* runtime/logs/*
+	rm -rf runtime/artifacts/* runtime/checkpoints/* runtime/logs/* runtime/web/*
 	find . -type d -name __pycache__ -exec rm -rf {} +

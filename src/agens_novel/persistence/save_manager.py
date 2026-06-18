@@ -15,7 +15,7 @@ from ..session.game_session import GameSession
 
 log = logging.getLogger(__name__)
 
-# Module-level override for save directory (used by mobile apps).
+# Module-level override for save directory.
 _custom_save_dir: Path | None = None
 
 # Reserved slot names.
@@ -24,7 +24,7 @@ MAX_MANUAL_SAVES = 5
 
 
 def set_save_dir(save_dir: Path) -> None:
-    """Override the save directory (e.g. for Android internal storage)."""
+    """Override the save directory."""
     global _custom_save_dir
     _custom_save_dir = save_dir
 

@@ -4,7 +4,7 @@
 
 ## 关键文件
 
-- `game_engine.py` — 唯一游戏逻辑入口（`GameEngine`）。UI 仅通过 `mobile/service/engine_adapter.py` 调用。
+- `game_engine.py` — 唯一游戏逻辑入口（`GameEngine`）。Web 后端通过服务层调用。
 - `turn_runner.py` — LangGraph Agent 调用器，每回合执行 `run_turn_sync`。
 - `render.py` — UI 无关的文本格式化（角色状态、物品列表等）。
 - `_stream_context.py` — Thread-local 流式回调上下文，**不要**写入 LangGraph state（msgpack 无法序列化 callable）。

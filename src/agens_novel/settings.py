@@ -5,7 +5,7 @@ The API key is loaded from the AGNES_API_KEY env var and masked on repr.
 Never log the Settings object directly — call ``settings.public_summary()``
 instead.
 
-No external dependencies — pure Python, works on Android.
+No external dependencies; safe to use from the web backend and tests.
 """
 
 from __future__ import annotations

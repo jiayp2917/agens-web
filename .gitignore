@@ -28,17 +28,14 @@ runtime/checkpoints/
 runtime/logs/
 runtime/backups/
 runtime/saves/
+runtime/web/
 runtime/**/*.json
 runtime/**/*.jsonl
 runtime/**/*.log
 
-# Android build outputs
-mobile/.buildozer/
-mobile/bin/
-*.apk
-
 # Tool residues
 .workbuddy/
+.playwright-cli/
 
 # Demo artifacts
 demo_*.jsonl
@@ -48,9 +45,3 @@ demos/validation/screenshots/
 demos/validation/real_click/
 demos/validation/**/__pycache__/
 
-# Audio assets (remove if version control is needed)
-mobile/assets/audio/*.flac
-mobile/assets/audio/*.mp3
-mobile/assets/audio/*.ogg
-mobile/assets/fonts/*.ttf
-mobile/assets/fonts/*.otf

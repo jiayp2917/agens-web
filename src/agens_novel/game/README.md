@@ -22,10 +22,9 @@
 - `tests/unit/game/test_realm.py` / `test_realm_full.py` — 境界系统
 - `tests/unit/game/test_combat.py` — 战斗系统
 - `tests/unit/game/test_constants.py` — 常量
-- `tests/unit/game/test_bgm.py` — BGM（与 `mobile/audio_manager` 协作）
 
 ## 注意事项
 
-- **境界顺序不可改**：`REALM_ORDER` 是 UI 契约的一部分，删除境界会破坏 UI 文本（如"飞升成仙"）。
+- **境界顺序不可改**：`REALM_ORDER` 是 UI 契约的一部分，删除境界会破坏终局文本。
 - **战斗不走 LLM**：战斗是纯逻辑，由 `CombatEngine` 处理；LLM 只负责叙事。
 - **纯 `random.random()` 用于概率**：境界突破、战斗暴击等用 `random.random()` 与阈值比较。

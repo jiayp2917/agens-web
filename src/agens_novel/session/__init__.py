@@ -1,4 +1,4 @@
-﻿"""Android-first game session state."""
+"""Game session state."""
 
 from .game_session import GameSession
 

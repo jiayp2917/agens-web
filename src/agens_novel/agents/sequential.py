@@ -10,7 +10,7 @@ Node = Callable[[dict[str, Any]], Any]
 
 
 class SequentialAgentGraph:
-    """LangGraph-compatible subset used by the mobile agent pipeline."""
+    """LangGraph-compatible subset used by the agent pipeline."""
 
     def __init__(self, nodes: list[Node]) -> None:
         self._nodes = nodes

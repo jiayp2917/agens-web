@@ -14,7 +14,7 @@ from ..utils.timing import utcnow_compact, utcnow_iso
 
 log = logging.getLogger(__name__)
 
-# Sentinel path returned when writes fail (e.g. read-only Android bundle).
+# Sentinel path returned when writes fail.
 _DEV_NULL = Path(os.devnull)
 
 

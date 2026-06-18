@@ -1,6 +1,6 @@
 """UI-agnostic game engine for the xianxia cultivation simulator.
 
-The class emits events via callbacks. Android/Kivy UI can register
+The class emits events via callbacks. UI adapters can register
 callbacks and drive the game without knowing about the other layers.
 
 All agent calls go through ``run_turn_sync`` which internally uses
@@ -208,7 +208,7 @@ class GameEngine:
         reason: str,
         result: dict[str, Any],
     ) -> None:
-        """Write a non-secret model diagnostic line for USB logcat triage."""
+        """Write a non-secret model diagnostic line for runtime triage."""
         model = os.environ.get("AGNES_MODEL", "agnes-2.0-flash")
         base_url = os.environ.get("AGNES_BASE_URL", "https://apihub.agnes-ai.com/v1")
         log.info(
@@ -375,9 +375,9 @@ class GameEngine:
         self._auto_save()
 
     def start_from_profile(self, profile: dict[str, Any]) -> None:
-        """Create a deterministic mobile game from the character form.
+        """Create a deterministic game from the character form.
 
-        This keeps the Kivy character-creation screen on the same engine path
+        This keeps character creation on the same engine path
         as every other UI operation. When the profile does not already carry
         opening choices, the engine asks World Builder for a first 天道 scene;
         local fallback is used only if that model call fails.
@@ -449,7 +449,7 @@ class GameEngine:
         self._auto_save()
 
     def _generate_profile_opening(self, profile: dict[str, Any], special: bool) -> tuple[str, list[str]]:
-        """Ask World Builder for the first mobile scene after form creation."""
+        """Ask World Builder for the first scene after form creation."""
         if not os.environ.get("AGNES_API_KEY"):
             reason = "AGNES_API_KEY 未设置。"
             if self._confirm_local_fallback("profile_opening_missing_key", reason):
@@ -961,7 +961,7 @@ class GameEngine:
     def _parse_typed_combat_action(self, text: str) -> tuple[str, str] | None:
         """Map natural-language combat input onto the structured combat engine.
 
-        The mobile UI is input-first: a player can type "攻击", "防御",
+        The web UI is input-first: a player can type "攻击", "防御",
         "施展火球术", "使用回春丹" or "逃跑" instead of pressing combat
         buttons. Inputs that are not clearly combat commands stay on the LLM
         narrator path so the player can still observe, negotiate, feint, etc.
@@ -1389,7 +1389,7 @@ class GameEngine:
     def _sanitize_action_delta(self, delta: dict[str, Any]) -> dict[str, Any]:
         """Drop ordinary-turn updates that reset character identity or continuity.
 
-        LLM output is intentionally high variance, but mobile free actions must
+        LLM output is intentionally high variance, but web free actions must
         not re-open the world or replace the player's established profile.
         Breakthroughs and combat resolution use dedicated engine paths.
         """

@@ -1,8 +1,7 @@
-"""Destructive tests for the Android-first core runtime.
+"""Destructive tests for the core runtime.
 
-The terminal REPL product surface has been removed. These tests keep the
-adversarial coverage on the shared session, parser, and save/load layers that
-the Android UI still depends on.
+These tests keep adversarial coverage on the shared session, parser, and
+save/load layers that the web runtime depends on.
 """
 
 from __future__ import annotations

@@ -23,6 +23,6 @@
 
 ## 注意事项
 
-- **直接属性读写**：UI 适配器可能直接读 `session.realm` 等属性（用于显示）。
+- **直接属性读写**：Web 服务层可能直接读 `session.realm` 等属性（用于显示）。
 - **`apply_delta` 是有守卫的**：传入的 realm 不在 `REALM_ORDER` 中会被忽略；非 bool 的 `game_over` 会被拒绝。
-- **跨平台状态**：session 字段必须在 Android（Buildozer）打包后仍可 JSON 序列化，避免存 datetime / custom class。
+- **可序列化状态**：session 字段必须可 JSON 序列化，避免存 datetime / custom class。

@@ -57,7 +57,7 @@ def profile_opening(session: GameSession, *, special: bool = False, game_name: s
 
 
 def profile_concept(profile: dict[str, Any], *, special: bool = False) -> str:
-    """Build a compact World Builder concept from the mobile creation form."""
+    """Build a compact World Builder concept from the web creation form."""
     if special:
         return "生成隐藏开局的第一幕，保持界面不明示隐藏机制。"
     game_name = profile_seed_name(profile)

@@ -197,7 +197,7 @@ class TestCombatConstants:
 
 
 class TestPrototypeConstants:
-    """Validate Android prototype constants."""
+    """Validate game prototype constants."""
 
     def test_character_creation_options(self):
         assert "天命道胎" in TALENT_OPTIONS

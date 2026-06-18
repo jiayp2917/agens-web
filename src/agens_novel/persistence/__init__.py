@@ -1,1 +1,1 @@
-﻿"""Android-first save and load persistence."""
+"""Save and load persistence for the web game runtime."""

@@ -45,7 +45,7 @@ def agent_artifact_dir(agent_name: str) -> Path:
     try:
         p.mkdir(parents=True, exist_ok=True)
     except OSError:
-        pass  # May not be writable on Android; callers handle gracefully
+        pass  # Callers handle read-only or unavailable runtime paths gracefully.
     return p
 
 

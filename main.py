@@ -1,11 +1,9 @@
-"""Android APK entry point.
+"""Web entry point for local development."""
 
-Buildozer packages the repository root, so python-for-android starts this
-module and delegates to the Kivy app in ``mobile.main``.
-"""
+from __future__ import annotations
 
-from mobile.main import XianxiaApp
+import uvicorn
 
 
 if __name__ == "__main__":
-    XianxiaApp().run()
+    uvicorn.run("web.backend.app:app", host="127.0.0.1", port=8000, reload=True)

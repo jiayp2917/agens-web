@@ -53,7 +53,7 @@ class SafeStreamHandler(logging.StreamHandler):
 
     def handleError(self, record: logging.LogRecord) -> None:  # noqa: N802
         # Python's default handleError writes another traceback to sys.stderr
-        # when logging.raiseExceptions is true. In Kivy on Windows that can
+        # when logging.raiseExceptions is true. On Windows that can
         # recurse if stderr itself is the broken stream, so this is deliberately
         # silent.
         return None
@@ -89,5 +89,5 @@ def setup_logging(
 
 
 def redact(text: str) -> str:
-    """Public helper for ad-hoc redaction in CLI/JSON output."""
+    """Public helper for ad-hoc redaction in JSON output."""
     return SecretRedactor._scrub(text)

@@ -22,5 +22,5 @@
 ## 注意事项
 
 - **存档位置**：`runtime/saves/`，被 `.gitignore` 忽略。
-- **跨平台路径**：在 Android 上通过 `agens_novel.paths.SAVE_DIR` 解析为 app private storage。
+- **运行时路径**：通过 `agens_novel.paths.SAVE_DIR` 解析到 `runtime/saves/`，Web 数据库另存于 `runtime/web/`。
 - **容错读取**：存档文件损坏时返回 `None` 而不是抛异常（避免游戏启动失败）。
