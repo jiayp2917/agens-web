@@ -5,7 +5,7 @@
 ## 本地启动
 
 ```powershell
-cd "D:\chat\agens -web"
+cd <repo>
 .\.venv\Scripts\python.exe -m pip install -e ".[dev]"
 .\.venv\Scripts\python.exe -m uvicorn web.backend.app:app --host 127.0.0.1 --port 8000 --reload
 ```

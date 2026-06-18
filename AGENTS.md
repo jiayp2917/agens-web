@@ -2,7 +2,7 @@
 
 ## 项目定位
 
-本目录是 `agens` 的 Web-only 项目，路径固定为 `D:\chat\agens -web`，当前 `master` 是浏览器版本主线。本项目不维护移动端打包或设备验证迭代。
+本仓库是 `agens` 的 Web-only 项目，当前 `master` 是浏览器版本主线。本项目不维护移动端打包或设备验证迭代。
 
 核心玩法继续复用 `src/agens_novel/`：
 
@@ -38,7 +38,7 @@
 
 ## 架构约束
 
-- 当前对话和后续 Web 改造只操作 `D:\chat\agens -web`。
+- 当前对话和后续 Web 改造只操作本仓库。
 - 不在本项目维护移动端打包或设备验证流程。
 - 不恢复 `agens-novel` CLI、终端 REPL 或旧高中低自由度模式。
 - `GameEngine` 仍是唯一游戏逻辑入口；Web 前端不得直接修改 `GameSession`。
@@ -49,7 +49,7 @@
 ## 常用命令
 
 ```powershell
-cd "D:\chat\agens -web"
+cd <repo>
 
 # 当前基线检查
 .\.venv\Scripts\python.exe -m compileall -q src tests

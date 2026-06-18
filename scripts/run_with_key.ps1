@@ -15,9 +15,8 @@ $env:AGNES_BASE_URL = $BaseUrl
 $env:AGNES_MODEL    = $Model
 
 try {
-    # Launch the Android/Kivy product path. Extra args are passed through for
-    # local debugging helpers, but the app normally does not require them.
-    & python mobile\main.py @args
+    # Launch the Web backend with the provided model configuration.
+    & python -m uvicorn web.backend.app:app --host 127.0.0.1 --port 8000 @args
     exit $LASTEXITCODE
 }
 finally {

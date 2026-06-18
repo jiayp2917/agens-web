@@ -1,6 +1,6 @@
 # agens-novel-web
 
-Web-only 文字修仙模拟器。本目录固定为 `D:\chat\agens -web`，当前 `master` 是浏览器版本主线。
+Web-only 文字修仙模拟器。当前 `master` 是浏览器版本主线。
 
 ## 当前目标
 
@@ -27,7 +27,7 @@ Browser UI
 ## 开发入口
 
 ```powershell
-cd "D:\chat\agens -web"
+cd <repo>
 python -m venv .venv
 .\.venv\Scripts\activate
 pip install -e ".[dev]"
