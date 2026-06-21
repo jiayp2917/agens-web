@@ -75,7 +75,11 @@ Browser UI
 | P1 | 模型返回文本但缺少结构化选项时，容易进入兜底或阻断流程。 | 保持格式修复重试，并在 API 响应中区分请求失败、输出不完整、审核失败和本地兜底。 |
 | P2 | 本地故事兜底只达到最小可玩。 | 改成数据文件化故事节点，逐步扩展多套故事。 |
 | P2 | Web 多用户会引入会话隔离和密钥安全问题。 | API 层统一鉴权、限流、脱敏日志和 per-user session 存储。 |
+| P2 | PostgreSQL 设计和 Alembic 迁移已经补齐 Alpha 必需表，但还缺真实 PG smoke、索引评审、备份恢复和回滚演练。 | 设置 `TEST_DATABASE_URL` 跑空库迁移和账号游玩链路；上线前完成备份/恢复验证。 |
+| P2 | 访客局只在单进程内存中，容器重启、多 worker 或多副本会丢失。 | Alpha 阶段明确提示；正式多人部署前引入共享会话存储或只允许账号局跨进程恢复。 |
+| P2 | 匿名访客仍可能消耗模型额度。 | 增加访客日限额、IP/设备限额、模型预算保护和边缘层限流。 |
 | P3 | 测试目录需继续从旧产品分类迁移到 Web 分类。 | 保留核心测试，新增 API 和浏览器测试，删除旧 UI 契约测试。 |
+| P3 | React 主入口仍偏重，后续 UI 迭代容易互相影响。 | 拆出认证、首页、角色创建、游戏页、设置/存档弹窗、BGM 和终局页组件。 |
 
 ## 验证入口
 
@@ -92,3 +96,4 @@ Browser UI
 - Alembic 初始迁移需要覆盖运行时会访问的 catalog 和死亡奖励表：`catalog_*`、`run_achievements`、`account_rewards`、`legacy_bonuses`。
 - React 主入口仍偏重，`web/frontend-react/src/main.tsx` 同时承担认证、首页、角色创建、游戏页、设置存档弹窗和终局页；后续应拆组件。
 - 文档分层以 `docs/INDEX.md` 为准：`RUNTIME_FLOW.md` 描述当前引导模式 Alpha，`GAME_MODE_SPEC.md` 只描述游戏模式 v5 草案。
+- Alpha 复盘和成功/失败经验以 `docs/ALPHA_REVIEW_AND_LESSONS.md` 为准。后续上线报告必须区分本地测试、PostgreSQL smoke、Docker Compose、反代和公网验证。

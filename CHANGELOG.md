@@ -9,11 +9,13 @@
 - React turn-action busy guards for A/B/C choices, fallback actions, and D input.
 - PostgreSQL smoke path that runs only when `TEST_DATABASE_URL` is configured.
 - Archived the game-mode planning draft under `docs/archive/`.
+- Alpha review evidence and lessons in `docs/ALPHA_REVIEW_AND_LESSONS.md`.
 
 ### Changed
 
 - `docs/INDEX.md` now separates current Alpha runtime docs from future game-mode v5 specs.
 - `docs/PROJECT_AUDIT.md` records the React-first entrypoint, legacy frontend fallback policy, and PG/Alembic authority.
+- `docs/ALPHA_REVIEW_AND_LESSONS.md` now records current conclusion, verification evidence, success lessons, failure lessons, residual risks, and follow-up execution rules.
 - `/api/invites` now uses a typed request schema instead of ad hoc dict parsing.
 
 ## 2026-06-18

@@ -115,7 +115,7 @@ class PostgresWebDatabase:
                         description TEXT NOT NULL DEFAULT '',
                         attribute_mods JSONB NOT NULL DEFAULT '{}',
                         tags JSONB NOT NULL DEFAULT '[]',
-                        created_at DOUBLE PRECISION NOT NULL
+                        created_at DOUBLE PRECISION NOT NULL DEFAULT EXTRACT(EPOCH FROM now())
                     )
                     """
                 )
@@ -131,7 +131,7 @@ class PostgresWebDatabase:
                         initial_resources JSONB NOT NULL DEFAULT '{}',
                         initial_risks JSONB NOT NULL DEFAULT '[]',
                         story_tags JSONB NOT NULL DEFAULT '[]',
-                        created_at DOUBLE PRECISION NOT NULL
+                        created_at DOUBLE PRECISION NOT NULL DEFAULT EXTRACT(EPOCH FROM now())
                     )
                     """
                 )
@@ -148,7 +148,7 @@ class PostgresWebDatabase:
                         breakthrough_bonus DOUBLE PRECISION NOT NULL DEFAULT 0.0,
                         cultivation_tendency TEXT NOT NULL DEFAULT '',
                         event_tags JSONB NOT NULL DEFAULT '[]',
-                        created_at DOUBLE PRECISION NOT NULL
+                        created_at DOUBLE PRECISION NOT NULL DEFAULT EXTRACT(EPOCH FROM now())
                     )
                     """
                 )
@@ -164,7 +164,7 @@ class PostgresWebDatabase:
                         lifespan_modifier DOUBLE PRECISION NOT NULL DEFAULT 1.0,
                         luck_modifier DOUBLE PRECISION NOT NULL DEFAULT 0,
                         description TEXT NOT NULL DEFAULT '',
-                        created_at DOUBLE PRECISION NOT NULL
+                        created_at DOUBLE PRECISION NOT NULL DEFAULT EXTRACT(EPOCH FROM now())
                     )
                     """
                 )
@@ -178,7 +178,7 @@ class PostgresWebDatabase:
                         category TEXT NOT NULL DEFAULT '',
                         description TEXT NOT NULL DEFAULT '',
                         tags JSONB NOT NULL DEFAULT '[]',
-                        created_at DOUBLE PRECISION NOT NULL
+                        created_at DOUBLE PRECISION NOT NULL DEFAULT EXTRACT(EPOCH FROM now())
                     )
                     """
                 )
@@ -773,6 +773,7 @@ class PostgresWebDatabase:
         if table not in self._CATALOG_TABLES:
             raise ValueError(f"Unknown catalog table: {table}")
         data = dict(row)
+        data.setdefault("created_at", now_ts())
         for field in ("attribute_mods", "tags", "initial_resources",
                       "initial_risks", "story_tags", "event_tags"):
             if field in data and not isinstance(data[field], str):

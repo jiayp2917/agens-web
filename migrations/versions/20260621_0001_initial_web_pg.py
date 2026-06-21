@@ -84,7 +84,12 @@ def upgrade() -> None:
             nullable=False,
             server_default=sa.text("'[]'::jsonb"),
         ),
-        sa.Column("created_at", sa.Float(), nullable=False),
+        sa.Column(
+            "created_at",
+            sa.Float(),
+            nullable=False,
+            server_default=sa.text("EXTRACT(EPOCH FROM now())"),
+        ),
     )
     op.create_table(
         "catalog_family_backgrounds",
@@ -110,7 +115,12 @@ def upgrade() -> None:
             nullable=False,
             server_default=sa.text("'[]'::jsonb"),
         ),
-        sa.Column("created_at", sa.Float(), nullable=False),
+        sa.Column(
+            "created_at",
+            sa.Float(),
+            nullable=False,
+            server_default=sa.text("EXTRACT(EPOCH FROM now())"),
+        ),
     )
     op.create_table(
         "catalog_spirit_roots",
@@ -127,7 +137,12 @@ def upgrade() -> None:
             nullable=False,
             server_default=sa.text("'[]'::jsonb"),
         ),
-        sa.Column("created_at", sa.Float(), nullable=False),
+        sa.Column(
+            "created_at",
+            sa.Float(),
+            nullable=False,
+            server_default=sa.text("EXTRACT(EPOCH FROM now())"),
+        ),
     )
     op.create_table(
         "catalog_difficulties",
@@ -138,7 +153,12 @@ def upgrade() -> None:
         sa.Column("lifespan_modifier", sa.Float(), nullable=False, server_default="1.0"),
         sa.Column("luck_modifier", sa.Float(), nullable=False, server_default="0"),
         sa.Column("description", sa.Text(), nullable=False, server_default=""),
-        sa.Column("created_at", sa.Float(), nullable=False),
+        sa.Column(
+            "created_at",
+            sa.Float(),
+            nullable=False,
+            server_default=sa.text("EXTRACT(EPOCH FROM now())"),
+        ),
     )
     op.create_table(
         "catalog_story_seeds",
@@ -152,7 +172,12 @@ def upgrade() -> None:
             nullable=False,
             server_default=sa.text("'[]'::jsonb"),
         ),
-        sa.Column("created_at", sa.Float(), nullable=False),
+        sa.Column(
+            "created_at",
+            sa.Float(),
+            nullable=False,
+            server_default=sa.text("EXTRACT(EPOCH FROM now())"),
+        ),
     )
     op.create_table(
         "run_achievements",
