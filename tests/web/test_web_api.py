@@ -7,6 +7,7 @@ from unittest.mock import patch
 from fastapi.testclient import TestClient
 
 from web.backend.app import create_app
+from web.backend.auth import hash_invite_code
 
 
 def _world_builder_result() -> dict:
@@ -85,15 +86,29 @@ def _runner(agent_name: str, *_args, **_kwargs):
     raise AssertionError(agent_name)
 
 
+def _register(client: TestClient, invite: str = "invite-code-123") -> dict:
+    return client.post(
+        "/api/auth/register",
+        json={"username": "player", "password": "password-123", "invite_code": invite},
+    ).json()["user"]
+
+
+def _create_invite(app, invite: str = "invite-code-123") -> None:
+    app.state.service.db.create_invite_code(hash_invite_code(invite), max_uses=10)
+
+
 def test_web_api_minimum_game_flow(tmp_path: Path, monkeypatch) -> None:
     monkeypatch.setenv("AGNES_API_KEY", "sk-test-web-api")
+    monkeypatch.setenv("SESSION_COOKIE_SECURE", "0")
     monkeypatch.setenv("AGENS_WEB_DB", str(tmp_path / "agens_web.sqlite3"))
     app = create_app(tmp_path / "agens_web.sqlite3")
     client = TestClient(app)
 
-    user = client.post("/api/users/login", json={"username": "local"}).json()
-    created = client.post("/api/sessions", json={"user_id": user["id"], "title": "测试局"}).json()
+    _create_invite(app)
+    user = _register(client)
+    created = client.post("/api/sessions", json={"user_id": "forged", "title": "测试局"}).json()
     session_id = created["session_id"]
+    assert created["user_id"] == user["id"]
 
     with patch("agens_novel.engine.game_engine.run_turn_sync", side_effect=_runner):
         started = client.post(
@@ -139,8 +154,11 @@ def test_web_api_minimum_game_flow(tmp_path: Path, monkeypatch) -> None:
 
 def test_web_save_load_restores_snapshot_and_chat_history(tmp_path: Path, monkeypatch) -> None:
     monkeypatch.setenv("AGNES_API_KEY", "sk-test-web-api")
+    monkeypatch.setenv("SESSION_COOKIE_SECURE", "0")
     app = create_app(tmp_path / "agens_web.sqlite3")
     client = TestClient(app)
+    _create_invite(app)
+    _register(client)
     session_id = client.post("/api/sessions", json={}).json()["session_id"]
 
     with patch("agens_novel.engine.game_engine.run_turn_sync", side_effect=_runner):
@@ -158,8 +176,11 @@ def test_web_save_load_restores_snapshot_and_chat_history(tmp_path: Path, monkey
 
 def test_web_model_failure_exposes_fallback_and_can_end(tmp_path: Path, monkeypatch) -> None:
     monkeypatch.delenv("AGNES_API_KEY", raising=False)
+    monkeypatch.setenv("SESSION_COOKIE_SECURE", "0")
     app = create_app(tmp_path / "agens_web.sqlite3")
     client = TestClient(app)
+    _create_invite(app)
+    _register(client)
     session_id = client.post("/api/sessions", json={}).json()["session_id"]
 
     started = client.post(f"/api/sessions/{session_id}/start", json={"char_name": "许满"}).json()
@@ -179,8 +200,14 @@ def test_web_model_failure_exposes_fallback_and_can_end(tmp_path: Path, monkeypa
 
 
 def test_model_settings_never_returns_raw_api_key(tmp_path: Path, monkeypatch) -> None:
+    monkeypatch.setenv("SESSION_COOKIE_SECURE", "0")
+    monkeypatch.setenv("INVITE_ADMIN_CODE", "admin-invite-123")
     app = create_app(tmp_path / "agens_web.sqlite3")
     client = TestClient(app)
+    client.post(
+        "/api/auth/register",
+        json={"username": "admin", "password": "password-123", "invite_code": "admin-invite-123"},
+    )
     raw_key = "sk-test-web-secret-123456789"
     saved = client.post(
         "/api/settings/model",
@@ -194,3 +221,79 @@ def test_model_settings_never_returns_raw_api_key(tmp_path: Path, monkeypatch) -
     assert saved["api_key_set"] is True
     assert saved["api_key_masked"] != raw_key
     assert raw_key not in json.dumps(saved, ensure_ascii=False)
+
+
+def test_post_model_settings_rejects_oversized_field(tmp_path: Path) -> None:
+    """F-002: 四个字段均有 max_length 约束。超长值必须返回 422。"""
+    app = create_app(tmp_path / "agens_web.sqlite3")
+    client = TestClient(app)
+    app.state.service.db.create_user("admin", "hash", is_admin=True)
+    token = __import__("web.backend.auth", fromlist=["create_session_token"]).create_session_token(
+        app.state.service.db.get_user_by_username("admin")["id"]
+    )
+    client.cookies.set("agens_session", token)
+    cases = [
+        ("provider", "x" * 200),
+        ("base_url", "https://" + "a" * 600),
+        ("model", "m" * 300),
+        ("api_key", "k" * 1024),
+    ]
+    for field, oversize_value in cases:
+        payload = {
+            "provider": "Agens",
+            "base_url": "https://apihub.agnes-ai.com/v1",
+            "model": "agnes-2.0-flash",
+            "api_key": "",
+        }
+        payload[field] = oversize_value
+        resp = client.post("/api/settings/model", json=payload)
+        assert resp.status_code == 422, f"{field}: expected 422, got {resp.status_code}"
+        body = resp.text
+        assert field in body or "too_long" in body or "max_length" in body or "longer than" in body
+
+
+def test_invite_register_and_auth_required(tmp_path: Path, monkeypatch) -> None:
+    monkeypatch.setenv("SESSION_COOKIE_SECURE", "0")
+    app = create_app(tmp_path / "agens_web.sqlite3")
+    client = TestClient(app)
+
+    assert client.post("/api/sessions", json={}).status_code == 401
+    _create_invite(app, "valid-invite-123")
+    bad = client.post(
+        "/api/auth/register",
+        json={"username": "bad", "password": "password-123", "invite_code": "wrong-code"},
+    )
+    assert bad.status_code == 400
+
+    ok = client.post(
+        "/api/auth/register",
+        json={"username": "player", "password": "password-123", "invite_code": "valid-invite-123"},
+    )
+    assert ok.status_code == 200
+    assert ok.json()["user"]["username"] == "player"
+    assert client.post("/api/sessions", json={}).status_code == 200
+
+
+def test_legacy_local_login_route_is_removed(tmp_path: Path) -> None:
+    app = create_app(tmp_path / "agens_web.sqlite3")
+    client = TestClient(app)
+    assert client.post("/api/users/login", json={"username": "local"}).status_code == 404
+
+
+def test_user_cannot_access_another_users_session(tmp_path: Path, monkeypatch) -> None:
+    monkeypatch.setenv("SESSION_COOKIE_SECURE", "0")
+    app = create_app(tmp_path / "agens_web.sqlite3")
+    client_a = TestClient(app)
+    client_b = TestClient(app)
+    app.state.service.db.create_invite_code(hash_invite_code("invite-a-123"), max_uses=1)
+    app.state.service.db.create_invite_code(hash_invite_code("invite-b-123"), max_uses=1)
+    client_a.post(
+        "/api/auth/register",
+        json={"username": "user_a", "password": "password-123", "invite_code": "invite-a-123"},
+    )
+    client_b.post(
+        "/api/auth/register",
+        json={"username": "user_b", "password": "password-123", "invite_code": "invite-b-123"},
+    )
+    session_id = client_a.post("/api/sessions", json={}).json()["session_id"]
+    assert client_b.get(f"/api/sessions/{session_id}").status_code == 403

@@ -8,6 +8,7 @@
 - `docs/WEB_ITERATION_PLAN.md`：Web-only 迭代计划和保留/删除清单。
 - `docs/PROJECT_AUDIT.md`：当前结构边界、技术债和瘦身方向。
 - `docs/RUNTIME_FLOW.md`：当前核心业务逻辑和代码调用链。
+- `docs/FOLLOWUPS.md`：Claude Code 可做遗留项清单（P0/P1/P2 分级与 e2e 能力说明）。
 
 ## 按任务读取
 
@@ -17,6 +18,7 @@
 | 理解项目边界或做架构审核 | `docs/PROJECT_AUDIT.md` |
 | 分析游戏运行流程 | `docs/RUNTIME_FLOW.md` |
 | 安全与密钥边界 | `docs/security.md`、`AGENTS.md` |
+| 接手遗留项 / 评估下一步 | `docs/FOLLOWUPS.md` |
 | Agent 提示词或调用链 | `config/prompts/system/*.md`、`src/agens_novel/agents/` |
 
 ## 当前执行边界
@@ -25,3 +27,4 @@
 - 当前产品入口是浏览器 UI + FastAPI 后端。
 - 默认模型仍是 Agens；DeepSeek 只是可选测试项。
 - API key 只允许由后端读取、保存或脱敏展示，不写入仓库、前端包或日志。
+- 真实浏览器 e2e 在 Claude Code 工具范围内不可达；详见 `docs/FOLLOWUPS.md` 末尾说明。

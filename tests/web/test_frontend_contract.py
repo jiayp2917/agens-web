@@ -14,6 +14,7 @@ def test_frontend_contains_required_web_views() -> None:
         'id="characterView"',
         'id="gameView"',
         'id="endingView"',
+        'id="authButton"',
         'id="settingsButton"',
         'id="modalCloseButton"',
         'id="choices"',
@@ -50,3 +51,89 @@ def test_frontend_exposes_fallback_choice_without_hidden_rule() -> None:
     assert "/end" in js
     assert "fallback_prompt" in js
     assert "结束本局" in js
+
+
+def test_frontend_uses_cookie_auth_not_legacy_local_login() -> None:
+    js = (ROOT / "web" / "frontend" / "app.js").read_text(encoding="utf-8")
+    assert "/api/auth/login" in js
+    assert "/api/auth/register" in js
+    assert 'credentials: "include"' in js
+    assert "/api/users/login" not in js
+
+
+# ====================== F-003 / F-101 / F-102 / F-104 / F-205 契约 ======================
+
+
+def _escape_html(value: str) -> str:
+    """Python 镜像实现，与 app.js 内 escapeHtml 完全等价。"""
+    return (
+        value.replace("&", "&amp;")
+        .replace("<", "&lt;")
+        .replace(">", "&gt;")
+        .replace('"', "&quot;")
+        .replace("'", "&#039;")
+    )
+
+
+def test_frontend_escapes_xss_in_choice_text() -> None:
+    """F-003: renderChoices 对 choice 文本调用 escapeHtml，恶意串必须被转义。"""
+    js = (ROOT / "web" / "frontend" / "app.js").read_text(encoding="utf-8")
+    # 1. 必须存在 escapeHtml + 实际被 renderChoices 调用
+    assert "function escapeHtml" in js
+    assert "escapeHtml(choice)" in js
+    # 2. 模拟一次渲染：手工调用与 JS 等价的 Python escapeHtml
+    malicious = '<img src=x onerror=alert(1)>'
+    rendered = _escape_html(malicious)
+    assert "&lt;img" in rendered
+    assert "<img" not in rendered
+    assert "alert(1)" in rendered  # 内容保留，只是标签被转义
+
+
+def test_frontend_dialog_uses_native_show_modal() -> None:
+    """F-101: 模态用 <dialog> + showModal()，浏览器原生支持 Esc 关闭。"""
+    js = (ROOT / "web" / "frontend" / "app.js").read_text(encoding="utf-8")
+    html = (ROOT / "web" / "frontend" / "index.html").read_text(encoding="utf-8")
+    assert '<dialog id="modal"' in html
+    assert "modal.showModal()" in js
+    # 浏览器原生 <dialog> 在按下 Esc 时自动关闭，无需 JS 监听器
+    # 这里只断言依赖关系
+
+
+def test_frontend_theme_toggle_wired_to_both_buttons() -> None:
+    """F-102: 主题切换必须同时驱动 #themeToggle 与 #themeToggleInline。"""
+    js = (ROOT / "web" / "frontend" / "app.js").read_text(encoding="utf-8")
+    html = (ROOT / "web" / "frontend" / "index.html").read_text(encoding="utf-8")
+    assert 'id="themeToggle"' in html
+    assert 'id="themeToggleInline"' in html
+    assert "THEME_CYCLE" in js
+    assert "applyTheme" in js
+    assert 'agens.theme' in js  # localStorage key
+    assert '#themeToggle' in js
+    assert '#themeToggleInline' in js
+
+
+def test_frontend_narrative_log_has_aria_describedby() -> None:
+    """F-104: narrativeLog 滚动区域必须有键盘提示。"""
+    html = (ROOT / "web" / "frontend" / "index.html").read_text(encoding="utf-8")
+    assert 'id="narrativeLog"' in html
+    assert 'id="narrativeLogHint"' in html
+    assert "aria-describedby=\"narrativeLogHint\"" in html
+
+
+def test_frontend_event_badges_locked() -> None:
+    """F-205: 11 个事件 badge 全部存在。"""
+    js = (ROOT / "web" / "frontend" / "app.js").read_text(encoding="utf-8")
+    for key in (
+        "narrative",
+        "status",
+        "info",
+        "error",
+        "loading",
+        "stream",
+        "combat",
+        "character_created",
+        "model_failure",
+        "game_over",
+        "finale",
+    ):
+        assert f"{key}:" in js, f"EVENT_BADGES 缺少 {key}"

@@ -36,6 +36,11 @@ runtime/**/*.log
 # Tool residues
 .workbuddy/
 .playwright-cli/
+web/frontend-react/node_modules/
+web/frontend-react/dist/
+web/frontend-react/*.tsbuildinfo
+web/frontend-react/vite.config.js
+web/frontend-react/vite.config.d.ts
 
 # Demo artifacts
 demo_*.jsonl

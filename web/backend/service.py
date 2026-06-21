@@ -137,30 +137,36 @@ class WebGameService:
         self._persist(runner, title=title)
         return runner.response()
 
-    def get_session(self, session_id: str) -> dict[str, Any]:
-        return self._runner(session_id).response()
+    def get_session(self, session_id: str, user_id: str | None = None) -> dict[str, Any]:
+        return self._runner(session_id, user_id=user_id).response()
 
-    def start_session(self, session_id: str, profile: dict[str, Any]) -> dict[str, Any]:
-        runner = self._runner(session_id)
+    def start_session(
+        self, session_id: str, profile: dict[str, Any], user_id: str | None = None
+    ) -> dict[str, Any]:
+        runner = self._runner(session_id, user_id=user_id)
         runner.engine.start_from_profile(self._normalize_profile(profile))
         self._persist(runner, title=runner.engine.game_session.char_name or "新局")
         return runner.response()
 
-    def choose(self, session_id: str, payload: dict[str, Any]) -> dict[str, Any]:
-        runner = self._runner(session_id)
+    def choose(
+        self, session_id: str, payload: dict[str, Any], user_id: str | None = None
+    ) -> dict[str, Any]:
+        runner = self._runner(session_id, user_id=user_id)
         action = self._choice_text(runner, payload)
         runner.engine.handle_action(action)
         self._persist(runner)
         return runner.response()
 
-    def act(self, session_id: str, action: str) -> dict[str, Any]:
-        runner = self._runner(session_id)
+    def act(self, session_id: str, action: str, user_id: str | None = None) -> dict[str, Any]:
+        runner = self._runner(session_id, user_id=user_id)
         runner.engine.handle_action(action)
         self._persist(runner)
         return runner.response()
 
-    def save(self, session_id: str, save_name: str = "slot_1") -> dict[str, Any]:
-        runner = self._runner(session_id)
+    def save(
+        self, session_id: str, save_name: str = "slot_1", user_id: str | None = None
+    ) -> dict[str, Any]:
+        runner = self._runner(session_id, user_id=user_id)
         save = self.db.save_game_slot(
             runner.user_id,
             save_name,
@@ -171,8 +177,10 @@ class WebGameService:
         self._persist(runner)
         return {"save": save, "session": runner.response()}
 
-    def load(self, session_id: str, save_name: str = "slot_1") -> dict[str, Any]:
-        runner = self._runner(session_id)
+    def load(
+        self, session_id: str, save_name: str = "slot_1", user_id: str | None = None
+    ) -> dict[str, Any]:
+        runner = self._runner(session_id, user_id=user_id)
         saved = self.db.load_save(runner.user_id, save_name)
         if saved is None:
             raise KeyError(f"存档不存在: {save_name}")
@@ -187,8 +195,10 @@ class WebGameService:
         self._persist(restored, title=restored.engine.game_session.char_name or saved["name"])
         return restored.response()
 
-    def end_session(self, session_id: str, reason: str = "玩家结束本局。") -> dict[str, Any]:
-        runner = self._runner(session_id)
+    def end_session(
+        self, session_id: str, reason: str = "玩家结束本局。", user_id: str | None = None
+    ) -> dict[str, Any]:
+        runner = self._runner(session_id, user_id=user_id)
         session = runner.engine.game_session
         session.game_over = True
         session.finale = False
@@ -238,12 +248,17 @@ class WebGameService:
         )
         return self.model_settings()
 
-    def _runner(self, session_id: str) -> WebRunner:
+    def _runner(self, session_id: str, user_id: str | None = None) -> WebRunner:
         if session_id in self.runners:
-            return self.runners[session_id]
+            runner = self.runners[session_id]
+            if user_id and runner.user_id != user_id:
+                raise PermissionError("无权访问该会话。")
+            return runner
         row = self.db.load_session(session_id)
         if row is None:
             raise KeyError(f"会话不存在: {session_id}")
+        if user_id and row["user_id"] != user_id:
+            raise PermissionError("无权访问该会话。")
         runner = WebRunner.from_snapshot(
             session_id=session_id,
             user_id=row["user_id"],
@@ -265,7 +280,7 @@ class WebGameService:
 
     def _ensure_user(self, user_id: str = "") -> dict[str, Any]:
         if user_id:
-            return {"id": user_id, "username": "local"}
+            return {"id": user_id, "username": "authenticated"}
         return self.login("local")
 
     def _normalize_profile(self, profile: dict[str, Any]) -> dict[str, Any]:

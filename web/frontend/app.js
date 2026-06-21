@@ -7,9 +7,16 @@ const state = {
   user: null,
   session: null,
   prevCharacter: null,
+  theme: "auto",
+  authModalOpen: false,
 };
 
+const THEME_KEY = "agens.theme";
+const THEME_CYCLE = ["auto", "light", "dark"];
+const THEME_LABELS = { auto: "自动", light: "浅色", dark: "深色" };
+
 const SAVE_SLOTS = ["slot_1", "slot_2", "slot_3", "slot_4", "slot_5"];
+const SAVE_SLOT_LABELS = { slot_1: "档位 1", slot_2: "档位 2", slot_3: "档位 3", slot_4: "档位 4", slot_5: "档位 5", autosave: "(自动)" };
 
 const EVENT_BADGES = {
   narrative: "剧情",
@@ -43,20 +50,24 @@ const appShell = document.querySelector("#app");
 /* ====================== 事件接线 ====================== */
 
 document.querySelector("#newGameButton").addEventListener("click", async () => {
+  if (!ensureAuthenticated()) return;
   state.session = null;
   state.prevCharacter = null;
   await ensureSession();
   showView("character");
 });
 
-document.querySelector("#loadHomeButton").addEventListener("click", () => showLoadDialog());
-
 document.querySelector("#tutorialButton").addEventListener("click", showTutorial);
 
-document.querySelector("#settingsButton").addEventListener("click", showSettings);
-document.querySelector("#gameSettingsButton").addEventListener("click", showSettings);
+document.querySelector("#settingsButton").addEventListener("click", () => showUnifiedSettings({ initialTab: "settings" }));
+document.querySelector("#gameSettingsButton").addEventListener("click", () => showUnifiedSettings({ initialTab: "settings" }));
 
 document.querySelector("#modalCloseButton").addEventListener("click", () => modal.close());
+
+document.querySelector("#authButton").addEventListener("click", () => {
+  if (state.user) showAccountModal();
+  else showAuthModal();
+});
 
 document.querySelector("#exitButton").addEventListener("click", () => {
   state.session = null;
@@ -67,14 +78,9 @@ document.querySelector("#exitButton").addEventListener("click", () => {
   notify("已返回首页。");
 });
 
-document.querySelector("#restartButton").addEventListener("click", () => {
-  state.session = null;
-  state.prevCharacter = null;
-  showView("character");
-});
-
-document.querySelector("#saveGameButton").addEventListener("click", () => showSaveDialog());
-document.querySelector("#loadGameButton").addEventListener("click", () => showLoadDialog());
+document.querySelector("#saveGameButton").addEventListener("click", () => showUnifiedSettings({ initialTab: "saves", mode: "save" }));
+document.querySelector("#loadGameButton").addEventListener("click", () => showUnifiedSettings({ initialTab: "saves", mode: "load" }));
+document.querySelector("#loadHomeButton").addEventListener("click", () => showUnifiedSettings({ initialTab: "saves", mode: "load" }));
 
 document.querySelectorAll("[data-nav]").forEach((button) => {
   button.addEventListener("click", () => {
@@ -112,6 +118,24 @@ document.querySelector("#randomAttributes").addEventListener("change", (event) =
 });
 
 document.querySelectorAll("#attributeInputs input[type='range']").forEach((input) => {
+  // 原生已支持 ArrowLeft/Right (±1)、ArrowUp/Down (±1)。
+  // 显式增强：Home/End 跳到边界，PageUp/PageDown ±10。
+  input.addEventListener("keydown", (event) => {
+    const step = 10;
+    let next = null;
+    if (event.key === "Home") next = Number(input.min || 0);
+    else if (event.key === "End") next = Number(input.max || 100);
+    else if (event.key === "PageUp") next = Number(input.value) + step;
+    else if (event.key === "PageDown") next = Number(input.value) - step;
+    if (next === null) return;
+    event.preventDefault();
+    const max = Number(input.max || 100);
+    const min = Number(input.min || 0);
+    input.value = String(Math.max(min, Math.min(max, next)));
+    const output = input.closest(".attr-row")?.querySelector("output");
+    if (output) output.textContent = String(input.value);
+    refreshCharacterPreview();
+  });
   input.addEventListener("input", () => {
     const output = input.closest(".attr-row")?.querySelector("output");
     if (output) output.textContent = String(input.value);
@@ -172,9 +196,22 @@ document.querySelector("#actionForm").addEventListener("submit", async (event) =
 
 document.querySelector("#narrativeLog").addEventListener("scroll", updateToTopVisibility);
 
+/* 主题切换（首页按钮 + 游戏页内联按钮） */
+
+["#themeToggle", "#themeToggleInline"].forEach((sel) => {
+  const button = document.querySelector(sel);
+  if (!button) return;
+  button.addEventListener("click", () => {
+    const idx = THEME_CYCLE.indexOf(state.theme);
+    const next = THEME_CYCLE[(idx + 1) % THEME_CYCLE.length];
+    applyTheme(next);
+  });
+});
+
 /* ====================== 启动 ====================== */
 
 async function init() {
+  loadTheme();
   // 默认随机属性开启 → 滑杆禁用
   document
     .querySelectorAll("#attributeInputs input[type='range']")
@@ -183,21 +220,96 @@ async function init() {
       input.disabled = true;
     });
   refreshCharacterPreview();
-  await login();
-  await loadModelSettings();
+  await loadCurrentUser();
+  updateAuthButton();
+  if (!state.user) {
+    showAuthModal();
+    return;
+  }
+  await loadModelSettings().catch(() => null);
+}
+
+/* ====================== 主题 ====================== */
+
+function loadTheme() {
+  try {
+    const stored = window.localStorage.getItem(THEME_KEY);
+    if (stored === "light" || stored === "dark") {
+      applyTheme(stored);
+      return;
+    }
+  } catch (_error) {
+    /* localStorage 不可用，忽略 */
+  }
+  applyTheme("auto");
+}
+
+function applyTheme(value) {
+  const next = THEME_CYCLE.includes(value) ? value : "auto";
+  state.theme = next;
+  const html = document.documentElement;
+  html.setAttribute("data-theme", next);
+  try {
+    if (next === "auto") {
+      window.localStorage.removeItem(THEME_KEY);
+    } else {
+      window.localStorage.setItem(THEME_KEY, next);
+    }
+  } catch (_error) {
+    /* 忽略 */
+  }
+  // 同步两个按钮的视觉态
+  ["#themeToggle", "#themeToggleInline"].forEach((sel) => {
+    const btn = document.querySelector(sel);
+    if (!btn) return;
+    btn.setAttribute("aria-pressed", next === "auto" ? "false" : "true");
+    const icon = btn.querySelector(".theme-toggle__icon");
+    if (icon) {
+      icon.classList.remove("theme-toggle__icon--auto", "theme-toggle__icon--light", "theme-toggle__icon--dark");
+      icon.classList.add(`theme-toggle__icon--${next}`);
+    }
+  });
+  const label = document.querySelector("#themeToggleLabel");
+  if (label) label.textContent = `当前：${THEME_LABELS[next]}`;
+}
+
+// 系统主题变化时仅在 auto 模式下响应
+if (window.matchMedia) {
+  const mq = window.matchMedia("(prefers-color-scheme: dark)");
+  const handler = () => {
+    if (state.theme === "auto") {
+      // 仅触发一次：CSS 会自动响应；这里只需确认 body 仍处于 auto 状态
+      document.documentElement.setAttribute("data-theme", "auto");
+    }
+  };
+  if (mq.addEventListener) mq.addEventListener("change", handler);
+  else if (mq.addListener) mq.addListener(handler);
 }
 
 /* ====================== 网络 ====================== */
 
-async function login() {
-  state.user = await api("/api/users/login", { method: "POST", body: { username: "local" } });
+async function loadCurrentUser() {
+  try {
+    const payload = await api("/api/auth/me", { authQuiet: true });
+    state.user = payload.user;
+  } catch (_error) {
+    state.user = null;
+  }
+}
+
+function ensureAuthenticated() {
+  if (state.user) return true;
+  showAuthModal();
+  notify("请先登录。");
+  return false;
 }
 
 async function ensureSession() {
+  if (!ensureAuthenticated()) throw new Error("请先登录。");
   if (state.session) return state.session;
   const session = await api("/api/sessions", {
     method: "POST",
-    body: { user_id: state.user?.id || "", title: "新局" },
+    body: { title: "新局" },
   });
   state.session = session;
   return session;
@@ -219,6 +331,7 @@ async function api(url, options = {}) {
   const init = {
     method: options.method || "GET",
     headers: { "Content-Type": "application/json" },
+    credentials: "include",
   };
   if (options.body !== undefined) init.body = JSON.stringify(options.body);
   const response = await fetch(url, init);
@@ -230,7 +343,12 @@ async function api(url, options = {}) {
     } catch (_error) {
       /* keep status text */
     }
-    notify(String(detail));
+    if (response.status === 401 && !options.authQuiet) {
+      state.user = null;
+      updateAuthButton();
+      showAuthModal();
+    }
+    if (!options.authQuiet) notifyError(String(detail));
     throw new Error(String(detail));
   }
   return response.json();
@@ -238,6 +356,13 @@ async function api(url, options = {}) {
 
 async function loadModelSettings() {
   return api("/api/settings/model");
+}
+
+function updateAuthButton() {
+  const button = document.querySelector("#authButton");
+  if (!button) return;
+  button.textContent = state.user ? `${state.user.username}` : "登录";
+  button.setAttribute("aria-label", state.user ? "账户" : "登录或注册");
 }
 
 /* ====================== 视图路由 ====================== */
@@ -458,23 +583,47 @@ function renderFallbackBanner(prompt) {
   if (!panel) return;
   const existing = panel.querySelector(".fallback-banner");
   if (existing) existing.remove();
-  if (!prompt || !prompt.active) return;
+  // 兜底未激活：清除页面 fallback 状态
+  if (!prompt || !prompt.active) {
+    document.body.classList.remove("is-fallback");
+    return;
+  }
+  document.body.classList.add("is-fallback");
 
   const banner = document.createElement("aside");
-  banner.className = "fallback-banner";
+  banner.className = "fallback-banner fallback-banner--hero";
   banner.setAttribute("role", "status");
+
+  const plaque = document.createElement("aside");
+  plaque.className = "fallback-plaque";
+  plaque.setAttribute("aria-hidden", "true");
+  plaque.innerHTML = `<span>浮生若梦</span>`;
+
+  const warningText = prompt.text || "模型暂不可用，当前以本地故事继续。";
   banner.innerHTML = `
-    <span class="fallback-banner__dot" aria-hidden="true"></span>
-    <span class="fallback-banner__text">${escapeHtml(prompt.text || "模型暂不可用，当前以本地故事兜底继续。")}</span>
-    <span class="fallback-banner__actions">
-      <button class="command-button ghost" id="fallbackContinueButton" type="button">继续本局</button>
-      <button class="command-button danger" id="fallbackEndButton" type="button">结束本局</button>
-    </span>
+    <div class="fallback-banner__row">
+      <span class="badge badge--model_failure">兜底</span>
+      <span class="fallback-banner__text">${escapeHtml(warningText)}</span>
+    </div>
+    <div class="fallback-banner__actions">
+      <button class="command-button ghost fallback-action" id="fallbackContinueButton" type="button">继续本局</button>
+      <button class="command-button danger fallback-action" id="fallbackEndButton" type="button">结束本局</button>
+    </div>
   `;
   panel.insertBefore(banner, panel.firstChild.nextSibling); // after toolbar
+  panel.insertBefore(plaque, panel.firstChild); // 浮生若梦 ribbon at very top
 
-  banner.querySelector("#fallbackContinueButton").addEventListener("click", () => {
-    notify("继续当前本地故事。");
+  banner.querySelector("#fallbackContinueButton").addEventListener("click", async () => {
+    if (!state.session) return;
+    const submit = document.querySelector("#fallbackContinueButton");
+    submit.classList.add("is-busy");
+    try {
+      await runTurn(`/api/sessions/${state.session.session_id}/action`, {
+        action: "继续本局",
+      });
+    } finally {
+      submit.classList.remove("is-busy");
+    }
   });
   banner.querySelector("#fallbackEndButton").addEventListener("click", async () => {
     if (!state.session) return;
@@ -491,29 +640,38 @@ function renderFallbackBanner(prompt) {
 /* ====================== 渲染：选项 ====================== */
 
 function renderChoices(choices) {
-  const container = document.querySelector("#choices");
-  if (!container) return;
-  container.innerHTML = choices
+  const html = choices
     .map((choice, index) => {
       const label = String.fromCharCode(65 + index);
       return `<button class="choice" type="button" data-choice-index="${index}" aria-label="${escapeAttr("选项 " + label + "：" + choice)}">
+        <span class="choice__art" aria-hidden="true"></span>
         <span class="choice-key" aria-hidden="true">${label}</span>
         <span class="choice-text">${escapeHtml(choice)}</span>
       </button>`;
     })
     .join("");
-  container.querySelectorAll("[data-choice-index]").forEach((button) => {
-    button.addEventListener("click", async () => {
-      if (!state.session) return;
-      button.classList.add("is-busy");
-      try {
-        await runTurn(
-          `/api/sessions/${state.session.session_id}/choice`,
-          { choice_index: Number(button.dataset.choiceIndex) }
-        );
-      } finally {
-        button.classList.remove("is-busy");
-      }
+  ["#choices", "#choicesSidebar"].forEach((sel) => {
+    const container = document.querySelector(sel);
+    if (!container) return;
+    container.innerHTML = html;
+    container.querySelectorAll("[data-choice-index]").forEach((button) => {
+      button.addEventListener("click", async () => {
+        if (!state.session) return;
+        // 双容器时同时给两个按钮加 busy
+        document
+          .querySelectorAll(`[data-choice-index="${button.dataset.choiceIndex}"]`)
+          .forEach((b) => b.classList.add("is-busy"));
+        try {
+          await runTurn(
+            `/api/sessions/${state.session.session_id}/choice`,
+            { choice_index: Number(button.dataset.choiceIndex) }
+          );
+        } finally {
+          document
+            .querySelectorAll(`[data-choice-index="${button.dataset.choiceIndex}"]`)
+            .forEach((b) => b.classList.remove("is-busy"));
+        }
+      });
     });
   });
 }
@@ -614,141 +772,356 @@ function showTutorial() {
   );
 }
 
-async function showSettings() {
-  const settings = await loadModelSettings();
-  openModal(
-    "设置",
-    `<form id="settingsForm">
-      <label><span>服务商</span><input name="provider" value="${escapeAttr(settings.provider || "Agens")}" /></label>
-      <label><span>Base URL</span><input name="base_url" value="${escapeAttr(settings.base_url || "")}" /></label>
-      <label><span>模型</span><input name="model" value="${escapeAttr(settings.model || "")}" /></label>
+async function showUnifiedSettings({ initialTab = "settings", mode = "save" } = {}) {
+  if (!ensureAuthenticated()) return;
+  let settings = {};
+  let settingsError = "";
+  let saves = [];
+  try {
+    settings = await loadModelSettings();
+  } catch (error) {
+    settingsError = error.message || "只有管理员可以管理模型设置。";
+  }
+  try {
+    await ensureSession();
+    saves = await api("/api/saves");
+  } catch (_error) {
+    /* 存档未加载；表格为空 */
+  }
+
+  // 把存档按 slot 名归并
+  const saveBySlot = {};
+  saves.forEach((s) => {
+    saveBySlot[s.name] = s;
+  });
+
+  const providerOptions = ["Agens", "OpenAI", "Anthropic", "Custom"]
+    .map(
+      (p) =>
+        `<option value="${escapeAttr(p)}" ${p === (settings.provider || "Agens") ? "selected" : ""}>${escapeHtml(p)}</option>`
+    )
+    .join("");
+
+  const settingsPane = settingsError
+    ? `
+    <div class="auth-note" role="status">
+      <strong>模型设置受保护</strong>
+      <p>${escapeHtml(settingsError)}</p>
+    </div>
+  `
+    : `
+    <form id="settingsForm" class="stack">
+      <label>
+        <span>服务商</span>
+        <select name="provider">${providerOptions}</select>
+      </label>
+      <label>
+        <span>Base URL</span>
+        <input name="base_url" type="url" value="${escapeAttr(settings.base_url || "")}" autocomplete="off" />
+      </label>
+      <label>
+        <span>模型</span>
+        <input name="model" type="text" value="${escapeAttr(settings.model || "")}" autocomplete="off" />
+      </label>
       <label>
         <span>API Key</span>
         <input name="api_key" type="password" autocomplete="off" placeholder="${escapeAttr(settings.api_key_masked || "<unset>")}" />
-        <span class="field-hint">当前 Key 状态：${settings.api_key_set ? "已配置" : "未配置"}，前端不会显示明文。</span>
+        <span class="field-hint">
+          当前 Key 状态：<span class="key-chip ${settings.api_key_set ? "is-set" : "is-empty"}">${settings.api_key_set ? "已配置" : "未配置"}</span>，前端不会显示明文。
+        </span>
       </label>
       <p class="muted-line">
         当前仅开放引导模式：A / B / C 由模型生成，D 为自由输入；
         <span aria-disabled="true">小说模式</span> 与
         <span aria-disabled="true">游戏模式</span> 暂不开放。
       </p>
-      <button id="settingsSubmit" class="command-button primary wide" type="submit">
+    </form>
+  `;
+
+  // 存档表：5 槽 + 自动槽
+  const allSlotNames = [...SAVE_SLOTS, "autosave"];
+  const savesRows = allSlotNames
+    .map((slotName) => {
+      const save = saveBySlot[slotName];
+      const empty = !save;
+      const label = SAVE_SLOT_LABELS[slotName] || slotName;
+      const cls = empty ? "saves-table__row is-empty" : "saves-table__row";
+      return `<div class="${cls}" data-slot="${escapeAttr(slotName)}" ${empty ? "" : `data-load-name="${escapeAttr(slotName)}"`} role="button" tabindex="0" aria-selected="false">
+        <div class="saves-table__cell">${escapeHtml(label)}</div>
+        <div class="saves-table__cell">${empty ? "—" : escapeHtml(save.char_name || "—")}</div>
+        <div class="saves-table__cell">${empty ? "—" : escapeHtml(save.realm || "—")}</div>
+        <div class="saves-table__cell">${empty ? "—" : escapeHtml(String(save.turn_count || 0))}</div>
+        <div class="saves-table__cell">${empty ? "—" : escapeHtml(save.updated_at || save.created_at || "—")}</div>
+      </div>`;
+    })
+    .join("");
+
+  const savesPane = `
+    <div class="saves-table" role="grid" aria-label="存档列表">
+      <div class="saves-table__row saves-table__head" role="row">
+        <div class="saves-table__cell" role="columnheader">档位</div>
+        <div class="saves-table__cell" role="columnheader">角色</div>
+        <div class="saves-table__cell" role="columnheader">境界</div>
+        <div class="saves-table__cell" role="columnheader">回合</div>
+        <div class="saves-table__cell" role="columnheader">更新时间</div>
+      </div>
+      ${savesRows}
+    </div>
+    <p class="field-hint">点击已存在的存档行直接读档；当前局未开始时不能存档。</p>
+  `;
+
+  const body = `
+    <div class="unified-tabs" role="tablist">
+      <button class="unified-tab ${initialTab === "settings" ? "is-active" : ""}" data-tab="settings" type="button" role="tab" aria-selected="${initialTab === "settings"}">设置</button>
+      <button class="unified-tab ${initialTab === "saves" ? "is-active" : ""}" data-tab="saves" type="button" role="tab" aria-selected="${initialTab === "saves"}">存档</button>
+    </div>
+    <div class="unified-pane ${initialTab === "settings" ? "is-active" : ""}" data-pane="settings">${settingsPane}</div>
+    <div class="unified-pane ${initialTab === "saves" ? "is-active" : ""}" data-pane="saves">${savesPane}</div>
+    <div class="unified-footer">
+      <button id="unifiedSaveButton" class="command-button primary" type="button" data-active-tab="${initialTab}">
         <span class="spinner" aria-hidden="true"></span>
-        <span class="label">保存设置</span>
+        <span class="label">${initialTab === "settings" ? "保存设置" : "保存到选中档"}</span>
       </button>
-    </form>`
-  );
-  document.querySelector("#settingsForm").addEventListener("submit", async (event) => {
-    event.preventDefault();
-    const submit = document.querySelector("#settingsSubmit");
-    submit.classList.add("is-busy");
-    try {
-      const form = new FormData(event.currentTarget);
-      const saved = await api("/api/settings/model", {
-        method: "POST",
-        body: {
-          provider: text(form.get("provider")),
-          base_url: text(form.get("base_url")),
-          model: text(form.get("model")),
-          api_key: text(form.get("api_key")),
-        },
+      <button class="command-button ghost" data-close-modal type="button">关闭</button>
+    </div>
+  `;
+
+  openModal("设置与存档", body);
+
+  // Tab 切换
+  document.querySelectorAll(".unified-tab").forEach((tab) => {
+    tab.addEventListener("click", () => {
+      const target = tab.dataset.tab;
+      document.querySelectorAll(".unified-tab").forEach((t) => {
+        const active = t === tab;
+        t.classList.toggle("is-active", active);
+        t.setAttribute("aria-selected", active ? "true" : "false");
       });
-      notify(`设置已保存：${saved.provider} / ${saved.model}`);
-      modal.close();
-    } finally {
-      submit.classList.remove("is-busy");
-    }
-  });
-}
-
-async function showSaveDialog() {
-  if (!state.session) return notify("尚未创建会话。");
-  const slotsHtml = SAVE_SLOTS.map(
-    (slot, idx) => `<button class="save-slot ${idx === 0 ? "is-active" : ""}" type="button" data-slot="${escapeAttr(slot)}">
-      <strong>${escapeHtml(slot.replace("_", " "))}</strong>
-      <span>档位 ${idx + 1}</span>
-    </button>`
-  ).join("");
-
-  openModal(
-    "存档",
-    `<form id="saveForm">
-      <fieldset class="form-section">
-        <legend>选择档位</legend>
-        <div class="save-slots" role="radiogroup" aria-label="存档档位">${slotsHtml}</div>
-        <label>
-          <span>备注（可选）</span>
-          <input name="note" type="text" autocomplete="off" placeholder="例如：第三回合前" />
-          <span class="field-hint">备注仅在本机显示，不写入档名。</span>
-        </label>
-      </fieldset>
-      <button id="saveSubmit" class="command-button primary wide" type="submit">
-        <span class="spinner" aria-hidden="true"></span>
-        <span class="label">保存</span>
-      </button>
-    </form>`
-  );
-
-  let selectedSlot = SAVE_SLOTS[0];
-  document.querySelectorAll("[data-slot]").forEach((button) => {
-    button.addEventListener("click", () => {
-      selectedSlot = button.dataset.slot;
-      document.querySelectorAll("[data-slot]").forEach((b) =>
-        b.classList.toggle("is-active", b === button)
-      );
+      document.querySelectorAll(".unified-pane").forEach((p) => {
+        p.classList.toggle("is-active", p.dataset.pane === target);
+      });
+      const saveBtn = document.querySelector("#unifiedSaveButton");
+      if (saveBtn) {
+        saveBtn.dataset.activeTab = target;
+        const label = saveBtn.querySelector(".label");
+        if (label) label.textContent = target === "settings" ? "保存设置" : "保存到选中档";
+      }
     });
   });
 
-  document.querySelector("#saveForm").addEventListener("submit", async (event) => {
-    event.preventDefault();
-    const submit = document.querySelector("#saveSubmit");
-    submit.classList.add("is-busy");
+  // 关闭
+  document.querySelectorAll("[data-close-modal]").forEach((b) =>
+    b.addEventListener("click", () => modal.close())
+  );
+
+  // 保存（按当前 tab）
+  const saveButton = document.querySelector("#unifiedSaveButton");
+  saveButton.addEventListener("click", async () => {
+    const activeTab = saveButton.dataset.activeTab;
+    saveButton.classList.add("is-busy");
     try {
-      const note = text(new FormData(event.currentTarget).get("note"));
-      const result = await api(`/api/sessions/${state.session.session_id}/save`, {
-        method: "POST",
-        body: { name: selectedSlot },
-      });
-      state.session = result.session;
-      renderSession(state.session);
-      notify(note ? `已保存：${result.save.name} · ${note}` : `已保存：${result.save.name}`);
-      modal.close();
+      if (activeTab === "settings") {
+        const settingsForm = document.querySelector("#settingsForm");
+        if (!settingsForm) {
+          notify("只有管理员可以保存模型设置。");
+          return;
+        }
+        const form = new FormData(settingsForm);
+        const saved = await api("/api/settings/model", {
+          method: "POST",
+          body: {
+            provider: text(form.get("provider")),
+            base_url: text(form.get("base_url")),
+            model: text(form.get("model")),
+            api_key: text(form.get("api_key")),
+          },
+        });
+        notify(`设置已保存：${saved.provider} / ${saved.model}`);
+      } else if (activeTab === "saves") {
+        if (!state.session) {
+          notify("尚未创建会话，无法存档。");
+          return;
+        }
+        if (mode === "load") {
+          notify("当前是读档页；如需存档，请切换到上一局后使用存档。");
+          return;
+        }
+        const selectedSlot = document.querySelector("[data-slot].is-active")?.dataset.slot;
+        // 默认选第一个空槽
+        const slotName = selectedSlot || SAVE_SLOTS[0];
+        const result = await api(`/api/sessions/${state.session.session_id}/save`, {
+          method: "POST",
+          body: { name: slotName },
+        });
+        state.session = result.session;
+        renderSession(state.session);
+        notify(`已保存：${result.save.name}`);
+      }
     } finally {
-      submit.classList.remove("is-busy");
+      saveButton.classList.remove("is-busy");
     }
   });
-}
 
-async function showLoadDialog() {
-  await ensureSession();
-  const saves = await api(`/api/saves?user_id=${encodeURIComponent(state.user?.id || "")}`);
-  const body = saves.length
-    ? `<div class="save-list">${saves
-        .map(
-          (save) =>
-            `<button class="command-button save-list-row" type="button" data-load-name="${escapeAttr(save.name)}">
-              <span>
-                <span class="meta"><strong>${escapeHtml(save.name)}</strong> · ${escapeHtml(save.char_name || "?")} · ${escapeHtml(save.realm || "?")}</span>
-                <span class="meta">回合 ${save.turn_count || 0}</span>
-              </span>
-              <span class="turn">${save.turn_count || 0}</span>
-            </button>`
-        )
-        .join("")}</div>`
-    : `<p class="muted-line">暂无存档。先开始一局并保存。</p>`;
-  openModal("读档", body);
-  document.querySelectorAll("[data-load-name]").forEach((button) => {
-    button.addEventListener("click", async () => {
+  // 存档行选择
+  document.querySelectorAll(".saves-table__row[data-slot]").forEach((row) => {
+    row.addEventListener("click", () => selectSaveRow(row));
+    row.addEventListener("keydown", (e) => {
+      if (e.key === "Enter" || e.key === " ") {
+        e.preventDefault();
+        selectSaveRow(row);
+      }
+    });
+  });
+
+  // 读档行点击
+  document.querySelectorAll(".saves-table__row[data-load-name]").forEach((row) => {
+    const handler = async () => {
+      if (mode !== "load") return;
+      if (!state.session) {
+        await ensureSession();
+      }
       const session = await api(`/api/sessions/${state.session.session_id}/load`, {
         method: "POST",
-        body: { name: button.dataset.loadName },
+        body: { name: row.dataset.loadName },
       });
       state.session = session;
       state.prevCharacter = null;
       renderSession(session);
       modal.close();
       showView("game");
+    };
+    row.addEventListener("dblclick", handler);
+    row.addEventListener("keydown", (e) => {
+      if (mode === "load" && e.key === "Enter") {
+        e.preventDefault();
+        handler();
+      }
     });
+  });
+}
+
+function selectSaveRow(row) {
+  document.querySelectorAll(".saves-table__row[data-slot]").forEach((item) => {
+    const selected = item === row;
+    item.classList.toggle("is-active", selected);
+    item.setAttribute("aria-selected", selected ? "true" : "false");
+  });
+}
+
+function showAuthModal() {
+  state.authModalOpen = true;
+  const body = `
+    <div class="auth-layout">
+      <form id="loginForm" class="auth-card stack">
+        <div>
+          <p class="eyebrow">登录</p>
+          <h3>继续修行</h3>
+        </div>
+        <label>
+          <span>用户名</span>
+          <input name="username" type="text" autocomplete="username" required minlength="2" maxlength="40" />
+        </label>
+        <label>
+          <span>密码</span>
+          <input name="password" type="password" autocomplete="current-password" required />
+        </label>
+        <button class="command-button primary" type="submit">
+          <span class="spinner" aria-hidden="true"></span>
+          <span class="label">登录</span>
+        </button>
+      </form>
+      <form id="registerForm" class="auth-card stack">
+        <div>
+          <p class="eyebrow">邀请码注册</p>
+          <h3>创建道号</h3>
+        </div>
+        <label>
+          <span>用户名</span>
+          <input name="username" type="text" autocomplete="username" required minlength="2" maxlength="40" />
+        </label>
+        <label>
+          <span>密码</span>
+          <input name="password" type="password" autocomplete="new-password" required minlength="8" />
+        </label>
+        <label>
+          <span>邀请码</span>
+          <input name="invite_code" type="password" autocomplete="off" required minlength="8" />
+        </label>
+        <button class="command-button" type="submit">
+          <span class="spinner" aria-hidden="true"></span>
+          <span class="label">注册并登录</span>
+        </button>
+      </form>
+    </div>
+  `;
+  openModal("登录 / 注册", body);
+
+  document.querySelector("#loginForm").addEventListener("submit", async (event) => {
+    event.preventDefault();
+    const button = event.currentTarget.querySelector("button");
+    button.classList.add("is-busy");
+    try {
+      const form = new FormData(event.currentTarget);
+      const payload = await api("/api/auth/login", {
+        method: "POST",
+        body: {
+          username: text(form.get("username")),
+          password: String(form.get("password") || ""),
+        },
+      });
+      state.user = payload.user;
+      updateAuthButton();
+      modal.close();
+      notify("已登录。");
+    } finally {
+      button.classList.remove("is-busy");
+    }
+  });
+
+  document.querySelector("#registerForm").addEventListener("submit", async (event) => {
+    event.preventDefault();
+    const button = event.currentTarget.querySelector("button");
+    button.classList.add("is-busy");
+    try {
+      const form = new FormData(event.currentTarget);
+      const payload = await api("/api/auth/register", {
+        method: "POST",
+        body: {
+          username: text(form.get("username")),
+          password: String(form.get("password") || ""),
+          invite_code: String(form.get("invite_code") || ""),
+        },
+      });
+      state.user = payload.user;
+      updateAuthButton();
+      modal.close();
+      notify("已注册并登录。");
+    } finally {
+      button.classList.remove("is-busy");
+    }
+  });
+}
+
+function showAccountModal() {
+  const username = state.user?.username || "未登录";
+  const role = state.user?.is_admin ? "管理员" : "玩家";
+  openModal(
+    "账户",
+    `<div class="stack">
+      <p class="auth-note"><strong>${escapeHtml(username)}</strong><br /><span>${escapeHtml(role)}</span></p>
+      <button id="logoutButton" class="command-button danger" type="button">退出登录</button>
+    </div>`
+  );
+  document.querySelector("#logoutButton").addEventListener("click", async () => {
+    await api("/api/auth/logout", { method: "POST", body: {} });
+    state.user = null;
+    state.session = null;
+    state.prevCharacter = null;
+    updateAuthButton();
+    renderSession(null);
+    modal.close();
+    showView("home");
+    notify("已退出登录。");
   });
 }
 
@@ -768,6 +1141,23 @@ function notify(message) {
   toast.textContent = message;
   toast.classList.add("is-visible");
   window.setTimeout(() => toast.classList.remove("is-visible"), 3200);
+}
+
+function notifyError(message) {
+  // F-109: 错误信息用 assertive live region，screen reader 立即打断当前朗读
+  const errEl = document.querySelector("#toastError");
+  if (!errEl) {
+    // 后备：退回普通 toast
+    notify(message);
+    return;
+  }
+  errEl.textContent = message;
+  errEl.removeAttribute("hidden");
+  errEl.classList.add("is-visible");
+  window.setTimeout(() => {
+    errEl.classList.remove("is-visible");
+    errEl.setAttribute("hidden", "");
+  }, 4500);
 }
 
 function setBusy(busy) {

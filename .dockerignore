@@ -17,4 +17,8 @@ runtime
 build
 dist
 *.egg-info
-
+web/frontend-react/node_modules
+web/frontend-react/dist
+web/frontend-react/*.tsbuildinfo
+web/frontend-react/vite.config.js
+web/frontend-react/vite.config.d.ts

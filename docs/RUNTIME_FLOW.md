@@ -24,14 +24,16 @@ http://127.0.0.1:8000/
    - Web 端不执行“关闭程序”，结束按钮只清理当前前端状态并返回首页。
 
 2. 设置
-   - `GET /api/settings/model` 返回脱敏模型配置。
-   - `POST /api/settings/model` 更新 provider、base_url、model 和可选 API key。
-   - API key 只进入当前后端进程环境和 SQLite 脱敏摘要，不返回前端明文。
+   - `GET /api/settings/model` 返回脱敏模型配置，仅管理员可访问。
+   - `POST /api/settings/model` 更新 provider、base_url、model 和可选 API key，仅管理员可访问。
+   - API key 只进入当前后端进程环境和数据库脱敏摘要，不返回前端明文。
 
 3. 会话
-   - `POST /api/users/login` 创建或读取本地用户。
+   - `POST /api/auth/register` 使用邀请码注册。
+   - `POST /api/auth/login` 登录并设置 HttpOnly Session Cookie。
+   - `GET /api/auth/me` 读取当前登录用户。
    - `POST /api/sessions` 创建 Web 会话，后端为该会话持有一个 `GameEngine` runner。
-   - 会话快照写入 SQLite，可在服务重启后从数据库恢复。
+   - 会话快照写入数据库，可在服务重启后从数据库恢复。
 
 4. 角色创建
    - 前端角色页提交游戏名称、角色名、天赋、灵根、家世、难度和属性。
@@ -46,8 +48,8 @@ http://127.0.0.1:8000/
    - API 响应统一返回叙事事件、角色状态、世界状态、A/B/C、回合数和终局状态。
 
 6. 存读档
-   - `POST /api/sessions/{id}/save` 将当前 `GameSession.to_save_dict()`、事件和 chat_history 写入 SQLite。
-   - `POST /api/sessions/{id}/load` 从 SQLite 还原 `GameSession.from_save_dict()`。
+   - `POST /api/sessions/{id}/save` 将当前 `GameSession.to_save_dict()`、事件和 chat_history 写入数据库。
+   - `POST /api/sessions/{id}/load` 从数据库还原 `GameSession.from_save_dict()`。
    - `GET /api/saves` 返回当前用户存档摘要。
 
 7. 结束本局
@@ -63,7 +65,7 @@ Browser UI
   -> GameEngine
   -> World Builder / Narrator / Judge
   -> GameSession.apply_delta()
-  -> SQLite snapshots / saves
+  -> SQLite or PostgreSQL snapshots / saves
   -> Browser UI
 ```
 
@@ -72,6 +74,8 @@ Browser UI
 - Web 前端只调用 API，不直接修改 `GameSession`。
 - `GameEngine` 仍是唯一游戏逻辑入口。
 - API key 不进入前端包、日志、文档或 Git。
+- 外网首版为邀请码注册 + HttpOnly Cookie 登录。
+- 生产数据库通过 `DATABASE_BACKEND=postgresql` 和 `DATABASE_URL` 接入。
 - 首期只开放引导模式：A/B/C 模型选项 + D 自由输入。
 - 境界顺序固定为：练气、筑基、金丹、元婴、化神、合体、大乘、渡劫、飞升。
 

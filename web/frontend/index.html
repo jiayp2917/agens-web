@@ -9,15 +9,30 @@
       href='data:image/svg+xml,<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64"><rect width="64" height="64" rx="12" fill="%230e7c7b"/><path d="M16 44c14-1 22-9 28-24 3 14-1 26-13 31-7 3-12 1-15-7Z" fill="%23fbf6ea"/></svg>'
     />
     <link rel="stylesheet" href="/static/styles.css" />
+    <link rel="preload" as="image" href="/static/assets/game_desktop_bg.png" />
   </head>
-  <body>
+  <body data-theme="auto">
     <a class="skip-link" href="#app">跳到游戏内容</a>
     <main id="app" class="app-shell" aria-live="polite">
       <!-- ====================== 首页 ====================== -->
       <section id="homeView" class="view view-home is-active" aria-labelledby="homeTitle">
         <div class="home-topbar">
           <span class="brand-mark">agens<span class="brand-dot" aria-hidden="true">·</span>web</span>
-          <span class="brand-version" aria-hidden="true">v0.1 · web</span>
+          <div class="home-topbar__right">
+            <span class="brand-version" aria-hidden="true">v0.1 · web</span>
+            <button id="authButton" class="text-button auth-button" type="button">登录</button>
+            <button
+              id="themeToggle"
+              class="icon-button theme-toggle"
+              type="button"
+              aria-pressed="false"
+              aria-label="切换主题"
+              title="切换主题"
+            >
+              <span class="theme-toggle__icon theme-toggle__icon--auto" aria-hidden="true"></span>
+              <span id="themeToggleLabel" class="sr-only">当前：自动</span>
+            </button>
+          </div>
         </div>
         <div class="home-content">
           <p class="home-eyebrow">Web · 文字修仙模拟器</p>
@@ -270,9 +285,21 @@
               <h2 id="gameTitle">尚未开局</h2>
               <p id="characterSummary" class="muted-line">等待角色创建</p>
             </div>
-            <div class="turn-counter" aria-label="回合数">
-              <span>回合</span>
-              <strong id="turnCount">0</strong>
+            <div class="game-header__right">
+              <div class="turn-counter" aria-label="回合数">
+                <span>回合</span>
+                <strong id="turnCount">0</strong>
+              </div>
+              <button
+                id="themeToggleInline"
+                class="icon-button theme-toggle theme-toggle--inline"
+                type="button"
+                aria-pressed="false"
+                aria-label="切换主题"
+                title="切换主题"
+              >
+                <span class="theme-toggle__icon theme-toggle__icon--auto" aria-hidden="true"></span>
+              </button>
             </div>
           </header>
 
@@ -348,7 +375,6 @@
                   <button id="saveGameButton" type="button">存档</button>
                   <button id="loadGameButton" type="button">读档</button>
                   <button id="gameSettingsButton" type="button">设置</button>
-                  <button id="restartButton" type="button">重新开始</button>
                 </div>
               </section>
             </nav>
@@ -362,9 +388,21 @@
                 <span class="spinner" aria-hidden="true"></span>
                 <span>天道推演中…</span>
               </p>
-              <div id="narrativeLog" class="narrative-log" tabindex="0" aria-live="polite"></div>
-              <div id="choices" class="choices" role="group" aria-label="A B C 选项"></div>
+              <p id="narrativeLogHint" class="sr-only">使用 Page Down 滚动叙事，Tab 切换到输入框。</p>
+              <div id="narrativeLog" class="narrative-log" tabindex="0" aria-live="polite" aria-describedby="narrativeLogHint"></div>
+              <div class="narrative-choices">
+                <div id="choices" class="choices" role="group" aria-label="A B C 选项"></div>
+              </div>
             </section>
+
+            <aside class="choices-rail" aria-label="选择栏">
+              <div class="choices-rail__art" aria-hidden="true"></div>
+              <div class="choices-rail__heading">
+                <span class="eyebrow">选择</span>
+                <span class="muted-line">天道推演后将呈现 A B C 三个选项。</span>
+              </div>
+              <div id="choicesSidebar" class="choices choices--sidebar" role="group" aria-label="A B C 选项（侧栏）"></div>
+            </aside>
           </div>
 
           <form id="actionForm" class="action-bar">
@@ -435,6 +473,7 @@
     </dialog>
 
     <div id="toast" class="toast" role="status" aria-live="polite"></div>
+    <div id="toastError" class="toast toast--error" role="alert" aria-live="assertive" hidden></div>
     <script src="/static/app.js" defer></script>
   </body>
 </html>
