@@ -1,12 +1,14 @@
 # Web-only 迭代计划
 
+> 说明：本文是早期 Web-only 迁移计划，保留作路线背景。当前权威状态以 `docs/RUNTIME_FLOW.md`、`docs/PROJECT_AUDIT.md` 和 `docs/security.md` 为准。
+
 ## 目标
 
 当前 `master` 是 Web-only 版本：保留核心游戏逻辑，提供浏览器 UI、FastAPI 后端、SQLite 数据库和 Web 验证。
 
 ## 一句话计划
 
-已移除移动端产品链路；保留 `src/agens_novel/` 的 GameEngine、Agent、LLM、Session、境界和规则；新增 `web/backend` FastAPI 接口、`web/frontend` 浏览器界面、SQLite 数据库、用户登录、会话存档、chat_history 和模型配置管理；验证改为后端 API 测试、核心引擎测试和浏览器端到端测试。
+已移除移动端产品链路；保留 `src/agens_novel/` 的 GameEngine、Agent、LLM、Session、境界和规则；新增 `web/backend` FastAPI 接口、React/Vite 主入口、旧 `web/frontend` fallback、SQLite/PostgreSQL 数据库、邀请码登录、会话存档、chat_history 和模型配置管理；验证改为后端 API 测试、核心引擎测试和前端契约/构建检查。
 
 ## 阶段
 

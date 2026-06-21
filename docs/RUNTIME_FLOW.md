@@ -93,8 +93,10 @@ Browser UI
 - 外网首版为访客新局 + 邀请码注册存档，登录态使用 HttpOnly Cookie。
 - 访客局必须持有服务端下发的 HttpOnly 访客 Cookie 才能继续操作该局。
 - 生产数据库通过 `DATABASE_BACKEND=postgresql` 和 `DATABASE_URL=postgresql+psycopg://...` 接入。
-- 生产 PostgreSQL schema 由 Alembic 迁移创建，应用启动不隐式建表。
+- 生产 PostgreSQL schema 由 Alembic 迁移创建，应用启动不隐式建表；catalog 和死亡奖励表也必须由迁移覆盖。
+- PostgreSQL 启动后可补充 catalog 种子数据，但不能依赖应用隐式建表。
 - 状态变更 API 需要同源/允许来源校验。
+- 生产模式关闭 `/docs`、`/redoc`、`/openapi.json`，并启用 Host 白名单。
 - 当前 Alpha 实现仍是引导模式：A/B/C 模型选项 + D 自由输入，支持访客新局 + 邀请码存档。游戏模式 v5 规格见 `docs/GAME_MODE_SPEC.md`。
 - 境界顺序固定为：练气、筑基、金丹、元婴、化神、合体、大乘、渡劫、飞升。
 

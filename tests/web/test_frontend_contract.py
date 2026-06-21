@@ -6,7 +6,7 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parents[2]
 
 
-def test_frontend_contains_required_web_views() -> None:
+def test_legacy_frontend_fallback_contains_required_web_views() -> None:
     html = (ROOT / "web" / "frontend" / "index.html").read_text(encoding="utf-8")
 
     for selector in (
@@ -31,7 +31,7 @@ def test_frontend_contains_required_web_views() -> None:
     assert "爽" + "文模式" not in html
 
 
-def test_frontend_does_not_embed_api_key_or_hidden_rules() -> None:
+def test_legacy_frontend_fallback_does_not_embed_api_key_or_hidden_rules() -> None:
     combined = "\n".join(
         [
             (ROOT / "web" / "frontend" / "index.html").read_text(encoding="utf-8"),
@@ -45,7 +45,7 @@ def test_frontend_does_not_embed_api_key_or_hidden_rules() -> None:
     assert "2917" not in combined
 
 
-def test_frontend_exposes_fallback_choice_without_hidden_rule() -> None:
+def test_legacy_frontend_fallback_exposes_fallback_choice_without_hidden_rule() -> None:
     js = (ROOT / "web" / "frontend" / "app.js").read_text(encoding="utf-8")
 
     assert "/end" in js
@@ -53,7 +53,7 @@ def test_frontend_exposes_fallback_choice_without_hidden_rule() -> None:
     assert "结束本局" in js
 
 
-def test_frontend_uses_cookie_auth_not_legacy_local_login() -> None:
+def test_legacy_frontend_fallback_uses_cookie_auth_not_legacy_local_login() -> None:
     js = (ROOT / "web" / "frontend" / "app.js").read_text(encoding="utf-8")
     assert "/api/auth/login" in js
     assert "/api/auth/register" in js
@@ -92,6 +92,17 @@ def test_react_homepage_buttons_have_handlers() -> None:
     assert "BgmToggle" in source
     assert "/assets/audio/bgm.flac" in source
     assert "agens web" not in source.lower()
+
+
+def test_react_turn_actions_disable_while_busy() -> None:
+    source = (ROOT / "web" / "frontend-react" / "src" / "main.tsx").read_text(encoding="utf-8")
+
+    assert "disabled={busy} onClick={() => runTurn(`/api/sessions/${session.session_id}/choice`" in source
+    assert "input disabled={busy}" in source
+    assert "FallbackBanner session={session} busy={busy} runTurn={runTurn}" in source
+    assert "function FallbackBanner({ session, busy, runTurn }" in source
+    assert "disabled={busy} onClick={() => runTurn(`/api/sessions/${session.session_id}/action`" in source
+    assert "disabled={busy} onClick={() => runTurn(`/api/sessions/${session.session_id}/end`" in source
 
 
 # ====================== F-003 / F-101 / F-102 / F-104 / F-205 契约 ======================

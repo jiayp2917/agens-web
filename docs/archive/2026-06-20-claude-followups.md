@@ -1,3 +1,6 @@
+> Archive note: historical Claude Code follow-up list from 2026-06-20.
+> Some items are already complete or superseded by the React-first Alpha path. Do not use this file as current project status.
+
 # Claude Code 可做遗留项 — agens-web
 
 最后更新: 2026-06-20

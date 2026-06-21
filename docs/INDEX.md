@@ -15,7 +15,6 @@
 ## 辅助和历史文档
 
 - `docs/WEB_ITERATION_PLAN.md`：早期 Web-only 迭代计划，保留作路线背景。
-- `docs/FOLLOWUPS.md`：旧 Claude Code 待办清单，部分内容已过期，不能直接当当前事实。
 - `docs/ALPHA_REVIEW_AND_LESSONS.md`：Alpha 复盘和经验记录。
 - `docs/archive/`：历史草稿和已归档计划，不作为当前状态来源。
 
@@ -27,7 +26,7 @@
 | 公网部署 / 密钥 / 安全 | `docs/security.md`、`deploy/production.env.example`、`deploy/docker-compose.yml` |
 | 结构清理 / 技术债 | `docs/PROJECT_AUDIT.md`、`docs/INDEX.md` |
 | 游戏模式 v5 设计 | `docs/GAME_MODE_SPEC.md` |
-| 历史待办核对 | `docs/FOLLOWUPS.md`、`docs/ALPHA_REVIEW_AND_LESSONS.md` |
+| 历史待办核对 | `docs/archive/2026-06-20-claude-followups.md`、`docs/ALPHA_REVIEW_AND_LESSONS.md` |
 
 ## 当前执行边界
 

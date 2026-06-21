@@ -21,6 +21,7 @@ SESSION_SECRET=CHANGE_ME
 SESSION_COOKIE_SECURE=1
 INVITE_ADMIN_CODE=CHANGE_ME
 AGENS_ALLOWED_ORIGINS=https://game.jiayp2917.xyz
+AGENS_ALLOWED_HOSTS=game.jiayp2917.xyz,agens-web,localhost,127.0.0.1
 TRUST_PROXY_HEADERS=0
 AGENS_API_KEY=CHANGE_ME
 ```
@@ -36,6 +37,9 @@ AGENS_API_KEY=CHANGE_ME
 - 普通用户只能访问自己的 session/save。
 - `INVITE_ADMIN_CODE` 只用于创建首个管理员；普通邀请码应由管理员通过后端接口创建。
 - 生产/PostgreSQL 模式下缺少 `SESSION_SECRET`、`DATABASE_URL` 或 `INVITE_ADMIN_CODE` 会启动失败。
+- 生产/PostgreSQL 模式下缺少 `AGENS_ALLOWED_ORIGINS` 会启动失败。
+- 生产模式关闭 `/docs`、`/redoc`、`/openapi.json`。
+- 生产模式启用 Host 白名单，来源为 `AGENS_ALLOWED_HOSTS` 和 `AGENS_ALLOWED_ORIGINS`。
 - Cookie 登录态的状态变更请求需要匹配 `AGENS_ALLOWED_ORIGINS` 或同源 Host。
 
 ## Deployment Boundary
