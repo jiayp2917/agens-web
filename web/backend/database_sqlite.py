@@ -2,12 +2,13 @@
 
 from __future__ import annotations
 
+import json
 import sqlite3
 import uuid
 from pathlib import Path
 from typing import Any
 
-from .database_common import default_db_path, dump_json, now_ts, row_with_json, safe_name
+from .database_common import default_db_path, dump_json, load_json, now_ts, row_with_json, safe_name
 
 
 class SQLiteWebDatabase:
@@ -78,9 +79,95 @@ class SQLiteWebDatabase:
                     api_key_set INTEGER NOT NULL,
                     updated_at REAL NOT NULL
                 );
+
+                CREATE TABLE IF NOT EXISTS catalog_talents (
+                    id TEXT PRIMARY KEY,
+                    name TEXT NOT NULL UNIQUE,
+                    rarity TEXT NOT NULL DEFAULT '普通',
+                    description TEXT NOT NULL DEFAULT '',
+                    attribute_mods TEXT NOT NULL DEFAULT '{}',
+                    tags TEXT NOT NULL DEFAULT '[]',
+                    created_at REAL NOT NULL
+                );
+
+                CREATE TABLE IF NOT EXISTS catalog_family_backgrounds (
+                    id TEXT PRIMARY KEY,
+                    name TEXT NOT NULL UNIQUE,
+                    rarity TEXT NOT NULL DEFAULT '普通',
+                    description TEXT NOT NULL DEFAULT '',
+                    initial_resources TEXT NOT NULL DEFAULT '{}',
+                    initial_risks TEXT NOT NULL DEFAULT '[]',
+                    story_tags TEXT NOT NULL DEFAULT '[]',
+                    created_at REAL NOT NULL
+                );
+
+                CREATE TABLE IF NOT EXISTS catalog_spirit_roots (
+                    id TEXT PRIMARY KEY,
+                    name TEXT NOT NULL UNIQUE,
+                    element TEXT NOT NULL DEFAULT '',
+                    grade TEXT NOT NULL DEFAULT '地',
+                    cultivation_bonus REAL NOT NULL DEFAULT 1.0,
+                    breakthrough_bonus REAL NOT NULL DEFAULT 0.0,
+                    cultivation_tendency TEXT NOT NULL DEFAULT '',
+                    event_tags TEXT NOT NULL DEFAULT '[]',
+                    created_at REAL NOT NULL
+                );
+
+                CREATE TABLE IF NOT EXISTS catalog_difficulties (
+                    id TEXT PRIMARY KEY,
+                    name TEXT NOT NULL UNIQUE,
+                    risk_multiplier REAL NOT NULL DEFAULT 1.0,
+                    reward_multiplier REAL NOT NULL DEFAULT 1.0,
+                    lifespan_modifier REAL NOT NULL DEFAULT 1.0,
+                    luck_modifier REAL NOT NULL DEFAULT 0,
+                    description TEXT NOT NULL DEFAULT '',
+                    created_at REAL NOT NULL
+                );
+
+                CREATE TABLE IF NOT EXISTS catalog_story_seeds (
+                    id TEXT PRIMARY KEY,
+                    name TEXT NOT NULL,
+                    category TEXT NOT NULL DEFAULT '',
+                    description TEXT NOT NULL DEFAULT '',
+                    tags TEXT NOT NULL DEFAULT '[]',
+                    created_at REAL NOT NULL
+                );
+
+                CREATE TABLE IF NOT EXISTS run_achievements (
+                    id TEXT PRIMARY KEY,
+                    user_id TEXT NOT NULL,
+                    session_id TEXT NOT NULL,
+                    achievement_key TEXT NOT NULL,
+                    achievement_name TEXT NOT NULL,
+                    description TEXT NOT NULL DEFAULT '',
+                    death_cause TEXT NOT NULL DEFAULT '',
+                    achieved_at REAL NOT NULL
+                );
+
+                CREATE TABLE IF NOT EXISTS account_rewards (
+                    id TEXT PRIMARY KEY,
+                    user_id TEXT NOT NULL,
+                    reward_type TEXT NOT NULL,
+                    reward_value TEXT NOT NULL,
+                    label TEXT NOT NULL DEFAULT '',
+                    source_session_id TEXT NOT NULL DEFAULT '',
+                    granted_at REAL NOT NULL
+                );
+
+                CREATE TABLE IF NOT EXISTS legacy_bonuses (
+                    id TEXT PRIMARY KEY,
+                    user_id TEXT NOT NULL,
+                    bonus_type TEXT NOT NULL,
+                    bonus_value TEXT NOT NULL,
+                    label TEXT NOT NULL DEFAULT '',
+                    runs_remaining INTEGER NOT NULL DEFAULT 1,
+                    source_session_id TEXT NOT NULL DEFAULT '',
+                    granted_at REAL NOT NULL
+                );
                 """
             )
             self._ensure_user_columns(conn)
+            self._seed_catalogs_if_empty(conn)
 
     def _ensure_user_columns(self, conn: sqlite3.Connection) -> None:
         columns = {row["name"] for row in conn.execute("PRAGMA table_info(users)").fetchall()}
@@ -359,3 +446,286 @@ class SQLiteWebDatabase:
         with self.connect() as conn:
             row = conn.execute("SELECT * FROM model_config WHERE id = 1").fetchone()
         return dict(row) if row else None
+
+    # ── Death rewards (P4) ──────────────────────────────────────────────────
+
+    def save_run_achievement(
+        self,
+        user_id: str,
+        session_id: str,
+        achievement_key: str,
+        achievement_name: str,
+        description: str,
+        death_cause: str,
+    ) -> dict[str, Any]:
+        achievement_id = str(uuid.uuid4())
+        now = now_ts()
+        with self.connect() as conn:
+            conn.execute(
+                """
+                INSERT INTO run_achievements
+                    (id, user_id, session_id, achievement_key, achievement_name,
+                     description, death_cause, achieved_at)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+                """,
+                (
+                    achievement_id,
+                    user_id,
+                    session_id,
+                    achievement_key,
+                    achievement_name,
+                    description,
+                    death_cause,
+                    now,
+                ),
+            )
+        return {
+            "id": achievement_id,
+            "user_id": user_id,
+            "session_id": session_id,
+            "achievement_key": achievement_key,
+            "achievement_name": achievement_name,
+            "description": description,
+            "death_cause": death_cause,
+            "achieved_at": now,
+        }
+
+    def list_run_achievements(self, user_id: str, session_id: str = "") -> list[dict[str, Any]]:
+        with self.connect() as conn:
+            if session_id:
+                rows = conn.execute(
+                    """
+                    SELECT * FROM run_achievements
+                    WHERE user_id = ? AND session_id = ?
+                    ORDER BY achieved_at
+                    """,
+                    (user_id, session_id),
+                ).fetchall()
+            else:
+                rows = conn.execute(
+                    """
+                    SELECT * FROM run_achievements
+                    WHERE user_id = ?
+                    ORDER BY achieved_at DESC
+                    """,
+                    (user_id,),
+                ).fetchall()
+        return [dict(row) for row in rows]
+
+    def save_account_reward(
+        self,
+        user_id: str,
+        reward_type: str,
+        reward_value: str,
+        label: str,
+        source_session_id: str,
+    ) -> dict[str, Any]:
+        reward_id = str(uuid.uuid4())
+        now = now_ts()
+        with self.connect() as conn:
+            conn.execute(
+                """
+                INSERT INTO account_rewards
+                    (id, user_id, reward_type, reward_value, label,
+                     source_session_id, granted_at)
+                VALUES (?, ?, ?, ?, ?, ?, ?)
+                """,
+                (
+                    reward_id,
+                    user_id,
+                    reward_type,
+                    str(reward_value),
+                    label,
+                    source_session_id,
+                    now,
+                ),
+            )
+        return {
+            "id": reward_id,
+            "user_id": user_id,
+            "reward_type": reward_type,
+            "reward_value": str(reward_value),
+            "label": label,
+            "source_session_id": source_session_id,
+            "granted_at": now,
+        }
+
+    def list_account_rewards(self, user_id: str) -> list[dict[str, Any]]:
+        with self.connect() as conn:
+            rows = conn.execute(
+                """
+                SELECT * FROM account_rewards
+                WHERE user_id = ?
+                ORDER BY granted_at DESC
+                """,
+                (user_id,),
+            ).fetchall()
+        return [dict(row) for row in rows]
+
+    def save_legacy_bonus(
+        self,
+        user_id: str,
+        bonus_type: str,
+        bonus_value: str,
+        label: str,
+        source_session_id: str,
+        runs_remaining: int = 1,
+    ) -> dict[str, Any]:
+        bonus_id = str(uuid.uuid4())
+        now = now_ts()
+        with self.connect() as conn:
+            conn.execute(
+                """
+                INSERT INTO legacy_bonuses
+                    (id, user_id, bonus_type, bonus_value, label,
+                     runs_remaining, source_session_id, granted_at)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+                """,
+                (
+                    bonus_id,
+                    user_id,
+                    bonus_type,
+                    str(bonus_value),
+                    label,
+                    int(runs_remaining),
+                    source_session_id,
+                    now,
+                ),
+            )
+        return {
+            "id": bonus_id,
+            "user_id": user_id,
+            "bonus_type": bonus_type,
+            "bonus_value": str(bonus_value),
+            "label": label,
+            "runs_remaining": int(runs_remaining),
+            "source_session_id": source_session_id,
+            "granted_at": now,
+        }
+
+    def list_legacy_bonuses(self, user_id: str) -> list[dict[str, Any]]:
+        with self.connect() as conn:
+            rows = conn.execute(
+                """
+                SELECT * FROM legacy_bonuses
+                WHERE user_id = ? AND runs_remaining > 0
+                ORDER BY granted_at
+                """,
+                (user_id,),
+            ).fetchall()
+        return [dict(row) for row in rows]
+
+    def consume_legacy_bonuses(self, user_id: str) -> int:
+        """Decrement runs_remaining for all bonuses owned by the user.
+
+        Returns the count of bonuses that were fully consumed (set to 0).
+        """
+        now = now_ts()
+        consumed = 0
+        with self.connect() as conn:
+            rows = conn.execute(
+                """
+                SELECT id, runs_remaining FROM legacy_bonuses
+                WHERE user_id = ? AND runs_remaining > 0
+                """,
+                (user_id,),
+            ).fetchall()
+            for row in rows:
+                remaining = int(row["runs_remaining"]) - 1
+                if remaining <= 0:
+                    conn.execute(
+                        "UPDATE legacy_bonuses SET runs_remaining = 0 WHERE id = ?",
+                        (row["id"],),
+                    )
+                    consumed += 1
+                else:
+                    conn.execute(
+                        "UPDATE legacy_bonuses SET runs_remaining = ? WHERE id = ?",
+                        (remaining, row["id"]),
+                    )
+        return consumed
+
+    # ── Catalog read/write ──────────────────────────────────────────────────
+
+    _CATALOG_TABLES = [
+        "catalog_talents",
+        "catalog_family_backgrounds",
+        "catalog_spirit_roots",
+        "catalog_difficulties",
+        "catalog_story_seeds",
+    ]
+
+    def list_catalog(self, table: str) -> list[dict[str, Any]]:
+        if table not in self._CATALOG_TABLES:
+            raise ValueError(f"Unknown catalog table: {table}")
+        with self.connect() as conn:
+            rows = conn.execute(f"SELECT * FROM {table} ORDER BY created_at").fetchall()
+        json_fields = {
+            "attribute_mods", "tags", "initial_resources", "initial_risks",
+            "story_tags", "event_tags",
+        }
+        result = []
+        for row in rows:
+            item = dict(row)
+            for field in json_fields:
+                if field in item and isinstance(item[field], str):
+                    try:
+                        item[field] = load_json(item[field])
+                    except (json.JSONDecodeError, TypeError):
+                        pass
+            result.append(item)
+        return result
+
+    def insert_catalog(self, table: str, row: dict[str, Any]) -> dict[str, Any]:
+        if table not in self._CATALOG_TABLES:
+            raise ValueError(f"Unknown catalog table: {table}")
+        json_fields = {
+            "attribute_mods", "tags", "initial_resources", "initial_risks",
+            "story_tags", "event_tags",
+        }
+        data = dict(row)
+        for field in json_fields:
+            if field in data and not isinstance(data[field], str):
+                data[field] = dump_json(data[field])
+        with self.connect() as conn:
+            conn.execute(
+                f"INSERT OR IGNORE INTO {table} ({', '.join(data.keys())}) "
+                f"VALUES ({', '.join('?' for _ in data)})",
+                tuple(data.values()),
+            )
+        return dict(row)
+
+    def _seed_catalogs_if_empty(self, conn: sqlite3.Connection) -> None:
+        """Seed catalog tables from seed data when they're empty.
+        Called during initialize() — runs inside the existing transaction."""
+        from .catalog_seed import SEED_TALENTS, SEED_FAMILY_BACKGROUNDS, SEED_SPIRIT_ROOTS
+        from .catalog_seed import SEED_DIFFICULTIES, SEED_STORY_SEEDS
+
+        now = now_ts()
+        seeds = [
+            ("catalog_talents", SEED_TALENTS),
+            ("catalog_family_backgrounds", SEED_FAMILY_BACKGROUNDS),
+            ("catalog_spirit_roots", SEED_SPIRIT_ROOTS),
+            ("catalog_difficulties", SEED_DIFFICULTIES),
+            ("catalog_story_seeds", SEED_STORY_SEEDS),
+        ]
+        json_fields = {
+            "attribute_mods", "tags", "initial_resources", "initial_risks",
+            "story_tags", "event_tags",
+        }
+        for table, rows in seeds:
+            existing = conn.execute(f"SELECT 1 FROM {table} LIMIT 1").fetchone()
+            if existing:
+                continue
+            for row in rows:
+                row_with_ts = dict(row)
+                row_with_ts.setdefault("created_at", now)
+                # Serialize JSON fields to strings for SQLite
+                for field in json_fields:
+                    if field in row_with_ts and not isinstance(row_with_ts[field], str):
+                        row_with_ts[field] = dump_json(row_with_ts[field])
+                conn.execute(
+                    f"INSERT OR IGNORE INTO {table} ({', '.join(row_with_ts.keys())}) "
+                    f"VALUES ({', '.join('?' for _ in row_with_ts)})",
+                    tuple(row_with_ts.values()),
+                )

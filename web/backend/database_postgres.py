@@ -10,6 +10,7 @@ from sqlalchemy import create_engine, text
 from sqlalchemy.engine import Engine
 
 from .database_common import dump_json, load_json, now_ts, safe_name
+from .catalog_seed import seed_catalogs
 
 
 class PostgresWebDatabase:
@@ -22,6 +23,8 @@ class PostgresWebDatabase:
         self.engine: Engine = create_engine(self.database_url, pool_pre_ping=True, future=True)
         if os.environ.get("AGENS_PG_AUTO_DDL", "").strip().lower() in ("1", "true", "yes"):
             self.initialize()
+        else:
+            seed_catalogs(self)
 
     def initialize(self) -> None:
         with self.engine.begin() as conn:
@@ -102,6 +105,132 @@ class PostgresWebDatabase:
                     """
                 )
             )
+            conn.execute(
+                text(
+                    """
+                    CREATE TABLE IF NOT EXISTS catalog_talents (
+                        id TEXT PRIMARY KEY,
+                        name TEXT NOT NULL UNIQUE,
+                        rarity TEXT NOT NULL DEFAULT '普通',
+                        description TEXT NOT NULL DEFAULT '',
+                        attribute_mods JSONB NOT NULL DEFAULT '{}',
+                        tags JSONB NOT NULL DEFAULT '[]',
+                        created_at DOUBLE PRECISION NOT NULL
+                    )
+                    """
+                )
+            )
+            conn.execute(
+                text(
+                    """
+                    CREATE TABLE IF NOT EXISTS catalog_family_backgrounds (
+                        id TEXT PRIMARY KEY,
+                        name TEXT NOT NULL UNIQUE,
+                        rarity TEXT NOT NULL DEFAULT '普通',
+                        description TEXT NOT NULL DEFAULT '',
+                        initial_resources JSONB NOT NULL DEFAULT '{}',
+                        initial_risks JSONB NOT NULL DEFAULT '[]',
+                        story_tags JSONB NOT NULL DEFAULT '[]',
+                        created_at DOUBLE PRECISION NOT NULL
+                    )
+                    """
+                )
+            )
+            conn.execute(
+                text(
+                    """
+                    CREATE TABLE IF NOT EXISTS catalog_spirit_roots (
+                        id TEXT PRIMARY KEY,
+                        name TEXT NOT NULL UNIQUE,
+                        element TEXT NOT NULL DEFAULT '',
+                        grade TEXT NOT NULL DEFAULT '地',
+                        cultivation_bonus DOUBLE PRECISION NOT NULL DEFAULT 1.0,
+                        breakthrough_bonus DOUBLE PRECISION NOT NULL DEFAULT 0.0,
+                        cultivation_tendency TEXT NOT NULL DEFAULT '',
+                        event_tags JSONB NOT NULL DEFAULT '[]',
+                        created_at DOUBLE PRECISION NOT NULL
+                    )
+                    """
+                )
+            )
+            conn.execute(
+                text(
+                    """
+                    CREATE TABLE IF NOT EXISTS catalog_difficulties (
+                        id TEXT PRIMARY KEY,
+                        name TEXT NOT NULL UNIQUE,
+                        risk_multiplier DOUBLE PRECISION NOT NULL DEFAULT 1.0,
+                        reward_multiplier DOUBLE PRECISION NOT NULL DEFAULT 1.0,
+                        lifespan_modifier DOUBLE PRECISION NOT NULL DEFAULT 1.0,
+                        luck_modifier DOUBLE PRECISION NOT NULL DEFAULT 0,
+                        description TEXT NOT NULL DEFAULT '',
+                        created_at DOUBLE PRECISION NOT NULL
+                    )
+                    """
+                )
+            )
+            conn.execute(
+                text(
+                    """
+                    CREATE TABLE IF NOT EXISTS catalog_story_seeds (
+                        id TEXT PRIMARY KEY,
+                        name TEXT NOT NULL,
+                        category TEXT NOT NULL DEFAULT '',
+                        description TEXT NOT NULL DEFAULT '',
+                        tags JSONB NOT NULL DEFAULT '[]',
+                        created_at DOUBLE PRECISION NOT NULL
+                    )
+                    """
+                )
+            )
+            conn.execute(
+                text(
+                    """
+                    CREATE TABLE IF NOT EXISTS run_achievements (
+                        id TEXT PRIMARY KEY,
+                        user_id TEXT NOT NULL REFERENCES users(id),
+                        session_id TEXT NOT NULL,
+                        achievement_key TEXT NOT NULL,
+                        achievement_name TEXT NOT NULL,
+                        description TEXT NOT NULL DEFAULT '',
+                        death_cause TEXT NOT NULL DEFAULT '',
+                        achieved_at DOUBLE PRECISION NOT NULL
+                    )
+                    """
+                )
+            )
+            conn.execute(
+                text(
+                    """
+                    CREATE TABLE IF NOT EXISTS account_rewards (
+                        id TEXT PRIMARY KEY,
+                        user_id TEXT NOT NULL REFERENCES users(id),
+                        reward_type TEXT NOT NULL,
+                        reward_value TEXT NOT NULL,
+                        label TEXT NOT NULL DEFAULT '',
+                        source_session_id TEXT NOT NULL DEFAULT '',
+                        granted_at DOUBLE PRECISION NOT NULL
+                    )
+                    """
+                )
+            )
+            conn.execute(
+                text(
+                    """
+                    CREATE TABLE IF NOT EXISTS legacy_bonuses (
+                        id TEXT PRIMARY KEY,
+                        user_id TEXT NOT NULL REFERENCES users(id),
+                        bonus_type TEXT NOT NULL,
+                        bonus_value TEXT NOT NULL,
+                        label TEXT NOT NULL DEFAULT '',
+                        runs_remaining INTEGER NOT NULL DEFAULT 1,
+                        source_session_id TEXT NOT NULL DEFAULT '',
+                        granted_at DOUBLE PRECISION NOT NULL
+                    )
+                    """
+                )
+            )
+            seed_catalogs(self)
 
     def upsert_user(self, username: str) -> dict[str, Any]:
         username = (username or "local").strip() or "local"
@@ -393,3 +522,299 @@ class PostgresWebDatabase:
         with self.engine.begin() as conn:
             row = conn.execute(text("SELECT * FROM model_config WHERE id = 1")).mappings().first()
         return dict(row) if row else None
+
+    # ── Death rewards (P4) ──────────────────────────────────────────────────
+
+    def save_run_achievement(
+        self,
+        user_id: str,
+        session_id: str,
+        achievement_key: str,
+        achievement_name: str,
+        description: str,
+        death_cause: str,
+    ) -> dict[str, Any]:
+        achievement_id = str(uuid.uuid4())
+        now = now_ts()
+        with self.engine.begin() as conn:
+            conn.execute(
+                text(
+                    """
+                    INSERT INTO run_achievements
+                        (id, user_id, session_id, achievement_key, achievement_name,
+                         description, death_cause, achieved_at)
+                    VALUES
+                        (:id, :user_id, :session_id, :achievement_key, :achievement_name,
+                         :description, :death_cause, :achieved_at)
+                    """
+                ),
+                {
+                    "id": achievement_id,
+                    "user_id": user_id,
+                    "session_id": session_id,
+                    "achievement_key": achievement_key,
+                    "achievement_name": achievement_name,
+                    "description": description,
+                    "death_cause": death_cause,
+                    "achieved_at": now,
+                },
+            )
+        return {
+            "id": achievement_id,
+            "user_id": user_id,
+            "session_id": session_id,
+            "achievement_key": achievement_key,
+            "achievement_name": achievement_name,
+            "description": description,
+            "death_cause": death_cause,
+            "achieved_at": now,
+        }
+
+    def list_run_achievements(self, user_id: str, session_id: str = "") -> list[dict[str, Any]]:
+        with self.engine.begin() as conn:
+            if session_id:
+                rows = conn.execute(
+                    text(
+                        """
+                        SELECT * FROM run_achievements
+                        WHERE user_id = :user_id AND session_id = :session_id
+                        ORDER BY achieved_at
+                        """
+                    ),
+                    {"user_id": user_id, "session_id": session_id},
+                ).mappings().all()
+            else:
+                rows = conn.execute(
+                    text(
+                        """
+                        SELECT * FROM run_achievements
+                        WHERE user_id = :user_id
+                        ORDER BY achieved_at DESC
+                        """
+                    ),
+                    {"user_id": user_id},
+                ).mappings().all()
+        return [dict(row) for row in rows]
+
+    def save_account_reward(
+        self,
+        user_id: str,
+        reward_type: str,
+        reward_value: str,
+        label: str,
+        source_session_id: str,
+    ) -> dict[str, Any]:
+        reward_id = str(uuid.uuid4())
+        now = now_ts()
+        with self.engine.begin() as conn:
+            conn.execute(
+                text(
+                    """
+                    INSERT INTO account_rewards
+                        (id, user_id, reward_type, reward_value, label,
+                         source_session_id, granted_at)
+                    VALUES
+                        (:id, :user_id, :reward_type, :reward_value, :label,
+                         :source_session_id, :granted_at)
+                    """
+                ),
+                {
+                    "id": reward_id,
+                    "user_id": user_id,
+                    "reward_type": reward_type,
+                    "reward_value": str(reward_value),
+                    "label": label,
+                    "source_session_id": source_session_id,
+                    "granted_at": now,
+                },
+            )
+        return {
+            "id": reward_id,
+            "user_id": user_id,
+            "reward_type": reward_type,
+            "reward_value": str(reward_value),
+            "label": label,
+            "source_session_id": source_session_id,
+            "granted_at": now,
+        }
+
+    def list_account_rewards(self, user_id: str) -> list[dict[str, Any]]:
+        with self.engine.begin() as conn:
+            rows = conn.execute(
+                text(
+                    """
+                    SELECT * FROM account_rewards
+                    WHERE user_id = :user_id
+                    ORDER BY granted_at DESC
+                    """
+                ),
+                {"user_id": user_id},
+            ).mappings().all()
+        return [dict(row) for row in rows]
+
+    def save_legacy_bonus(
+        self,
+        user_id: str,
+        bonus_type: str,
+        bonus_value: str,
+        label: str,
+        source_session_id: str,
+        runs_remaining: int = 1,
+    ) -> dict[str, Any]:
+        bonus_id = str(uuid.uuid4())
+        now = now_ts()
+        with self.engine.begin() as conn:
+            conn.execute(
+                text(
+                    """
+                    INSERT INTO legacy_bonuses
+                        (id, user_id, bonus_type, bonus_value, label,
+                         runs_remaining, source_session_id, granted_at)
+                    VALUES
+                        (:id, :user_id, :bonus_type, :bonus_value, :label,
+                         :runs_remaining, :source_session_id, :granted_at)
+                    """
+                ),
+                {
+                    "id": bonus_id,
+                    "user_id": user_id,
+                    "bonus_type": bonus_type,
+                    "bonus_value": str(bonus_value),
+                    "label": label,
+                    "runs_remaining": int(runs_remaining),
+                    "source_session_id": source_session_id,
+                    "granted_at": now,
+                },
+            )
+        return {
+            "id": bonus_id,
+            "user_id": user_id,
+            "bonus_type": bonus_type,
+            "bonus_value": str(bonus_value),
+            "label": label,
+            "runs_remaining": int(runs_remaining),
+            "source_session_id": source_session_id,
+            "granted_at": now,
+        }
+
+    def list_legacy_bonuses(self, user_id: str) -> list[dict[str, Any]]:
+        with self.engine.begin() as conn:
+            rows = conn.execute(
+                text(
+                    """
+                    SELECT * FROM legacy_bonuses
+                    WHERE user_id = :user_id AND runs_remaining > 0
+                    ORDER BY granted_at
+                    """
+                ),
+                {"user_id": user_id},
+            ).mappings().all()
+        return [dict(row) for row in rows]
+
+    def consume_legacy_bonuses(self, user_id: str) -> int:
+        """Decrement runs_remaining for all bonuses owned by the user."""
+        consumed = 0
+        with self.engine.begin() as conn:
+            rows = conn.execute(
+                text(
+                    """
+                    SELECT id, runs_remaining FROM legacy_bonuses
+                    WHERE user_id = :user_id AND runs_remaining > 0
+                    """
+                ),
+                {"user_id": user_id},
+            ).mappings().all()
+            for row in rows:
+                remaining = int(row["runs_remaining"]) - 1
+                if remaining <= 0:
+                    conn.execute(
+                        text("UPDATE legacy_bonuses SET runs_remaining = 0 WHERE id = :id"),
+                        {"id": row["id"]},
+                    )
+                    consumed += 1
+                else:
+                    conn.execute(
+                        text(
+                            "UPDATE legacy_bonuses SET runs_remaining = :r WHERE id = :id"
+                        ),
+                        {"r": remaining, "id": row["id"]},
+                    )
+        return consumed
+
+    # ── Catalog read/write ──────────────────────────────────────────────────
+
+    _CATALOG_TABLES = [
+        "catalog_talents",
+        "catalog_family_backgrounds",
+        "catalog_spirit_roots",
+        "catalog_difficulties",
+        "catalog_story_seeds",
+    ]
+
+    def list_catalog(self, table: str) -> list[dict[str, Any]]:
+        if table not in self._CATALOG_TABLES:
+            raise ValueError(f"Unknown catalog table: {table}")
+        with self.engine.begin() as conn:
+            rows = conn.execute(
+                text(f"SELECT * FROM {table} ORDER BY created_at")
+            ).mappings().all()
+        result = []
+        for row in rows:
+            item = dict(row)
+            for field in ("attribute_mods", "tags", "initial_resources",
+                          "initial_risks", "story_tags", "event_tags",
+                          "snapshot", "events"):
+                if field in item:
+                    item[field] = load_json(item[field])
+            result.append(item)
+        return result
+
+    def insert_catalog(self, table: str, row: dict[str, Any]) -> dict[str, Any]:
+        if table not in self._CATALOG_TABLES:
+            raise ValueError(f"Unknown catalog table: {table}")
+        data = dict(row)
+        for field in ("attribute_mods", "tags", "initial_resources",
+                      "initial_risks", "story_tags", "event_tags"):
+            if field in data and not isinstance(data[field], str):
+                data[field] = dump_json(data[field])
+        cols = ", ".join(data.keys())
+        placeholders = ", ".join(f":{k}" for k in data.keys())
+        with self.engine.begin() as conn:
+            conn.execute(
+                text(f"INSERT INTO {table} ({cols}) VALUES ({placeholders}) ON CONFLICT DO NOTHING"),
+                data,
+            )
+        return dict(row)
+
+    def _seed_catalogs_if_empty(self) -> None:
+        """Seed catalog tables from seed data when they're empty."""
+        from .catalog_seed import SEED_TALENTS, SEED_FAMILY_BACKGROUNDS, SEED_SPIRIT_ROOTS
+        from .catalog_seed import SEED_DIFFICULTIES, SEED_STORY_SEEDS
+
+        seeds = [
+            ("catalog_talents", SEED_TALENTS),
+            ("catalog_family_backgrounds", SEED_FAMILY_BACKGROUNDS),
+            ("catalog_spirit_roots", SEED_SPIRIT_ROOTS),
+            ("catalog_difficulties", SEED_DIFFICULTIES),
+            ("catalog_story_seeds", SEED_STORY_SEEDS),
+        ]
+        for table, rows in seeds:
+            with self.engine.begin() as conn:
+                existing = conn.execute(
+                    text(f"SELECT 1 FROM {table} LIMIT 1")
+                ).first()
+                if existing:
+                    continue
+                for row in rows:
+                    data = dict(row)
+                    data.setdefault("created_at", now_ts())
+                    for field in ("attribute_mods", "tags", "initial_resources",
+                                  "initial_risks", "story_tags", "event_tags"):
+                        if field in data and not isinstance(data[field], str):
+                            data[field] = dump_json(data[field])
+                    cols = ", ".join(data.keys())
+                    placeholders = ", ".join(f":{k}" for k in data.keys())
+                    conn.execute(
+                        text(f"INSERT INTO {table} ({cols}) VALUES ({placeholders}) ON CONFLICT DO NOTHING"),
+                        data,
+                    )

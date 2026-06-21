@@ -10,6 +10,14 @@ import uuid
 from dataclasses import dataclass, field
 from typing import Any
 
+from agens_novel.engine.death_rewards import (
+    apply_legacy_bonuses,
+    bonuses_to_legacy,
+    build_run_summary,
+    categorize_death,
+    compute_rewards,
+    evaluate_achievements,
+)
 from agens_novel.engine.game_engine import GameEngine, MODEL_FAILURE_CONTINUE
 from agens_novel.engine.render import format_status_bar
 from agens_novel.game.constants import (
@@ -55,7 +63,7 @@ class WebRunner:
         self.engine.on_status_bar = lambda text: self.record("status", text=text)
         self.engine.on_error = lambda text: self.record("error", text=text)
         self.engine.on_info = lambda text: self.record("info", text=text)
-        self.engine.on_game_over = lambda text: self.record("game_over", text=text)
+        self.engine.on_game_over = lambda text: self._on_game_over(text)
         self.engine.on_finale = lambda text: self.record("finale", text=text)
         self.engine.on_loading = lambda text: self.record("loading", text=text)
         self.engine.on_stream_chunk = lambda text: self.record("stream", text=text)
@@ -64,6 +72,36 @@ class WebRunner:
             "character_created", state=session.as_game_state()
         )
         self.engine.on_model_failure_choice = self._choose_model_failure
+
+    def _on_game_over(self, text: str) -> None:
+        """Record game-over and evaluate rewards (P4).
+
+        Evaluates achievements/rewards even for guest sessions (in-memory only).
+        Registered users get the results persisted to the database.
+        """
+        self.record("game_over", text=text)
+        summary = build_death_summary(self.engine.game_session)
+        if summary is None:
+            return
+        self.record(
+            "death_summary",
+            death_cause=summary["death_cause"],
+            achievements=summary["achievements"],
+            rewards=summary["rewards"],
+            headline=summary["headline"],
+            final_realm=summary["final_realm"],
+        )
+        # Persist for registered users only.
+        if not is_guest_user_id(self.user_id):
+            try:
+                persist_death_rewards(
+                    self.engine.game_session,
+                    self.user_id,
+                    self.session_id,
+                    summary,
+                )
+            except Exception:
+                log.exception("death rewards persistence failed")
 
     def _choose_model_failure(self, source: str, reason: str) -> str:
         self.record(
@@ -160,6 +198,7 @@ class WebGameService:
     def __init__(self, db: WebDatabase | None = None) -> None:
         self.db = db or WebDatabase()
         self.runners: dict[str, WebRunner] = {}
+        attach_death_rewards_helpers(self)
 
     def login(self, username: str = "local") -> dict[str, Any]:
         return self.db.upsert_user(username)
@@ -186,7 +225,24 @@ class WebGameService:
         self, session_id: str, profile: dict[str, Any], user_id: str | None = None
     ) -> dict[str, Any]:
         runner = self._runner(session_id, user_id=user_id)
-        runner.engine.start_from_profile(self._normalize_profile(profile))
+        normalized = self._normalize_profile(profile)
+        # Apply legacy bonuses from prior runs (P4) — registered users only.
+        if user_id and not is_guest_user_id(user_id):
+            bonuses = self.db.list_legacy_bonuses(user_id)
+            if bonuses:
+                normalized = apply_legacy_bonuses(
+                    normalized,
+                    [
+                        {
+                            "bonus_type": b["bonus_type"],
+                            "bonus_value": b["bonus_value"],
+                            "label": b.get("label", ""),
+                        }
+                        for b in bonuses
+                    ],
+                )
+                self.db.consume_legacy_bonuses(user_id)
+        runner.engine.start_from_profile(normalized)
         self._persist(runner, title=runner.engine.game_session.char_name or "新局")
         return runner.response()
 
@@ -249,7 +305,11 @@ class WebGameService:
         session.game_over = True
         session.finale = False
         session.error = reason or "玩家结束本局。"
-        runner.record("game_over", text=session.error)
+        # Reuse the engine's on_game_over hook so P4 rewards fire on manual end too.
+        if runner.engine.on_game_over is not None:
+            runner.engine.on_game_over(session.error)
+        else:
+            runner.record("game_over", text=session.error)
         self._persist(runner)
         return runner.response()
 
@@ -257,6 +317,65 @@ class WebGameService:
         if not user_id:
             raise PermissionError("读取存档需要登录。")
         return self.db.list_saves(user_id)
+
+    # ── Death rewards (P4) ──────────────────────────────────────────────
+
+    def death_summary(
+        self, session_id: str, user_id: str | None = None
+    ) -> dict[str, Any]:
+        """Return the most recent death summary for a session.
+
+        For registered users: pull from DB (run_achievements + account_rewards).
+        For guest sessions: rebuild from the live runner.
+        """
+        if is_guest_user_id(user_id) or user_id is None:
+            runner = self._runner(session_id, user_id=user_id)
+            summary = build_death_summary(runner.engine.game_session)
+            return {
+                "session_id": session_id,
+                "is_guest": True,
+                "summary": summary or {},
+            }
+        achievements = self.db.list_run_achievements(user_id, session_id)
+        rewards = [
+            r
+            for r in self.db.list_account_rewards(user_id)
+            if r.get("source_session_id") == session_id
+        ]
+        if not achievements and not rewards:
+            return {"session_id": session_id, "is_guest": False, "summary": {}}
+        death_cause = achievements[0].get("death_cause", "") if achievements else ""
+        headline_parts = [a.get("achievement_name") for a in achievements[:3] if a.get("achievement_name")]
+        headline = "、".join(headline_parts) if headline_parts else ""
+        return {
+            "session_id": session_id,
+            "is_guest": False,
+            "summary": {
+                "death_cause": death_cause,
+                "achievements": [
+                    {
+                        "key": a.get("achievement_key", ""),
+                        "name": a.get("achievement_name", ""),
+                        "description": a.get("description", ""),
+                    }
+                    for a in achievements
+                ],
+                "rewards": [
+                    {
+                        "type": r.get("reward_type", ""),
+                        "value": r.get("reward_value", ""),
+                        "label": r.get("label", ""),
+                    }
+                    for r in rewards
+                ],
+                "headline": headline,
+            },
+        }
+
+    def legacy_bonuses(self, user_id: str) -> list[dict[str, Any]]:
+        if not user_id or is_guest_user_id(user_id):
+            return []
+        return self.db.list_legacy_bonuses(user_id)
 
     def model_settings(self) -> dict[str, Any]:
         stored = self.db.get_model_config() or {}
@@ -384,3 +503,82 @@ def _random_attributes() -> dict[str, int]:
     heroic = random.random() < 0.08
     low, high = (75, 99) if heroic else (35, 88)
     return {key: random.randint(low, high) for key in ATTRIBUTE_KEYS}
+
+
+# ── Death rewards helpers (P4) ──────────────────────────────────────────────
+
+import logging  # noqa: E402
+
+log = logging.getLogger(__name__)
+
+
+def build_death_summary(session: GameSession) -> dict[str, Any] | None:
+    """Evaluate achievements + rewards for a finished run.
+
+    Returns None when the session is not actually game-over (e.g. mid-run).
+    """
+    if not session.game_over:
+        return None
+    death_cause = categorize_death(session)
+    achievements = evaluate_achievements(session)
+    rewards = compute_rewards(achievements, session)
+    return build_run_summary(session, achievements, rewards, death_cause)
+
+
+def persist_death_rewards(
+    session: GameSession,
+    user_id: str,
+    session_id: str,
+    summary: dict[str, Any],
+) -> None:
+    """Write achievements, account rewards, and legacy bonuses to the DB.
+
+    The DB layer is exposed via the WebGameService; this helper expects a
+    reference to the service instance.
+    """
+    raise NotImplementedError("persist_death_rewards must be called via WebGameService")
+
+
+def attach_death_rewards_helpers(service: "WebGameService") -> None:
+    """Attach bound helpers to the service instance.
+
+    The service owns the DB connection, so reward persistence must route
+    through it. We expose this as a method instead of free functions so
+    tests can stub it cleanly.
+    """
+    def persist(
+        session: GameSession,
+        user_id: str,
+        session_id: str,
+        summary: dict[str, Any],
+    ) -> None:
+        db = service.db
+        for achievement in summary.get("achievements", []) or []:
+            db.save_run_achievement(
+                user_id=user_id,
+                session_id=session_id,
+                achievement_key=str(achievement.get("key") or ""),
+                achievement_name=str(achievement.get("name") or ""),
+                description=str(achievement.get("description") or ""),
+                death_cause=str(summary.get("death_cause") or ""),
+            )
+        for reward in summary.get("rewards", []) or []:
+            db.save_account_reward(
+                user_id=user_id,
+                reward_type=str(reward.get("type") or ""),
+                reward_value=str(reward.get("value") or ""),
+                label=str(reward.get("label") or ""),
+                source_session_id=session_id,
+            )
+        for bonus in bonuses_to_legacy(summary.get("rewards", []) or []):
+            db.save_legacy_bonus(
+                user_id=user_id,
+                bonus_type=str(bonus.get("bonus_type") or ""),
+                bonus_value=str(bonus.get("bonus_value") or ""),
+                label=str(bonus.get("label") or ""),
+                source_session_id=session_id,
+                runs_remaining=int(bonus.get("runs_remaining") or 1),
+            )
+
+    # Bind to module-level helper.
+    globals()["persist_death_rewards"] = persist

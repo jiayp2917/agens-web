@@ -420,6 +420,16 @@ class GameEngine:
         self.game_session.discovered_locations = [self.game_session.location]
         self.game_session.lore_facts = [default_lore]
 
+        # ── World profile generation (P2) ──
+        self._emit("on_loading", "推演天道，生成世界中...")
+        world_profile = self._generate_world_profile(profile)
+        self.game_session.world_profile = world_profile
+        # Enrich world fields from the generated profile
+        if world_profile.get("world_name"):
+            self.game_session.region = world_profile["world_name"]
+        if world_profile.get("initial_situation"):
+            self.game_session.lore_facts.insert(0, world_profile["initial_situation"])
+
         profile_choices = normalize_choices(profile.get("choices"))
         self._emit("on_loading", "天道推演开局中...")
         generated_opening, generated_choices = self._generate_profile_opening(profile, special)
@@ -447,6 +457,46 @@ class GameEngine:
         self._emit("on_status_bar", format_status_bar(self.game_session))
         self._record_opening_context(opening)
         self._auto_save()
+
+    def _generate_world_profile(self, profile: dict[str, Any]) -> dict[str, Any]:
+        """Generate a structured world profile for the character session.
+
+        Uses the model if an API key is available; otherwise falls back to
+        a local template. The world profile is stored in the session and
+        used to contextualize subsequent turns.
+        """
+        from .world_generator import (
+            build_world_fallback,
+            build_world_prompt,
+            parse_world_response,
+        )
+
+        fallback = build_world_fallback(profile)
+
+        if not os.environ.get("AGNES_API_KEY"):
+            self._emit("on_info", "未检测到 API Key，使用本地模板生成世界观。")
+            return fallback
+
+        prompt = build_world_prompt(profile)
+        try:
+            result = run_turn_sync(
+                "world_builder",
+                prompt,
+                self.game_session,
+                generation_type="world_profile",
+            )
+        except Exception:
+            log.exception("world profile generation failed, using fallback")
+            return fallback
+
+        parsed = parse_world_response(result)
+        if not parsed or not parsed.get("world_name"):
+            return fallback
+
+        # Merge model result with fallback defaults for any missing keys
+        merged = dict(fallback)
+        merged.update({k: v for k, v in parsed.items() if v})
+        return merged
 
     def _generate_profile_opening(self, profile: dict[str, Any], special: bool) -> tuple[str, list[str]]:
         """Ask World Builder for the first scene after form creation."""
@@ -559,10 +609,25 @@ class GameEngine:
 
         self._emit("on_loading", "天道运转中...")
 
+        # ── P3: Rule engine settlement ──
+        from .turn_rules import settle_turn
+
+        rule_delta = settle_turn(text, self.game_session)
+        turn_summary = (
+            rule_delta.get("meta", {}).get("turn_summary", "")
+            if isinstance(rule_delta.get("meta"), dict) else ""
+        )
+
         # Step 1: Run narrator with stream callback.
+        # Include rule engine summary so the model writes narrative
+        # consistent with the authoritative numeric outcome.
+        narrator_input = text
+        if turn_summary:
+            narrator_input = f"{text}\n\n[本回合规则结算结果（以此为权威数值）：{turn_summary}]"
+
         try:
             narrator_result = run_turn_sync(
-                "narrator", text, self.game_session,
+                "narrator", narrator_input, self.game_session,
                 stream_callback=self._stream_callback if self.on_stream_chunk else None,
                 repair_incomplete_output=True,
             )
@@ -707,6 +772,9 @@ class GameEngine:
             char_delta = dict(char_delta)
             combat_delta = char_delta.pop("combat")
             state_delta = {**state_delta, "character": char_delta}
+
+        # ── P3: Merge rule engine delta (authoritative numbers) ──
+        state_delta = _merge_rule_delta(state_delta, rule_delta)
 
         # Step 3: Apply non-combat delta.
         self.game_session.apply_delta(state_delta)
@@ -1438,6 +1506,70 @@ class GameEngine:
         lowered = value.lower()
         reset_markers = ("混沌", "虚空", "未开", "起源", "void", "chaos")
         return any(marker in lowered for marker in reset_markers)
+
+
+def _merge_rule_delta(
+    model_delta: dict[str, Any], rule_delta: dict[str, Any]
+) -> dict[str, Any]:
+    """Merge authoritative rule-engine delta on top of model-generated delta.
+
+    Rule engine owns: age, lifespan, game_over, game_over_reason, elapsed_years.
+    For experience: rule engine provides a floor; model can grant more.
+    Model owns: narrative text, choices, world enrichments (lore, npcs, quests).
+    """
+    if not isinstance(model_delta, dict):
+        model_delta = {}
+    if not isinstance(rule_delta, dict):
+        return model_delta
+
+    merged = dict(model_delta)
+
+    # ── Character: rule engine authoritative for age and lifespan;
+    #     experience uses max(model, rule) so model can grant more ──
+    rule_char = rule_delta.get("character", {})
+    if isinstance(rule_char, dict) and rule_char:
+        merged_char = dict(merged.get("character", {}))
+
+        # Age and lifespan: rule engine ALWAYS authoritative
+        for key in ("age", "lifespan"):
+            if key in rule_char:
+                merged_char[key] = rule_char[key]
+
+        # Experience: rule engine = floor, model can add more
+        if "experience" in rule_char:
+            model_exp = _parse_delta_int(merged_char.get("experience"))
+            rule_exp = _parse_delta_int(rule_char["experience"])
+            merged_char["experience"] = f"+{max(model_exp, rule_exp)}"
+
+        if "attributes" in rule_char:
+            merged_char["attributes"] = rule_char["attributes"]
+        merged["character"] = merged_char
+
+    # ── Meta: rule engine authoritative for game-over and turn info ──
+    rule_meta = rule_delta.get("meta", {})
+    if isinstance(rule_meta, dict) and rule_meta:
+        merged_meta = dict(merged.get("meta", {}))
+        for key in ("game_over", "game_over_reason", "elapsed_years", "choice_category"):
+            if key in rule_meta:
+                merged_meta[key] = rule_meta[key]
+        merged["meta"] = merged_meta
+
+    return merged
+
+
+def _parse_delta_int(value: Any) -> int:
+    """Parse an int from a delta value like '+10', '10', or 10."""
+    if isinstance(value, bool):
+        return 0
+    if isinstance(value, int):
+        return value
+    if isinstance(value, str):
+        stripped = value.lstrip("+")
+        try:
+            return int(stripped)
+        except (ValueError, TypeError):
+            return 0
+    return 0
 
 
 _luck_from_attributes = luck_from_attributes

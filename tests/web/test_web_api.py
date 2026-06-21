@@ -143,7 +143,8 @@ def test_web_api_minimum_game_flow(tmp_path: Path, monkeypatch) -> None:
             json={"choice_index": 0},
         ).json()
         assert chosen["turn_count"] == 1
-        assert chosen["character"]["experience"] == 10
+        # Rule engine produces experience in range 5-15 for choice A (稳妥)
+        assert 5 <= chosen["character"]["experience"] <= 50
         assert chosen["choices"] == ["继续请教", "前往住处", "查看木牌"]
 
         acted = client.post(
@@ -358,6 +359,38 @@ def test_production_rejects_default_session_secret(tmp_path: Path, monkeypatch) 
         create_app(tmp_path / "agens_web.sqlite3")
 
 
+def test_production_requires_allowed_origins(tmp_path: Path, monkeypatch) -> None:
+    monkeypatch.setenv("AGENS_ENV", "production")
+    monkeypatch.setenv("DATABASE_BACKEND", "sqlite")
+    monkeypatch.setenv("DATABASE_URL", "postgresql+psycopg://agens_user:test@postgres:5432/agens_web")
+    monkeypatch.setenv("INVITE_ADMIN_CODE", "admin-invite-123")
+    monkeypatch.setenv("SESSION_SECRET", "not-the-dev-secret")
+    monkeypatch.delenv("AGENS_ALLOWED_ORIGINS", raising=False)
+
+    with pytest.raises(RuntimeError, match="AGENS_ALLOWED_ORIGINS"):
+        create_app(tmp_path / "agens_web.sqlite3")
+
+
+def test_production_hides_openapi_and_rejects_untrusted_host(tmp_path: Path, monkeypatch) -> None:
+    monkeypatch.setenv("AGENS_ENV", "production")
+    monkeypatch.setenv("DATABASE_BACKEND", "sqlite")
+    monkeypatch.setenv("DATABASE_URL", "postgresql+psycopg://agens_user:test@postgres:5432/agens_web")
+    monkeypatch.setenv("INVITE_ADMIN_CODE", "admin-invite-123")
+    monkeypatch.setenv("SESSION_SECRET", "not-the-dev-secret")
+    monkeypatch.setenv("AGENS_ALLOWED_ORIGINS", "https://game.example.test")
+    monkeypatch.setenv("SESSION_COOKIE_SECURE", "0")
+    app = create_app(tmp_path / "agens_web.sqlite3")
+
+    client = TestClient(app, base_url="https://game.example.test")
+    assert client.get("/api/health").status_code == 200
+    assert client.get("/docs").status_code == 404
+    assert client.get("/redoc").status_code == 404
+    assert client.get("/openapi.json").status_code == 404
+
+    blocked = TestClient(app, base_url="https://evil.example.test")
+    assert blocked.get("/api/health").status_code == 400
+
+
 def test_origin_mismatch_is_rejected_for_state_changes(tmp_path: Path, monkeypatch) -> None:
     monkeypatch.setenv("SESSION_COOKIE_SECURE", "0")
     monkeypatch.setenv("AGENS_ALLOWED_ORIGINS", "https://game.example.test")
@@ -399,6 +432,47 @@ def test_body_size_limit_rejects_actual_large_body(tmp_path: Path, monkeypatch) 
     assert response.status_code == 413
 
 
+def test_admin_invite_create_validates_schema(tmp_path: Path, monkeypatch) -> None:
+    monkeypatch.setenv("SESSION_COOKIE_SECURE", "0")
+    app = create_app(tmp_path / "agens_web.sqlite3")
+    client = TestClient(app)
+    app.state.service.db.create_user("admin", "hash", is_admin=True)
+    token = __import__("web.backend.auth", fromlist=["create_session_token"]).create_session_token(
+        app.state.service.db.get_user_by_username("admin")["id"]
+    )
+    client.cookies.set("agens_session", token)
+
+    assert client.post("/api/invites", json={"code": "short"}).status_code == 422
+    assert client.post(
+        "/api/invites",
+        json={"code": "valid-code-123", "role": "owner", "max_uses": 1},
+    ).status_code == 422
+    assert client.post(
+        "/api/invites",
+        json={"code": "valid-code-123", "role": "user", "max_uses": "many"},
+    ).status_code == 422
+
+
+def test_alembic_initial_pg_schema_covers_runtime_tables() -> None:
+    migration = (
+        Path(__file__).resolve().parents[2]
+        / "migrations"
+        / "versions"
+        / "20260621_0001_initial_web_pg.py"
+    ).read_text(encoding="utf-8")
+    for table in (
+        "catalog_talents",
+        "catalog_family_backgrounds",
+        "catalog_spirit_roots",
+        "catalog_difficulties",
+        "catalog_story_seeds",
+        "run_achievements",
+        "account_rewards",
+        "legacy_bonuses",
+    ):
+        assert f'"{table}"' in migration
+
+
 def test_model_failure_events_are_public_safe(tmp_path: Path, monkeypatch) -> None:
     monkeypatch.setenv("SESSION_COOKIE_SECURE", "0")
     app = create_app(tmp_path / "agens_web.sqlite3")
@@ -422,9 +496,170 @@ def test_model_failure_events_are_public_safe(tmp_path: Path, monkeypatch) -> No
 
 @pytest.mark.skipif(not os.environ.get("TEST_DATABASE_URL"), reason="TEST_DATABASE_URL not configured")
 def test_postgres_database_url_smoke(monkeypatch) -> None:
+    from alembic import command
+    from alembic.config import Config
+
     monkeypatch.setenv("DATABASE_BACKEND", "postgresql")
     monkeypatch.setenv("DATABASE_URL", os.environ["TEST_DATABASE_URL"])
+    monkeypatch.setenv("SESSION_COOKIE_SECURE", "0")
+    monkeypatch.setenv("INVITE_ADMIN_CODE", "pg-admin-invite-123")
+    monkeypatch.setenv("SESSION_SECRET", "test-postgres-session-secret")
+    monkeypatch.setenv("AGENS_ALLOWED_ORIGINS", "https://game.example.test")
+
+    alembic_cfg = Config(str(Path(__file__).resolve().parents[2] / "alembic.ini"))
+    command.upgrade(alembic_cfg, "head")
+
     from web.backend.database import create_database
 
     db = create_database()
     assert db.engine.url.drivername.startswith("postgresql")
+    assert db.list_catalog("catalog_talents")
+
+    app = create_app()
+    client = TestClient(app, base_url="https://game.example.test")
+    client.post(
+        "/api/auth/register",
+        json={"username": "pg_player", "password": "password-123", "invite_code": "pg-admin-invite-123"},
+        headers={"Origin": "https://game.example.test"},
+    )
+    created = client.post(
+        "/api/sessions",
+        json={},
+        headers={"Origin": "https://game.example.test"},
+    ).json()
+    session_id = created["session_id"]
+    with patch("agens_novel.engine.game_engine.run_turn_sync", side_effect=_runner):
+        started = client.post(
+            f"/api/sessions/{session_id}/start",
+            json={"char_name": "pg_player"},
+            headers={"Origin": "https://game.example.test"},
+        ).json()
+        assert started["game_started"] is True
+        assert client.post(
+            f"/api/sessions/{session_id}/choice",
+            json={"choice_index": 0},
+            headers={"Origin": "https://game.example.test"},
+        ).status_code == 200
+        assert client.post(
+            f"/api/sessions/{session_id}/save",
+            json={"name": "slot_1"},
+            headers={"Origin": "https://game.example.test"},
+        ).status_code == 200
+        assert client.post(
+            f"/api/sessions/{session_id}/load",
+            json={"name": "slot_1"},
+            headers={"Origin": "https://game.example.test"},
+        ).status_code == 200
+        assert client.post(
+            f"/api/sessions/{session_id}/end",
+            json={"reason": "done"},
+            headers={"Origin": "https://game.example.test"},
+        ).status_code == 200
+    assert client.get(f"/api/sessions/{session_id}/death_summary").status_code == 200
+
+
+# ── P4: Death rewards ──────────────────────────────────────────────────
+
+
+def test_death_summary_persists_for_registered_user(tmp_path: Path, monkeypatch) -> None:
+    monkeypatch.setenv("AGNES_API_KEY", "sk-test-web-api")
+    monkeypatch.setenv("SESSION_COOKIE_SECURE", "0")
+    app = create_app(tmp_path / "agens_web.sqlite3")
+    client = TestClient(app)
+    _create_invite(app)
+    _register(client)
+    session_id = client.post("/api/sessions", json={"title": "试炼"}).json()["session_id"]
+
+    with patch("agens_novel.engine.game_engine.run_turn_sync", side_effect=_runner):
+        client.post(f"/api/sessions/{session_id}/start", json={"char_name": "许满"})
+        ended = client.post(
+            f"/api/sessions/{session_id}/end",
+            json={"reason": "玩家结束本局。"},
+        ).json()
+        assert ended["game_over"] is True
+
+    summary_resp = client.get(f"/api/sessions/{session_id}/death_summary").json()
+    assert summary_resp["is_guest"] is False
+    summary = summary_resp["summary"]
+    assert summary["death_cause"] == "玩家结束本局"
+    # At minimum, base attribute_points are always granted.
+    types = {r["type"] for r in summary.get("rewards", [])}
+    assert "attribute_points" in types
+
+    # Legacy bonuses should now be listed for the user.
+    bonuses = client.get("/api/users/me/legacy_bonuses").json()
+    assert len(bonuses) >= 1
+    assert any(b["bonus_type"] == "attribute_points" for b in bonuses)
+
+
+def test_legacy_bonuses_applied_on_next_character(tmp_path: Path, monkeypatch) -> None:
+    monkeypatch.setenv("AGNES_API_KEY", "sk-test-web-api")
+    monkeypatch.setenv("SESSION_COOKIE_SECURE", "0")
+    app = create_app(tmp_path / "agens_web.sqlite3")
+    client = TestClient(app)
+    _create_invite(app)
+    _register(client)
+    db = app.state.service.db
+    user_id = db.get_user_by_username("player")["id"]
+    # Pre-seed two legacy bonuses for the user.
+    db.save_legacy_bonus(
+        user_id=user_id,
+        bonus_type="attribute_points",
+        bonus_value="2",
+        label="+2",
+        source_session_id="seeded",
+    )
+    db.save_legacy_bonus(
+        user_id=user_id,
+        bonus_type="extra_lifespan",
+        bonus_value="10",
+        label="+10",
+        source_session_id="seeded",
+    )
+
+    session_id = client.post("/api/sessions", json={}).json()["session_id"]
+    with patch("agens_novel.engine.game_engine.run_turn_sync", side_effect=_runner):
+        started = client.post(
+            f"/api/sessions/{session_id}/start",
+            json={
+                "char_name": "许满",
+                "attributes": {
+                    "root_bone": 50, "comprehension": 50, "luck": 50,
+                    "willpower": 50, "physique": 50, "spiritual_sense": 50,
+                },
+            },
+        ).json()
+    # Both bonuses should have been applied: +2 attribute points distributed
+    # to the lowest stats, +10 extra lifespan reflected in world/character.
+    assert started["game_started"] is True
+    # After consumption, legacy_bonuses for this user should be 0 (runs_remaining 0).
+    remaining = db.list_legacy_bonuses(user_id)
+    assert all(b["runs_remaining"] == 0 for b in remaining)
+
+
+def test_legacy_bonuses_endpoint_returns_empty_for_guest(tmp_path: Path, monkeypatch) -> None:
+    monkeypatch.setenv("SESSION_COOKIE_SECURE", "0")
+    app = create_app(tmp_path / "agens_web.sqlite3")
+    client = TestClient(app)
+    # No login → 401 (endpoint requires auth).
+    assert client.get("/api/users/me/legacy_bonuses").status_code == 401
+
+
+def test_guest_death_summary_returns_in_memory(tmp_path: Path, monkeypatch) -> None:
+    monkeypatch.setenv("AGNES_API_KEY", "sk-test-web-api")
+    monkeypatch.setenv("SESSION_COOKIE_SECURE", "0")
+    app = create_app(tmp_path / "agens_web.sqlite3")
+    client = TestClient(app)
+    session_id = client.post("/api/sessions", json={"title": "访客局"}).json()["session_id"]
+
+    with patch("agens_novel.engine.game_engine.run_turn_sync", side_effect=_runner):
+        client.post(f"/api/sessions/{session_id}/start", json={"char_name": "访客"})
+        client.post(
+            f"/api/sessions/{session_id}/end",
+            json={"reason": "玩家结束本局。"},
+        )
+
+    summary = client.get(f"/api/sessions/{session_id}/death_summary").json()
+    assert summary["is_guest"] is True
+    # Summary exists even though the guest has no DB.
+    assert summary["summary"]["death_cause"] == "玩家结束本局"

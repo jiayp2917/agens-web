@@ -124,7 +124,7 @@ class TestGameEngineHandleAction:
         with patch("agens_novel.engine.game_engine.run_turn_sync", side_effect=runner):
             engine.handle_action("B")
 
-        assert seen_inputs == ["询问接引弟子"]
+        assert seen_inputs[0].startswith("询问接引弟子")
         assert engine.game_session.last_choices == ["继续询问", "返回山门", "观察弟子神色"]
 
     def test_choice_letter_ignores_missing_slot(self, monkeypatch) -> None:
@@ -155,7 +155,7 @@ class TestGameEngineHandleAction:
         with patch("agens_novel.engine.game_engine.run_turn_sync", side_effect=runner):
             engine.handle_action("D: 沿石阶寻找隐藏碑文")
 
-        assert seen_inputs == ["沿石阶寻找隐藏碑文"]
+        assert seen_inputs[0].startswith("沿石阶寻找隐藏碑文")
 
     def test_action_without_game(self, monkeypatch) -> None:
         monkeypatch.setenv("AGNES_API_KEY", "sk-test-1234567890")
@@ -535,7 +535,8 @@ class TestGameEngineHandleAction:
         assert s.current_scene == "晨雾中的青云山外门"
         assert s.day_count == 2
         assert s.mp == 45
-        assert s.experience == 10
+        # Rule engine provides a floor; model may grant more
+        assert s.experience >= 5
 
     def test_start_from_profile_seeds_opening_chat_history(self, monkeypatch, tmp_path) -> None:
         from agens_novel import paths

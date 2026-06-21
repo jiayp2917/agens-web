@@ -70,6 +70,10 @@ class GameSession:
     active_quests: list[dict] = field(default_factory=list)
     discovered_locations: list[str] = field(default_factory=list)
     lore_facts: list[str] = field(default_factory=list)
+    world_profile: dict[str, Any] = field(default_factory=dict)
+    # world_profile keys (when generated):
+    #   world_name, regions, sects, cultivation_system, current_conflicts,
+    #   world_rules (hidden from frontend)
 
     # ── Turn history ──
     turn_history: list[dict] = field(default_factory=list)
@@ -141,6 +145,7 @@ class GameSession:
                 "lore_facts": self.lore_facts,
                 "turn_events": [],
                 "day_count": self.day_count,
+                "world_profile": self.world_profile,
             },
             "model": self.model,
             "base_url": self.base_url,
@@ -431,6 +436,7 @@ class GameSession:
                 "active_quests": self.active_quests,
                 "discovered_locations": self.discovered_locations,
                 "lore_facts": self.lore_facts,
+                "world_profile": self.world_profile,
             },
             "turn_history": self.turn_history[-20:],
             "chat_history": self.chat_history[-20:],
@@ -496,6 +502,9 @@ class GameSession:
         session.active_quests = world.get("active_quests", [])
         session.discovered_locations = world.get("discovered_locations", [])
         session.lore_facts = world.get("lore_facts", [])
+        session.world_profile = world.get("world_profile", {})
+        if not isinstance(session.world_profile, dict):
+            session.world_profile = {}
         session.turn_history = data.get("turn_history", [])
         chat_history = data.get("chat_history", [])
         session.chat_history = chat_history if isinstance(chat_history, list) else []

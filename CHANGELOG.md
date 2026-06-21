@@ -1,5 +1,21 @@
 # Changelog
 
+## 2026-06-21
+
+### Added
+
+- PostgreSQL Alembic schema coverage for catalog tables and death reward tables.
+- Production safety gates for allowed origins, OpenAPI hiding, and trusted host checks.
+- React turn-action busy guards for A/B/C choices, fallback actions, and D input.
+- PostgreSQL smoke path that runs only when `TEST_DATABASE_URL` is configured.
+- Archived the game-mode planning draft under `docs/archive/`.
+
+### Changed
+
+- `docs/INDEX.md` now separates current Alpha runtime docs from future game-mode v5 specs.
+- `docs/PROJECT_AUDIT.md` records the React-first entrypoint, legacy frontend fallback policy, and PG/Alembic authority.
+- `/api/invites` now uses a typed request schema instead of ad hoc dict parsing.
+
 ## 2026-06-18
 
 ### Added

@@ -443,13 +443,13 @@ function GamePage({
           <pre className="panel-output">{String(session.panels?.[panel] || "暂无内容。")}</pre>
         </aside>
         <section className="story-panel">
-          {session.fallback_prompt?.active && <FallbackBanner session={session} runTurn={runTurn} />}
+          {session.fallback_prompt?.active && <FallbackBanner session={session} busy={busy} runTurn={runTurn} />}
           <div className="story-log">
             {events.length === 0 ? <p>叙事将在这里展开。</p> : events.map((event, idx) => <article key={idx}>{event.text}</article>)}
           </div>
           <div className="choice-list">
             {session.choices.map((choice, index) => (
-              <button key={`${choice}-${index}`} onClick={() => runTurn(`/api/sessions/${session.session_id}/choice`, { choice_index: index })}>
+              <button key={`${choice}-${index}`} disabled={busy} onClick={() => runTurn(`/api/sessions/${session.session_id}/choice`, { choice_index: index })}>
                 <span>{String.fromCharCode(65 + index)}</span>{choice}
               </button>
             ))}
@@ -458,20 +458,20 @@ function GamePage({
       </div>
       <form className="action-bar-react" onSubmit={submit}>
         <label>D 自由行动</label>
-        <input value={action} onChange={(event) => setAction(event.target.value)} placeholder="例如：前往悬赏榜、请教师兄、尝试突破" />
+        <input disabled={busy} value={action} onChange={(event) => setAction(event.target.value)} placeholder="例如：前往悬赏榜、请教师兄、尝试突破" />
         <button className="primary-btn" disabled={busy} type="submit"><Send size={18} />{busy ? "推演中" : "发送"}</button>
       </form>
     </section>
   );
 }
 
-function FallbackBanner({ session, runTurn }: { session: Session; runTurn: (path: string, body: unknown) => Promise<void> }) {
+function FallbackBanner({ session, busy, runTurn }: { session: Session; busy: boolean; runTurn: (path: string, body: unknown) => Promise<void> }) {
   return (
     <aside className="fallback">
       <ShieldAlert size={20} />
       <span>{session.fallback_prompt?.text || "模型暂不可用，当前以本地故事继续。"}</span>
-      <button onClick={() => runTurn(`/api/sessions/${session.session_id}/action`, { action: "继续本局" })}>继续本局</button>
-      <button onClick={() => runTurn(`/api/sessions/${session.session_id}/end`, { reason: "玩家结束本局。" })}>结束本局</button>
+      <button disabled={busy} onClick={() => runTurn(`/api/sessions/${session.session_id}/action`, { action: "继续本局" })}>继续本局</button>
+      <button disabled={busy} onClick={() => runTurn(`/api/sessions/${session.session_id}/end`, { reason: "玩家结束本局。" })}>结束本局</button>
     </aside>
   );
 }

@@ -1,3 +1,6 @@
+> Archive note: historical game-mode planning draft from 2026-06-21.
+> This file is not authoritative for current runtime status. Read `docs/RUNTIME_FLOW.md` for current Alpha behavior and `docs/GAME_MODE_SPEC.md` for the v5 game-mode spec.
+
 P0：先收口当前 Alpha
 目标：当前版本能给少量人玩，不阻塞、不泄密、可回滚。
 固化当前工作区

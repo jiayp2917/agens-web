@@ -1,0 +1,220 @@
+"""Turn rule engine — authoritative numeric settlement per turn.
+
+Model *only* polishes narrative and choice text. The rule engine decides:
+- elapsed_years
+- attribute changes
+- lifespan consumption
+- breakthrough / death / opportunity outcomes
+"""
+
+from __future__ import annotations
+
+import random
+from typing import Any
+
+# ── Realm → base years per turn ─────────────────────────────────────────────
+# Higher realms mean longer time spans for each pivotal decision.
+
+_REALM_YEAR_RANGES: dict[str, tuple[int, int]] = {
+    "练气": (1, 3),
+    "筑基": (1, 5),
+    "金丹": (3, 10),
+    "元婴": (5, 20),
+    "化神": (10, 50),
+    "合体": (20, 100),
+    "大乘": (50, 200),
+    "渡劫": (100, 500),
+    "飞升": (0, 0),  # terminal
+}
+
+# ── Choice category → risk multiplier for elapsed years ─────────────────────
+
+_CHOICE_CATEGORY_MAP: dict[str, str] = {
+    "A": "稳妥",
+    "B": "机遇",
+    "C": "风险",
+    "D": "气运",
+}
+
+_RISK_YEAR_MULTIPLIER: dict[str, float] = {
+    "稳妥": 0.8,
+    "机遇": 1.0,
+    "风险": 1.5,
+    "气运": 1.0,
+}
+
+# ── Lifespan by realm ───────────────────────────────────────────────────────
+
+_REALM_LIFESPAN: dict[str, int] = {
+    "练气": 100,
+    "筑基": 200,
+    "金丹": 500,
+    "元婴": 1000,
+    "化神": 2000,
+    "合体": 4000,
+    "大乘": 5000,
+    "渡劫": 6000,
+    "飞升": 9999,
+}
+
+# ── Choice → attribute impact ───────────────────────────────────────────────
+
+_CHOICE_ATTRIBUTE_IMPACT: dict[str, dict[str, Any]] = {
+    "稳妥": {
+        "attributes": {"willpower": (0, 2), "comprehension": (0, 1)},
+        "experience_range": (5, 15),
+        "breakthrough_chance": 0.1,
+    },
+    "机遇": {
+        "attributes": {"luck": (0, 2), "comprehension": (0, 2)},
+        "experience_range": (10, 25),
+        "breakthrough_chance": 0.05,
+    },
+    "风险": {
+        "attributes": {"physique": (-2, 2), "willpower": (0, 3)},
+        "experience_range": (20, 50),
+        "breakthrough_chance": 0.15,
+        "death_risk": 0.05,
+    },
+    "气运": {
+        "attributes": {"luck": (-3, 5)},
+        "experience_range": (5, 40),
+        "breakthrough_chance": 0.08,
+        "luck_driven": True,
+    },
+}
+
+
+def classify_choice(text: str) -> str:
+    """Map a player choice text to a category label (稳妥/机遇/风险/气运).
+
+    Falls back to '机遇' for free-text actions that don't match A/B/C/D.
+    """
+    raw = text.strip()
+    # Direct A/B/C/D letter
+    upper = raw.upper()
+    if upper in _CHOICE_CATEGORY_MAP and len(raw) == 1:
+        return _CHOICE_CATEGORY_MAP[upper]
+    # Text starting with A/B/C/D marker
+    for letter, category in _CHOICE_CATEGORY_MAP.items():
+        if raw.startswith(letter) or raw.startswith(letter.lower()):
+            return category
+    # Default for free-text actions
+    return "机遇"
+
+
+def settle_turn(
+    choice_text: str,
+    session: Any,  # GameSession
+    difficulty_config: dict[str, Any] | None = None,
+) -> dict[str, Any]:
+    """Compute authoritative numeric outcomes for one turn.
+
+    Returns a state_delta dict compatible with GameSession.apply_delta().
+    The caller should apply this delta to the session AFTER the model
+    generates narrative (so narrative matches the rule outcome).
+
+    Returns:
+        dict with keys:
+            character: state changes (experience, age, lifespan, hp, etc.)
+            world: world state changes (current_scene, lore_add, etc.)
+            meta: game_over, game_over_reason, elapsed_years
+            turn_summary: human-readable summary for model prompt
+    """
+    category = classify_choice(choice_text)
+    difficulty = (difficulty_config or {}).get("name") or session.difficulty or "普通"
+
+    # ── Compute elapsed years ──
+    realm = session.realm or "练气"
+    year_min, year_max = _REALM_YEAR_RANGES.get(realm, (1, 3))
+    risk_mult = _RISK_YEAR_MULTIPLIER.get(category, 1.0)
+
+    # Adjust for difficulty
+    diff_mult = 1.0
+    if difficulty == "简单":
+        diff_mult = 0.7
+    elif difficulty == "困难":
+        diff_mult = 1.3
+
+    base_years = random.randint(year_min, year_max)
+    elapsed_years = max(1, int(base_years * risk_mult * diff_mult))
+
+    # ── Compute attribute/experience changes ──
+    impact = _CHOICE_ATTRIBUTE_IMPACT.get(category, _CHOICE_ATTRIBUTE_IMPACT["机遇"])
+    char_delta: dict[str, Any] = {}
+
+    # Experience gain
+    exp_min, exp_max = impact["experience_range"]
+    exp_gain = random.randint(exp_min, exp_max)
+    if difficulty == "简单":
+        exp_gain = int(exp_gain * 0.8)
+    elif difficulty == "困难":
+        exp_gain = int(exp_gain * 1.2)
+    char_delta["experience"] = f"+{exp_gain}"
+
+    # Attribute fluctuations
+    attr_delta: dict[str, int] = {}
+    for attr, (lo, hi) in impact.get("attributes", {}).items():
+        change = random.randint(lo, hi)
+        if change != 0:
+            attr_delta[attr] = change
+    if attr_delta:
+        # Use explicit int values (not "+N" strings) for apply_delta compatibility
+        char_delta["attributes"] = attr_delta
+
+    # Age and lifespan
+    char_delta["age"] = f"+{elapsed_years}"
+    char_delta["lifespan"] = f"-{elapsed_years}"
+
+    # ── Check for lifespan death ──
+    new_age = session.age + elapsed_years
+    new_lifespan = session.lifespan - elapsed_years
+    game_over = False
+    game_over_reason = ""
+
+    if new_lifespan <= 0 and session.realm != "飞升":
+        game_over = True
+        game_over_reason = "寿元耗尽，坐化而去。"
+
+    # Update realm max lifespan on breakthrough
+    realm_lifespan = _REALM_LIFESPAN.get(realm, 100)
+    if session.lifespan < realm_lifespan:
+        char_delta["lifespan"] = str(realm_lifespan - session.lifespan)
+
+    # ── Build turn summary for model prompt ──
+    turn_summary = (
+        f"本回合类别：{category}；"
+        f"时间流逝：{elapsed_years}年；"
+        f"角色年龄：{session.age}→{new_age}岁；"
+        f"剩余寿元：{new_lifespan}年；"
+        f"获得修为：{exp_gain}点。"
+    )
+    if game_over:
+        turn_summary += f" 结局：{game_over_reason}"
+
+    # ── Build state_delta ──
+    state_delta: dict[str, Any] = {
+        "character": char_delta,
+        "world": {},
+        "meta": {
+            "elapsed_years": elapsed_years,
+            "choice_category": category,
+            "turn_summary": turn_summary,
+        },
+    }
+
+    if game_over:
+        state_delta["meta"]["game_over"] = True
+        state_delta["meta"]["game_over_reason"] = game_over_reason
+
+    return state_delta
+
+
+def get_realm_lifespan(realm: str) -> int:
+    """Return the base lifespan for a given realm."""
+    return _REALM_LIFESPAN.get(realm, 100)
+
+
+def get_realm_year_range(realm: str) -> tuple[int, int]:
+    """Return (min, max) years per turn for a given realm."""
+    return _REALM_YEAR_RANGES.get(realm, (1, 3))

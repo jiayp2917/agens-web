@@ -21,6 +21,10 @@ services:
       - jiayp_proxy
       - jiayp_internal
 
+# This compose file intentionally does not create PostgreSQL.
+# DATABASE_URL must point to the existing internal PostgreSQL service on
+# jiayp_internal or another private tunnel/network; never expose PostgreSQL
+# to the public internet or LAN for this app.
 networks:
   jiayp_proxy:
     external: true

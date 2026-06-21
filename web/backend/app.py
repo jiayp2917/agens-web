@@ -6,11 +6,13 @@ import os
 import uuid
 from pathlib import Path
 from typing import Any
+from urllib.parse import urlparse
 
 from fastapi import Depends, FastAPI, HTTPException, Request, Response
 from fastapi.responses import FileResponse, JSONResponse
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel, Field
+from starlette.middleware.trustedhost import TrustedHostMiddleware
 
 from .auth import (
     DEV_SESSION_SECRET,
@@ -29,6 +31,7 @@ from .database import create_database
 from .database_common import public_user
 from .security import BodySizeLimitMiddleware, RateLimiter, client_key, enforce_same_origin
 from .service import GUEST_USER_PREFIX, WebGameService, is_guest_user_id
+from .catalog_seed import catalog_as_json
 
 FRONTEND_DIR = Path(__file__).resolve().parents[1] / "frontend"
 FRONTEND_REACT_DIST = Path(__file__).resolve().parents[1] / "frontend-react" / "dist"
@@ -87,11 +90,20 @@ class ModelSettingsRequest(BaseModel):
     api_key: str = Field(default="", max_length=512)
 
 
-def validate_runtime_config() -> None:
+class InviteCreateRequest(BaseModel):
+    code: str = Field(min_length=8, max_length=256)
+    role: str = Field(default="user", pattern=r"^(user|admin)$")
+    max_uses: int = Field(default=1, ge=1, le=100)
+
+
+def is_production_mode() -> bool:
     backend = os.environ.get("DATABASE_BACKEND", "sqlite").strip().lower()
     env = os.environ.get("AGENS_ENV", "").strip().lower()
-    production = env in ("prod", "production") or backend in ("postgres", "postgresql", "pg")
-    if not production:
+    return env in ("prod", "production") or backend in ("postgres", "postgresql", "pg")
+
+
+def validate_runtime_config() -> None:
+    if not is_production_mode():
         return
 
     session_secret = os.environ.get("SESSION_SECRET", "").strip()
@@ -101,14 +113,42 @@ def validate_runtime_config() -> None:
         raise RuntimeError("DATABASE_URL is required in production.")
     if not os.environ.get("INVITE_ADMIN_CODE", "").strip():
         raise RuntimeError("INVITE_ADMIN_CODE is required in production.")
+    if not os.environ.get("AGENS_ALLOWED_ORIGINS", "").strip():
+        raise RuntimeError("AGENS_ALLOWED_ORIGINS is required in production.")
+
+
+def allowed_hosts_from_env() -> list[str]:
+    hosts = {
+        item.strip().lower()
+        for item in os.environ.get("AGENS_ALLOWED_HOSTS", "").split(",")
+        if item.strip()
+    }
+    for origin in os.environ.get("AGENS_ALLOWED_ORIGINS", "").split(","):
+        parsed = urlparse(origin.strip())
+        if parsed.hostname:
+            hosts.add(parsed.hostname.lower())
+    if hosts:
+        hosts.update({"127.0.0.1", "localhost", "agens-web"})
+    return sorted(hosts)
 
 
 def create_app(db_path: Path | None = None) -> FastAPI:
     validate_runtime_config()
     service = WebGameService(create_database(db_path))
-    app = FastAPI(title="agens-web", version="0.1.0", dependencies=[Depends(enforce_same_origin)])
+    production = is_production_mode()
+    app = FastAPI(
+        title="agens-web",
+        version="0.1.0",
+        dependencies=[Depends(enforce_same_origin)],
+        docs_url=None if production else "/docs",
+        redoc_url=None if production else "/redoc",
+        openapi_url=None if production else "/openapi.json",
+    )
     app.state.service = service
     app.state.rate_limiter = RateLimiter()
+    allowed_hosts = allowed_hosts_from_env()
+    if production or allowed_hosts:
+        app.add_middleware(TrustedHostMiddleware, allowed_hosts=allowed_hosts or ["127.0.0.1", "localhost"])
     app.add_middleware(
         BodySizeLimitMiddleware,
         max_bytes=int(os.environ.get("AGENS_MAX_REQUEST_BYTES", str(64 * 1024))),
@@ -195,6 +235,28 @@ def create_app(db_path: Path | None = None) -> FastAPI:
     def health() -> dict[str, str]:
         return {"status": "ok"}
 
+    # ── Catalog endpoints (public read-only game content) ─────────────────
+
+    @app.get("/api/catalog/talents")
+    def catalog_talents() -> list[dict[str, Any]]:
+        return [catalog_as_json(row) for row in service.db.list_catalog("catalog_talents")]
+
+    @app.get("/api/catalog/family_backgrounds")
+    def catalog_family_backgrounds() -> list[dict[str, Any]]:
+        return [catalog_as_json(row) for row in service.db.list_catalog("catalog_family_backgrounds")]
+
+    @app.get("/api/catalog/spirit_roots")
+    def catalog_spirit_roots() -> list[dict[str, Any]]:
+        return [catalog_as_json(row) for row in service.db.list_catalog("catalog_spirit_roots")]
+
+    @app.get("/api/catalog/difficulties")
+    def catalog_difficulties() -> list[dict[str, Any]]:
+        return [catalog_as_json(row) for row in service.db.list_catalog("catalog_difficulties")]
+
+    @app.get("/api/catalog/story_seeds")
+    def catalog_story_seeds() -> list[dict[str, Any]]:
+        return [catalog_as_json(row) for row in service.db.list_catalog("catalog_story_seeds")]
+
     @app.post("/api/auth/register")
     def register(payload: RegisterRequest, request: Request, response: Response) -> dict[str, Any]:
         rate_limit(request, "register", limit=5, window_seconds=300)
@@ -223,22 +285,14 @@ def create_app(db_path: Path | None = None) -> FastAPI:
 
     @app.post("/api/invites")
     def create_invite(
-        payload: dict[str, Any],
+        payload: InviteCreateRequest,
         admin: dict[str, Any] = Depends(current_admin),
     ) -> dict[str, Any]:
-        raw_code = str(payload.get("code") or "").strip()
-        if len(raw_code) < 8:
-            raise HTTPException(status_code=422, detail="邀请码至少 8 个字符。")
-        role = str(payload.get("role") or "user").strip().lower()
-        if role not in ("user", "admin"):
-            raise HTTPException(status_code=422, detail="邀请码角色无效。")
-        max_uses = int(payload.get("max_uses") or 1)
-        if max_uses < 1 or max_uses > 100:
-            raise HTTPException(status_code=422, detail="邀请码可用次数无效。")
+        raw_code = payload.code.strip()
         invite = service.db.create_invite_code(
             hash_invite_code(raw_code),
-            role=role,
-            max_uses=max_uses,
+            role=payload.role,
+            max_uses=payload.max_uses,
             created_by=admin["id"],
         )
         return {
@@ -393,6 +447,26 @@ def create_app(db_path: Path | None = None) -> FastAPI:
     @app.get("/api/saves")
     def saves(user: dict[str, Any] = Depends(current_user)) -> list[dict[str, Any]]:
         return service.list_saves(user["id"])
+
+    @app.get("/api/sessions/{session_id}/death_summary")
+    def death_summary(
+        session_id: str,
+        request: Request,
+        user: dict[str, Any] | None = Depends(optional_user),
+    ) -> dict[str, Any]:
+        try:
+            return service.death_summary(
+                session_id,
+                user_id=session_owner_id(session_id, request, user),
+            )
+        except KeyError as exc:
+            raise HTTPException(status_code=404, detail=str(exc)) from exc
+        except PermissionError as exc:
+            raise HTTPException(status_code=403, detail=str(exc)) from exc
+
+    @app.get("/api/users/me/legacy_bonuses")
+    def legacy_bonuses(user: dict[str, Any] = Depends(current_user)) -> list[dict[str, Any]]:
+        return service.legacy_bonuses(user["id"])
 
     @app.get("/api/settings/model")
     def get_model_settings(_admin: dict[str, Any] = Depends(current_admin)) -> dict[str, Any]:
