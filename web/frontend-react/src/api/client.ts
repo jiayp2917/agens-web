@@ -8,6 +8,7 @@ export type User = {
 export type Session = {
   session_id: string;
   user_id: string;
+  guest?: boolean;
   turn_count: number;
   game_started: boolean;
   game_over: boolean;
@@ -28,6 +29,14 @@ export type SaveRow = {
   realm: string;
   turn_count: number;
   updated_at: number;
+};
+
+export type ModelSettings = {
+  provider: string;
+  base_url: string;
+  model: string;
+  api_key_set: boolean;
+  api_key_masked: string;
 };
 
 export async function api<T>(path: string, init: RequestInit = {}): Promise<T> {

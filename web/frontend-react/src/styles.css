@@ -1,10 +1,10 @@
 :root {
   color-scheme: light;
-  --bg: #f5efe1;
-  --surface: #fbf6ea;
-  --surface-strong: #fffaf0;
+  --bg: #f3ecdc;
+  --surface: rgba(255, 250, 240, 0.92);
+  --surface-solid: #fffaf0;
   --ink: #1f1b16;
-  --muted: #5c5144;
+  --muted: #5f5446;
   --border: #d8c8a7;
   --jade: #0e7c7b;
   --jade-strong: #0a5d5c;
@@ -21,8 +21,11 @@
 body {
   margin: 0;
   color: var(--ink);
-  background: var(--bg);
+  background:
+    linear-gradient(180deg, rgba(243, 236, 220, 0.88), rgba(243, 236, 220, 0.96)),
+    url("/assets/paper_texture.png") center / 720px auto repeat;
   min-width: 320px;
+  overflow-x: hidden;
 }
 
 button,
@@ -35,14 +38,24 @@ select {
 button {
   border: 1px solid var(--border);
   border-radius: 8px;
-  background: var(--surface);
+  background: var(--surface-solid);
   color: var(--ink);
   cursor: pointer;
   padding: 10px 14px;
+  transition: border-color 180ms ease, background 180ms ease, color 180ms ease, transform 180ms ease;
 }
 
 button:hover {
   border-color: var(--jade);
+}
+
+button:active {
+  transform: translateY(1px);
+}
+
+button:disabled {
+  cursor: not-allowed;
+  opacity: 0.52;
 }
 
 .app {
@@ -53,23 +66,34 @@ button:hover {
   display: flex;
   align-items: center;
   justify-content: space-between;
-  padding: 16px clamp(16px, 4vw, 48px);
-  border-bottom: 1px solid var(--border);
-  background: rgba(251, 246, 234, 0.9);
+  gap: 12px;
+  min-height: 76px;
+  padding: 14px clamp(16px, 4vw, 48px);
+  border-bottom: 1px solid rgba(216, 200, 167, 0.72);
+  background: rgba(251, 246, 234, 0.88);
   position: sticky;
   top: 0;
   z-index: 10;
-  backdrop-filter: blur(10px);
+  backdrop-filter: blur(12px);
 }
 
 .brand {
-  font-size: 22px;
-  font-weight: 800;
+  flex: 0 0 auto;
+  color: var(--ink);
+  font-size: clamp(21px, 3vw, 28px);
+  font-weight: 900;
+  text-decoration: none;
 }
 
-.brand span {
-  margin-left: 6px;
-  color: var(--jade);
+.brand::after {
+  content: "";
+  display: inline-block;
+  width: 8px;
+  height: 8px;
+  margin-left: 9px;
+  border-radius: 999px;
+  background: var(--jade);
+  vertical-align: middle;
 }
 
 .topbar-actions,
@@ -77,10 +101,15 @@ button:hover {
   display: inline-flex;
   align-items: center;
   gap: 8px;
+  min-width: 0;
 }
 
 .user-chip {
+  max-width: min(42vw, 260px);
   color: var(--muted);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 .icon-btn {
@@ -90,7 +119,17 @@ button:hover {
   place-items: center;
 }
 
+.bgm-btn.is-on {
+  border-color: var(--jade);
+  color: var(--jade-strong);
+  background: rgba(14, 124, 123, 0.1);
+}
+
 .plain-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
   background: transparent;
 }
 
@@ -112,42 +151,49 @@ button:hover {
 .eyebrow {
   margin: 0 0 8px;
   color: var(--jade);
-  font-weight: 700;
+  font-weight: 800;
   font-size: 12px;
   letter-spacing: 0.14em;
   text-transform: uppercase;
 }
 
 .home {
-  min-height: calc(100dvh - 77px);
+  min-height: calc(100dvh - 76px);
   display: grid;
-  place-items: center;
-  padding: 24px;
+  align-items: center;
+  padding: clamp(20px, 5vw, 56px);
   background:
-    linear-gradient(180deg, rgba(245, 239, 225, 0.55), var(--bg)),
+    linear-gradient(90deg, rgba(245, 239, 225, 0.98) 0%, rgba(245, 239, 225, 0.82) 42%, rgba(245, 239, 225, 0.18) 100%),
     url("/assets/ink_home_bg.png") center bottom / cover no-repeat;
 }
 
-.hero {
-  width: min(560px, 100%);
+.home-shell {
+  width: min(1180px, 100%);
+  margin: 0 auto;
   display: grid;
-  gap: 20px;
-  justify-items: center;
-  text-align: center;
+  grid-template-columns: minmax(300px, 440px) minmax(0, 1fr);
+  align-items: center;
+  gap: clamp(24px, 5vw, 72px);
+}
+
+.hero {
+  display: grid;
+  gap: 18px;
+  text-align: left;
 }
 
 .hero h1 {
   margin: 0;
-  font-size: clamp(42px, 9vw, 76px);
-  line-height: 1.05;
+  font-size: clamp(42px, 7vw, 78px);
+  line-height: 1.04;
 }
 
 .hero p {
-  max-width: 56ch;
+  max-width: 36rem;
   margin: 0;
   color: var(--muted);
   font-size: 18px;
-  line-height: 1.65;
+  line-height: 1.68;
 }
 
 .seal {
@@ -163,27 +209,74 @@ button:hover {
   transform: rotate(-4deg);
 }
 
+.play-modes {
+  display: grid;
+  gap: 8px;
+  color: var(--muted);
+  line-height: 1.5;
+}
+
+.play-modes span {
+  padding-left: 14px;
+  border-left: 3px solid rgba(14, 124, 123, 0.42);
+}
+
 .home-actions {
   width: min(360px, 100%);
   display: grid;
   gap: 10px;
 }
 
+.home-actions button {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+}
+
+.home-preview {
+  margin: 0;
+  min-height: min(56dvh, 520px);
+  border: 1px solid rgba(216, 200, 167, 0.62);
+  border-radius: 8px;
+  overflow: hidden;
+  box-shadow: var(--shadow);
+  background: rgba(255, 250, 240, 0.62);
+}
+
+.home-preview img {
+  width: 100%;
+  height: 100%;
+  min-height: inherit;
+  display: block;
+  object-fit: cover;
+}
+
 .auth-screen,
-.character-page,
-.ending-page {
-  min-height: calc(100dvh - 77px);
+.character-page {
+  min-height: calc(100dvh - 76px);
   display: grid;
   place-items: center;
   padding: 24px;
 }
 
+.auth-screen {
+  background:
+    linear-gradient(180deg, rgba(243, 236, 220, 0.68), rgba(243, 236, 220, 0.96)),
+    url("/assets/ink_mountain_gate.png") center / cover no-repeat;
+}
+
+.character-page {
+  background:
+    linear-gradient(90deg, rgba(243, 236, 220, 0.94), rgba(243, 236, 220, 0.8)),
+    url("/assets/choice_card_mountain.png") center / cover no-repeat;
+}
+
 .auth-panel,
-.character-form,
-.ending-page {
-  width: min(760px, 100%);
+.character-form {
+  width: min(820px, 100%);
   padding: clamp(18px, 4vw, 32px);
-  border: 1px solid var(--border);
+  border: 1px solid rgba(216, 200, 167, 0.84);
   border-radius: 8px;
   background: var(--surface);
   box-shadow: var(--shadow);
@@ -197,9 +290,38 @@ button:hover {
 
 .auth-panel h2,
 .character-form h2,
-.ending-page h2 {
+.ending-card h2 {
   margin: 0;
   font-size: clamp(30px, 5vw, 48px);
+}
+
+.auth-note {
+  margin: 0;
+  color: var(--muted);
+  line-height: 1.6;
+}
+
+.back-home {
+  justify-self: start;
+}
+
+.form-topline {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 12px;
+}
+
+.mode-grid {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 8px;
+}
+
+.mode-grid .active-mode {
+  border-color: var(--jade);
+  color: var(--jade-strong);
+  font-weight: 800;
 }
 
 label {
@@ -214,7 +336,7 @@ select {
   width: 100%;
   border: 1px solid var(--border);
   border-radius: 8px;
-  background: var(--surface-strong);
+  background: var(--surface-solid);
   color: var(--ink);
   padding: 10px 12px;
 }
@@ -235,9 +357,12 @@ select {
 }
 
 .game-page {
-  min-height: calc(100dvh - 77px);
+  min-height: calc(100dvh - 76px);
   display: grid;
   grid-template-rows: auto 1fr auto;
+  background:
+    linear-gradient(180deg, rgba(243, 236, 220, 0.94), rgba(243, 236, 220, 0.86)),
+    url("/assets/game_desktop_bg.png") center bottom / cover fixed no-repeat;
 }
 
 .game-summary {
@@ -253,8 +378,25 @@ select {
   margin: 0;
 }
 
-.game-summary p {
+.game-summary h2 {
+  overflow-wrap: anywhere;
+}
+
+.game-summary p,
+.session-mode {
   color: var(--muted);
+}
+
+.session-mode {
+  display: inline-block;
+  margin-top: 6px;
+  font-size: 14px;
+}
+
+.summary-actions {
+  display: inline-flex;
+  gap: 8px;
+  flex: 0 0 auto;
 }
 
 .game-grid {
@@ -265,9 +407,9 @@ select {
 
 .status-panel,
 .story-panel {
-  border: 1px solid var(--border);
+  border: 1px solid rgba(216, 200, 167, 0.84);
   border-radius: 8px;
-  background: var(--surface);
+  background: rgba(255, 250, 240, 0.88);
   box-shadow: var(--shadow);
 }
 
@@ -282,8 +424,29 @@ select {
 }
 
 .tool-grid {
-  grid-template-columns: repeat(2, 1fr);
+  grid-template-columns: repeat(2, minmax(0, 1fr));
   margin-top: 12px;
+}
+
+.tool-grid button {
+  min-width: 0;
+}
+
+.selected-tool {
+  border-color: var(--jade);
+  color: var(--jade-strong);
+  font-weight: 700;
+}
+
+.panel-output {
+  max-height: 240px;
+  overflow: auto;
+  margin: 12px 0 0;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+  color: var(--muted);
+  font: inherit;
+  line-height: 1.65;
 }
 
 .story-panel {
@@ -296,24 +459,22 @@ select {
   max-height: 58dvh;
   overflow: auto;
   padding: 20px;
-  background:
-    linear-gradient(rgba(251, 246, 234, 0.82), rgba(251, 246, 234, 0.94)),
-    url("/assets/game_desktop_bg.png") center bottom / cover no-repeat;
+  background: linear-gradient(rgba(255, 250, 240, 0.62), rgba(255, 250, 240, 0.88));
 }
 
 .story-log article {
   max-width: 70ch;
   margin: 0 auto 14px;
   padding: 14px 16px;
-  border: 1px solid var(--border);
+  border: 1px solid rgba(216, 200, 167, 0.82);
   border-radius: 8px;
-  background: var(--surface);
+  background: rgba(255, 250, 240, 0.92);
   line-height: 1.7;
 }
 
 .choice-list {
   padding: 14px;
-  background: var(--surface-strong);
+  background: rgba(255, 250, 240, 0.92);
 }
 
 .choice-list button {
@@ -322,6 +483,7 @@ select {
   grid-template-columns: 34px 1fr;
   align-items: center;
   gap: 10px;
+  overflow-wrap: anywhere;
 }
 
 .choice-list span {
@@ -337,17 +499,17 @@ select {
 
 .fallback {
   display: grid;
-  grid-template-columns: auto 1fr;
+  grid-template-columns: auto 1fr auto auto;
   gap: 10px;
   align-items: center;
   padding: 12px 14px;
-  border-bottom: 1px solid rgba(181, 69, 59, 0.32);
-  background: rgba(181, 69, 59, 0.1);
+  border-bottom: 1px solid rgba(181, 69, 59, 0.24);
+  background: rgba(181, 69, 59, 0.08);
   color: var(--ink);
 }
 
-.fallback button {
-  grid-column: auto;
+.fallback svg {
+  color: var(--cinnabar);
 }
 
 .action-bar-react {
@@ -357,9 +519,14 @@ select {
   align-items: center;
   padding: 14px clamp(16px, 4vw, 44px);
   border-top: 1px solid var(--border);
-  background: var(--surface);
+  background: rgba(255, 250, 240, 0.94);
   position: sticky;
   bottom: 0;
+  z-index: 8;
+}
+
+.action-bar-react label {
+  white-space: nowrap;
 }
 
 .modal-scrim {
@@ -373,7 +540,7 @@ select {
 }
 
 .settings-dialog {
-  width: min(760px, 100%);
+  width: min(780px, 100%);
   max-height: min(720px, calc(100dvh - 36px));
   overflow: auto;
   border-radius: 8px;
@@ -381,6 +548,10 @@ select {
   color: #ece6d6;
   border: 1px solid #2e343c;
   box-shadow: 0 24px 60px rgba(0, 0, 0, 0.55);
+}
+
+.compact-dialog {
+  width: min(520px, 100%);
 }
 
 .settings-dialog header {
@@ -391,13 +562,38 @@ select {
   border-bottom: 1px solid #2e343c;
 }
 
+.settings-dialog h2,
+.settings-dialog p {
+  margin: 0;
+}
+
+.dialog-tabs {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 8px;
+  padding: 12px 16px 0;
+}
+
+.dialog-tabs button {
+  background: #242a30;
+  color: #ece6d6;
+  border-color: #38414a;
+}
+
+.dialog-tabs .active-tab {
+  background: var(--jade);
+  border-color: var(--jade);
+  color: #fffaf0;
+}
+
 .settings-grid,
 .dialog-message {
   padding: 16px;
 }
 
 .protected-settings,
-.dialog-message {
+.dialog-message,
+.guest-save-state {
   display: flex;
   gap: 12px;
   align-items: center;
@@ -406,23 +602,78 @@ select {
   padding: 14px;
 }
 
+.protected-settings {
+  align-items: flex-start;
+}
+
+.guest-save-state {
+  display: grid;
+  line-height: 1.65;
+  background: #242a30;
+}
+
+.inline-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.settings-form {
+  width: 100%;
+  display: grid;
+  gap: 10px;
+}
+
+.settings-form label {
+  color: #d6cfbf;
+}
+
+.settings-form input {
+  background: #111417;
+  color: #ece6d6;
+  border-color: #38414a;
+}
+
 .save-list {
   display: grid;
   gap: 8px;
-  margin-top: 16px;
 }
 
-.save-list button {
+.save-row {
   display: grid;
-  grid-template-columns: auto 1fr;
-  justify-items: start;
-  gap: 4px 10px;
-  text-align: left;
+  grid-template-columns: auto minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 10px;
+  min-height: 64px;
+  padding: 12px;
+  border: 1px solid #2e343c;
+  border-radius: 8px;
+  background: #242a30;
 }
 
-.save-list small {
-  grid-column: 2;
+.save-row strong,
+.save-row small {
+  display: block;
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+
+.save-row small {
   color: #b5ad9b;
+}
+
+.save-row-actions {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+  gap: 8px;
+}
+
+.save-row-actions button {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
 }
 
 .toast {
@@ -439,11 +690,34 @@ select {
 }
 
 .ending-page {
-  text-align: center;
-  gap: 16px;
+  min-height: calc(100dvh - 76px);
+  display: grid;
+  grid-template-columns: minmax(280px, 0.78fr) minmax(0, 1fr);
+  gap: 20px;
+  padding: clamp(20px, 5vw, 56px);
+  background:
+    linear-gradient(90deg, rgba(243, 236, 220, 0.96), rgba(243, 236, 220, 0.78)),
+    url("/assets/ascension_gate.png") center / cover no-repeat;
 }
 
-.ending-page dl {
+.ending-card,
+.ending-recap {
+  border: 1px solid rgba(216, 200, 167, 0.84);
+  border-radius: 8px;
+  background: rgba(255, 250, 240, 0.9);
+  box-shadow: var(--shadow);
+}
+
+.ending-card {
+  display: grid;
+  align-content: center;
+  justify-items: center;
+  gap: 16px;
+  padding: clamp(22px, 4vw, 40px);
+  text-align: center;
+}
+
+.ending-card dl {
   display: grid;
   grid-template-columns: auto 1fr;
   gap: 8px 14px;
@@ -454,6 +728,24 @@ select {
   display: grid;
   grid-template-columns: 1fr 1fr;
   gap: 10px;
+}
+
+.ending-recap {
+  padding: clamp(18px, 3vw, 28px);
+  overflow: auto;
+}
+
+.ending-recap h3 {
+  margin-top: 0;
+}
+
+.ending-recap article {
+  margin-bottom: 12px;
+  padding: 12px;
+  border: 1px solid rgba(216, 200, 167, 0.72);
+  border-radius: 8px;
+  background: rgba(255, 250, 240, 0.86);
+  line-height: 1.7;
 }
 
 @media (min-width: 760px) {
@@ -472,21 +764,80 @@ select {
   }
 }
 
+@media (max-width: 900px) {
+  .home-shell,
+  .ending-page {
+    grid-template-columns: 1fr;
+  }
+
+  .home {
+    background:
+      linear-gradient(180deg, rgba(245, 239, 225, 0.96), rgba(245, 239, 225, 0.82)),
+      url("/assets/ink_home_bg.png") center bottom / cover no-repeat;
+  }
+
+  .home-preview {
+    min-height: 240px;
+  }
+}
+
 @media (max-width: 480px) {
   .topbar {
     padding-inline: 12px;
   }
 
-  .action-bar-react {
+  .brand {
+    font-size: 18px;
+  }
+
+  .user-chip {
+    max-width: 34vw;
+  }
+
+  .home,
+  .auth-screen,
+  .character-page,
+  .ending-page {
+    padding: 16px;
+  }
+
+  .hero h1 {
+    font-size: clamp(34px, 12vw, 46px);
+  }
+
+  .mode-grid,
+  .game-summary,
+  .action-bar-react,
+  .fallback,
+  .ending-actions {
     grid-template-columns: 1fr;
+  }
+
+  .game-summary {
+    display: grid;
+    align-items: flex-start;
   }
 
   .fallback {
-    grid-template-columns: 1fr;
+    display: grid;
   }
 
-  .ending-actions {
-    grid-template-columns: 1fr;
+  .save-row {
+    grid-template-columns: auto minmax(0, 1fr);
+  }
+
+  .save-row-actions {
+    grid-column: 1 / -1;
+    justify-content: stretch;
+  }
+
+  .save-row-actions button,
+  .inline-actions button {
+    flex: 1 1 140px;
+  }
+
+  .protected-settings {
+    display: grid;
   }
 }
 
