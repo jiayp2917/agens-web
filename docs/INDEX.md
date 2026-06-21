@@ -9,6 +9,7 @@
 - `docs/PROJECT_AUDIT.md`：当前结构边界、技术债和瘦身方向。
 - `docs/RUNTIME_FLOW.md`：当前核心业务逻辑和代码调用链。
 - `docs/FOLLOWUPS.md`：Claude Code 可做遗留项清单（P0/P1/P2 分级与 e2e 能力说明）。
+- `docs/GAME_MODE_SPEC.md`：游戏模式全流程细则（草案 v4 / 待批准立项）。
 
 ## 按任务读取
 
@@ -19,6 +20,7 @@
 | 分析游戏运行流程 | `docs/RUNTIME_FLOW.md` |
 | 安全与密钥边界 | `docs/security.md`、`AGENTS.md` |
 | 接手遗留项 / 评估下一步 | `docs/FOLLOWUPS.md` |
+| 游戏模式设计 / 立项前确认 | `docs/GAME_MODE_SPEC.md` |
 | Agent 提示词或调用链 | `config/prompts/system/*.md`、`src/agens_novel/agents/` |
 
 ## 当前执行边界
@@ -28,3 +30,4 @@
 - 默认模型仍是 Agens；DeepSeek 只是可选测试项。
 - API key 只允许由后端读取、保存或脱敏展示，不写入仓库、前端包或日志。
 - 真实浏览器 e2e 在 Claude Code 工具范围内不可达；详见 `docs/FOLLOWUPS.md` 末尾说明。
+- 当前只开放引导模式；游戏模式、小说模式为产品规划，详见 `docs/GAME_MODE_SPEC.md`（草案 v4）。
