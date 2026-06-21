@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import os
 import random
+import re
 import time
 import uuid
 from dataclasses import dataclass, field
@@ -27,6 +28,17 @@ from agens_novel.settings import Settings
 
 from .database import WebDatabase
 
+PUBLIC_MODEL_FALLBACK_TEXT = "模型暂不可用，当前以本地故事继续。"
+_MODEL_FAILURE_PREFIXES = (
+    "世界生成失败:",
+    "叙述失败:",
+    "天道审判失败:",
+    "突破叙事失败:",
+    "突破审判失败:",
+)
+_SECRET_MARKERS = ("sk-", "api_key", "apikey", "authorization", "database_url", "postgresql://")
+GUEST_USER_PREFIX = "guest:"
+
 
 @dataclass
 class WebRunner:
@@ -36,6 +48,7 @@ class WebRunner:
     user_id: str
     engine: GameEngine = field(default_factory=GameEngine)
     events: list[dict[str, Any]] = field(default_factory=list)
+    guest_token: str = ""
 
     def __post_init__(self) -> None:
         self.engine.on_narrative = lambda text, turn: self.record("narrative", text=text, turn=turn)
@@ -55,9 +68,8 @@ class WebRunner:
     def _choose_model_failure(self, source: str, reason: str) -> str:
         self.record(
             "model_failure",
-            text="模型暂不可用，已切入本地故事兜底。你可以继续本局或结束返回首页。",
+            text=PUBLIC_MODEL_FALLBACK_TEXT,
             source=source,
-            reason=reason,
         )
         return MODEL_FAILURE_CONTINUE
 
@@ -75,6 +87,7 @@ class WebRunner:
         return runner
 
     def record(self, event_type: str, **payload: Any) -> None:
+        payload = _sanitize_event_payload(event_type, payload)
         self.events.append({"type": event_type, "at": time.time(), **payload})
         self.events = self.events[-120:]
 
@@ -84,6 +97,7 @@ class WebRunner:
         return {
             "session_id": self.session_id,
             "user_id": self.user_id,
+            "guest": is_guest_user_id(self.user_id),
             "turn_count": session.turn_count,
             "game_started": session.game_started,
             "game_over": session.game_over,
@@ -97,7 +111,7 @@ class WebRunner:
             },
             "fallback_prompt": {
                 "active": session.local_story_active and not session.game_over,
-                "text": "模型暂不可用，当前以本地故事兜底继续；你可以继续本局或结束。",
+                "text": PUBLIC_MODEL_FALLBACK_TEXT,
             },
             "character": state["character"],
             "world": state["world"],
@@ -118,6 +132,28 @@ class WebRunner:
         return self.engine.game_session.to_save_dict()
 
 
+def _sanitize_event_payload(event_type: str, payload: dict[str, Any]) -> dict[str, Any]:
+    sanitized = dict(payload)
+    if event_type == "model_failure":
+        sanitized.pop("reason", None)
+        sanitized["text"] = PUBLIC_MODEL_FALLBACK_TEXT
+        return sanitized
+    if event_type == "error":
+        text = str(sanitized.get("text") or "")
+        if _looks_internal_model_error(text):
+            sanitized["text"] = PUBLIC_MODEL_FALLBACK_TEXT
+    return sanitized
+
+
+def _looks_internal_model_error(text: str) -> bool:
+    lowered = text.lower()
+    if any(marker in lowered for marker in _SECRET_MARKERS):
+        return True
+    if any(text.startswith(prefix) for prefix in _MODEL_FAILURE_PREFIXES):
+        return True
+    return bool(re.search(r"https?://\S+", text))
+
+
 class WebGameService:
     """Application service for users, sessions, saves, and settings."""
 
@@ -128,10 +164,16 @@ class WebGameService:
     def login(self, username: str = "local") -> dict[str, Any]:
         return self.db.upsert_user(username)
 
-    def create_session(self, user_id: str = "", title: str = "新局") -> dict[str, Any]:
-        user = self._ensure_user(user_id)
+    def create_session(
+        self,
+        user_id: str,
+        title: str = "新局",
+        guest_token: str = "",
+    ) -> dict[str, Any]:
+        if not user_id:
+            raise ValueError("创建持久会话需要登录用户。")
         session_id = str(uuid.uuid4())
-        runner = WebRunner(session_id=session_id, user_id=user["id"])
+        runner = WebRunner(session_id=session_id, user_id=user_id, guest_token=guest_token)
         self.runners[session_id] = runner
         runner.record("info", text="新会话已创建。")
         self._persist(runner, title=title)
@@ -167,6 +209,8 @@ class WebGameService:
         self, session_id: str, save_name: str = "slot_1", user_id: str | None = None
     ) -> dict[str, Any]:
         runner = self._runner(session_id, user_id=user_id)
+        if is_guest_user_id(runner.user_id):
+            raise PermissionError("访客游玩不提供云端存档，请先注册或登录。")
         save = self.db.save_game_slot(
             runner.user_id,
             save_name,
@@ -181,6 +225,8 @@ class WebGameService:
         self, session_id: str, save_name: str = "slot_1", user_id: str | None = None
     ) -> dict[str, Any]:
         runner = self._runner(session_id, user_id=user_id)
+        if is_guest_user_id(runner.user_id):
+            raise PermissionError("访客游玩不提供云端读档，请先注册或登录。")
         saved = self.db.load_save(runner.user_id, save_name)
         if saved is None:
             raise KeyError(f"存档不存在: {save_name}")
@@ -208,8 +254,9 @@ class WebGameService:
         return runner.response()
 
     def list_saves(self, user_id: str = "") -> list[dict[str, Any]]:
-        user = self._ensure_user(user_id)
-        return self.db.list_saves(user["id"])
+        if not user_id:
+            raise PermissionError("读取存档需要登录。")
+        return self.db.list_saves(user_id)
 
     def model_settings(self) -> dict[str, Any]:
         stored = self.db.get_model_config() or {}
@@ -253,7 +300,11 @@ class WebGameService:
             runner = self.runners[session_id]
             if user_id and runner.user_id != user_id:
                 raise PermissionError("无权访问该会话。")
+            if not user_id and not is_guest_user_id(runner.user_id):
+                raise PermissionError("请先登录。")
             return runner
+        if not user_id:
+            raise KeyError(f"会话不存在: {session_id}")
         row = self.db.load_session(session_id)
         if row is None:
             raise KeyError(f"会话不存在: {session_id}")
@@ -269,6 +320,8 @@ class WebGameService:
         return runner
 
     def _persist(self, runner: WebRunner, title: str | None = None) -> None:
+        if is_guest_user_id(runner.user_id):
+            return
         session = runner.engine.game_session
         self.db.save_session(
             runner.session_id,
@@ -277,11 +330,6 @@ class WebGameService:
             runner.snapshot(),
             runner.events,
         )
-
-    def _ensure_user(self, user_id: str = "") -> dict[str, Any]:
-        if user_id:
-            return {"id": user_id, "username": "authenticated"}
-        return self.login("local")
 
     def _normalize_profile(self, profile: dict[str, Any]) -> dict[str, Any]:
         normalized = dict(profile)
@@ -326,6 +374,10 @@ class WebGameService:
 
 def _pick(value: str, options: list[str]) -> str:
     return value if value in options else options[0]
+
+
+def is_guest_user_id(user_id: str | None) -> bool:
+    return bool(user_id and user_id.startswith(GUEST_USER_PREFIX))
 
 
 def _random_attributes() -> dict[str, int]:

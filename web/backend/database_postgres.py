@@ -20,7 +20,8 @@ class PostgresWebDatabase:
         if not self.database_url:
             raise RuntimeError("DATABASE_URL is required when DATABASE_BACKEND=postgresql")
         self.engine: Engine = create_engine(self.database_url, pool_pre_ping=True, future=True)
-        self.initialize()
+        if os.environ.get("AGENS_PG_AUTO_DDL", "").strip().lower() in ("1", "true", "yes"):
+            self.initialize()
 
     def initialize(self) -> None:
         with self.engine.begin() as conn:

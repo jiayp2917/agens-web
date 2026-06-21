@@ -61,6 +61,39 @@ def test_frontend_uses_cookie_auth_not_legacy_local_login() -> None:
     assert "/api/users/login" not in js
 
 
+def test_react_frontend_wires_save_load_and_settings() -> None:
+    source = (ROOT / "web" / "frontend-react" / "src" / "main.tsx").read_text(encoding="utf-8")
+    client = (ROOT / "web" / "frontend-react" / "src" / "api" / "client.ts").read_text(encoding="utf-8")
+
+    assert "/api/saves" in source
+    assert '/load`' in source
+    assert "读档" in source
+    assert "覆盖保存" in source
+    assert "保存到此档" in source
+    assert "/api/settings/model" in source
+    assert "当前 Key 状态" in source
+    assert "留空则保持当前 Key" in source
+    assert "访客游玩不提供云端存档" in source
+    assert "邀请码注册" in source
+    assert 'credentials: "include"' in client
+    assert "sk-" not in source
+
+
+def test_react_homepage_buttons_have_handlers() -> None:
+    source = (ROOT / "web" / "frontend-react" / "src" / "main.tsx").read_text(encoding="utf-8")
+
+    assert "onLoad" in source
+    assert "onTutorial" in source
+    assert "onSettings" in source
+    assert "TutorialDialog" in source
+    assert "模型暂不可用，当前以本地故事继续。" in source
+    assert "requireAuth" not in source
+    assert 'href="https://www.jiayp2917.xyz/"' in source
+    assert "BgmToggle" in source
+    assert "/assets/audio/bgm.flac" in source
+    assert "agens web" not in source.lower()
+
+
 # ====================== F-003 / F-101 / F-102 / F-104 / F-205 契约 ======================
 
 

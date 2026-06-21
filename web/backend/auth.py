@@ -23,7 +23,9 @@ except Exception:  # pragma: no cover - exercised only when optional dependency 
 from .database_common import public_user
 
 SESSION_COOKIE_NAME = "agens_session"
+GUEST_COOKIE_NAME = "agens_guest"
 SESSION_MAX_AGE_SECONDS = 60 * 60 * 24 * 14
+DEV_SESSION_SECRET = "dev-session-secret-change-me"
 _PASSWORD_HASHER = PasswordHasher() if PasswordHasher is not None else None
 
 
@@ -98,12 +100,16 @@ def cookie_kwargs() -> dict[str, Any]:
     }
 
 
+def create_guest_token() -> str:
+    return secrets.token_urlsafe(32)
+
+
 def public_auth_response(user: dict[str, Any]) -> dict[str, Any]:
     return {"user": public_user(user)}
 
 
 def _sign(payload: str, secret: str | None = None) -> str:
-    session_secret = secret or os.environ.get("SESSION_SECRET") or "dev-session-secret-change-me"
+    session_secret = secret or os.environ.get("SESSION_SECRET") or DEV_SESSION_SECRET
     return hmac.new(session_secret.encode("utf-8"), payload.encode("utf-8"), hashlib.sha256).hexdigest()
 
 

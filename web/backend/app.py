@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import os
+import uuid
 from pathlib import Path
 from typing import Any
 
@@ -12,8 +13,11 @@ from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel, Field
 
 from .auth import (
+    DEV_SESSION_SECRET,
+    GUEST_COOKIE_NAME,
     SESSION_COOKIE_NAME,
     cookie_kwargs,
+    create_guest_token,
     create_session_token,
     hash_invite_code,
     hash_password,
@@ -23,8 +27,8 @@ from .auth import (
 )
 from .database import create_database
 from .database_common import public_user
-from .security import BodySizeLimitMiddleware, RateLimiter, client_key
-from .service import WebGameService
+from .security import BodySizeLimitMiddleware, RateLimiter, client_key, enforce_same_origin
+from .service import GUEST_USER_PREFIX, WebGameService, is_guest_user_id
 
 FRONTEND_DIR = Path(__file__).resolve().parents[1] / "frontend"
 FRONTEND_REACT_DIST = Path(__file__).resolve().parents[1] / "frontend-react" / "dist"
@@ -43,7 +47,6 @@ class LoginRequest(BaseModel):
 
 
 class CreateSessionRequest(BaseModel):
-    user_id: str = ""
     title: str = "新局"
 
 
@@ -84,9 +87,26 @@ class ModelSettingsRequest(BaseModel):
     api_key: str = Field(default="", max_length=512)
 
 
+def validate_runtime_config() -> None:
+    backend = os.environ.get("DATABASE_BACKEND", "sqlite").strip().lower()
+    env = os.environ.get("AGENS_ENV", "").strip().lower()
+    production = env in ("prod", "production") or backend in ("postgres", "postgresql", "pg")
+    if not production:
+        return
+
+    session_secret = os.environ.get("SESSION_SECRET", "").strip()
+    if not session_secret or session_secret == DEV_SESSION_SECRET:
+        raise RuntimeError("SESSION_SECRET must be set to a non-default value in production.")
+    if not os.environ.get("DATABASE_URL", "").strip():
+        raise RuntimeError("DATABASE_URL is required in production.")
+    if not os.environ.get("INVITE_ADMIN_CODE", "").strip():
+        raise RuntimeError("INVITE_ADMIN_CODE is required in production.")
+
+
 def create_app(db_path: Path | None = None) -> FastAPI:
+    validate_runtime_config()
     service = WebGameService(create_database(db_path))
-    app = FastAPI(title="agens-web", version="0.1.0")
+    app = FastAPI(title="agens-web", version="0.1.0", dependencies=[Depends(enforce_same_origin)])
     app.state.service = service
     app.state.rate_limiter = RateLimiter()
     app.add_middleware(
@@ -111,6 +131,13 @@ def create_app(db_path: Path | None = None) -> FastAPI:
             raise HTTPException(status_code=401, detail="登录状态已失效。")
         return user
 
+    def optional_user(request: Request) -> dict[str, Any] | None:
+        token = request.cookies.get(SESSION_COOKIE_NAME, "")
+        claims = parse_session_token(token)
+        if claims is None:
+            return None
+        return service.db.get_user_by_id(claims.user_id)
+
     def current_admin(user: dict[str, Any] = Depends(current_user)) -> dict[str, Any]:
         if not user.get("is_admin"):
             raise HTTPException(status_code=403, detail="需要管理员权限。")
@@ -122,6 +149,23 @@ def create_app(db_path: Path | None = None) -> FastAPI:
             create_session_token(user["id"]),
             **cookie_kwargs(),
         )
+
+    def set_guest_cookie(response: Response, token: str) -> None:
+        response.set_cookie(GUEST_COOKIE_NAME, token, **cookie_kwargs())
+
+    def session_owner_id(session_id: str, request: Request, user: dict[str, Any] | None) -> str | None:
+        if user is not None:
+            return user["id"]
+        guest_token = request.cookies.get(GUEST_COOKIE_NAME, "")
+        runner = service.runners.get(session_id)
+        if (
+            runner
+            and is_guest_user_id(runner.user_id)
+            and runner.guest_token
+            and runner.guest_token == guest_token
+        ):
+            return None
+        raise HTTPException(status_code=401, detail="访客会话已失效，请从新游戏重新开始。")
 
     def register_with_invite(payload: RegisterRequest) -> dict[str, Any]:
         username = payload.username.strip()
@@ -174,6 +218,7 @@ def create_app(db_path: Path | None = None) -> FastAPI:
     @app.post("/api/auth/logout")
     def logout(response: Response) -> dict[str, str]:
         response.delete_cookie(SESSION_COOKIE_NAME, path="/")
+        response.delete_cookie(GUEST_COOKIE_NAME, path="/")
         return {"status": "ok"}
 
     @app.post("/api/invites")
@@ -207,17 +252,27 @@ def create_app(db_path: Path | None = None) -> FastAPI:
     @app.post("/api/sessions")
     def create_session(
         payload: CreateSessionRequest,
-        user: dict[str, Any] = Depends(current_user),
+        response: Response,
+        user: dict[str, Any] | None = Depends(optional_user),
     ) -> dict[str, Any]:
-        return service.create_session(user_id=user["id"], title=payload.title)
+        if user is not None:
+            return service.create_session(user_id=user["id"], title=payload.title)
+        guest_token = create_guest_token()
+        set_guest_cookie(response, guest_token)
+        return service.create_session(
+            user_id=f"{GUEST_USER_PREFIX}{uuid.uuid4()}",
+            title=payload.title,
+            guest_token=guest_token,
+        )
 
     @app.get("/api/sessions/{session_id}")
     def get_session(
         session_id: str,
-        user: dict[str, Any] = Depends(current_user),
+        request: Request,
+        user: dict[str, Any] | None = Depends(optional_user),
     ) -> dict[str, Any]:
         try:
-            return service.get_session(session_id, user_id=user["id"])
+            return service.get_session(session_id, user_id=session_owner_id(session_id, request, user))
         except KeyError as exc:
             raise HTTPException(status_code=404, detail=str(exc)) from exc
         except PermissionError as exc:
@@ -228,11 +283,18 @@ def create_app(db_path: Path | None = None) -> FastAPI:
         session_id: str,
         payload: StartRequest,
         request: Request,
-        user: dict[str, Any] = Depends(current_user),
+        user: dict[str, Any] | None = Depends(optional_user),
     ) -> dict[str, Any]:
         rate_limit(request, "turn", limit=30, window_seconds=60)
+        owner_id = session_owner_id(session_id, request, user)
+        if owner_id is None:
+            rate_limit(request, "guest_turn", limit=10, window_seconds=60)
         try:
-            return service.start_session(session_id, payload.model_dump(), user_id=user["id"])
+            return service.start_session(
+                session_id,
+                payload.model_dump(),
+                user_id=owner_id,
+            )
         except KeyError as exc:
             raise HTTPException(status_code=404, detail=str(exc)) from exc
         except PermissionError as exc:
@@ -243,11 +305,18 @@ def create_app(db_path: Path | None = None) -> FastAPI:
         session_id: str,
         payload: ChoiceRequest,
         request: Request,
-        user: dict[str, Any] = Depends(current_user),
+        user: dict[str, Any] | None = Depends(optional_user),
     ) -> dict[str, Any]:
         rate_limit(request, "turn", limit=30, window_seconds=60)
+        owner_id = session_owner_id(session_id, request, user)
+        if owner_id is None:
+            rate_limit(request, "guest_turn", limit=10, window_seconds=60)
         try:
-            return service.choose(session_id, payload.model_dump(), user_id=user["id"])
+            return service.choose(
+                session_id,
+                payload.model_dump(),
+                user_id=owner_id,
+            )
         except KeyError as exc:
             raise HTTPException(status_code=404, detail=str(exc)) from exc
         except ValueError as exc:
@@ -260,11 +329,18 @@ def create_app(db_path: Path | None = None) -> FastAPI:
         session_id: str,
         payload: ActionRequest,
         request: Request,
-        user: dict[str, Any] = Depends(current_user),
+        user: dict[str, Any] | None = Depends(optional_user),
     ) -> dict[str, Any]:
         rate_limit(request, "turn", limit=30, window_seconds=60)
+        owner_id = session_owner_id(session_id, request, user)
+        if owner_id is None:
+            rate_limit(request, "guest_turn", limit=10, window_seconds=60)
         try:
-            return service.act(session_id, payload.action, user_id=user["id"])
+            return service.act(
+                session_id,
+                payload.action,
+                user_id=owner_id,
+            )
         except KeyError as exc:
             raise HTTPException(status_code=404, detail=str(exc)) from exc
         except PermissionError as exc:
@@ -300,10 +376,15 @@ def create_app(db_path: Path | None = None) -> FastAPI:
     def end_session(
         session_id: str,
         payload: EndSessionRequest,
-        user: dict[str, Any] = Depends(current_user),
+        request: Request,
+        user: dict[str, Any] | None = Depends(optional_user),
     ) -> dict[str, Any]:
         try:
-            return service.end_session(session_id, payload.reason, user_id=user["id"])
+            return service.end_session(
+                session_id,
+                payload.reason,
+                user_id=session_owner_id(session_id, request, user),
+            )
         except KeyError as exc:
             raise HTTPException(status_code=404, detail=str(exc)) from exc
         except PermissionError as exc:

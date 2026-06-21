@@ -1,9 +1,11 @@
 from __future__ import annotations
 
 import json
+import os
 from pathlib import Path
 from unittest.mock import patch
 
+import pytest
 from fastapi.testclient import TestClient
 
 from web.backend.app import create_app
@@ -257,7 +259,9 @@ def test_invite_register_and_auth_required(tmp_path: Path, monkeypatch) -> None:
     app = create_app(tmp_path / "agens_web.sqlite3")
     client = TestClient(app)
 
-    assert client.post("/api/sessions", json={}).status_code == 401
+    guest = client.post("/api/sessions", json={})
+    assert guest.status_code == 200
+    assert guest.json()["guest"] is True
     _create_invite(app, "valid-invite-123")
     bad = client.post(
         "/api/auth/register",
@@ -271,7 +275,39 @@ def test_invite_register_and_auth_required(tmp_path: Path, monkeypatch) -> None:
     )
     assert ok.status_code == 200
     assert ok.json()["user"]["username"] == "player"
-    assert client.post("/api/sessions", json={}).status_code == 200
+    assert client.post("/api/sessions", json={}).json()["guest"] is False
+
+
+def test_guest_can_play_but_cannot_use_cloud_saves(tmp_path: Path, monkeypatch) -> None:
+    monkeypatch.delenv("AGNES_API_KEY", raising=False)
+    monkeypatch.setenv("SESSION_COOKIE_SECURE", "0")
+    app = create_app(tmp_path / "agens_web.sqlite3")
+    client = TestClient(app)
+
+    created = client.post("/api/sessions", json={"title": "访客局"}).json()
+    assert created["guest"] is True
+    assert created["user_id"].startswith("guest:")
+    session_id = created["session_id"]
+
+    started = client.post(f"/api/sessions/{session_id}/start", json={"char_name": "访客"}).json()
+    assert started["game_started"] is True
+    assert started["guest"] is True
+    assert started["local_story"]["active"] is True
+
+    assert client.post(
+        f"/api/sessions/{session_id}/action",
+        json={"action": "继续本局"},
+    ).status_code == 200
+    assert client.post(f"/api/sessions/{session_id}/save", json={"name": "slot_1"}).status_code == 401
+    assert client.get("/api/saves").status_code == 401
+    assert client.get(f"/api/sessions/{session_id}").status_code == 200
+
+    other_client = TestClient(app)
+    assert other_client.get(f"/api/sessions/{session_id}").status_code == 401
+    assert other_client.post(
+        f"/api/sessions/{session_id}/action",
+        json={"action": "继续本局"},
+    ).status_code == 401
 
 
 def test_legacy_local_login_route_is_removed(tmp_path: Path) -> None:
@@ -297,3 +333,98 @@ def test_user_cannot_access_another_users_session(tmp_path: Path, monkeypatch) -
     )
     session_id = client_a.post("/api/sessions", json={}).json()["session_id"]
     assert client_b.get(f"/api/sessions/{session_id}").status_code == 403
+    for path, payload in (
+        (f"/api/sessions/{session_id}/start", {"char_name": "盗档者"}),
+        (f"/api/sessions/{session_id}/choice", {"choice_index": 0}),
+        (f"/api/sessions/{session_id}/action", {"action": "查看"}),
+        (f"/api/sessions/{session_id}/save", {"name": "slot_1"}),
+        (f"/api/sessions/{session_id}/load", {"name": "slot_1"}),
+        (f"/api/sessions/{session_id}/end", {"reason": "结束"}),
+    ):
+        assert client_b.post(path, json=payload).status_code == 403
+
+
+def test_production_rejects_default_session_secret(tmp_path: Path, monkeypatch) -> None:
+    monkeypatch.setenv("DATABASE_BACKEND", "postgresql")
+    monkeypatch.setenv("DATABASE_URL", "postgresql+psycopg://agens_user:test@postgres:5432/agens_web")
+    monkeypatch.setenv("INVITE_ADMIN_CODE", "admin-invite-123")
+    monkeypatch.delenv("SESSION_SECRET", raising=False)
+
+    with pytest.raises(RuntimeError, match="SESSION_SECRET"):
+        create_app(tmp_path / "agens_web.sqlite3")
+
+    monkeypatch.setenv("SESSION_SECRET", "dev-session-secret-change-me")
+    with pytest.raises(RuntimeError, match="SESSION_SECRET"):
+        create_app(tmp_path / "agens_web.sqlite3")
+
+
+def test_origin_mismatch_is_rejected_for_state_changes(tmp_path: Path, monkeypatch) -> None:
+    monkeypatch.setenv("SESSION_COOKIE_SECURE", "0")
+    monkeypatch.setenv("AGENS_ALLOWED_ORIGINS", "https://game.example.test")
+    app = create_app(tmp_path / "agens_web.sqlite3")
+    client = TestClient(app, base_url="https://game.example.test")
+    _create_invite(app)
+    client.post(
+        "/api/auth/register",
+        json={"username": "player", "password": "password-123", "invite_code": "invite-code-123"},
+        headers={"Origin": "https://game.example.test"},
+    )
+
+    blocked = client.post(
+        "/api/sessions",
+        json={},
+        headers={"Origin": "https://evil.example.test"},
+    )
+    assert blocked.status_code == 403
+
+    allowed = client.post(
+        "/api/sessions",
+        json={},
+        headers={"Origin": "https://game.example.test"},
+    )
+    assert allowed.status_code == 200
+
+
+def test_body_size_limit_rejects_actual_large_body(tmp_path: Path, monkeypatch) -> None:
+    monkeypatch.setenv("SESSION_COOKIE_SECURE", "0")
+    monkeypatch.setenv("AGENS_MAX_REQUEST_BYTES", "128")
+    app = create_app(tmp_path / "agens_web.sqlite3")
+    client = TestClient(app)
+
+    response = client.post(
+        "/api/auth/login",
+        content=b'{"username":"' + (b"x" * 256) + b'","password":"password-123"}',
+        headers={"Content-Type": "application/json"},
+    )
+    assert response.status_code == 413
+
+
+def test_model_failure_events_are_public_safe(tmp_path: Path, monkeypatch) -> None:
+    monkeypatch.setenv("SESSION_COOKIE_SECURE", "0")
+    app = create_app(tmp_path / "agens_web.sqlite3")
+    client = TestClient(app)
+    _create_invite(app)
+    _register(client)
+    session_id = client.post("/api/sessions", json={}).json()["session_id"]
+
+    def failing_world_builder(agent_name: str, *_args, **_kwargs):
+        if agent_name == "world_builder":
+            return {"generated_data": {}, "llm_error": "sk-secret leaked via provider"}
+        return _runner(agent_name)
+
+    with patch("agens_novel.engine.game_engine.run_turn_sync", side_effect=failing_world_builder):
+        payload = client.post(f"/api/sessions/{session_id}/start", json={"char_name": "许满"}).json()
+
+    body = json.dumps(payload, ensure_ascii=False)
+    assert "sk-secret" not in body
+    assert "模型暂不可用，当前以本地故事继续。" in body
+
+
+@pytest.mark.skipif(not os.environ.get("TEST_DATABASE_URL"), reason="TEST_DATABASE_URL not configured")
+def test_postgres_database_url_smoke(monkeypatch) -> None:
+    monkeypatch.setenv("DATABASE_BACKEND", "postgresql")
+    monkeypatch.setenv("DATABASE_URL", os.environ["TEST_DATABASE_URL"])
+    from web.backend.database import create_database
+
+    db = create_database()
+    assert db.engine.url.drivername.startswith("postgresql")

@@ -2,30 +2,62 @@
 
 from __future__ import annotations
 
+import os
 import time
 from collections import defaultdict, deque
-from collections.abc import Awaitable, Callable
+from urllib.parse import urlparse
 
 from fastapi import HTTPException, Request
-from starlette.middleware.base import BaseHTTPMiddleware
 from starlette.responses import JSONResponse
-from starlette.responses import Response
 
 
-class BodySizeLimitMiddleware(BaseHTTPMiddleware):
+class BodySizeLimitMiddleware:
     def __init__(self, app, max_bytes: int = 64 * 1024) -> None:
-        super().__init__(app)
+        self.app = app
         self.max_bytes = max_bytes
 
-    async def dispatch(self, request: Request, call_next: Callable[[Request], Awaitable[Response]]) -> Response:
-        content_length = request.headers.get("content-length")
+    async def __call__(self, scope, receive, send) -> None:
+        if scope["type"] != "http":
+            await self.app(scope, receive, send)
+            return
+
+        headers = {key.lower(): value for key, value in scope.get("headers") or []}
+        content_length = headers.get(b"content-length")
         if content_length:
             try:
-                if int(content_length) > self.max_bytes:
-                    return JSONResponse({"detail": "请求内容过大。"}, status_code=413)
-            except ValueError:
-                return JSONResponse({"detail": "请求头无效。"}, status_code=400)
-        return await call_next(request)
+                if int(content_length.decode("ascii")) > self.max_bytes:
+                    response = JSONResponse({"detail": "请求内容过大。"}, status_code=413)
+                    await response(scope, receive, send)
+                    return
+            except (UnicodeDecodeError, ValueError):
+                response = JSONResponse({"detail": "请求头无效。"}, status_code=400)
+                await response(scope, receive, send)
+                return
+
+        body = bytearray()
+        while True:
+            message = await receive()
+            if message.get("type") != "http.request":
+                await self.app(scope, receive, send)
+                return
+            body.extend(message.get("body", b""))
+            if len(body) > self.max_bytes:
+                response = JSONResponse({"detail": "请求内容过大。"}, status_code=413)
+                await response(scope, receive, send)
+                return
+            if not message.get("more_body", False):
+                break
+
+        replayed = False
+
+        async def replay_receive():
+            nonlocal replayed
+            if replayed:
+                return {"type": "http.request", "body": b"", "more_body": False}
+            replayed = True
+            return {"type": "http.request", "body": bytes(body), "more_body": False}
+
+        await self.app(scope, replay_receive, send)
 
 
 class RateLimiter:
@@ -45,6 +77,57 @@ class RateLimiter:
 
 
 def client_key(request: Request, action: str) -> str:
-    forwarded = request.headers.get("x-forwarded-for", "")
-    host = forwarded.split(",", 1)[0].strip() or (request.client.host if request.client else "unknown")
+    host = request.client.host if request.client else "unknown"
+    if os.environ.get("TRUST_PROXY_HEADERS", "").strip().lower() in ("1", "true", "yes"):
+        forwarded = request.headers.get("x-forwarded-for", "")
+        host = forwarded.split(",", 1)[0].strip() or host
     return f"{action}:{host}"
+
+
+def enforce_same_origin(request: Request) -> None:
+    if request.method.upper() in ("GET", "HEAD", "OPTIONS"):
+        return
+
+    allowed = _allowed_origins(request)
+    if not allowed:
+        return
+
+    origin = request.headers.get("origin", "").strip()
+    if origin:
+        if _normalize_origin(origin) not in allowed:
+            raise HTTPException(status_code=403, detail="请求来源不被允许。")
+        return
+
+    referer = request.headers.get("referer", "").strip()
+    if referer and _normalize_origin(referer) in allowed:
+        return
+    raise HTTPException(status_code=403, detail="请求来源不被允许。")
+
+
+def _allowed_origins(request: Request) -> set[str]:
+    configured = {
+        _normalize_origin(item)
+        for item in os.environ.get("AGENS_ALLOWED_ORIGINS", "").split(",")
+        if item.strip()
+    }
+    if configured:
+        return configured
+    if _is_production_mode():
+        host = request.headers.get("host", "").strip()
+        if host:
+            scheme = request.headers.get("x-forwarded-proto", request.url.scheme).split(",", 1)[0]
+            return {_normalize_origin(f"{scheme}://{host}")}
+    return set()
+
+
+def _is_production_mode() -> bool:
+    backend = os.environ.get("DATABASE_BACKEND", "sqlite").strip().lower()
+    env = os.environ.get("AGENS_ENV", "").strip().lower()
+    return env in ("prod", "production") or backend in ("postgres", "postgresql", "pg")
+
+
+def _normalize_origin(value: str) -> str:
+    parsed = urlparse(value.strip())
+    if not parsed.scheme or not parsed.netloc:
+        return value.strip().rstrip("/")
+    return f"{parsed.scheme.lower()}://{parsed.netloc.lower()}"
