@@ -72,11 +72,11 @@ def test_local_story_d_keyword_match_and_no_match_keep_choices(monkeypatch, tmp_
     ):
         engine.start_from_profile({"char_name": "许满"})
 
-    engine.handle_action("D: 我沿着灵雾观察药径")
+    engine.handle_action("沿灵雾流向观察地势，寻找异常机缘")
     assert engine.game_session.local_story_node_id == "herb_path"
     choices_after_match = list(engine.game_session.last_choices)
 
-    engine.handle_action("D: 我想做一件完全无关的事")
+    engine.handle_action("我想做一件完全无关的事")
     assert engine.game_session.last_choices == choices_after_match
     assert any(NO_MATCH_NOTICE in msg for msg in infos)
 
@@ -109,7 +109,7 @@ def test_loaded_local_story_can_continue_from_saved_node(monkeypatch, tmp_path) 
 
     engine = GameEngine()
     engine.game_session = GameSession.from_save_dict(session.to_save_dict())
-    engine.handle_action("D: 我请教师兄筑基心得")
+    engine.handle_action("请教师兄如何准备筑基")
 
     assert engine.game_session.local_story_active is True
     assert engine.game_session.local_story_node_id == "preparation"
@@ -151,7 +151,7 @@ def test_local_story_can_reach_first_major_breakthrough(monkeypatch, tmp_path) -
     ):
         engine.start_from_profile({"char_name": "许满"})
 
-    engine.handle_action("D: 我沿着灵雾观察药径")
+    engine.handle_action("沿灵雾流向观察地势，寻找异常机缘")
     engine.handle_action("谨慎采摘灵草，炼成简易筑基药引")
     engine.handle_action("稳固心境后尝试冲击筑基")
 

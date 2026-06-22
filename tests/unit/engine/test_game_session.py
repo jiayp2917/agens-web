@@ -15,19 +15,15 @@ class TestGameSessionInit:
         s = GameSession()
         assert s.realm == "练气"
         assert s.realm_stage == 1
-        assert s.hp == 100
-        assert s.hp_max == 100
-        assert s.mp == 50
-        assert s.mp_max == 50
         assert s.spirit_root == ""
         assert s.spirit_root_grade == ""
         assert s.age == 16
         assert s.talent == ""
         assert s.family_background == ""
-        assert s.luck == "中上"
         assert s.difficulty == "普通"
         assert s.game_mode == "abcd"
         assert s.attributes == DEFAULT_ATTRIBUTES
+        assert s.attributes["luck"] == 50
         assert s.last_choices == []
         assert s.experience == 0
         assert s.experience_to_next == 100
@@ -37,7 +33,6 @@ class TestGameSessionInit:
         assert s.inventory == []
         assert s.status_effects == []
         assert s.lifespan == 100
-        assert s.combat is None
         assert s.equipment_slots == dict(DEFAULT_EQUIPMENT_SLOTS)
         assert s.game_started is False
         assert s.game_over is False
@@ -59,7 +54,6 @@ class TestGameSessionApplyDelta:
                 "age": "+2",
                 "talent": "剑心微明",
                 "family_background": "寒门",
-                "luck": "平稳",
                 "difficulty": "困难",
                 "game_mode": "mid",
                 "attributes": {"root_bone": 75, "luck": 101, "bad": True},
@@ -68,36 +62,18 @@ class TestGameSessionApplyDelta:
         assert s.age == 18
         assert s.talent == "剑心微明"
         assert s.family_background == "寒门"
-        assert s.luck == "平稳"
         assert s.difficulty == "困难"
         assert s.game_mode == "abcd"
         assert s.attributes["root_bone"] == 75
         assert s.attributes["luck"] == 100
         assert "bad" not in s.attributes
 
-    def test_apply_combat_start(self):
+    def test_apply_combat_start_is_ignored(self):
+        """Game-mode v5: combat is event-based; a structured combat delta is dropped."""
         s = GameSession()
         combat = {"phase": "player_turn", "enemy": {"name": "妖兽"}}
         s.apply_delta({"character": {"combat": combat}})
-        assert s.combat is not None
-        assert s.combat["phase"] == "player_turn"
-
-    def test_apply_combat_update(self):
-        s = GameSession()
-        s.combat = {"phase": "player_turn", "enemy": {"hp": 80}}
-        s.apply_delta({"character": {"combat": {"enemy": {"hp": 50}}}})
-        assert s.combat["enemy"]["hp"] == 50
-
-    def test_apply_combat_clear(self):
-        s = GameSession()
-        s.combat = {"phase": "player_turn"}
-        s.apply_delta({"character": {"combat": None}})
-        assert s.combat is None
-
-    def test_apply_combat_empty_dict_clears(self):
-        s = GameSession()
-        s.combat = {"phase": "player_turn"}
-        s.apply_delta({"character": {"combat": {}}})
+        # No structured combat state on the session; the engine never reads it.
         assert s.combat is None
 
     def test_apply_equipment_slots(self):
@@ -107,35 +83,30 @@ class TestGameSessionApplyDelta:
         # Other slots should still be None
         assert s.equipment_slots["armor"] is None
 
-    def test_apply_hp_positive_delta(self):
+    def test_apply_lifespan_positive_delta(self):
         s = GameSession()
-        s.hp = 80
-        s.apply_delta({"character": {"hp": "+20"}})
-        assert s.hp == 100
+        s.lifespan = 80
+        s.apply_delta({"character": {"lifespan": "+20"}})
+        assert s.lifespan == 100
 
-    def test_apply_hp_negative_delta(self):
+    def test_apply_lifespan_negative_delta(self):
         s = GameSession()
-        s.hp = 80
-        s.apply_delta({"character": {"hp": "-30"}})
-        assert s.hp == 50
+        s.lifespan = 80
+        s.apply_delta({"character": {"lifespan": "-30"}})
+        assert s.lifespan == 50
 
-    def test_apply_hp_absolute(self):
+    def test_apply_lifespan_absolute(self):
         s = GameSession()
-        s.hp = 80
-        s.apply_delta({"character": {"hp": 50}})
-        assert s.hp == 50
+        s.lifespan = 80
+        s.apply_delta({"character": {"lifespan": 50}})
+        assert s.lifespan == 50
 
-    def test_apply_hp_clamped_to_max(self):
+    def test_apply_lifespan_floored_at_one(self):
+        """lifespan is the game-mode death resource (no HP); floor at 1."""
         s = GameSession()
-        s.hp = 90
-        s.apply_delta({"character": {"hp": "+30"}})
-        assert s.hp == 100  # clamped to hp_max
-
-    def test_apply_hp_not_below_zero(self):
-        s = GameSession()
-        s.hp = 10
-        s.apply_delta({"character": {"hp": "-50"}})
-        assert s.hp == 0
+        s.lifespan = 10
+        s.apply_delta({"character": {"lifespan": "-50"}})
+        assert s.lifespan == 1  # floor guard, not zero
 
     def test_apply_experience_add(self):
         s = GameSession()
@@ -213,16 +184,11 @@ class TestGameSessionSerialization:
         s.char_name = "许满"
         s.realm = "筑基"
         s.realm_stage = 3
-        s.hp = 150
-        s.hp_max = 200
-        s.mp = 80
-        s.mp_max = 100
         s.spirit_root = "火灵根"
         s.spirit_root_grade = "地"
         s.age = 17
         s.talent = "剑心微明"
         s.family_background = "寒门"
-        s.luck = "中上"
         s.difficulty = "困难"
         s.game_mode = "abcd"
         s.attributes = {key: 66 for key in DEFAULT_ATTRIBUTES}
@@ -236,7 +202,6 @@ class TestGameSessionSerialization:
         s.status_effects = ["中毒"]
         s.lifespan = 95
         s.equipment_slots = {"weapon": {"name": "铁剑"}, "armor": None, "accessory": None}
-        s.combat = {"phase": "player_turn", "enemy": {"name": "妖兽"}}
         s.location = "青云山"
         s.region = "东荒"
         s.day_count = 5
@@ -255,16 +220,11 @@ class TestGameSessionSerialization:
         assert s2.char_name == "许满"
         assert s2.realm == "筑基"
         assert s2.realm_stage == 3
-        assert s2.hp == 150
-        assert s2.hp_max == 200
-        assert s2.mp == 80
-        assert s2.mp_max == 100
         assert s2.spirit_root == "火灵根"
         assert s2.spirit_root_grade == "地"
         assert s2.age == 17
         assert s2.talent == "剑心微明"
         assert s2.family_background == "寒门"
-        assert s2.luck == "中上"
         assert s2.difficulty == "困难"
         assert s2.game_mode == "abcd"
         assert s2.attributes == {key: 66 for key in DEFAULT_ATTRIBUTES}
@@ -278,7 +238,6 @@ class TestGameSessionSerialization:
         assert s2.status_effects == ["中毒"]
         assert s2.lifespan == 95
         assert s2.equipment_slots["weapon"]["name"] == "铁剑"
-        assert s2.combat["phase"] == "player_turn"
         assert s2.location == "青云山"
         assert s2.region == "东荒"
         assert s2.day_count == 5
@@ -287,10 +246,12 @@ class TestGameSessionSerialization:
         assert len(s2.chat_history) == 20
         assert s2.chat_history[0]["content"] == "行动5"
 
-    def test_round_trip_preserves_none_combat(self):
+    def test_round_trip_preserves_no_legacy_fields(self):
+        """Game-mode v5: no structured combat is serialized; legacy fields absent."""
         s = GameSession()
         s.game_started = True
         data = s.to_save_dict()
+        assert "combat" not in data["character"]
         s2 = GameSession.from_save_dict(data)
         assert s2.combat is None
 
@@ -310,7 +271,7 @@ class TestGameSessionSerialization:
         s = GameSession.from_save_dict(data)
         assert s.char_name == "旧角色"
         assert s.age == 16
-        assert s.luck == "中上"
+        assert s.attributes["luck"] == 50
         assert s.game_mode == "abcd"
         assert s.attributes == DEFAULT_ATTRIBUTES
         assert s.chat_history == []
@@ -325,11 +286,9 @@ class TestGameSessionReset:
         s.realm = "筑基"
         s.spirit_root = "火灵根"
         s.spirit_root_grade = "地"
-        s.combat = {"phase": "player_turn"}
         s.equipment_slots = {"weapon": {"name": "铁剑"}, "armor": None, "accessory": None}
         s.game_started = True
         s.game_over = True
-        s.hp = 0
         s.error = "dead"
 
         s.reset()
@@ -338,11 +297,9 @@ class TestGameSessionReset:
         assert s.realm == "练气"
         assert s.spirit_root == ""
         assert s.spirit_root_grade == ""
-        assert s.combat is None
         assert s.equipment_slots == dict(DEFAULT_EQUIPMENT_SLOTS)
         assert s.game_started is False
         assert s.game_over is False
-        assert s.hp == 100
         assert s.error == ""
 
 
@@ -354,11 +311,11 @@ class TestGameSessionAsGameState:
         s.spirit_root = "冰灵根"
         s.spirit_root_grade = "天"
         s.equipment_slots = {"weapon": None, "armor": None, "accessory": None}
-        s.combat = None
 
         gs = s.as_game_state()
 
         assert gs["character"]["spirit_root"] == "冰灵根"
         assert gs["character"]["spirit_root_grade"] == "天"
         assert gs["character"]["equipment_slots"] == {"weapon": None, "armor": None, "accessory": None}
-        assert gs["character"]["combat"] is None
+        # Game-mode v5: no structured combat field in game state.
+        assert "combat" not in gs["character"]

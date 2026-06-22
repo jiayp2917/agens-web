@@ -147,14 +147,17 @@ class TestFinaleCallback:
         assert engine.game_session.realm == "飞升"
 
     def test_death_screen_no_finale_for_normal_death(self, monkeypatch) -> None:
-        """Regular death (HP=0) does not set finale flag."""
+        """Game-mode v5: a normal death (game_over set, no finale) does not
+        raise the finale/ascension screen."""
         monkeypatch.setenv("AGNES_API_KEY", "sk-test-1234567890")
         engine = GameEngine()
         game_overs: list[str] = []
         engine.on_game_over = lambda reason: game_overs.append(reason)
 
         engine.game_session.game_started = True
-        engine.game_session.hp = 0
+        engine.game_session.game_over = True
+        engine.game_session.finale = False
+        engine.game_session.error = "天命难违"
         engine.game_session.char_name = "许满"
         engine._check_game_over()
 

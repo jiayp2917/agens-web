@@ -37,7 +37,7 @@ DIFFICULTY_OPTIONS: list[str] = ["简单", "普通", "困难"]
 
 LUCK_LEVELS: list[str] = ["低迷", "平稳", "中上", "起伏", "天眷"]
 
-ATTRIBUTE_KEYS: list[str] = ["root_bone", "comprehension", "luck", "willpower", "physique", "spiritual_sense"]
+ATTRIBUTE_KEYS: list[str] = ["root_bone", "comprehension", "luck", "willpower", "physique", "soul"]
 
 ATTRIBUTE_LABELS: dict[str, str] = {
     "root_bone": "根骨",
@@ -45,7 +45,7 @@ ATTRIBUTE_LABELS: dict[str, str] = {
     "luck": "气运",
     "willpower": "心性",
     "physique": "体魄",
-    "spiritual_sense": "神识",
+    "soul": "神魂",
 }
 
 DEFAULT_ATTRIBUTES: dict[str, int] = {key: 50 for key in ATTRIBUTE_KEYS}
@@ -75,8 +75,6 @@ REALM_CONFIGS: dict[str, dict[str, Any]] = {
             {"key": "foundation_aid", "label": "筑基丹、师门护持或筑基机缘"},
         ],
         "breakthrough_base_rate": 0.80,
-        "hp_base": 100,
-        "mp_base": 50,
         "spirit_root_bonus": {
             "天": 0.10,
             "地": 0.05,
@@ -91,8 +89,6 @@ REALM_CONFIGS: dict[str, dict[str, Any]] = {
             {"key": "golden_core_aid", "label": "结金丹、凝丹机缘或金丹法门"},
         ],
         "breakthrough_base_rate": 0.60,
-        "hp_base": 200,
-        "mp_base": 100,
         "spirit_root_bonus": {
             "天": 0.10,
             "地": 0.05,
@@ -107,8 +103,6 @@ REALM_CONFIGS: dict[str, dict[str, Any]] = {
             {"key": "nascent_soul_aid", "label": "化婴丹、生死顿悟或元婴护法"},
         ],
         "breakthrough_base_rate": 0.45,
-        "hp_base": 400,
-        "mp_base": 200,
         "spirit_root_bonus": {
             "天": 0.10,
             "地": 0.05,
@@ -123,8 +117,6 @@ REALM_CONFIGS: dict[str, dict[str, Any]] = {
             {"key": "spirit_transformation_aid", "label": "神魂试炼、心魔明悟或化神契机"},
         ],
         "breakthrough_base_rate": 0.30,
-        "hp_base": 800,
-        "mp_base": 400,
         "spirit_root_bonus": {
             "天": 0.10,
             "地": 0.05,
@@ -139,8 +131,6 @@ REALM_CONFIGS: dict[str, dict[str, Any]] = {
             {"key": "unity_law_aid", "label": "天地法则感悟或合体道基"},
         ],
         "breakthrough_base_rate": 0.20,
-        "hp_base": 1600,
-        "mp_base": 800,
         "spirit_root_bonus": {
             "天": 0.10,
             "地": 0.05,
@@ -156,8 +146,6 @@ REALM_CONFIGS: dict[str, dict[str, Any]] = {
             {"key": "mahayana_vow_aid", "label": "宏愿因果、宗门气运或大乘道果"},
         ],
         "breakthrough_base_rate": 0.15,
-        "hp_base": 3200,
-        "mp_base": 1600,
         "spirit_root_bonus": {
             "天": 0.10,
             "地": 0.05,
@@ -172,8 +160,6 @@ REALM_CONFIGS: dict[str, dict[str, Any]] = {
             {"key": "tribulation_preparation", "label": "雷劫情报、避劫阵基或渡劫场地"},
         ],
         "breakthrough_base_rate": 0.10,
-        "hp_base": 6400,
-        "mp_base": 3200,
         "spirit_root_bonus": {
             "天": 0.10,
             "地": 0.05,
@@ -189,8 +175,6 @@ REALM_CONFIGS: dict[str, dict[str, Any]] = {
             {"key": "ascension_protection", "label": "护身法宝、雷劫阵法或替劫符箓"},
         ],
         "breakthrough_base_rate": 0.05,
-        "hp_base": 12800,
-        "mp_base": 6400,
         "spirit_root_bonus": {
             "天": 0.10,
             "地": 0.05,
@@ -203,8 +187,6 @@ REALM_CONFIGS: dict[str, dict[str, Any]] = {
         "insight_required": 0,
         "breakthrough_requirements": [],
         "breakthrough_base_rate": 0.00,
-        "hp_base": 99999,
-        "mp_base": 99999,
         "spirit_root_bonus": {},
     },
 }
@@ -235,6 +217,38 @@ SPIRIT_ROOT_GRADES: list[str] = ["天", "地", "玄", "黄"]
 # ─────────────────────────────────────────────────────────────────────────────
 # Rarity levels
 # ─────────────────────────────────────────────────────────────────────────────
+
+# ── Catalog rarity tiers (白绿蓝紫橙红) for talents, family backgrounds, spirit roots ──
+# Random pool always includes 白绿蓝; 红 requires 1 run to appear in random.
+# Self-select: ≤蓝 always; 紫 after 1 run; 橙 after 1 飞升; 红 after 2 飞升.
+# Weights sum to 200 for normalization.
+
+CATALOG_RARITY_TIERS: list[dict[str, Any]] = [
+    {"key": "白", "label": "白色", "weight": 90, "select_requires_runs": 0, "select_requires_ascensions": 0, "random_requires_runs": 0},
+    {"key": "绿", "label": "绿色", "weight": 60, "select_requires_runs": 0, "select_requires_ascensions": 0, "random_requires_runs": 0},
+    {"key": "蓝", "label": "蓝色", "weight": 30, "select_requires_runs": 0, "select_requires_ascensions": 0, "random_requires_runs": 0},
+    {"key": "紫", "label": "紫色", "weight": 14, "select_requires_runs": 1, "select_requires_ascensions": 0, "random_requires_runs": 0},
+    {"key": "橙", "label": "橙色", "weight": 5, "select_requires_runs": 0, "select_requires_ascensions": 1, "random_requires_runs": 0},
+    {"key": "红", "label": "红色", "weight": 1, "select_requires_runs": 0, "select_requires_ascensions": 2, "random_requires_runs": 1},
+]
+
+
+def rarity_unlocked_for(runs_completed: int, ascension_count: int, *,
+                        for_random: bool = False) -> list[str]:
+    """Return the rarity keys the player may select (or roll) given progress.
+
+    Spec §11 unlock gates:
+    - 紫 requires 1 completed run (select) / — (random).
+    - 橙 requires 1 ascension.
+    - 红 requires 2 ascensions + 1 run for the random pool.
+    """
+    unlocked: list[str] = []
+    for tier in CATALOG_RARITY_TIERS:
+        need_runs = tier["random_requires_runs"] if for_random else tier["select_requires_runs"]
+        need_asc = tier["select_requires_ascensions"]
+        if runs_completed >= need_runs and ascension_count >= need_asc:
+            unlocked.append(tier["key"])
+    return unlocked
 
 RARITY_ORDER: list[str] = ["凡品", "良品", "上品", "极品", "仙品"]
 

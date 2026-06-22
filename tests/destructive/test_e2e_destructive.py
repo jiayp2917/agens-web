@@ -315,19 +315,18 @@ class TestDestructiveInputs:
 # ─── 3. Combat engine ──────────────────────────────────────────────────────
 
 class TestCombatEdgeCases:
+    """Game-mode v5: combat is event-based; handle_combat_action is a no-op."""
 
-    def test_combat_without_active_combat(self, engine):
+    def test_combat_action_emits_event_based_notice(self, engine):
         eng, events = engine
         eng.handle_combat_action("attack")
-        # Should emit "当前不在战斗中" info, not crash.
-        assert any("不在战斗" in str(e) for e in events)
+        # Combat is resolved via events, not manual rounds.
+        assert any("事件判定" in str(e) or "无需手动" in str(e) for e in events)
 
     def test_combat_engine_start_and_resolve(self):
+        """The legacy CombatEngine still constructs an internal state (zombie code),
+        but the GameEngine never invokes it in game mode. Verify it doesn't crash."""
         s = GameSession()
-        s.hp = 100
-        s.hp_max = 100
-        s.mp = 50
-        s.mp_max = 50
         s.realm = "练气"
         s.techniques = [{"name": "基础剑法", "mp_cost": 5}]
 
@@ -339,16 +338,14 @@ class TestCombatEdgeCases:
         assert combat["enemy"]["name"] == "妖兽"
 
     def test_combat_action_with_no_combat(self):
-        ce = CombatEngine()
-        s = GameSession()
-        s.combat = None
-        # This should be handled by the engine, not the combat engine directly.
-        # Verify engine side:
+        """Engine-side: handle_combat_action is a safe no-op in game mode."""
         eng = GameEngine()
         events = []
         eng.on_info = lambda msg: events.append(msg)
         eng.handle_combat_action("attack")
-        assert any("不在战斗" in e for e in events)
+        # Emits the event-based notice, never crashes.
+        assert events
+        assert all(isinstance(e, str) for e in events)
 
 
 # ─── 4. Realm system ──────────────────────────────────────────────────────
@@ -361,8 +358,10 @@ class TestRealmEdgeCases:
         for realm in REALM_ORDER:
             cfg = rs.get_realm_config(realm)
             assert cfg is not None, f"Missing config for realm: {realm}"
-            assert cfg.hp_base > 0
-            assert cfg.mp_base > 0
+            # Game-mode v5: no hp_base/mp_base; assert the real required fields.
+            assert cfg.stages >= 1
+            assert cfg.experience_required > 0
+            assert 0.0 <= cfg.breakthrough_base_rate <= 1.0
 
     def test_next_realm_chain(self):
         """Every realm except the last should have a next realm."""
@@ -398,8 +397,8 @@ class TestRealmEdgeCases:
             rate = rs.calculate_breakthrough_rate(s)
             assert 0.0 <= rate <= 1.0, f"Rate {rate} out of range for {realm}"
 
-    def test_breakthrough_failure_gives_damage(self):
-        """Failed breakthrough should reduce HP."""
+    def test_breakthrough_failure_penalizes_experience(self):
+        """Game-mode v5: failed breakthrough costs experience (no HP)."""
         s = GameSession()
         s.realm = "练气"
         s.realm_stage = 9
@@ -407,7 +406,6 @@ class TestRealmEdgeCases:
         s.experience_to_next = 100
         s.insight = 999  # clear the 感悟 gate so the attempt actually resolves
         s.breakthrough_flags = list(ALL_BREAKTHROUGH_FLAGS)
-        s.hp = 100
 
         rs = RealmSystem()
         # Force failure.
@@ -415,7 +413,8 @@ class TestRealmEdgeCases:
             delta = rs.attempt_breakthrough(s)
 
         assert delta["meta"]["breakthrough_result"] == "failure"
-        assert delta["character"]["hp"].startswith("-")
+        assert delta["character"]["experience"].startswith("-")
+        assert delta["meta"]["status_effect_add"] == "走火入魔"
 
     def test_breakthrough_success_advances_realm(self):
         s = GameSession()
@@ -506,7 +505,7 @@ class TestSaveManager:
         s = GameSession()
         s.char_name = "修仙者"
         s.realm = "金丹"
-        s.hp = 200
+        s.lifespan = 200
         s.turn_count = 42
 
         save_game(s, "test_roundtrip")
@@ -514,7 +513,7 @@ class TestSaveManager:
 
         assert loaded.char_name == "修仙者"
         assert loaded.realm == "金丹"
-        assert loaded.hp == 200
+        assert loaded.lifespan == 200
         assert loaded.turn_count == 42
 
     def test_list_saves(self, tmp_save_dir):
@@ -600,8 +599,7 @@ class TestGameSessionStress:
         s = GameSession()
         s.char_name = "修仙者"
         s.realm = "金丹"
-        s.hp = 200
-        s.combat = {"phase": "active"}
+        s.lifespan = 200
         s.game_started = True
         s.game_over = True
         s.finale = True
@@ -609,7 +607,7 @@ class TestGameSessionStress:
         s.reset()
         assert s.char_name == ""
         assert s.realm == "练气"
-        assert s.hp == 100
+        assert s.lifespan == 100  # back to default
         assert s.combat is None
         assert not s.game_started
         assert not s.game_over

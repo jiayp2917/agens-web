@@ -49,7 +49,7 @@ class TestRealmConstants:
             assert name in REALM_CONFIGS, f"Missing realm config for: {name}"
 
     def test_realm_configs_required_fields(self):
-        required_keys = {"name", "stages", "experience_required", "breakthrough_base_rate", "hp_base", "mp_base", "spirit_root_bonus"}
+        required_keys = {"name", "stages", "experience_required", "breakthrough_base_rate", "spirit_root_bonus"}
         for name, cfg in REALM_CONFIGS.items():
             missing = required_keys - set(cfg.keys())
             assert not missing, f"Realm {name} missing keys: {missing}"
@@ -70,11 +70,6 @@ class TestRealmConstants:
         for name, cfg in REALM_CONFIGS.items():
             rate = cfg["breakthrough_base_rate"]
             assert 0.0 <= rate <= 1.0, f"Realm {name} base rate {rate} out of [0,1]"
-
-    def test_realm_configs_hp_mp_positive(self):
-        for name, cfg in REALM_CONFIGS.items():
-            assert cfg["hp_base"] > 0, f"Realm {name} hp_base <= 0"
-            assert cfg["mp_base"] > 0, f"Realm {name} mp_base <= 0"
 
     def test_realm_experience_monotonically_increasing(self):
         exps = [REALM_CONFIGS[name]["experience_required"] for name in REALM_ORDER]

@@ -309,16 +309,11 @@ class GameEngine:
             self.game_session.char_name = char_data.get("name", "无名")
             self.game_session.realm = char_data.get("realm", "练气")
             self.game_session.realm_stage = char_data.get("realm_stage", 1)
-            self.game_session.hp = char_data.get("hp", 100)
-            self.game_session.hp_max = char_data.get("hp_max", 100)
-            self.game_session.mp = char_data.get("mp", 50)
-            self.game_session.mp_max = char_data.get("mp_max", 50)
             self.game_session.spirit_root = char_data.get("spirit_root", "")
             self.game_session.spirit_root_grade = char_data.get("spirit_root_grade", "")
             self.game_session.age = char_data.get("age", self.game_session.age)
             self.game_session.talent = char_data.get("talent", self.game_session.talent)
             self.game_session.family_background = char_data.get("family_background", self.game_session.family_background)
-            self.game_session.luck = char_data.get("luck", self.game_session.luck)
             self.game_session.difficulty = char_data.get("difficulty", self.game_session.difficulty)
             self.game_session.game_mode = DEFAULT_GAME_MODE
             attrs = char_data.get("attributes")
@@ -403,13 +398,8 @@ class GameEngine:
         self.game_session.spirit_root_grade = str(profile.get("spirit_root_grade") or "")
         self.game_session.family_background = str(profile.get("family_background") or FAMILY_BACKGROUNDS[0])
         self.game_session.difficulty = str(profile.get("difficulty") or DIFFICULTY_OPTIONS[1])
-        self.game_session.luck = str(profile.get("luck") or luck_from_attributes(attrs))
         self.game_session.game_mode = DEFAULT_GAME_MODE
         self.game_session.attributes = attrs
-        self.game_session.hp = int(profile.get("hp") or (999 if special else 100))
-        self.game_session.hp_max = int(profile.get("hp_max") or self.game_session.hp)
-        self.game_session.mp = int(profile.get("mp") or (999 if special else 50))
-        self.game_session.mp_max = int(profile.get("mp_max") or self.game_session.mp)
         self.game_session.gold = int(profile.get("gold") or (9999 if special else 20))
         self.game_session.techniques = list(profile.get("techniques") or [{"name": "基础吐纳术", "level": 1, "type": "内功"}])
         self.game_session.inventory = list(profile.get("inventory") or [{"name": "粗布道袍", "quantity": 1, "type": "防具"}])
@@ -889,44 +879,8 @@ class GameEngine:
     # ─── Combat handling ──────────────────────────────────────────────
 
     def handle_combat_action(self, action: str, target: str = "") -> None:
-        """Process a player combat action.
-
-        Called when player text is recognized as a structured combat move.
-        """
-        combat = self.game_session.combat
-        if combat is None:
-            self._emit("on_info", "当前不在战斗中。")
-            return
-
-        try:
-            # Player action.
-            combat = self.combat_engine.player_action(combat, action, target)
-            self.game_session.combat = combat
-
-            # Check if combat ended after player action (victory/fled).
-            if combat.get("phase") in ("victory", "idle") or combat.get("result") in ("victory", "fled"):
-                self._resolve_combat()
-                return
-
-            # Enemy turn.
-            combat = self.combat_engine.enemy_turn(combat)
-            self.game_session.combat = combat
-
-            # Check if player died.
-            if combat.get("phase") == "defeat" or combat.get("result") == "defeat":
-                self._resolve_combat()
-                return
-
-            # Combat continues — notify UI.
-            self._emit("on_combat_update", combat)
-            self._emit("on_status_bar", format_status_bar(self.game_session))
-
-        except Exception:
-            log.exception("Combat error")
-            # Reset combat state on error.
-            self.game_session.combat = None
-            self._emit("on_error", "战斗异常，已退出战斗状态。")
-            self._emit("on_combat_update", None)
+        """Game mode: combat is event-based — no round-based combat actions."""
+        self._emit("on_info", "战斗已通过事件判定结算，无需手动操作。")
 
     def _parse_breakthrough_action(self, text: str) -> bool:
         """Detect natural-language breakthrough intent.
@@ -934,7 +888,7 @@ class GameEngine:
         Allows players to type "突破", "尝试突破", "冲击筑基",
         "准备渡劫飞升", etc. instead of relying on a command syntax.
         """
-        if self.game_session.combat:
+        if False:  # game mode — combat is event-based
             return False  # can't attempt breakthrough during combat
 
         compact = "".join(text.strip().lower().split())
@@ -948,10 +902,9 @@ class GameEngine:
         return any(kw in compact for kw in keywords)
 
     def _resolve_choice_input(self, text: str) -> str | None:
-        """Map A/B/C or 1/2/3 input to the current model choice.
+        """Map A/B/C/D or 1/2/3/4 input to the current model choice.
 
-        D is the free-input branch. ``D: xxx``/``D.xxx`` submit only ``xxx``;
-        plain text is already free input and returns ``None``.
+        Game mode: A/B/C/D are 4 fixed buttons. D = 气运/天命 (fixed semantics).
         """
         raw = text.strip()
         if not raw:
@@ -961,14 +914,10 @@ class GameEngine:
         choices = normalize_choices(self.game_session.last_choices)
 
         key = normalized.rstrip(".:、)） ").strip()
-        mapping = {"A": 0, "B": 1, "C": 2, "1": 0, "2": 1, "3": 2}
+        mapping = {"A": 0, "B": 1, "C": 2, "D": 3, "1": 0, "2": 1, "3": 2, "4": 3}
         if key in mapping:
             index = mapping[key]
             return choices[index] if index < len(choices) else None
-
-        for prefix in ("D:", "D.", "D、", "4:", "4.", "4、"):
-            if normalized.startswith(prefix):
-                return raw[len(prefix):].strip()
 
         return None
 
@@ -1027,118 +976,20 @@ class GameEngine:
             )
 
     def _parse_typed_combat_action(self, text: str) -> tuple[str, str] | None:
-        """Map natural-language combat input onto the structured combat engine.
-
-        The web UI is input-first: a player can type "攻击", "防御",
-        "施展火球术", "使用回春丹" or "逃跑" instead of pressing combat
-        buttons. Inputs that are not clearly combat commands stay on the LLM
-        narrator path so the player can still observe, negotiate, feint, etc.
-        """
-        combat = self.game_session.combat
-        if not combat:
-            return None
-
-        raw = text.strip()
-        if not raw:
-            return None
-        compact = "".join(raw.lower().split())
-
-        if any(word in compact for word in ("逃跑", "逃走", "撤退", "脱身", "遁走", "离开战斗")):
-            return "flee", ""
-
-        if any(word in compact for word in ("服用", "吞服", "使用丹药", "用药", "吃药")):
-            return "item", self._extract_named_combat_target(raw, "consumables", ("服用", "吞服", "使用", "用", "吃"))
-
-        if any(word in compact for word in ("防御", "格挡", "护体", "闪避", "躲避", "防守", "守住")):
-            return "defend", ""
-
-        if any(word in compact for word in ("施展", "催动", "运转", "功法", "法术", "术法", "剑诀")):
-            return "technique", self._extract_named_combat_target(raw, "techniques", ("施展", "催动", "运转", "使用"))
-
-        if any(word in compact for word in ("攻击", "普攻", "进攻", "挥剑", "出剑", "斩", "刺", "劈", "砍")):
-            return "attack", ""
-
+        """Game mode: combat is event-based — no typed combat actions."""
         return None
 
-    def _extract_named_combat_target(
-        self,
-        text: str,
-        collection_key: str,
-        verbs: tuple[str, ...],
-    ) -> str:
-        """Return a named technique/item if the typed text mentions one."""
-        combat = self.game_session.combat or {}
-        player = combat.get("player", {})
-        for item in player.get(collection_key, []):
-            if not isinstance(item, dict):
-                continue
-            name = str(item.get("name") or "")
-            if name and name in text:
-                return name
-
-        target = text.strip()
-        for verb in verbs:
-            target = target.replace(verb, "")
-        for filler in ("我", "你", "向", "对", "朝", "敌人", "妖兽", "一下"):
-            target = target.replace(filler, "")
-        return target.strip()
+    def _extract_named_combat_target(self, text: str, collection_key: str, verbs: tuple[str, ...]) -> str:
+        """Game mode: no typed combat targets."""
+        return ""
 
     def _handle_combat_start_or_update(self, combat_delta: Any) -> None:
-        """Process combat state changes from narrator delta."""
-        if combat_delta is None or combat_delta == {}:
-            self.game_session.combat = None
-            self._emit("on_combat_update", None)
-            return
-
-        if isinstance(combat_delta, dict):
-            current = self.game_session.combat
-
-            if current is None or current.get("phase") == "idle":
-                # New combat — initialize.
-                if combat_delta.get("enemy"):
-                    enemy_data = combat_delta["enemy"]
-                    combat_state = self.combat_engine.start_combat(
-                        self.game_session, enemy_data
-                    )
-                    self.game_session.combat = combat_state
-                    self._emit("on_combat_update", combat_state)
-                    self._emit("on_info", format_combat(self.game_session))
-                else:
-                    # Merge partial combat delta.
-                    self.game_session.combat = combat_delta
-                    self._emit("on_combat_update", combat_delta)
-            else:
-                # Update existing combat.
-                current.update(combat_delta)
-                self.game_session.combat = current
-                self._emit("on_combat_update", current)
+        """Game mode: combat handled through events — silently drop combat deltas."""
+        pass
 
     def _resolve_combat(self) -> None:
-        """Resolve the current combat and apply results."""
-        combat = self.game_session.combat
-        if combat is None:
-            return
-
-        delta = self.combat_engine.resolve(combat)
-        self.game_session.apply_delta(delta)
-        self.game_session.combat = None
-
-        # Notify UI.
-        self._emit("on_combat_update", None)
-
-        result = combat.get("result", "")
-        if result == "victory":
-            exp = delta.get("meta", {}).get("exp_gained", 0)
-            gold = delta.get("meta", {}).get("gold_gained", 0)
-            self._emit("on_info", f"战斗胜利！获得 {exp} 经验，{gold} 灵石。")
-        elif result == "defeat":
-            self._emit("on_game_over", self.game_session.error or "战斗失败，修真之路就此终结。")
-        elif result == "fled":
-            self._emit("on_info", "成功逃离战斗。")
-
-        self._emit("on_narrative", combat.get("narrative", ""), self.game_session.turn_count)
-        self._emit("on_status_bar", format_status_bar(self.game_session))
-        self._auto_save()
+        """Game mode: combat resolved through events — no-op."""
+        pass
 
     # ─── Breakthrough ─────────────────────────────────────────────────
 
@@ -1280,7 +1131,7 @@ class GameEngine:
     # ─── Game over check ─────────────────────────────────────────────
 
     def _check_game_over(self) -> bool:
-        """Check for game-over conditions (HP ≤ 0, explicit flag).
+        """Check for game-over conditions (lifespan depletion, finale flag).
 
         Returns True if game is over.
         """
@@ -1289,13 +1140,6 @@ class GameEngine:
                 self._emit("on_finale", self.game_session.error or "飞升成仙，修真之路圆满。")
                 return True
             self._emit("on_game_over", self.game_session.error or "游戏结束。")
-            return True
-
-        if self.game_session.hp <= 0 and self.game_session.game_started:
-            self.game_session.game_over = True
-            self.game_session.hp = 0
-            self.game_session.error = "生命值归零，修真之路就此终结。"
-            self._emit("on_game_over", self.game_session.error)
             return True
 
         return False
@@ -1327,9 +1171,6 @@ class GameEngine:
                 self.game_session.last_choices = current_local_story_choices(self.game_session)
             self._emit("on_info", f"已加载存档: {name}")
             self._emit("on_status_bar", format_status_bar(self.game_session))
-            # If combat was active, notify UI.
-            if self.game_session.combat:
-                self._emit("on_combat_update", self.game_session.combat)
         except FileNotFoundError as e:
             self._emit("on_info", str(e))
         except Exception as e:
@@ -1339,7 +1180,6 @@ class GameEngine:
         """Reset the game session."""
         self.game_session.reset()
         self._emit("on_info", "游戏已重置。请返回角色创建重新开始。")
-        self._emit("on_combat_update", None)
 
     # ─── Multi-slot save management ──────────────────────────────────
 

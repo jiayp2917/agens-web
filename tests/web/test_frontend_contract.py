@@ -87,6 +87,10 @@ def test_react_homepage_buttons_have_handlers() -> None:
     assert "onSettings" in source
     assert "TutorialDialog" in source
     assert "模型暂不可用，当前以本地故事继续。" in source
+    assert "A 稳妥、B 机遇、C 风险、D 气运" in source
+    assert "D 代表随缘与天命路线，不是自由输入" in source
+    assert "D 输入框可以写自由行动" not in source
+    assert "D 写下自己的行动" not in source
     assert "requireAuth" not in source
     assert 'href="https://www.jiayp2917.xyz/"' in source
     assert "BgmToggle" in source
@@ -129,8 +133,11 @@ def test_react_game_page_has_escape_route_and_stable_meters() -> None:
 def test_react_turn_actions_disable_while_busy() -> None:
     source = (ROOT / "web" / "frontend-react" / "src" / "main.tsx").read_text(encoding="utf-8")
 
-    assert "disabled={busy} onClick={() => runTurn(`/api/sessions/${session.session_id}/choice`" in source
-    assert "input disabled={busy}" in source
+    assert "disabled={busy}" in source
+    assert "runTurn(`/api/sessions/${session.session_id}/choice`" in source
+    # Game-mode v5: A/B/C/D fixed choices only; no free-text input element.
+    for label in ("A 稳妥", "B 机遇", "C 风险", "D 气运"):
+        assert label in source
     assert "FallbackBanner session={session} busy={busy} runTurn={runTurn}" in source
     assert "function FallbackBanner({ session, busy, runTurn }" in source
     assert "disabled={busy} onClick={() => runTurn(`/api/sessions/${session.session_id}/action`" in source

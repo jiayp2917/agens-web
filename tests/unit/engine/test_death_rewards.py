@@ -5,8 +5,9 @@ from __future__ import annotations
 from typing import Any
 
 from agens_novel.engine.death_rewards import (
-    DEATH_BY_COMBAT,
+    DEATH_BY_EVENT,
     DEATH_BY_FINALE,
+    DEATH_BY_KARMA,
     DEATH_BY_LIFESPAN,
     DEATH_BY_PLAYER,
     apply_legacy_bonuses,
@@ -31,9 +32,13 @@ class TestCategorizeDeath:
         session = _make_session(game_over=True, finale=True, hp=0)
         assert categorize_death(session) == DEATH_BY_FINALE
 
-    def test_combat_death_when_hp_zero(self) -> None:
-        session = _make_session(game_over=True, hp=0, lifespan=100)
-        assert categorize_death(session) == DEATH_BY_COMBAT
+    def test_event_death_from_trial(self) -> None:
+        session = _make_session(game_over=True, lifespan=100, error="斗法失败，道消身殒。")
+        assert categorize_death(session) == DEATH_BY_EVENT
+
+    def test_karma_death_from_luck(self) -> None:
+        session = _make_session(game_over=True, lifespan=100, error="气运反噬，因果缠身。")
+        assert categorize_death(session) == DEATH_BY_KARMA
 
     def test_lifespan_death(self) -> None:
         session = _make_session(game_over=True, hp=100, lifespan=0)

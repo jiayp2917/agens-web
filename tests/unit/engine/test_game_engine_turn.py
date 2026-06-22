@@ -96,7 +96,8 @@ class TestGameEngineHandleAction:
 
         assert call_log == ["narrator", "judge"]
         assert engine.game_session.turn_count == 1
-        assert engine.game_session.mp == 40  # 50 - 10
+        # Game-mode v5: mp removed; experience gained (rule engine + narrator delta).
+        assert engine.game_session.experience >= 15
 
     def test_choice_letter_routes_to_current_choice(self, monkeypatch) -> None:
         monkeypatch.setenv("AGNES_API_KEY", "sk-test-1234567890")
@@ -134,28 +135,14 @@ class TestGameEngineHandleAction:
 
         assert engine._resolve_choice_input("C") is None
 
-    def test_d_prefix_is_free_typed_action(self, monkeypatch) -> None:
+    def test_d_prefix_is_not_free_typed_action(self, monkeypatch) -> None:
         monkeypatch.setenv("AGNES_API_KEY", "sk-test-1234567890")
-        seen_inputs: list[str] = []
         engine = GameEngine()
-        with _patch_turn_runner():
-            engine.start_from_profile({
-                "char_name": "许满",
-                "choices": ["留在山门吐纳", "询问接引弟子", "观察灵气流向"],
-            })
+        engine.game_session.game_started = True
+        engine.game_session.last_choices = ["留在山门吐纳", "询问接引弟子", "观察灵气流向", "随缘听天命"]
 
-        def runner(agent_name, user_input, session, **kw):
-            if agent_name == "narrator":
-                seen_inputs.append(user_input)
-                return _canned_narrator()
-            if agent_name == "judge":
-                return _canned_judge()
-            return {}
-
-        with patch("agens_novel.engine.game_engine.run_turn_sync", side_effect=runner):
-            engine.handle_action("D: 沿石阶寻找隐藏碑文")
-
-        assert seen_inputs[0].startswith("沿石阶寻找隐藏碑文")
+        assert engine._resolve_choice_input("D: 沿石阶寻找隐藏碑文") is None
+        assert engine._resolve_choice_input("D") == "随缘听天命"
 
     def test_action_without_game(self, monkeypatch) -> None:
         monkeypatch.setenv("AGNES_API_KEY", "sk-test-1234567890")
@@ -409,8 +396,8 @@ class TestGameEngineHandleAction:
             if agent_name == "judge":
                 return {
                     "approved": False,
-                    "corrected_delta": {"character": {"mp": "-5"}},
-                    "judgment_note": "MP消耗过大",
+                    "corrected_delta": {"character": {"experience": "-5"}},
+                    "judgment_note": "经验获取过大",
                     "review_score": 3,
                     "output_path": "", "audit_path": "", "finished_at": "", "llm_error": "",
                 }
@@ -419,7 +406,15 @@ class TestGameEngineHandleAction:
         with patch("agens_novel.engine.game_engine.run_turn_sync", side_effect=selective_runner):
             engine.handle_action("修炼")
 
-        assert engine.game_session.mp == 45  # 50 - 5 (corrected)
+        # Game-mode v5: corrected_delta uses a real field (experience); mp removed.
+        # The judge's correction overrides the narrator's proposed experience,
+        # so the final experience differs from the approved path.
+        baseline_engine = GameEngine()
+        with _patch_turn_runner():
+            baseline_engine.new_game("许满")
+        with _patch_turn_runner():
+            baseline_engine.handle_action("修炼")  # approved baseline
+        assert engine.game_session.experience != baseline_engine.game_session.experience
 
     def test_judge_reject_without_correction_suppresses_drift_narrative(self, monkeypatch) -> None:
         monkeypatch.setenv("AGNES_API_KEY", "sk-test-1234567890")
@@ -534,8 +529,7 @@ class TestGameEngineHandleAction:
         assert s.techniques == [{"name": "基础吐纳术", "level": 1, "type": "内功"}]
         assert s.current_scene == "晨雾中的青云山外门"
         assert s.day_count == 2
-        assert s.mp == 45
-        # Rule engine provides a floor; model may grant more
+        # Game-mode v5: mp removed; experience gain applies.
         assert s.experience >= 5
 
     def test_start_from_profile_seeds_opening_chat_history(self, monkeypatch, tmp_path) -> None:
@@ -554,36 +548,29 @@ class TestGameEngineHandleAction:
         assert engine.game_session.chat_history
         assert "当前状态 JSON 为准" in engine.game_session.chat_history[0]["content"]
 
-    def test_typed_combat_action_uses_combat_engine_without_llm(self, monkeypatch, tmp_path) -> None:
+    def test_typed_combat_action_is_none_in_game_mode(self, monkeypatch, tmp_path) -> None:
+        """Game-mode v5: combat is event-based; there is no typed combat action.
+        A combat-flavored phrase routes to the narrator like any other action."""
         from agens_novel import paths
 
         monkeypatch.setattr(paths, "SAVE_DIR", tmp_path)
         monkeypatch.setenv("AGNES_API_KEY", "sk-test-1234567890")
 
-        import agens_novel.game.combat as combat_mod
-
-        monkeypatch.setattr(combat_mod.random, "uniform", lambda _a, _b: 1.0)
-
         engine = GameEngine()
         with _patch_turn_runner():
             engine.start_from_profile({
                 "char_name": "许满",
-                "techniques": [{"name": "基础吐纳术", "level": 1, "type": "内功", "mp_cost": 10}],
+                "techniques": [{"name": "基础吐纳术", "level": 1, "type": "内功"}],
             })
-        engine.game_session.combat = engine.combat_engine.start_combat(
-            engine.game_session,
-            {"name": "妖兽", "hp": 80, "hp_max": 80, "realm": "练气"},
-        )
 
-        with patch("agens_novel.engine.game_engine.run_turn_sync") as runner:
-            engine.handle_action("施展基础吐纳术攻击妖兽")
+        # No typed combat action parsing in game mode.
+        assert engine._parse_typed_combat_action("施展基础吐纳术攻击妖兽") is None
+        # Game-mode v5: no structured combat state on the session ever.
+        assert engine.game_session.combat is None
 
-        runner.assert_not_called()
-        assert engine.game_session.combat is not None
-        assert engine.game_session.combat["enemy"]["hp"] < 80
-        assert engine.game_session.combat["player"]["mp"] < engine.game_session.mp_max
-
-    def test_narrator_combat_delta_initializes_structured_combat(self, monkeypatch, tmp_path) -> None:
+    def test_narrator_combat_delta_is_dropped_in_game_mode(self, monkeypatch, tmp_path) -> None:
+        """Game-mode v5: a structured combat delta in the narrator output is
+        dropped (combat is event-based); no structured combat is initialized."""
         from agens_novel import paths
 
         monkeypatch.setattr(paths, "SAVE_DIR", tmp_path)
@@ -592,8 +579,6 @@ class TestGameEngineHandleAction:
         engine = GameEngine()
         with _patch_turn_runner():
             engine.start_from_profile({"char_name": "许满"})
-        combat_updates: list[dict | None] = []
-        engine.on_combat_update = lambda state: combat_updates.append(state)
 
         def selective_runner(agent_name, user_input, session, **kw):
             if agent_name == "narrator":
@@ -621,10 +606,8 @@ class TestGameEngineHandleAction:
         with patch("agens_novel.engine.game_engine.run_turn_sync", side_effect=selective_runner):
             engine.handle_action("查看山门外的异响")
 
-        assert engine.game_session.combat is not None
-        assert engine.game_session.combat["phase"] == "player_turn"
-        assert engine.game_session.combat["enemy"]["name"] == "山魈"
-        assert combat_updates and combat_updates[-1]["phase"] == "player_turn"
+        # Game-mode v5: structured combat delta is dropped; no combat state kept.
+        assert engine.game_session.combat is None
 
 
 class TestStageAdvancement:
@@ -709,12 +692,12 @@ class TestBreakthroughRouting:
         assert engine._parse_breakthrough_action("闭关修炼") is False
         assert engine._parse_breakthrough_action("探索秘境") is False
 
-    def test_breakthrough_not_during_combat(self) -> None:
-        """Breakthrough keyword during combat should not route to breakthrough."""
+    def test_breakthrough_keyword_always_detected_in_game_mode(self) -> None:
+        """Game-mode v5: combat is event-based; there is no structured combat
+        state to suppress breakthrough intent. The keyword is detected normally."""
         engine = GameEngine()
         engine.game_session.game_started = True
-        engine.game_session.combat = {"phase": "player_turn", "enemy": {"name": "山魈"}}
-        assert engine._parse_breakthrough_action("突破") is False
+        assert engine._parse_breakthrough_action("突破") is True
 
     def test_handle_action_routes_breakthrough(self, monkeypatch) -> None:
         """Typing "尝试突破" routes to attempt_breakthrough, not narrator."""

@@ -22,8 +22,9 @@ log = logging.getLogger(__name__)
 
 # ── Death categorization ─────────────────────────────────────────────────────
 
-DEATH_BY_COMBAT = "战斗失败"
+DEATH_BY_EVENT = "天命难违"
 DEATH_BY_LIFESPAN = "寿元耗尽"
+DEATH_BY_KARMA = "气运反噬"
 DEATH_BY_PLAYER = "玩家结束本局"
 DEATH_BY_FINALE = "飞升成仙"
 
@@ -31,22 +32,28 @@ DEATH_BY_FINALE = "飞升成仙"
 def categorize_death(session: Any) -> str:
     """Classify how the run ended based on the final session state.
 
-    Order matters: finale (ascension) takes precedence over plain game_over,
-    then combat defeat (HP ≤ 0) beats lifespan exhaustion, then the player's
-    voluntary quit covers anything else.
+    Game-mode death causes (per §6):
+    - finale > event_death/karma_death > lifespan > player
+    - event_death: 斗法、禁地、心魔、天劫 etc.
+    - karma_death: D气运 path extreme failure
+    - No HP check — combat is event-based.
     """
     if getattr(session, "finale", False):
         return DEATH_BY_FINALE
     if not getattr(session, "game_over", False):
         return ""
-    hp = getattr(session, "hp", 1)
+    error = getattr(session, "error", "") or ""
     lifespan = getattr(session, "lifespan", 1)
-    if hp <= 0:
-        return DEATH_BY_COMBAT
+    # Karma death: D气运 extreme failure.
+    if "气运" in error or "karma" in error.lower():
+        return DEATH_BY_KARMA
+    # Event death: 斗法、禁地、心魔、天劫 etc.
+    event_keywords = ("斗法", "禁地", "心魔", "天劫", "重伤", "走火入魔", "雷劫", "道消")
+    if any(kw in error for kw in event_keywords):
+        return DEATH_BY_EVENT
     if lifespan <= 0:
         return DEATH_BY_LIFESPAN
-    error = getattr(session, "error", "") or ""
-    if error == "玩家结束本局。":
+    if error == "玩家结束本局":
         return DEATH_BY_PLAYER
     return DEATH_BY_PLAYER
 
@@ -341,8 +348,10 @@ def _summary_headline(session: Any, death_cause: str) -> str:
     realm = getattr(session, "realm", "练气")
     if death_cause == DEATH_BY_FINALE:
         return f"{char_name}破界飞升，修真之路圆满。"
-    if death_cause == DEATH_BY_COMBAT:
-        return f"{char_name}殒于争斗，{realm}之路止步于此。"
+    if death_cause == DEATH_BY_EVENT:
+        return f"{char_name}遭逢劫数，{realm}之路止步于此。"
+    if death_cause == DEATH_BY_KARMA:
+        return f"{char_name}气运反噬，{realm}修为化为因果。"
     if death_cause == DEATH_BY_LIFESPAN:
         return f"{char_name}寿元耗尽，坐化而去，{realm}修为归于尘土。"
     if death_cause == DEATH_BY_PLAYER:

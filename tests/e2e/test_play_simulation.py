@@ -409,7 +409,7 @@ class TestChaoticPlayer:
         assert s.game_over is False, "Game should not auto-over from nonsense"
 
     def test_game_over_suicide(self, temp_project_root, set_api_key):
-        """Test that a suicide action (HP -> 0) triggers game_over properly."""
+        """Test that a lethal event (lifespan -> 0 + game_over) triggers game_over properly."""
         engine, rec = make_engine()
 
         def mock_turn_sync(agent_name, user_input, session, **kwargs):
@@ -418,7 +418,11 @@ class TestChaoticPlayer:
             elif agent_name == "narrator":
                 return _narrator_result(
                     narrative="你纵身跳下万丈深渊...",
-                    delta={"character": {"hp": "-200"}, "world": {}},
+                    delta={
+                        "character": {"lifespan": "-200"},
+                        "world": {},
+                        "meta": {"game_over": True, "game_over_reason": "天命难违"},
+                    },
                 )
             elif agent_name == "judge":
                 return _judge_approved()
@@ -430,9 +434,9 @@ class TestChaoticPlayer:
 
             engine.handle_action("跳崖自杀")
 
-            # HP should be clamped to 0
-            assert engine.game_session.hp == 0
+            # Game-mode v5: death is event-based (meta.game_over), not HP.
             assert engine.game_session.game_over is True
+            assert engine.game_session.lifespan >= 1  # never below the floor
             assert len(rec.game_overs) > 0, "Should have emitted game_over event"
 
     def test_game_over_prevents_further_actions(self, temp_project_root, set_api_key):
@@ -448,7 +452,11 @@ class TestChaoticPlayer:
             elif agent_name == "narrator":
                 return _narrator_result(
                     narrative="你死了。",
-                    delta={"character": {"hp": "-200"}, "world": {}},
+                    delta={
+                        "character": {"lifespan": "-200"},
+                        "world": {},
+                        "meta": {"game_over": True, "game_over_reason": "天命难违"},
+                    },
                 )
             elif agent_name == "judge":
                 return _judge_approved()
@@ -637,7 +645,11 @@ class TestEngineerPlayer:
             elif agent_name == "narrator":
                 return _narrator_result(
                     narrative="你死了。",
-                    delta={"character": {"hp": "-200"}, "world": {}},
+                    delta={
+                        "character": {"lifespan": "-200"},
+                        "world": {},
+                        "meta": {"game_over": True, "game_over_reason": "天命难违"},
+                    },
                 )
             elif agent_name == "judge":
                 return _judge_approved()
@@ -722,7 +734,7 @@ class TestEngineerPlayer:
             "Breakthrough should be rejected for low stage"
 
     def test_exploit_combat_when_not_in_combat(self, temp_project_root, set_api_key):
-        """Try combat actions when not in combat."""
+        """Game-mode v5: combat is event-based; handle_combat_action is a safe no-op."""
         engine, rec = self._setup_engine()
 
         def mock_turn_sync(agent_name, user_input, session, **kwargs):
@@ -734,23 +746,24 @@ class TestEngineerPlayer:
             engine.new_game("好战者")
 
         rec.clear()
-        # No combat active
+        # No structured combat exists in game mode; the action is a safe no-op.
         engine.handle_combat_action("attack")
-        assert any("不在战斗中" in e["args"][0] for e in rec.events if e["type"] == "info"), \
-            "Should reject combat action when not in combat"
+        assert any(
+            "事件判定" in e["args"][0] or "无需手动" in e["args"][0]
+            for e in rec.events if e["type"] == "info"
+        ), "Should emit the event-based combat notice, not crash"
 
-    def test_exploit_set_hp_max_low(self, temp_project_root, set_api_key):
-        """Try to set hp_max very low (should kill the character via clamping)."""
+    def test_exploit_attribute_clamp_extreme(self, temp_project_root, set_api_key):
+        """Try to set an attribute out of [0,100] range (should be clamped)."""
         session = GameSession()
         session.game_started = True
-        session.hp = 100
-        session.hp_max = 100
 
-        # Set hp_max to 0 or 1
-        session.apply_delta({"character": {"hp_max": 1}})
-        assert session.hp_max == 1
-        # HP should be clamped to [0, hp_max]
-        assert session.hp == 1, f"HP should be clamped to hp_max=1, got {session.hp}"
+        # Above 100 is clamped to 100.
+        session.apply_delta({"character": {"attributes": {"luck": 99999}}})
+        assert session.attributes["luck"] == 100
+        # Below 0 is clamped to 0.
+        session.apply_delta({"character": {"attributes": {"luck": -99999}}})
+        assert session.attributes["luck"] == 0
 
     def test_exploit_bool_game_over_injection(self, temp_project_root, set_api_key):
         """Try to inject game_over via delta with non-bool types."""

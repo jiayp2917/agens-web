@@ -29,7 +29,7 @@ http://127.0.0.1:8000/
 ## 业务流程
 
 1. 首页
-   - 生产入口优先加载 `web/frontend-react/dist/index.html`；旧 `web/frontend/index.html` 只作为 fallback。
+   - 生产入口加载 `web/frontend-react/dist/index.html`；旧 `web/frontend/index.html` 仅在显式设置 `AGENS_ENABLE_LEGACY_FRONTEND=1` 时作为 fallback。
    - 首页提供新游戏、读档、教程、设置、邀请码注册入口和背景音乐开关。
    - 新游戏允许访客直接进入角色创建；读档/设置打开弹窗，不再强制跳登录页。
    - Web 端不执行“关闭程序”，结束本局只清理当前局状态并返回首页。
@@ -52,14 +52,14 @@ http://127.0.0.1:8000/
 4. 角色创建
    - 前端角色页提交游戏名称、角色名、天赋、灵根、家世、难度和属性。
    - `POST /api/sessions/{id}/start` 调用 `GameEngine.start_from_profile()`。
-   - World Builder 负责开场叙事和 A/B/C；无 key 或模型失败时进入本地故事兜底，并在前端提供继续或结束本局。
+   - World Builder 负责开场叙事和 A/B/C/D；无 key 或模型失败时进入本地故事兜底，并在前端提供继续或结束本局。
    - 特殊开局只由后端识别，前端不明示隐藏规则。
 
 5. 回合推进
-   - A/B/C 按钮调用 `POST /api/sessions/{id}/choice`。
-   - D 输入框调用 `POST /api/sessions/{id}/action`。
+   - A/B/C/D 固定按钮调用 `POST /api/sessions/{id}/choice`，D 为气运/天命路线。
+   - `POST /api/sessions/{id}/action` 仅保留给兜底“继续本局”和兼容调用，不再作为 React 主入口的自由文本输入。
    - 后端把行动交给 `GameEngine.handle_action()`，引擎继续负责 Narrator、Judge、状态落账、战斗、突破、死亡和飞升。
-   - API 响应统一返回叙事事件、角色状态、世界状态、A/B/C、回合数和终局状态。
+   - API 响应统一返回叙事事件、角色状态、世界状态、A/B/C/D、回合数和终局状态。
 
 6. 存读档
    - `POST /api/sessions/{id}/save` 将当前 `GameSession.to_save_dict()`、事件和 chat_history 写入数据库。

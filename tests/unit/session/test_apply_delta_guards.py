@@ -48,23 +48,24 @@ class TestApplyDeltaDefensive:
         s.apply_delta({"character": {"status_effects_add": None}})
         assert s.status_effects == []
 
-    def test_negative_hp_clamped(self):
+    def test_negative_lifespan_floored(self):
+        """Game-mode v5: lifespan (not HP) is the death resource; floored at 1."""
         s = GameSession()
-        s.hp = 10
-        s.apply_delta({"character": {"hp": "-100"}})
-        assert s.hp == 0  # clamped to 0
+        s.lifespan = 10
+        s.apply_delta({"character": {"lifespan": "-100"}})
+        assert s.lifespan == 1  # floor guard at 1, not 0
 
-    def test_negative_mp_clamped(self):
+    def test_negative_gold_floored(self):
         s = GameSession()
-        s.mp = 5
-        s.apply_delta({"character": {"mp": "-50"}})
-        assert s.mp == 0
+        s.gold = 5
+        s.apply_delta({"character": {"gold": "-50"}})
+        assert s.gold == 0
 
-    def test_bool_ignored_for_hp(self):
+    def test_bool_ignored_for_gold(self):
         s = GameSession()
-        original_hp = s.hp
-        s.apply_delta({"character": {"hp": True}})
-        assert s.hp == original_hp  # bool ignored
+        original_gold = s.gold
+        s.apply_delta({"character": {"gold": True}})
+        assert s.gold == original_gold  # bool ignored
 
     def test_finale_flag(self):
         s = GameSession()
@@ -114,13 +115,14 @@ class TestApplyDeltaDefensive:
         s.apply_delta({"character": {"equipment_slots": {"weapon": {"name": "铁剑"}}}})
         assert s.equipment_slots["weapon"]["name"] == "铁剑"
 
-    def test_combat_clear(self):
+    def test_combat_clear_ignored(self):
+        """Game-mode v5: structured combat is event-based; combat delta is dropped."""
         s = GameSession()
-        s.combat = {"phase": "active"}
         s.apply_delta({"character": {"combat": None}})
         assert s.combat is None
 
-    def test_combat_start(self):
+    def test_combat_start_ignored(self):
+        """A structured combat delta does not create structured combat state."""
         s = GameSession()
         s.apply_delta({"character": {"combat": {"phase": "player_turn", "enemy": {"name": "妖兽"}}}})
-        assert s.combat["phase"] == "player_turn"
+        assert s.combat is None  # game-mode combat is event-based; no struct kept

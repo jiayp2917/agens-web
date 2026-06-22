@@ -19,8 +19,6 @@ class TestRealmConfig:
         assert cfg.stages == 9
         assert cfg.experience_required == 100
         assert cfg.breakthrough_base_rate == 0.80
-        assert cfg.hp_base == 100
-        assert cfg.mp_base == 50
 
     def test_from_dict_defaults(self):
         cfg = RealmConfig.from_dict({})
@@ -295,12 +293,10 @@ class TestAttemptBreakthrough:
         assert result["meta"]["new_realm"] == "筑基"
         assert result["character"]["realm"] == "筑基"
         assert result["character"]["realm_stage"] == 1
-        assert result["character"]["hp_max"] == 200
-        assert result["character"]["mp_max"] == 100
 
     def test_failure_returns_correct_delta(self):
         rs = RealmSystem()
-        session = _make_session(realm="练气", realm_stage=9, hp=100, experience=300, experience_to_next=100)
+        session = _make_session(realm="练气", realm_stage=9, experience=300, experience_to_next=100)
         # Force failure
         import agens_novel.game.realm as realm_mod
         original_random = realm_mod.random.random
@@ -312,9 +308,6 @@ class TestAttemptBreakthrough:
 
         assert result["meta"]["breakthrough_result"] == "failure"
         assert result["meta"]["status_effect_add"] == "走火入魔"
-        # HP loss should be ~15% of current
-        hp_loss_str = result["character"]["hp"]
-        assert hp_loss_str.startswith("-")
         assert result["character"]["experience"] == "-20"
 
 

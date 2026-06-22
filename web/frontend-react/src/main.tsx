@@ -38,7 +38,7 @@ const attributes = [
   ["luck", "气运"],
   ["willpower", "心性"],
   ["physique", "体魄"],
-  ["spiritual_sense", "神识"],
+  ["soul", "神魂"],
 ] as const;
 
 const fallbackCatalogs = {
@@ -74,10 +74,16 @@ const randomOnlySpiritRootNames = new Set(["阴阳灵根", "混沌灵根"]);
 const manualAttributeBudget = 300;
 const manualAttributeMin = 20;
 const manualAttributeMax = 80;
+const choiceSemantics = [
+  { key: "A", label: "稳妥", hint: "闭关、修炼、整顿，低风险推进" },
+  { key: "B", label: "机遇", hint: "外出、结交、寻访，中风险探索" },
+  { key: "C", label: "风险", hint: "突破、斗法、禁地，高风险结算" },
+  { key: "D", label: "气运", hint: "随缘、天命、未知机缘，强受气运影响" },
+] as const;
 
 const randomBetween = (min: number, max: number) => Math.floor(Math.random() * (max - min + 1)) + min;
 const pickRandom = <T,>(items: T[]) => items[Math.floor(Math.random() * items.length)];
-const isManualRarity = (item: CatalogItem) => !["传说", "橙", "红"].includes(String(item.rarity || item.grade || ""));
+const isManualRarity = (item: CatalogItem) => !["紫", "橙", "红"].includes(String(item.rarity || item.grade || ""));
 const uniqueByName = (items: CatalogItem[]) => Array.from(new Map(items.map((item) => [item.name, item])).values());
 
 function App() {
@@ -299,7 +305,7 @@ function HomePage({
         <div className="hero">
           <p className="eyebrow">WEB · 文字修仙模拟器</p>
           <h1>文字修仙模拟器<span className="seal">道</span></h1>
-          <p>从山门晨雾开始。A/B/C 推进天道选项，D 写下自己的行动。</p>
+          <p>从山门晨雾开始。A 稳妥、B 机遇、C 风险、D 气运，四选一推进修行岁月。</p>
           <div className="play-modes" aria-label="游玩方式">
             <span>访客新局：立即开玩，不提供云端存档</span>
             <span>邀请码账号：登录后可保存和读档</span>
@@ -566,16 +572,8 @@ function GamePage({
 }) {
   const character = session.character || {};
   const world = session.world || {};
-  const [action, setAction] = useState("");
   const [panel, setPanel] = useState<keyof Session["panels"]>("status");
   const events = useMemo(() => session.events.filter((event) => event.text), [session.events]);
-  const submit = async (event: FormEvent) => {
-    event.preventDefault();
-    if (!action.trim()) return;
-    const text = action.trim();
-    setAction("");
-    await runTurn(`/api/sessions/${session.session_id}/action`, { action: text });
-  };
 
   return (
     <section className="game-page">
@@ -595,11 +593,12 @@ function GamePage({
         <aside className="status-panel">
           <strong>{world.location || "山门"}</strong>
           <div className="stat-stack">
-            <StatLine label="气血" value={Number(character.hp || 0)} max={Number(character.hp_max || 0)} />
-            <StatLine label="灵力" value={Number(character.mp || 0)} max={Number(character.mp_max || 0)} />
+            <StatLine label="寿元" value={Number(character.lifespan || 100) - Number(character.age || 16)} max={Number(character.lifespan || 100)} />
+            <StatLine label="经验" value={Number(character.experience || 0)} max={Number(character.experience_to_next || 100)} />
           </div>
           <dl className="character-meta">
             <dt>年龄</dt><dd>{character.age || 16}</dd>
+            <dt>境界</dt><dd>{character.realm || "练气"}{character.realm_stage || 1}层</dd>
             <dt>灵根</dt><dd>{character.spirit_root || "未明"}</dd>
             <dt>天赋</dt><dd>{character.talent || "平平无奇"}</dd>
           </dl>
@@ -618,7 +617,7 @@ function GamePage({
           {panel === "status" ? (
             <dl className="panel-summary">
               <dt>境界</dt><dd>{character.realm || "练气"}{character.realm_stage || 1}层</dd>
-              <dt>气运</dt><dd>{character.luck || "平稳"}</dd>
+              <dt>气运</dt><dd>{character.attributes?.luck ?? "平稳"}</dd>
               <dt>经验</dt><dd>{character.experience ?? 0}/{character.experience_to_next ?? 100}</dd>
               <dt>感悟</dt><dd>{character.insight ?? 0}/{character.insight_required ?? 30}</dd>
               <dt>寿元</dt><dd>{character.lifespan || 100} 年</dd>
@@ -634,19 +633,18 @@ function GamePage({
             {events.length === 0 ? <p>叙事将在这里展开。</p> : events.map((event, idx) => <article key={idx}>{event.text}</article>)}
           </div>
           <div className="choice-list">
-            {session.choices.map((choice, index) => (
-              <button key={`${choice}-${index}`} disabled={busy} onClick={() => runTurn(`/api/sessions/${session.session_id}/choice`, { choice_index: index })}>
-                <span>{String.fromCharCode(65 + index)}</span>{choice}
+            {session.choices.map((choice, index) => {
+              const semantic = choiceSemantics[index];
+              const label = semantic ? `${semantic.key} ${semantic.label}` : String.fromCharCode(65 + index);
+              return (
+              <button key={`${choice}-${index}`} disabled={busy} title={semantic?.hint} aria-label={`${label}：${choice}`} onClick={() => runTurn(`/api/sessions/${session.session_id}/choice`, { choice_index: index })}>
+                <span>{label}</span>{choice}
               </button>
-            ))}
+              );
+            })}
           </div>
         </section>
       </div>
-      <form className="action-bar-react" onSubmit={submit}>
-        <label>D 自由行动</label>
-        <input disabled={busy} value={action} onChange={(event) => setAction(event.target.value)} placeholder="例如：前往悬赏榜、请教师兄、尝试突破" />
-        <button className="primary-btn" disabled={busy} type="submit"><Send size={18} />{busy ? "推演中" : "发送"}</button>
-      </form>
     </section>
   );
 }
@@ -850,7 +848,7 @@ function TutorialDialog({ onClose }: { onClose: () => void }) {
       <div className="settings-dialog compact-dialog">
         <header><h2>教程</h2><button className="icon-btn" onClick={onClose} aria-label="关闭">×</button></header>
         <section className="settings-grid">
-          <p>A/B/C 是当前回合选项。D 输入框可以写自由行动，例如探索、交谈、修炼、战斗或尝试突破。</p>
+          <p>A/B/C/D 是当前回合固定选项：A 稳妥、B 机遇、C 风险、D 气运。D 代表随缘与天命路线，不是自由输入。</p>
           <p>模型暂不可用时，本局会切到本地故事继续；访客局仍可继续玩，但不提供云端存档。</p>
           <button className="primary-btn" onClick={onClose}>知道了</button>
         </section>

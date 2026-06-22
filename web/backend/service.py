@@ -251,13 +251,17 @@ class WebGameService:
     ) -> dict[str, Any]:
         runner = self._runner(session_id, user_id=user_id)
         action = self._choice_text(runner, payload)
+        before = _turn_start_snapshot(runner.engine.game_session)
         runner.engine.handle_action(action)
+        self._record_settled_turn(runner, before, action)
         self._persist(runner)
         return runner.response()
 
     def act(self, session_id: str, action: str, user_id: str | None = None) -> dict[str, Any]:
         runner = self._runner(session_id, user_id=user_id)
+        before = _turn_start_snapshot(runner.engine.game_session)
         runner.engine.handle_action(action)
+        self._record_settled_turn(runner, before, action)
         self._persist(runner)
         return runner.response()
 
@@ -450,6 +454,61 @@ class WebGameService:
             runner.events,
         )
 
+    def _record_settled_turn(
+        self,
+        runner: WebRunner,
+        before: dict[str, Any],
+        choice_taken: str,
+    ) -> None:
+        """Persist the latest settled turn for registered users.
+
+        This is telemetry/progression state for GAME_MODE_SPEC §8.3; a write
+        failure must not block play because the authoritative session snapshot
+        is still saved through _persist().
+        """
+        if is_guest_user_id(runner.user_id):
+            return
+        session = runner.engine.game_session
+        if session.turn_count <= int(before.get("turn_no") or 0):
+            return
+        if not session.turn_history:
+            return
+        turn = session.turn_history[-1]
+        if int(turn.get("turn") or 0) != session.turn_count:
+            return
+
+        delta = turn.get("delta") if isinstance(turn.get("delta"), dict) else {}
+        meta = delta.get("meta") if isinstance(delta, dict) else {}
+        if not isinstance(meta, dict):
+            meta = {}
+        elapsed_years = int(meta.get("elapsed_years") or max(0, session.age - int(before.get("age") or session.age)))
+        calendar_summary = str(
+            meta.get("calendar_summary")
+            or meta.get("turn_summary")
+            or _calendar_summary(before, session, elapsed_years)
+        )
+        event_kind = str(meta.get("choice_category") or turn.get("event_kind") or "event")
+        try:
+            self.db.record_game_turn(
+                runner.session_id,
+                session.turn_count,
+                start_age=int(before.get("age") or session.age),
+                elapsed_years=elapsed_years,
+                end_age=int(session.age),
+                lifespan=int(session.lifespan),
+                remaining_lifespan=max(0, int(session.lifespan)),
+                choice_taken=choice_taken,
+                choices=list(turn.get("choices") or session.last_choices or []),
+                state_delta=delta,
+                state_after=session.as_game_state(),
+                calendar_summary=calendar_summary,
+                narrative=str(turn.get("narrative") or ""),
+                event_kind=event_kind,
+                end_reason=session.error if session.game_over else None,
+            )
+        except Exception:
+            log.exception("game turn persistence failed")
+
     def _normalize_profile(self, profile: dict[str, Any]) -> dict[str, Any]:
         normalized = dict(profile)
         game_name = str(normalized.get("game_name") or "").strip()
@@ -517,12 +576,12 @@ class WebGameService:
             return choices[index]
 
         raw = str(payload.get("choice") or "").strip()
-        letter_map = {"A": 0, "B": 1, "C": 2}
+        letter_map = {"A": 0, "B": 1, "C": 2, "D": 3}
         if raw.upper() in letter_map and letter_map[raw.upper()] < len(choices):
             return choices[letter_map[raw.upper()]]
         if raw:
             return raw
-        raise ValueError("请选择 A/B/C 或提交行动文本。")
+        raise ValueError("请选择 A/B/C/D。")
 
 
 def _pick(value: str, options: list[str]) -> str:
@@ -587,6 +646,23 @@ def attach_death_rewards_helpers(service: "WebGameService") -> None:
         summary: dict[str, Any],
     ) -> None:
         db = service.db
+        existing_rewards = [
+            reward
+            for reward in db.list_account_rewards(user_id)
+            if reward.get("source_session_id") == session_id
+        ]
+        if db.list_run_achievements(user_id, session_id) or existing_rewards:
+            return
+        db.record_game_run(
+            user_id=user_id,
+            run_id=session_id,
+            session_id=session_id,
+            char_name=session.char_name,
+            realm=session.realm,
+            death_cause=str(summary.get("death_cause") or ""),
+            ascended=bool(session.finale),
+            turn_count=int(session.turn_count or 0),
+        )
         for achievement in summary.get("achievements", []) or []:
             db.save_run_achievement(
                 user_id=user_id,
@@ -616,3 +692,22 @@ def attach_death_rewards_helpers(service: "WebGameService") -> None:
 
     # Bind to module-level helper.
     globals()["persist_death_rewards"] = persist
+
+
+def _turn_start_snapshot(session: GameSession) -> dict[str, Any]:
+    return {
+        "turn_no": int(session.turn_count or 0),
+        "age": int(session.age or 0),
+        "lifespan": int(session.lifespan or 0),
+    }
+
+
+def _calendar_summary(
+    before: dict[str, Any],
+    session: GameSession,
+    elapsed_years: int,
+) -> str:
+    start_age = int(before.get("age") or session.age)
+    if elapsed_years > 0:
+        return f"本回合流逝 {elapsed_years} 年，年龄 {start_age}→{session.age}。"
+    return f"本回合完成关键抉择，年龄 {session.age}。"

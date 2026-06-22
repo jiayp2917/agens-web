@@ -230,6 +230,61 @@ class PostgresWebDatabase:
                     """
                 )
             )
+            conn.execute(
+                text(
+                    """
+                    CREATE TABLE IF NOT EXISTS game_runs (
+                        id TEXT PRIMARY KEY,
+                        user_id TEXT NOT NULL REFERENCES users(id),
+                        session_id TEXT NOT NULL DEFAULT '',
+                        char_name TEXT NOT NULL DEFAULT '',
+                        realm TEXT NOT NULL DEFAULT '',
+                        death_cause TEXT NOT NULL DEFAULT '',
+                        ascended BOOLEAN NOT NULL DEFAULT FALSE,
+                        turn_count INTEGER NOT NULL DEFAULT 0,
+                        finished_at DOUBLE PRECISION NOT NULL
+                    )
+                    """
+                )
+            )
+            conn.execute(
+                text(
+                    """
+                    CREATE TABLE IF NOT EXISTS game_turns (
+                        id TEXT PRIMARY KEY,
+                        run_id TEXT NOT NULL,
+                        turn_no INTEGER NOT NULL,
+                        start_age INTEGER NOT NULL,
+                        elapsed_years INTEGER NOT NULL,
+                        end_age INTEGER NOT NULL,
+                        lifespan INTEGER NOT NULL,
+                        remaining_lifespan INTEGER NOT NULL,
+                        choice_taken TEXT,
+                        choices JSONB NOT NULL,
+                        state_delta JSONB NOT NULL,
+                        state_after JSONB NOT NULL,
+                        calendar_summary TEXT NOT NULL,
+                        narrative TEXT NOT NULL,
+                        event_kind TEXT NOT NULL,
+                        end_reason TEXT,
+                        created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+                        UNIQUE(run_id, turn_no)
+                    )
+                    """
+                )
+            )
+            conn.execute(
+                text(
+                    """
+                    CREATE TABLE IF NOT EXISTS player_progress (
+                        user_id TEXT PRIMARY KEY REFERENCES users(id),
+                        runs_completed INTEGER NOT NULL DEFAULT 0,
+                        ascension_count INTEGER NOT NULL DEFAULT 0,
+                        updated_at DOUBLE PRECISION NOT NULL
+                    )
+                    """
+                )
+            )
             seed_catalogs(self)
 
     def upsert_user(self, username: str) -> dict[str, Any]:
@@ -740,6 +795,129 @@ class PostgresWebDatabase:
                         {"r": remaining, "id": row["id"]},
                     )
         return consumed
+
+    # ── Game-mode v5: run / turn / progress tracking ─────────────────────────
+    # Spec §8.3 — game_turns JSONB + §11 rarity unlock gates.
+
+    def record_game_run(self, user_id: str, *, session_id: str = "", char_name: str = "",
+                        realm: str = "", death_cause: str = "", ascended: bool = False,
+                        turn_count: int = 0, run_id: str | None = None) -> str:
+        """Persist a finished run and bump player progress counters.
+
+        Drives the rarity unlock gates (§11): 紫 needs 1 run, 橙 needs 1
+        ascension, 红 needs 2 ascensions + 1 run.
+        """
+        now = now_ts()
+        run_id = run_id or str(uuid.uuid4())
+        with self.engine.begin() as conn:
+            existing = conn.execute(
+                text("SELECT id FROM game_runs WHERE id = :id"),
+                {"id": run_id},
+            ).mappings().first()
+            if existing is not None:
+                return str(existing["id"])
+            conn.execute(
+                text(
+                    """
+                    INSERT INTO game_runs
+                        (id, user_id, session_id, char_name, realm, death_cause,
+                         ascended, turn_count, finished_at)
+                    VALUES (:id, :user_id, :session_id, :char_name, :realm,
+                            :death_cause, :ascended, :turn_count, :finished_at)
+                    """
+                ),
+                {
+                    "id": run_id, "user_id": user_id, "session_id": session_id,
+                    "char_name": char_name, "realm": realm, "death_cause": death_cause,
+                    "ascended": bool(ascended), "turn_count": turn_count, "finished_at": now,
+                },
+            )
+            row = conn.execute(
+                text(
+                    "SELECT runs_completed, ascension_count FROM player_progress WHERE user_id = :u"
+                ),
+                {"u": user_id},
+            ).mappings().first()
+            if row is None:
+                conn.execute(
+                    text(
+                        """
+                        INSERT INTO player_progress
+                            (user_id, runs_completed, ascension_count, updated_at)
+                        VALUES (:u, 1, :a, :now)
+                        """
+                    ),
+                    {"u": user_id, "a": 1 if ascended else 0, "now": now},
+                )
+            else:
+                conn.execute(
+                    text(
+                        """
+                        UPDATE player_progress
+                        SET runs_completed = runs_completed + 1,
+                            ascension_count = ascension_count + :a,
+                            updated_at = :now
+                        WHERE user_id = :u
+                        """
+                    ),
+                    {"a": 1 if ascended else 0, "now": now, "u": user_id},
+                )
+        return run_id
+
+    def record_game_turn(self, run_id: str, turn_no: int, *, start_age: int,
+                         elapsed_years: int, end_age: int, lifespan: int,
+                         remaining_lifespan: int, choice_taken: str | None,
+                         choices: list, state_delta: dict, state_after: dict,
+                         calendar_summary: str, narrative: str, event_kind: str,
+                         end_reason: str | None = None) -> str:
+        """Append one settled turn to the game_turns log (spec §8.3)."""
+        import json as _json
+        turn_id = str(uuid.uuid4())
+        with self.engine.begin() as conn:
+            conn.execute(
+                text(
+                    """
+                    INSERT INTO game_turns
+                        (id, run_id, turn_no, start_age, elapsed_years, end_age, lifespan,
+                         remaining_lifespan, choice_taken, choices, state_delta,
+                         state_after, calendar_summary, narrative, event_kind,
+                         end_reason)
+                    VALUES (:id, :run_id, :turn_no, :start_age, :elapsed_years, :end_age,
+                            :lifespan, :remaining_lifespan, :choice_taken,
+                            CAST(:choices AS JSONB), CAST(:state_delta AS JSONB),
+                            CAST(:state_after AS JSONB), :calendar_summary, :narrative,
+                            :event_kind, :end_reason)
+                    """
+                ),
+                {
+                    "id": turn_id, "run_id": run_id, "turn_no": turn_no,
+                    "start_age": start_age, "elapsed_years": elapsed_years,
+                    "end_age": end_age, "lifespan": lifespan,
+                    "remaining_lifespan": remaining_lifespan,
+                    "choice_taken": choice_taken, "choices": _json.dumps(choices),
+                    "state_delta": _json.dumps(state_delta),
+                    "state_after": _json.dumps(state_after),
+                    "calendar_summary": calendar_summary, "narrative": narrative,
+                    "event_kind": event_kind, "end_reason": end_reason,
+                },
+            )
+        return turn_id
+
+    def get_player_progress(self, user_id: str) -> dict[str, Any]:
+        """Return {runs_completed, ascension_count} for the rarity unlock gates."""
+        with self.engine.begin() as conn:
+            row = conn.execute(
+                text(
+                    "SELECT runs_completed, ascension_count FROM player_progress WHERE user_id = :u"
+                ),
+                {"u": user_id},
+            ).mappings().first()
+        if row is None:
+            return {"runs_completed": 0, "ascension_count": 0}
+        return {
+            "runs_completed": int(row["runs_completed"]),
+            "ascension_count": int(row["ascension_count"]),
+        }
 
     # ── Catalog read/write ──────────────────────────────────────────────────
 

@@ -22,57 +22,54 @@ class TestDestructiveApplyDelta:
     def test_empty_delta(self):
         s = GameSession()
         s.apply_delta({})
-        assert s.hp == 100  # unchanged
+        assert s.lifespan == 100  # unchanged
 
     def test_none_delta(self):
         """None delta should be safely ignored."""
         s = GameSession()
         s.apply_delta(None)  # type: ignore
-        assert s.hp == 100  # unchanged, no crash
+        assert s.lifespan == 100  # unchanged, no crash
 
     def test_empty_character_delta(self):
         s = GameSession()
         s.apply_delta({"character": {}})
-        assert s.hp == 100
+        assert s.lifespan == 100
 
-    def test_float_hp(self):
+    def test_float_lifespan(self):
         """Float values should be silently dropped."""
         s = GameSession()
-        s.apply_delta({"character": {"hp": 99.5}})
-        assert s.hp == 100  # float not int, dropped
+        s.apply_delta({"character": {"lifespan": 99.5}})
+        assert s.lifespan == 100  # float not int, dropped
 
-    def test_list_hp(self):
+    def test_list_lifespan(self):
         """List values should be silently dropped."""
         s = GameSession()
-        s.apply_delta({"character": {"hp": [1, 2, 3]}})
-        assert s.hp == 100
+        s.apply_delta({"character": {"lifespan": [1, 2, 3]}})
+        assert s.lifespan == 100
 
-    def test_dict_hp(self):
+    def test_dict_lifespan(self):
         """Dict values should be silently dropped."""
         s = GameSession()
-        s.apply_delta({"character": {"hp": {"val": 50}}})
-        assert s.hp == 100
+        s.apply_delta({"character": {"lifespan": {"val": 50}}})
+        assert s.lifespan == 100
 
-    def test_very_large_positive_hp(self):
+    def test_very_large_positive_lifespan(self):
         s = GameSession()
-        s.apply_delta({"character": {"hp": 999999}})
-        # HP is clamped to hp_max (100 by default).
-        assert s.hp == s.hp_max
+        s.apply_delta({"character": {"lifespan": 999999}})
+        # lifespan has no upper clamp in game mode; only floors at 1.
+        assert s.lifespan == 999999
 
-    def test_hp_max_zero(self):
-        """hp_max=0 should be clamped to 1 (minimum guard)."""
+    def test_lifespan_floors_at_one(self):
+        """lifespan below 1 is floored to 1 (minimum guard)."""
         s = GameSession()
-        s.hp_max = 0
-        s.apply_delta({"character": {"hp": 50}})
-        # hp_max clamped to 1, hp clamped to [0, 1] = 1
-        assert s.hp_max == 1
-        assert s.hp == 1
+        s.apply_delta({"character": {"lifespan": -50}})
+        assert s.lifespan == 1
 
     def test_unknown_keys_ignored(self):
         """Unknown keys in character delta should not crash."""
         s = GameSession()
         s.apply_delta({"character": {"unknown_field": "value", "another": 42}})
-        assert s.hp == 100
+        assert s.lifespan == 100
 
     def test_nested_unknown_structure(self):
         """Deeply nested unknown structures should not crash."""
@@ -89,7 +86,7 @@ class TestDestructiveApplyDelta:
             },
             "extra_top_level": 42,
         })
-        assert s.hp == 100  # session still valid
+        assert s.lifespan == 100  # session still valid
 
     def test_realm_empty_string(self):
         s = GameSession()
@@ -122,17 +119,17 @@ class TestDestructiveApplyDelta:
     def test_plus_prefix_non_numeric(self):
         """'+abc' should be silently dropped."""
         s = GameSession()
-        s.apply_delta({"character": {"hp": "+abc"}})
-        assert s.hp == 100  # unchanged
+        s.apply_delta({"character": {"lifespan": "+abc"}})
+        assert s.lifespan == 100  # unchanged
 
     def test_minus_prefix_non_numeric(self):
         s = GameSession()
-        s.apply_delta({"character": {"hp": "-abc"}})
-        assert s.hp == 100
+        s.apply_delta({"character": {"lifespan": "-abc"}})
+        assert s.lifespan == 100
 
-    def test_combat_empty_dict_clears(self):
+    def test_combat_empty_dict_ignored(self):
+        """Game-mode v5: structured combat delta is dropped (event-based)."""
         s = GameSession()
-        s.combat = {"phase": "active"}
         s.apply_delta({"character": {"combat": {}}})
         assert s.combat is None
 

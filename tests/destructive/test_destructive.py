@@ -25,22 +25,22 @@ class TestApplyDeltaDestructive:
         ["+abc", "+3.5", "+", "-abc", "-3.5", "-", "+0x10", "++5", "--5", "+ 10"],
     )
     def test_malformed_increment_string_is_ignored(self, bad_val: str) -> None:
-        s = GameSession(hp=80)
-        s.apply_delta({"character": {"hp": bad_val}})
-        assert isinstance(s.hp, int)
-        assert 0 <= s.hp <= s.hp_max
+        s = GameSession(lifespan=80)
+        s.apply_delta({"character": {"lifespan": bad_val}})
+        assert isinstance(s.lifespan, int)
+        assert s.lifespan >= 1  # lifespan floors at 1 in game mode
 
-    @pytest.mark.parametrize("bad_val", [3.14, None, True, False, [5], {"hp": 5}])
+    @pytest.mark.parametrize("bad_val", [3.14, None, True, False, [5], {"lifespan": 5}])
     def test_non_numeric_types_are_ignored(self, bad_val: Any) -> None:
-        s = GameSession(hp=80)
-        s.apply_delta({"character": {"hp": bad_val}})
-        assert s.hp == 80
+        s = GameSession(lifespan=80)
+        s.apply_delta({"character": {"lifespan": bad_val}})
+        assert s.lifespan == 80
 
     def test_stat_clamps_survive_extreme_values(self) -> None:
-        s = GameSession(hp=100, hp_max=100, mp=50, mp_max=50, gold=0)
-        s.apply_delta({"character": {"hp": "+999999", "mp": "-999999", "gold": "-10"}})
-        assert s.hp == 100
-        assert s.mp == 0
+        s = GameSession(lifespan=100, gold=0)
+        s.apply_delta({"character": {"lifespan": "+999999", "gold": "-999999"}})
+        # lifespan has no upper clamp (100 + 999999); gold floors at 0.
+        assert s.lifespan == 1000099
         assert s.gold == 0
 
     def test_invalid_realm_is_rejected(self) -> None:
@@ -75,10 +75,11 @@ class TestApplyDeltaDestructive:
         assert s.lore_facts == []
         assert s.discovered_locations == []
 
-    def test_combat_none_and_empty_dict_clear_state(self) -> None:
+    def test_combat_delta_is_ignored_in_game_mode(self) -> None:
+        """Game-mode v5: structured combat delta is dropped (combat is event-based)."""
         s = GameSession()
         s.apply_delta({"character": {"combat": {"phase": "player_turn"}}})
-        assert s.combat is not None
+        assert s.combat is None  # never set
         s.apply_delta({"character": {"combat": None}})
         assert s.combat is None
         s.apply_delta({"character": {"combat": {"phase": "player_turn"}}})
@@ -157,10 +158,6 @@ class TestSaveLoadDestructive:
             char_name="许满",
             realm="金丹",
             realm_stage=5,
-            hp=85,
-            hp_max=120,
-            mp=60,
-            mp_max=80,
             spirit_root="火木双灵根",
             spirit_root_grade="天",
             experience=450,
@@ -188,10 +185,9 @@ class TestSaveLoadDestructive:
         assert loaded.char_name == s.char_name
         assert loaded.realm == s.realm
         assert loaded.realm_stage == s.realm_stage
-        assert loaded.hp == s.hp
-        assert loaded.mp == s.mp
         assert loaded.spirit_root == s.spirit_root
         assert loaded.gold == s.gold
+        assert loaded.lifespan == s.lifespan
         assert loaded.status_effects == ["中毒", "力竭"]
         assert loaded.location == s.location
         assert loaded.turn_count == s.turn_count
@@ -199,8 +195,8 @@ class TestSaveLoadDestructive:
 
 class TestAsGameState:
     def test_produces_json_serializable_state(self) -> None:
-        s = GameSession(char_name="许满", realm="筑基", hp=85)
+        s = GameSession(char_name="许满", realm="筑基", lifespan=85)
         parsed = json.loads(json.dumps(s.as_game_state(), ensure_ascii=False))
         assert parsed["character"]["name"] == "许满"
-        assert parsed["character"]["hp"] == 85
+        assert parsed["character"]["lifespan"] == 85
         assert "world" in parsed

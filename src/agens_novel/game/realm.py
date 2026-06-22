@@ -26,8 +26,6 @@ class RealmConfig:
     experience_required: int = 100
     insight_required: int = 0
     breakthrough_base_rate: float = 0.80
-    hp_base: int = 100
-    mp_base: int = 50
     spirit_root_bonus: dict[str, float] = field(default_factory=dict)
     breakthrough_requirements: list[dict[str, str]] = field(default_factory=list)
 
@@ -40,8 +38,6 @@ class RealmConfig:
             experience_required=data.get("experience_required", 100),
             insight_required=data.get("insight_required", 0),
             breakthrough_base_rate=data.get("breakthrough_base_rate", 0.80),
-            hp_base=data.get("hp_base", 100),
-            mp_base=data.get("mp_base", 50),
             spirit_root_bonus=data.get("spirit_root_bonus", {}),
             breakthrough_requirements=list(data.get("breakthrough_requirements", [])),
         )
@@ -206,10 +202,6 @@ class RealmSystem:
                 "character": {
                     "realm": next_realm,
                     "realm_stage": 1,
-                    "hp_max": next_cfg.hp_base,
-                    "hp": next_cfg.hp_base,
-                    "mp_max": next_cfg.mp_base,
-                    "mp": next_cfg.mp_base,
                     "experience": "-50",  # consume some experience
                     "experience_to_next": next_cfg.experience_required,
                     "insight": 0,  # reset insight — new realm, new bottleneck
@@ -227,11 +219,8 @@ class RealmSystem:
             return delta
         else:
             log.info("Breakthrough failed: %s (rate=%.2f)", realm, rate)
-            current_hp = getattr(session, "hp", 100)
-            hp_loss = max(1, int(current_hp * 0.15))
             return {
                 "character": {
-                    "hp": f"-{hp_loss}",
                     "experience": "-20",
                 },
                 "meta": {
@@ -271,8 +260,6 @@ class RealmSystem:
 
         # Advance to next layer within the same realm.
         next_stage = stage + 1
-        hp_gain = max(1, cfg.hp_base // 8)
-        mp_gain = max(1, cfg.mp_base // 8)
 
         delta: dict[str, Any] = {
             "character": {
@@ -280,10 +267,6 @@ class RealmSystem:
                 "experience": f"-{xp_needed}",
                 # Keep experience_to_next stable so breakthrough threshold
                 # matches the realm config and doesn't drift upward.
-                "hp_max": f"+{hp_gain}",
-                "hp": f"+{hp_gain}",
-                "mp_max": f"+{mp_gain}",
-                "mp": f"+{mp_gain}",
             },
             "meta": {
                 "stage_advanced": True,

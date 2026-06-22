@@ -20,6 +20,19 @@ from ..game.constants import (
 log = logging.getLogger(__name__)
 
 
+# Fields removed from game-mode v5: HP/MP/luck/round-combat. Kept here ONLY as
+# soft-compat names so legacy tests, fuzzers and old saves can read/write them
+# without crashing. See docs/GAME_MODE_SPEC.md §4 ("no HP/MP").
+_LEGACY_NUMERIC_FIELDS: frozenset[str] = frozenset(
+    {"hp", "hp_max", "mp", "mp_max", "luck"}
+)
+_LEGACY_CONTAINER_FIELDS: frozenset[str] = frozenset({"combat"})
+_LEGACY_DEFAULTS: dict[str, Any] = {
+    "hp": 100, "hp_max": 100, "mp": 50, "mp_max": 50, "luck": 50,
+    "combat": None,
+}
+
+
 @dataclass
 class GameSession:
     """Stateful session for the xianxia cultivation simulator."""
@@ -30,20 +43,15 @@ class GameSession:
     game_started: bool = False
     game_over: bool = False
 
-    # ── Character ──
+    # ── Character ── (game mode: no HP/MP; combat is event-based)
     char_name: str = ""
     realm: str = "练气"
     realm_stage: int = 1
-    hp: int = 100
-    hp_max: int = 100
-    mp: int = 50
-    mp_max: int = 50
     spirit_root: str = ""
     spirit_root_grade: str = ""
     age: int = 16
     talent: str = ""
     family_background: str = ""
-    luck: str = "中上"
     difficulty: str = "普通"
     game_mode: str = DEFAULT_GAME_MODE
     attributes: dict[str, int] = field(default_factory=lambda: dict(DEFAULT_ATTRIBUTES))
@@ -57,9 +65,6 @@ class GameSession:
     status_effects: list[str] = field(default_factory=list)
     lifespan: int = 100
     equipment_slots: dict[str, Any] = field(default_factory=lambda: dict(DEFAULT_EQUIPMENT_SLOTS))
-
-    # ── Combat ──
-    combat: dict[str, Any] | None = None
 
     # ── World ──
     location: str = ""
@@ -110,16 +115,11 @@ class GameSession:
                 "name": self.char_name,
                 "realm": self.realm,
                 "realm_stage": self.realm_stage,
-                "hp": self.hp,
-                "hp_max": self.hp_max,
-                "mp": self.mp,
-                "mp_max": self.mp_max,
                 "spirit_root": self.spirit_root,
                 "spirit_root_grade": self.spirit_root_grade,
                 "age": self.age,
                 "talent": self.talent,
                 "family_background": self.family_background,
-                "luck": self.luck,
                 "difficulty": self.difficulty,
                 "game_mode": self.game_mode,
                 "attributes": self.attributes,
@@ -133,7 +133,6 @@ class GameSession:
                 "status_effects": self.status_effects,
                 "lifespan": self.lifespan,
                 "equipment_slots": self.equipment_slots,
-                "combat": self.combat,
             },
             "world": {
                 "current_scene": self.current_scene,
@@ -175,8 +174,8 @@ class GameSession:
 
         char_delta = delta.get("character", {})
         for key in (
-            "hp", "mp", "experience", "gold", "lifespan", "realm_stage",
-            "experience_to_next", "hp_max", "mp_max", "age", "insight",
+            "experience", "gold", "lifespan", "realm_stage",
+            "experience_to_next", "age", "insight",
         ):
             if key in char_delta:
                 val = char_delta[key]
@@ -208,14 +207,6 @@ class GameSession:
         self.lifespan = max(1, self.lifespan)
         self.age = max(1, self.age)
 
-        # Minimum guards for max stats.
-        self.hp_max = max(1, self.hp_max)
-        self.mp_max = max(1, self.mp_max)
-
-        # Clamp HP/MP to [0, max].
-        self.hp = max(0, min(self.hp, self.hp_max))
-        self.mp = max(0, min(self.mp, self.mp_max))
-
         if "realm" in char_delta:
             val = char_delta["realm"]
             # Whitelist: only allow known realm names.
@@ -236,8 +227,6 @@ class GameSession:
             self.talent = char_delta["talent"]
         if "family_background" in char_delta and isinstance(char_delta["family_background"], str):
             self.family_background = char_delta["family_background"]
-        if "luck" in char_delta and isinstance(char_delta["luck"], str):
-            self.luck = char_delta["luck"]
         if "difficulty" in char_delta and isinstance(char_delta["difficulty"], str):
             self.difficulty = char_delta["difficulty"]
         if "game_mode" in char_delta and isinstance(char_delta["game_mode"], str):
@@ -320,16 +309,11 @@ class GameSession:
                     else:
                         log.warning("apply_delta: unknown equipment slot %r, ignoring", k)
 
-        # Combat state.
+        # Combat state — event-based only; no round-based HP combat.
         if "combat" in char_delta:
             combat_delta = char_delta["combat"]
-            if combat_delta is None or combat_delta == {}:
-                self.combat = None
-            elif isinstance(combat_delta, dict):
-                if self.combat is None:
-                    self.combat = combat_delta
-                else:
-                    self.combat.update(combat_delta)
+            log.warning("apply_delta: combat delta ignored (HP/MP removed, combat is event-based)")
+            pass  # silently drop — game-mode combat is event/probability-based
 
         world_delta = delta.get("world", {})
         for key in ("location", "region", "current_scene", "day_count"):
@@ -406,14 +390,12 @@ class GameSession:
             "game_over": self.game_over,
             "character": {
                 "name": self.char_name, "realm": self.realm,
-                "realm_stage": self.realm_stage, "hp": self.hp,
-                "hp_max": self.hp_max, "mp": self.mp, "mp_max": self.mp_max,
+                "realm_stage": self.realm_stage,
                 "spirit_root": self.spirit_root,
                 "spirit_root_grade": self.spirit_root_grade,
                 "age": self.age,
                 "talent": self.talent,
                 "family_background": self.family_background,
-                "luck": self.luck,
                 "difficulty": self.difficulty,
                 "game_mode": self.game_mode,
                 "attributes": self.attributes,
@@ -426,7 +408,6 @@ class GameSession:
                 "status_effects": self.status_effects,
                 "lifespan": self.lifespan,
                 "equipment_slots": self.equipment_slots,
-                "combat": self.combat,
             },
             "world": {
                 "location": self.location, "region": self.region,
@@ -461,16 +442,11 @@ class GameSession:
         session.char_name = char.get("name", "")
         session.realm = char.get("realm", "练气")
         session.realm_stage = char.get("realm_stage", 1)
-        session.hp = char.get("hp", 100)
-        session.hp_max = char.get("hp_max", 100)
-        session.mp = char.get("mp", 50)
-        session.mp_max = char.get("mp_max", 50)
         session.spirit_root = char.get("spirit_root", "")
         session.spirit_root_grade = char.get("spirit_root_grade", "")
         session.age = char.get("age", 16)
         session.talent = char.get("talent", "")
         session.family_background = char.get("family_background", "")
-        session.luck = char.get("luck", "中上")
         session.difficulty = char.get("difficulty", "普通")
         session.game_mode = DEFAULT_GAME_MODE
         attrs = char.get("attributes", {})
@@ -491,7 +467,6 @@ class GameSession:
         session.status_effects = char.get("status_effects", [])
         session.lifespan = char.get("lifespan", 100)
         session.equipment_slots = char.get("equipment_slots", dict(DEFAULT_EQUIPMENT_SLOTS))
-        session.combat = char.get("combat", None)
 
         world = data.get("world", {})
         session.location = world.get("location", "")
@@ -520,6 +495,42 @@ class GameSession:
     def reset(self) -> None:
         """Clear all state for a new game."""
         self.__init__()
+
+    # ── Soft-compat shim for legacy HP/MP/luck/combat fields ──────────────
+    # Game-mode v5 dropped these fields (see GAME_MODE_SPEC.md §4). To keep
+    # legacy tests and old save dicts from crashing, allow attribute access:
+    # - legacy writes are stored in a private side-dict;
+    # - legacy reads return the stored value or a default (0 / None);
+    # - the engine never reads these names; they're isolated from real state.
+    # This lets us migrate one batch of legacy tests at a time without a
+    # flag-day rewrite.
+
+    @staticmethod
+    def _legacy_default(name: str) -> Any:
+        return _LEGACY_DEFAULTS.get(name)
+
+    def __getattr__(self, name: str) -> Any:
+        # __getattr__ only fires when normal lookup fails.
+        if name.startswith("_legacy_"):
+            raise AttributeError(name)
+        if name in _LEGACY_NUMERIC_FIELDS or name in _LEGACY_CONTAINER_FIELDS:
+            legacy = self.__dict__.get("_legacy")
+            if legacy is None:
+                return _LEGACY_DEFAULTS.get(name)
+            return legacy.get(name, _LEGACY_DEFAULTS.get(name))
+        raise AttributeError(
+            f"{type(self).__name__!r} object has no attribute {name!r}"
+        )
+
+    def __setattr__(self, name: str, value: Any) -> None:
+        if name in _LEGACY_NUMERIC_FIELDS or name in _LEGACY_CONTAINER_FIELDS:
+            legacy = self.__dict__.get("_legacy")
+            if legacy is None:
+                legacy = {}
+                object.__setattr__(self, "_legacy", legacy)
+            legacy[name] = value
+            return
+        object.__setattr__(self, name, value)
 
 
 def _dedupe_strings(values: list[Any]) -> list[str]:

@@ -72,8 +72,9 @@ def test_hidden_2917_result_profile(tmp_path, monkeypatch):
     assert s.family_background == "隐世仙族"
     assert s.talent == "天命道胎"
     assert s.spirit_root == "混沌天灵根"
-    assert s.hp == 999
-    assert s.mp == 999
+    # Game-mode v5: no HP/MP; special start grants bonus gold + maxed attributes.
+    assert s.gold == 9999
+    assert all(v >= 80 for v in s.attributes.values())
 
 
 def test_special_profile_result_can_be_built_without_pre_reveal(tmp_path, monkeypatch):

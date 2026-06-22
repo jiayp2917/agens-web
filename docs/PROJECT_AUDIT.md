@@ -91,9 +91,9 @@ Browser UI
 
 ## 2026-06-21 Alpha 收口审计
 
-- 当前生产入口优先使用 `web/frontend-react/dist`；`web/frontend` 只作为 fallback。React 稳定和部署验收后再归档旧前端，不直接删除。
+- 当前生产入口使用 `web/frontend-react/dist`；`web/frontend` 只允许通过 `AGENS_ENABLE_LEGACY_FRONTEND=1` 显式 fallback。React 稳定和部署验收后再归档旧前端，不直接删除。
 - PostgreSQL 生产 schema 必须由 Alembic 创建。`database_postgres.py` 的 `AGENS_PG_AUTO_DDL` 只允许作为显式兼容开关，不作为生产默认路径。
 - Alembic 初始迁移需要覆盖运行时会访问的 catalog 和死亡奖励表：`catalog_*`、`run_achievements`、`account_rewards`、`legacy_bonuses`。
 - React 主入口仍偏重，`web/frontend-react/src/main.tsx` 同时承担认证、首页、角色创建、游戏页、设置存档弹窗和终局页；后续应拆组件。
-- 文档分层以 `docs/INDEX.md` 为准：`RUNTIME_FLOW.md` 描述当前引导模式 Alpha，`GAME_MODE_SPEC.md` 只描述游戏模式 v5 草案。
+- 文档分层以 `docs/INDEX.md` 为准：`RUNTIME_FLOW.md` 描述当前运行流程，`GAME_MODE_SPEC.md` 描述游戏模式 v5 规格和实现状态。
 - Alpha 复盘和成功/失败经验以 `docs/ALPHA_REVIEW_AND_LESSONS.md` 为准。后续上线报告必须区分本地测试、PostgreSQL smoke、Docker Compose、反代和公网验证。

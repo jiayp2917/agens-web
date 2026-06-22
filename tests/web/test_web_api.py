@@ -35,7 +35,7 @@ def _world_builder_result() -> dict:
                     "luck": 50,
                     "willpower": 50,
                     "physique": 50,
-                    "spiritual_sense": 50,
+                    "soul": 50,
                 },
                 "experience": 0,
                 "experience_to_next": 100,
@@ -129,7 +129,7 @@ def test_web_api_minimum_game_flow(tmp_path: Path, monkeypatch) -> None:
                     "luck": 50,
                     "willpower": 50,
                     "physique": 50,
-                    "spiritual_sense": 50,
+                    "soul": 50,
                 },
             },
         ).json()
@@ -153,6 +153,29 @@ def test_web_api_minimum_game_flow(tmp_path: Path, monkeypatch) -> None:
         ).json()
         assert acted["turn_count"] == 2
         assert acted["panels"]["status"]
+
+        with app.state.service.db.connect() as conn:
+            turn_count = conn.execute(
+                "SELECT count(*) AS c FROM game_turns WHERE run_id = ?",
+                (session_id,),
+            ).fetchone()["c"]
+        assert turn_count == 2
+
+        ended = client.post(
+            f"/api/sessions/{session_id}/end",
+            json={"reason": "玩家结束本局"},
+        ).json()
+        assert ended["game_over"] is True
+        assert app.state.service.db.get_player_progress(user["id"]) == {
+            "runs_completed": 1,
+            "ascension_count": 0,
+        }
+
+        client.post(f"/api/sessions/{session_id}/end", json={"reason": "玩家结束本局"})
+        assert app.state.service.db.get_player_progress(user["id"]) == {
+            "runs_completed": 1,
+            "ascension_count": 0,
+        }
 
 
 def test_web_save_load_restores_snapshot_and_chat_history(tmp_path: Path, monkeypatch) -> None:
@@ -473,6 +496,19 @@ def test_alembic_initial_pg_schema_covers_runtime_tables() -> None:
         assert f'"{table}"' in migration
 
 
+def test_alembic_game_mode_v5_bridge_covers_runtime_tables() -> None:
+    migration = (
+        Path(__file__).resolve().parents[2]
+        / "migrations"
+        / "versions"
+        / "20260622_0003_game_mode_v5_runs_turns_progress.py"
+    ).read_text(encoding="utf-8")
+    for table in ("game_runs", "game_turns", "player_progress"):
+        assert table in migration
+    assert "CREATE TABLE IF NOT EXISTS" in migration
+    assert 'down_revision = "20260621_0002"' in migration
+
+
 def test_model_failure_events_are_public_safe(tmp_path: Path, monkeypatch) -> None:
     monkeypatch.setenv("SESSION_COOKIE_SECURE", "0")
     app = create_app(tmp_path / "agens_web.sqlite3")
@@ -519,7 +555,7 @@ def test_start_accepts_seeded_catalog_character_options(tmp_path: Path, monkeypa
                     "luck": 50,
                     "willpower": 50,
                     "physique": 50,
-                    "spiritual_sense": 50,
+                    "soul": 50,
                 },
             },
         ).json()
@@ -662,7 +698,7 @@ def test_legacy_bonuses_applied_on_next_character(tmp_path: Path, monkeypatch) -
                 "char_name": "许满",
                 "attributes": {
                     "root_bone": 50, "comprehension": 50, "luck": 50,
-                    "willpower": 50, "physique": 50, "spiritual_sense": 50,
+                    "willpower": 50, "physique": 50, "soul": 50,
                 },
             },
         ).json()

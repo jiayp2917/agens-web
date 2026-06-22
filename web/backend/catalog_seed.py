@@ -11,7 +11,7 @@ import uuid
 from typing import Any
 
 # ── catalog_talents ──────────────────────────────────────────────────────────
-# rarity: 普通 / 稀有 / 传说
+# rarity: 白 / 绿 / 蓝 / 紫 / 橙 / 红 (6-tier per GAME_MODE_SPEC §11)
 # attribute_mods: flat adjustments to character attributes at creation
 # tags: labels for story/event matching
 
@@ -19,7 +19,7 @@ SEED_TALENTS: list[dict[str, Any]] = [
     {
         "id": str(uuid.uuid4()),
         "name": "平平无奇",
-        "rarity": "普通",
+        "rarity": "白",
         "description": "无特别天赋，但胜在没有明显短板，适应力强。",
         "attribute_mods": {},
         "tags": ["均衡"],
@@ -27,7 +27,7 @@ SEED_TALENTS: list[dict[str, Any]] = [
     {
         "id": str(uuid.uuid4()),
         "name": "草木亲和",
-        "rarity": "普通",
+        "rarity": "白",
         "description": "天生与草木灵气亲近，炼丹采药事半功倍。",
         "attribute_mods": {"soul": 5, "comprehension": 3},
         "tags": ["炼丹", "灵植", "治愈"],
@@ -35,7 +35,7 @@ SEED_TALENTS: list[dict[str, Any]] = [
     {
         "id": str(uuid.uuid4()),
         "name": "剑心微明",
-        "rarity": "稀有",
+        "rarity": "蓝",
         "description": "心中自有一缕剑意，修炼剑道功法更快，斗法时剑招更利。",
         "attribute_mods": {"physique": 5, "willpower": 5},
         "tags": ["剑道", "杀伐", "斗法"],
@@ -43,7 +43,7 @@ SEED_TALENTS: list[dict[str, Any]] = [
     {
         "id": str(uuid.uuid4()),
         "name": "惊雷骨",
-        "rarity": "稀有",
+        "rarity": "蓝",
         "description": "骨骼天生蕴藏雷属性，引雷淬体事半功倍，突破瓶颈时有额外助力。",
         "attribute_mods": {"physique": 8, "root_bone": 5},
         "tags": ["雷法", "淬体", "突破"],
@@ -51,7 +51,7 @@ SEED_TALENTS: list[dict[str, Any]] = [
     {
         "id": str(uuid.uuid4()),
         "name": "天命道胎",
-        "rarity": "传说",
+        "rarity": "橙",
         "description": "传说中天生近道的体质，悟性远超常人，修炼一日千里。但天道忌满，气运起伏极大。",
         "attribute_mods": {"comprehension": 15, "soul": 10, "luck": -10},
         "tags": ["悟道", "机缘", "天妒"],
@@ -59,7 +59,7 @@ SEED_TALENTS: list[dict[str, Any]] = [
     {
         "id": str(uuid.uuid4()),
         "name": "丹心不灭",
-        "rarity": "稀有",
+        "rarity": "蓝",
         "description": "心脉坚韧异于常人，重伤恢复更快，心魔劫中更易守住本心。",
         "attribute_mods": {"willpower": 8, "physique": 5},
         "tags": ["心性", "恢复", "渡劫"],
@@ -67,7 +67,7 @@ SEED_TALENTS: list[dict[str, Any]] = [
     {
         "id": str(uuid.uuid4()),
         "name": "阵法通明",
-        "rarity": "稀有",
+        "rarity": "蓝",
         "description": "对阵法禁制有天然直觉，破解遗迹禁制、布置洞府阵法均占优势。",
         "attribute_mods": {"comprehension": 8, "soul": 3},
         "tags": ["阵法", "禁制", "探索"],
@@ -75,7 +75,7 @@ SEED_TALENTS: list[dict[str, Any]] = [
     {
         "id": str(uuid.uuid4()),
         "name": "魔心潜伏",
-        "rarity": "稀有",
+        "rarity": "蓝",
         "description": "体内潜藏一丝魔性，战力提升时心魔亦随之壮大。修炼魔道功法无副作用，但正道功法事倍功半。",
         "attribute_mods": {"physique": 8, "willpower": -3, "luck": -3},
         "tags": ["魔道", "杀伐", "心魔"],
@@ -83,7 +83,7 @@ SEED_TALENTS: list[dict[str, Any]] = [
     {
         "id": str(uuid.uuid4()),
         "name": "福缘深厚",
-        "rarity": "稀有",
+        "rarity": "蓝",
         "description": "天生福缘加身，行走在外更容易遇到贵人机缘，但因果纠缠亦多。",
         "attribute_mods": {"luck": 12},
         "tags": ["机缘", "因果", "贵人"],
@@ -91,7 +91,7 @@ SEED_TALENTS: list[dict[str, Any]] = [
     {
         "id": str(uuid.uuid4()),
         "name": "万法归宗",
-        "rarity": "传说",
+        "rarity": "橙",
         "description": "万法皆可通，不受灵根属性限制，任何属性功法均可修炼至大成。",
         "attribute_mods": {"comprehension": 10, "root_bone": 10},
         "tags": ["万法", "无属性", "悟道"],
@@ -105,7 +105,7 @@ SEED_FAMILY_BACKGROUNDS: list[dict[str, Any]] = [
     {
         "id": str(uuid.uuid4()),
         "name": "凡人孤儿",
-        "rarity": "普通",
+        "rarity": "白",
         "description": "出身平凡，无父无母，在乡野间靠自身努力长大。没有家族支持，但也没有家族恩怨的牵绊。",
         "initial_resources": {"gold": 5, "items": ["粗布衣衫"]},
         "initial_risks": ["无依无靠"],
@@ -114,7 +114,7 @@ SEED_FAMILY_BACKGROUNDS: list[dict[str, Any]] = [
     {
         "id": str(uuid.uuid4()),
         "name": "寒门子弟",
-        "rarity": "普通",
+        "rarity": "白",
         "description": "出身普通农家或小商贩家庭，家人省吃俭用送你踏上仙途。虽无显赫背景，却有家人殷切期盼。",
         "initial_resources": {"gold": 15, "items": ["家传护身符"]},
         "initial_risks": ["家中有牵挂"],
@@ -123,7 +123,7 @@ SEED_FAMILY_BACKGROUNDS: list[dict[str, Any]] = [
     {
         "id": str(uuid.uuid4()),
         "name": "修仙小族",
-        "rarity": "稀有",
+        "rarity": "蓝",
         "description": "出身于一个没落的小修仙家族，族中尚存几部残缺功法和几件低阶法器。",
         "initial_resources": {"gold": 50, "items": ["残缺功法残卷", "低阶储物袋"]},
         "initial_risks": ["族中期望过高", "旧日仇怨"],
@@ -132,7 +132,7 @@ SEED_FAMILY_BACKGROUNDS: list[dict[str, Any]] = [
     {
         "id": str(uuid.uuid4()),
         "name": "宗门旁支",
-        "rarity": "稀有",
+        "rarity": "蓝",
         "description": "出身于大宗门的旁支或杂役弟子家庭，虽在主宗门内生长，却非核心弟子。",
         "initial_resources": {"gold": 30, "items": ["宗门基础功法", "杂役令牌"]},
         "initial_risks": ["宗门内部排挤", "被寄予厚望"],
@@ -141,7 +141,7 @@ SEED_FAMILY_BACKGROUNDS: list[dict[str, Any]] = [
     {
         "id": str(uuid.uuid4()),
         "name": "隐世仙族",
-        "rarity": "传说",
+        "rarity": "橙",
         "description": "出身于避世多年的修仙世家，血脉中有远古大能的传承。族中底蕴深厚，但亦有避世戒律。",
         "initial_resources": {"gold": 200, "items": ["仙族玉佩", "上古功法入门"]},
         "initial_risks": ["世仇追杀", "戒律约束", "血脉诅咒"],
@@ -150,7 +150,7 @@ SEED_FAMILY_BACKGROUNDS: list[dict[str, Any]] = [
     {
         "id": str(uuid.uuid4()),
         "name": "散修之后",
-        "rarity": "稀有",
+        "rarity": "蓝",
         "description": "父母是云游四方的散修，自幼随父母走南闯北，见多识广但居无定所。",
         "initial_resources": {"gold": 20, "items": ["散修手札", "破旧地图"]},
         "initial_risks": ["仇家可能寻来"],
@@ -159,7 +159,7 @@ SEED_FAMILY_BACKGROUNDS: list[dict[str, Any]] = [
     {
         "id": str(uuid.uuid4()),
         "name": "魔道遗孤",
-        "rarity": "稀有",
+        "rarity": "蓝",
         "description": "父母是魔道修士，在正道围剿中陨落。你被秘密送出，隐姓埋名长大。体内有封印的魔功传承。",
         "initial_resources": {"gold": 40, "items": ["封印魔简", "易容面具"]},
         "initial_risks": ["正道追杀令", "魔功反噬风险"],

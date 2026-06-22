@@ -19,21 +19,22 @@ class TestFormatStatusBar:
         s = GameSession()
         text = format_status_bar(s)
         assert "练气" in text
-        assert "HP:" in text
-        assert "MP:" in text
+        assert "寿元" in text  # game-mode v5: lifespan replaces HP/MP
 
     def test_with_name_and_realm(self) -> None:
-        s = GameSession(char_name="许满", realm="筑基", realm_stage=3, hp=50, hp_max=80)
+        s = GameSession(char_name="许满", realm="筑基", realm_stage=3, lifespan=80)
         text = format_status_bar(s)
         assert "筑基" in text
-        assert "50/80" in text
+        assert "寿元" in text
+        # No HP/MP segments in the game-mode status bar.
+        assert "HP" not in text
+        assert "MP" not in text
 
 
 class TestFormatStatusCard:
     def test_full_card(self) -> None:
         s = GameSession(
             char_name="许满", realm="金丹", realm_stage=5,
-            hp=85, hp_max=120, mp=60, mp_max=80,
             spirit_root="火木双灵根", spirit_root_grade="天",
             experience=450, experience_to_next=500,
             gold=99, lifespan=200,
@@ -42,10 +43,12 @@ class TestFormatStatusCard:
         text = format_status_card(s)
         assert "许满" in text
         assert "金丹" in text
-        assert "85/120" in text
         assert "火木双灵根" in text
         assert "青云山内门" in text
-        assert "99" in text
+        assert "99" in text  # gold
+        # Game-mode v5: no HP/MP rows in the status card.
+        assert "HP" not in text
+        assert "MP" not in text
 
     def test_empty_name(self) -> None:
         s = GameSession()

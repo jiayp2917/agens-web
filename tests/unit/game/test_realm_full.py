@@ -19,10 +19,6 @@ def _make_session_at_final_stage(realm: str, **overrides) -> GameSession:
         experience=cfg.experience_required + 100,
         experience_to_next=cfg.experience_required,
         insight=cfg.insight_required + 100,  # enough 感悟 to clear the breakthrough gate
-        hp=cfg.hp_base,
-        hp_max=cfg.hp_base,
-        mp=cfg.mp_base,
-        mp_max=cfg.mp_base,
         game_started=True,
         breakthrough_flags=[
             "foundation_aid",

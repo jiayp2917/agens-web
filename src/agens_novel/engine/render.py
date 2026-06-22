@@ -61,45 +61,42 @@ def _breakthrough_requirement_count(session: GameSession) -> tuple[int, int]:
 
 
 def format_status_bar(session: GameSession) -> str:
-    """One-line compact status."""
+    """One-line compact status — game mode (age/realm/lifespan/meters)."""
     realm_str = f"{session.realm}{_stage_suffix(session.realm_stage)}"
-    hp = f"HP:{session.hp}/{session.hp_max}"
-    mp = f"MP:{session.mp}/{session.mp_max}"
+    age = getattr(session, "age", 16)
+    lifespan = getattr(session, "lifespan", 100)
+    remaining = max(0, lifespan - age)
     insight = getattr(session, "insight", 0)
     insight_req = _insight_required(session)
     insight_str = f"感悟:{insight}/{insight_req}" if insight_req else f"感悟:{insight}"
     prep_met, prep_total = _breakthrough_requirement_count(session)
     prep_str = f" | 准备:{prep_met}/{prep_total}" if prep_total else ""
     loc = session.location or "未知"
-    combat_marker = " ⚔" if session.combat else ""
-    return f"[{realm_str} | {hp} | {mp} | {insight_str}{prep_str} | 地点:{loc} | 第{session.turn_count}回合{combat_marker}]"
+    return f"[{realm_str} | {age}岁 | 寿元:{remaining}年 | {insight_str}{prep_str} | 地点:{loc} | 第{session.turn_count}回合]"
 
 
 def format_status_card(session: GameSession) -> str:
-    """Multi-line character card."""
+    """Multi-line character card — game mode (no HP/MP)."""
     realm_str = f"{session.realm}{_stage_suffix(session.realm_stage)}"
-    hp_bar = _bar(session.hp, session.hp_max)
-    mp_bar = _bar(session.mp, session.mp_max)
     xp_bar = _bar(session.experience, session.experience_to_next)
     insight = getattr(session, "insight", 0)
     insight_req = _insight_required(session)
     insight_bar = _bar(insight, insight_req) if insight_req else ""
     prep_met, prep_total = _breakthrough_requirement_count(session)
+    age = getattr(session, "age", 16)
+    lifespan = getattr(session, "lifespan", 100)
+    remaining = max(0, lifespan - age)
 
     lines = [
         f"  姓名:   {session.char_name or '未命名'}",
-        f"  年龄:   {getattr(session, 'age', 16)}",
+        f"  年龄:   {age} / 寿元 {lifespan} 年（剩余 {remaining} 年）",
         f"  境界:   {realm_str}",
-        f"  HP:     {hp_bar} {session.hp}/{session.hp_max}",
-        f"  MP:     {mp_bar} {session.mp}/{session.mp_max}",
         f"  灵根:   {_spirit_root_str(session)}",
         f"  天赋:   {getattr(session, 'talent', '') or '未显'}",
         f"  家世:   {getattr(session, 'family_background', '') or '凡俗'}",
-        f"  气运:   {getattr(session, 'luck', '') or '平稳'}",
         f"  经验:   {xp_bar} {session.experience}/{session.experience_to_next}",
         f"  感悟:   {insight_bar} {insight}/{insight_req}" if insight_req else f"  感悟:   {insight}",
         f"  准备:   {prep_met}/{prep_total}（破境资源/机缘）" if prep_total else "  准备:   无额外要求",
-        f"  寿命:   {session.lifespan} 年",
         f"  灵石:   {session.gold}",
         f"  地点:   {session.location or '未知'}" + (f" - {session.region}" if session.region else ""),
         f"  回合:   {session.turn_count}",
@@ -107,8 +104,6 @@ def format_status_card(session: GameSession) -> str:
     if session.status_effects:
         effects = ", ".join(session.status_effects) if isinstance(session.status_effects, list) else str(session.status_effects)
         lines.append(f"  状态:   {effects}")
-    if session.combat:
-        lines.append("  ⚔ 战斗中")
     attrs = getattr(session, "attributes", {})
     if attrs:
         from ..game.constants import ATTRIBUTE_LABELS
@@ -205,10 +200,8 @@ def format_log(session: GameSession, count: int = 5) -> str:
 
 
 def format_combat(session: GameSession) -> str:
-    """Format combat state as readable text."""
-    combat = session.combat
-    if not combat:
-        return "  (未在战斗中)"
+    """Game mode: combat is event-based — no round-based combat display."""
+    return "  (战斗通过事件判定结算)"
 
     phase = combat.get("phase", "idle")
     player = combat.get("player", {})

@@ -257,6 +257,41 @@ def create_app(db_path: Path | None = None) -> FastAPI:
     def catalog_story_seeds() -> list[dict[str, Any]]:
         return [catalog_as_json(row) for row in service.db.list_catalog("catalog_story_seeds")]
 
+    @app.get("/api/catalog/rarities")
+    def catalog_rarities(request: Request) -> dict[str, Any]:
+        """Return the 6 rarity tiers and the player's unlocked set (spec §11).
+
+        Guests and new accounts start with 白/绿/蓝 only; 紫/橙/红 unlock as the
+        player completes runs and ascends. The UI uses this to grey out locked
+        rarities during manual selection.
+        """
+        from agens_novel.game.constants import (
+            CATALOG_RARITY_TIERS,
+            rarity_unlocked_for,
+        )
+        user = current_user(request)
+        progress = service.db.get_player_progress(user["id"])
+        unlocked = rarity_unlocked_for(
+            progress["runs_completed"], progress["ascension_count"]
+        )
+        return {
+            "tiers": [
+                {
+                    "key": t["key"],
+                    "label": t["label"],
+                    "weight": t["weight"],
+                    "select_requires_runs": t["select_requires_runs"],
+                    "select_requires_ascensions": t["select_requires_ascensions"],
+                    "random_requires_runs": t["random_requires_runs"],
+                    "unlocked": t["key"] in unlocked,
+                }
+                for t in CATALOG_RARITY_TIERS
+            ],
+            "runs_completed": progress["runs_completed"],
+            "ascension_count": progress["ascension_count"],
+            "unlocked": unlocked,
+        }
+
     @app.post("/api/auth/register")
     def register(payload: RegisterRequest, request: Request, response: Response) -> dict[str, Any]:
         rate_limit(request, "register", limit=5, window_seconds=300)
@@ -479,8 +514,15 @@ def create_app(db_path: Path | None = None) -> FastAPI:
     ) -> dict[str, Any]:
         return service.update_model_settings(payload.model_dump())
 
-    frontend_dir = FRONTEND_REACT_DIST if FRONTEND_REACT_DIST.exists() else FRONTEND_DIR
-    if frontend_dir.exists():
+    legacy_frontend_enabled = os.environ.get("AGENS_ENABLE_LEGACY_FRONTEND", "").strip().lower() in (
+        "1",
+        "true",
+        "yes",
+    )
+    frontend_dir = FRONTEND_REACT_DIST if FRONTEND_REACT_DIST.exists() else None
+    if frontend_dir is None and legacy_frontend_enabled:
+        frontend_dir = FRONTEND_DIR
+    if frontend_dir is not None and frontend_dir.exists():
         legacy_assets_dir = FRONTEND_DIR / "assets"
         assets_dir = legacy_assets_dir if legacy_assets_dir.exists() else frontend_dir / "assets"
         if assets_dir.exists():
