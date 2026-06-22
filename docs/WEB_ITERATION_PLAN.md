@@ -8,14 +8,14 @@
 
 ## 一句话计划
 
-已移除移动端产品链路；保留 `src/agens_novel/` 的 GameEngine、Agent、LLM、Session、境界和规则；新增 `web/backend` FastAPI 接口、React/Vite 主入口、旧 `web/frontend` fallback、SQLite/PostgreSQL 数据库、邀请码登录、会话存档、chat_history 和模型配置管理；验证改为后端 API 测试、核心引擎测试和前端契约/构建检查。
+已移除移动端产品链路；保留 `src/agens_novel/` 的 GameEngine、Agent、LLM、Session、境界和规则；新增 `web/backend` FastAPI 接口、React/Vite 主入口、SQLite/PostgreSQL 数据库、邀请码登录、会话存档、chat_history、v5 回合日志和模型配置管理；旧 `web/frontend` 已删除；验证改为后端 API 测试、核心引擎测试、前端契约/构建检查和浏览器验收。
 
 ## 阶段
 
 | 阶段 | 内容 | 验收 |
 | --- | --- | --- |
-| 1 | 建立 `web/backend`，用 FastAPI 包装 `GameEngine`。 | 能创建会话、开局、提交 A/B/C、提交 D 输入、读取状态。 |
-| 2 | 建立 `web/frontend`，实现首页、角色创建、游戏页、设置、存读档、死亡/飞升页。 | 浏览器可完成一局最小流程。 |
+| 1 | 建立 `web/backend`，用 FastAPI 包装 `GameEngine`。 | 能创建会话、开局、提交 A/B/C/D、读取状态。 |
+| 2 | 建立 `web/frontend-react`，实现首页、角色创建、游戏页、设置、存读档、死亡/飞升页。 | 浏览器可完成一局最小流程。 |
 | 3 | 引入 SQLite，保存用户、会话、存档、chat_history 和模型配置摘要。 | 刷新页面或重启服务后可恢复存档。 |
 | 4 | 清理旧文档和测试分类。 | 搜索不到旧移动端产品入口作为当前运行路径。 |
 | 5 | 完善测试和部署。 | 后端测试、核心测试、浏览器端到端测试通过。 |
@@ -24,8 +24,8 @@
 
 - `POST /api/sessions`：创建会话。
 - `POST /api/sessions/{id}/start`：角色创建并开局。
-- `POST /api/sessions/{id}/choice`：提交 A/B/C。
-- `POST /api/sessions/{id}/action`：提交 D 输入。
+- `POST /api/sessions/{id}/choice`：提交 A/B/C/D 固定选项。
+- `POST /api/sessions/{id}/action`：仅保留给兜底“继续本局”和兼容调用。
 - `GET /api/sessions/{id}`：读取当前叙事、状态、选项和终局状态。
 - `POST /api/sessions/{id}/save`：保存。
 - `POST /api/sessions/{id}/load`：读档。

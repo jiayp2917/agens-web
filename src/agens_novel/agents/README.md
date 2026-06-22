@@ -6,8 +6,8 @@
 
 | Agent | 目录 | 系统提示词 | 职责 |
 |-------|------|-----------|------|
-| **Narrator** | `narrator/` | `config/prompts/system/narrator.md` | 生成每回合叙事、状态变化、A/B/C 选项 |
-| **World Builder** | `world_builder/` | `config/prompts/system/world_builder.md` | 初始化角色、世界开局、初始选项 |
+| **Narrator** | `narrator/` | `config/prompts/system/narrator.md` | 生成每回合叙事、状态变化、A/B/C/D 选项建议 |
+| **World Builder** | `world_builder/` | `config/prompts/system/world_builder.md` | 初始化角色、世界开局、初始 A/B/C/D 选项建议 |
 | **Judge** | `judge/` | `config/prompts/system/judge.md` | 审核状态变化与世界逻辑是否合理 |
 
 ## 每个 Agent 目录结构

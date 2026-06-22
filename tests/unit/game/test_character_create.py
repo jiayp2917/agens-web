@@ -1,4 +1,4 @@
-"""Tests for prototype-driven character creation flow."""
+﻿"""Tests for prototype-driven character creation flow."""
 
 from __future__ import annotations
 
@@ -47,7 +47,7 @@ def test_start_from_profile_initializes_session(tmp_path, monkeypatch):
     assert s.spirit_root == "火灵根"
     assert s.family_background == "寒门"
     assert s.game_mode == "abcd"
-    assert s.last_choices == ["留在山门吐纳", "询问接引弟子", "观察灵气流向"]
+    assert s.last_choices == ["留在山门吐纳", "询问接引弟子", "观察灵气流向", "【气运】随缘而行，听天命、赌因果"]
     assert narratives and narratives[0][1] == 0
 
 
@@ -130,7 +130,7 @@ def test_start_from_profile_generates_opening_choices_from_model(tmp_path, monke
     with patch("agens_novel.engine.game_engine.run_turn_sync", side_effect=runner):
         engine.start_from_profile({"char_name": "许满"})
 
-    assert engine.game_session.last_choices == ["拜见接引弟子", "观察灵气", "整理行囊"]
+    assert engine.game_session.last_choices == ["拜见接引弟子", "观察灵气", "整理行囊", "【气运】随缘而行，听天命、赌因果"]
 
 
 def test_start_from_profile_model_failure_uses_tiandao_fallback(tmp_path, monkeypatch):
@@ -147,7 +147,7 @@ def test_start_from_profile_model_failure_uses_tiandao_fallback(tmp_path, monkey
         engine.start_from_profile({"char_name": "许满"})
 
     assert engine.game_session.local_story_active is True
-    assert len(engine.game_session.last_choices) == 3
+    assert len(engine.game_session.last_choices) == 4
     assert any("天道紊乱" in msg for msg in infos)
 
 
@@ -189,7 +189,7 @@ def test_start_from_profile_model_failure_enters_local_story_not_profile_choices
 
     assert engine.game_session.local_story_active is True
     assert engine.game_session.last_choices != ["退回山门", "询问执事"]
-    assert len(engine.game_session.last_choices) == 3
+    assert len(engine.game_session.last_choices) == 4
     assert any("天道紊乱" in msg for msg in infos)
 
 

@@ -45,7 +45,7 @@ class TestNarratorParse:
         assert narrative == "山风吹过石阶。"
         assert choices == ["修炼", "交谈", "探索"]
 
-    def test_choices_less_than_three_not_padded_by_parser(self) -> None:
+    def test_choices_less_than_four_not_padded_by_parser(self) -> None:
         text = (
             "山门风急。\n"
             "<state_update>{}</state_update>\n"

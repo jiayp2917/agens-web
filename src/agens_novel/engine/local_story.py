@@ -81,6 +81,16 @@ _STORIES: dict[str, dict[str, LocalStoryNode]] = {
                     result="你发现灵雾总在一条偏僻药径前回旋，似有阵纹残留。",
                     keywords=("观察", "灵雾", "机缘", "地势", "药径"),
                 ),
+                LocalStoryOption(
+                    text="随缘而行，听天命指向山门深处",
+                    next_node="herb_path",
+                    delta={
+                        "world": {"discovered_add": ["雾隐药径"]},
+                        "character": {"attributes": {"luck": 2}, "insight": "+8"},
+                    },
+                    result="你没有刻意寻找，却被一阵钟声引到偏僻药径前，雾中似有残阵微亮。",
+                    keywords=("随缘", "天命", "气运", "因果"),
+                ),
             ),
         ),
         "outer_gate": LocalStoryNode(
@@ -116,6 +126,16 @@ _STORIES: dict[str, dict[str, LocalStoryNode]] = {
                     result="你领到采药竹牌，沿着山后小径进入薄雾。",
                     keywords=("采药", "试炼", "灵草", "山后"),
                 ),
+                LocalStoryOption(
+                    text="随缘抽取一枚任务竹牌，任由气运安排",
+                    next_node="herb_path",
+                    delta={
+                        "world": {"discovered_add": ["山后药圃"]},
+                        "character": {"attributes": {"luck": 1}, "insight": "+7"},
+                    },
+                    result="你随手抽中一枚旧竹牌，背面残留的药香指向山后薄雾。",
+                    keywords=("随缘", "任务", "竹牌", "气运", "天命"),
+                ),
             ),
         ),
         "cultivation": LocalStoryNode(
@@ -141,6 +161,16 @@ _STORIES: dict[str, dict[str, LocalStoryNode]] = {
                     delta={"character": {"insight": "+6"}},
                     result="你摊开木牌、心得和行囊，逐项确认破境所缺。",
                     keywords=("整理", "检查", "筑基", "准备"),
+                ),
+                LocalStoryOption(
+                    text="顺心而行，跟随一缕突来的灵机",
+                    next_node="herb_path",
+                    delta={
+                        "world": {"discovered_add": ["雾隐山后径"]},
+                        "character": {"attributes": {"luck": 2}, "insight": "+10"},
+                    },
+                    result="你忽然想起山风中的药香，起身循着灵机走向后山。",
+                    keywords=("顺心", "灵机", "随缘", "气运", "天命"),
                 ),
             ),
         ),
@@ -173,6 +203,20 @@ _STORIES: dict[str, dict[str, LocalStoryNode]] = {
                     delta={"character": {"insight": "+8"}, "world": {"lore_add": ["雾隐药径疑似旧阵残留。"]}},
                     result="师兄听完你的描述，神色凝重，提醒你暂勿深入旧阵。",
                     keywords=("回去", "师兄", "辨认", "来历"),
+                ),
+                LocalStoryOption(
+                    text="赌一线天命，沿露珠最亮处继续前行",
+                    next_node="preparation",
+                    delta={
+                        "character": {
+                            "attributes": {"luck": -1},
+                            "insight": "+12",
+                            "breakthrough_flags_add": ["foundation_aid"],
+                        },
+                        "world": {"lore_add": ["雾隐药径深处残留一线旧阵机缘。"]},
+                    },
+                    result="你顺着最亮的露珠前行，险些踏入旧阵，却也看清了一处筑基药引的生机。",
+                    keywords=("天命", "露珠", "气运", "赌", "机缘"),
                 ),
             ),
         ),
@@ -207,6 +251,21 @@ _STORIES: dict[str, dict[str, LocalStoryNode]] = {
                     result="你反复核对药引、心得与气息，心中把握更清晰了些。",
                     keywords=("检查", "行囊", "心得", "准备"),
                 ),
+                LocalStoryOption(
+                    text="听从心血来潮，择此刻一试天命",
+                    next_node="foundation_result",
+                    delta={
+                        "character": {
+                            "experience": "+700",
+                            "insight": "+24",
+                            "attributes": {"luck": -1},
+                            "breakthrough_flags_add": ["foundation_aid"],
+                        }
+                    },
+                    result="你感到心血来潮，虽仍有风险，却捕捉到一线破境契机。",
+                    keywords=("心血来潮", "天命", "气运", "一试", "随缘"),
+                    breakthrough=True,
+                ),
             ),
         ),
         "foundation_result": LocalStoryNode(
@@ -239,6 +298,13 @@ _STORIES: dict[str, dict[str, LocalStoryNode]] = {
                     delta={"world": {"lore_add": ["因果残影已推进至筑基准备节点。"]}},
                     result="你将这段因果记入玉简，方便之后继续。",
                     keywords=("记录", "保存", "玉简"),
+                ),
+                LocalStoryOption(
+                    text="随缘静候下一缕破境机缘",
+                    next_node="preparation",
+                    delta={"character": {"attributes": {"luck": 1}, "insight": "+6"}},
+                    result="你没有强求破境，只在静候中让气息更贴近天时。",
+                    keywords=("随缘", "静候", "破境", "机缘", "气运"),
                 ),
             ),
         ),
@@ -338,8 +404,8 @@ def validate_local_story_graph(story_id: str | None = None) -> list[str]:
         return [f"missing story: {story_key}"]
     problems: list[str] = []
     for node_id, node in story.items():
-        if len(node.options) != 3:
-            problems.append(f"{node_id}: expected 3 options, got {len(node.options)}")
+        if len(node.options) != 4:
+            problems.append(f"{node_id}: expected 4 options, got {len(node.options)}")
         for option in node.options:
             if option.next_node not in story:
                 problems.append(f"{node_id}: option '{option.text}' points to missing node {option.next_node}")

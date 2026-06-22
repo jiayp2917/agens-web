@@ -1,5 +1,19 @@
 # Changelog
 
+## 2026-06-22
+
+### Added
+
+- Alembic `20260622_0003` for game-mode v5 `game_runs`, `game_turns`, and `player_progress`.
+- React public assets under `web/frontend-react/public/assets`, including BGM.
+- Web service writes settled turns and terminal run progress for rarity unlocks.
+
+### Changed
+
+- React is the only product frontend entrypoint; old `web/frontend` fallback was removed.
+- Docs now describe the current runtime as game-mode v5 Alpha with A/B/C/D fixed semantics.
+- Frontend contract tests now target the React entrypoint and public assets.
+
 ## 2026-06-21
 
 ### Added
@@ -14,7 +28,7 @@
 ### Changed
 
 - `docs/INDEX.md` now separates current Alpha runtime docs from future game-mode v5 specs.
-- `docs/PROJECT_AUDIT.md` records the React-first entrypoint, legacy frontend fallback policy, and PG/Alembic authority.
+- `docs/PROJECT_AUDIT.md` records the React-first entrypoint, legacy frontend retirement, and PG/Alembic authority.
 - `docs/ALPHA_REVIEW_AND_LESSONS.md` now records current conclusion, verification evidence, success lessons, failure lessons, residual risks, and follow-up execution rules.
 - `/api/invites` now uses a typed request schema instead of ad hoc dict parsing.
 

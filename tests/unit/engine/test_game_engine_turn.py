@@ -1,4 +1,4 @@
-"""Tests for GameEngine turn execution and gameplay mechanics — UI-agnostic game logic service."""
+﻿"""Tests for GameEngine turn execution and gameplay mechanics — UI-agnostic game logic service."""
 
 from __future__ import annotations
 
@@ -126,7 +126,7 @@ class TestGameEngineHandleAction:
             engine.handle_action("B")
 
         assert seen_inputs[0].startswith("询问接引弟子")
-        assert engine.game_session.last_choices == ["继续询问", "返回山门", "观察弟子神色"]
+        assert engine.game_session.last_choices == ["继续询问", "返回山门", "观察弟子神色", "【气运】随缘而行，听天命、赌因果"]
 
     def test_choice_letter_ignores_missing_slot(self, monkeypatch) -> None:
         engine = GameEngine()
@@ -178,7 +178,7 @@ class TestGameEngineHandleAction:
 
         assert engine.game_session.turn_count == 0
         assert engine.game_session.local_story_active is True
-        assert len(engine.game_session.last_choices) == 3
+        assert len(engine.game_session.last_choices) == 4
         assert any("天道紊乱" in msg for msg in infos)
 
     def test_narrator_exception_can_end_run_from_ui_choice(self, monkeypatch) -> None:
@@ -224,7 +224,7 @@ class TestGameEngineHandleAction:
         assert engine.game_session.game_over is False
         assert engine.game_session.turn_count == 1
         assert engine.game_session.local_story_active is True
-        assert len(engine.game_session.last_choices) == 3
+        assert len(engine.game_session.last_choices) == 4
         assert calls == ["narrator"]
         assert narratives and "因果残影" in narratives[-1][0]
         assert not any("状态栏为准" in msg for msg in infos)
@@ -251,7 +251,7 @@ class TestGameEngineHandleAction:
         assert any("不完整" in msg or "未返回可用 A/B/C" in msg for msg in infos)
         assert not any("天道紊乱" in msg for msg in infos)
         assert engine.game_session.local_story_active is True
-        assert len(engine.game_session.last_choices) == 3
+        assert len(engine.game_session.last_choices) == 4
 
     def test_narrative_claim_without_structured_delta_is_rejected(self, monkeypatch) -> None:
         monkeypatch.setenv("AGNES_API_KEY", "sk-test-1234567890")
@@ -484,7 +484,7 @@ class TestGameEngineHandleAction:
         with patch("agens_novel.engine.game_engine.run_turn_sync", side_effect=selective_runner):
             engine.handle_action("强闯内门")
 
-        assert engine.game_session.last_choices == ["向执事解释来意", "退回山门等候", "寻找外门任务"]
+        assert engine.game_session.last_choices == ["向执事解释来意", "退回山门等候", "寻找外门任务", "【气运】随缘而行，听天命、赌因果"]
         assert any("审判未通过" in msg for msg in infos)
         assert not any("天道紊乱" in msg for msg in infos)
 
@@ -822,7 +822,7 @@ class TestInsightGate:
         assert engine.game_session.realm == "筑基", \
             f"Breakthrough should reach 筑基, got {engine.game_session.realm}"
         assert engine.game_session.local_story_active is False
-        assert len(engine.game_session.last_choices) == 3
+        assert len(engine.game_session.last_choices) == 4
 
     def test_breakthrough_updates_model_choices(self, monkeypatch) -> None:
         monkeypatch.setenv("AGNES_API_KEY", "sk-test-1234567890")
@@ -855,7 +855,7 @@ class TestInsightGate:
                 engine.attempt_breakthrough()
 
         assert engine.game_session.realm == "筑基"
-        assert engine.game_session.last_choices == ["稳固筑基道台", "拜谢护法长老", "查看新功法"]
+        assert engine.game_session.last_choices == ["稳固筑基道台", "拜谢护法长老", "查看新功法", "【气运】随缘而行，听天命、赌因果"]
 
     def test_breakthrough_narrator_error_uses_fallback_choices(self, monkeypatch) -> None:
         monkeypatch.setenv("AGNES_API_KEY", "sk-test-1234567890")
@@ -882,7 +882,7 @@ class TestInsightGate:
             engine.attempt_breakthrough()
 
         assert engine.game_session.realm == "练气"
-        assert len(engine.game_session.last_choices) == 3
+        assert len(engine.game_session.last_choices) == 4
         assert any("天道紊乱" in msg for msg in infos)
 
     def test_insight_resets_on_breakthrough(self, monkeypatch) -> None:

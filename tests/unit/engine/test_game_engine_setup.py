@@ -1,4 +1,4 @@
-"""Tests for GameEngine initialization and configuration — UI-agnostic game logic service."""
+﻿"""Tests for GameEngine initialization and configuration — UI-agnostic game logic service."""
 
 from __future__ import annotations
 
@@ -95,10 +95,10 @@ class TestGameEngineNewGame:
         assert engine.game_session.char_name == "许满"
         assert engine.game_session.realm == "练气"
         assert engine.game_session.hp == 100
-        assert engine.game_session.last_choices == ["留在山门吐纳", "询问接引弟子", "观察灵气流向"]
+        assert engine.game_session.last_choices == ["留在山门吐纳", "询问接引弟子", "观察灵气流向", "【气运】随缘而行，听天命、赌因果"]
         assert len(narratives) == 1
 
-    def test_model_choices_not_padded_when_less_than_three(self, monkeypatch) -> None:
+    def test_model_choices_are_completed_to_four_buttons(self, monkeypatch) -> None:
         monkeypatch.setenv("AGNES_API_KEY", "sk-test-1234567890")
         engine = GameEngine()
 
@@ -112,7 +112,12 @@ class TestGameEngineNewGame:
         with patch("agens_novel.engine.game_engine.run_turn_sync", side_effect=runner):
             engine.new_game("许满")
 
-        assert engine.game_session.last_choices == ["请教陈师兄", "查看山门规矩"]
+        assert engine.game_session.last_choices == [
+            "请教陈师兄",
+            "查看山门规矩",
+            "【风险】检查随身物品、功法与破境准备",
+            "【气运】随缘而行，听天命、赌因果",
+        ]
 
     def test_empty_model_choices_use_visible_fallback_notice(self, monkeypatch) -> None:
         monkeypatch.setenv("AGNES_API_KEY", "sk-test-1234567890")
@@ -134,7 +139,7 @@ class TestGameEngineNewGame:
         with patch("agens_novel.engine.game_engine.run_turn_sync", side_effect=runner):
             engine.handle_action("观察")
 
-        assert len(engine.game_session.last_choices) == 3
+        assert len(engine.game_session.last_choices) == 4
         assert any("天道紊乱" in msg for msg in infos)
 
     def test_empty_successful_choices_still_show_fallback_notice(self, monkeypatch) -> None:
@@ -159,7 +164,7 @@ class TestGameEngineNewGame:
         with patch("agens_novel.engine.game_engine.run_turn_sync", side_effect=runner):
             engine.handle_action("观察")
 
-        assert len(engine.game_session.last_choices) == 3
+        assert len(engine.game_session.last_choices) == 4
         assert any("天道紊乱" in msg for msg in infos)
 
     def test_new_game_without_api_key_uses_agent_error(self, monkeypatch) -> None:

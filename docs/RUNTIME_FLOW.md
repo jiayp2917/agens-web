@@ -1,6 +1,6 @@
 # Web 运行流程
 
-> **当前实现状态：引导模式 Alpha。** 本文描述的是当前可运行的 Alpha 版本实现，不是游戏模式 v5 规格。游戏模式 v5 是下一阶段规格，详见 `docs/GAME_MODE_SPEC.md`（草案 v5 / 待批准立项）。
+> **当前实现状态：游戏模式 v5 Alpha。** React 主入口已经切到 A/B/C/D 四按钮固定语义：A 稳妥、B 机遇、C 风险、D 气运；无自由文本主入口，无 HP/MP 常驻 UI。`docs/GAME_MODE_SPEC.md` 是当前游戏模式规格和验收来源。
 
 本文记录当前 Web-only 运行链路。产品入口是浏览器 UI + FastAPI 后端，不再包含移动端打包或设备验证路径。
 
@@ -29,7 +29,8 @@ http://127.0.0.1:8000/
 ## 业务流程
 
 1. 首页
-   - 生产入口加载 `web/frontend-react/dist/index.html`；旧 `web/frontend/index.html` 仅在显式设置 `AGENS_ENABLE_LEGACY_FRONTEND=1` 时作为 fallback。
+   - 生产入口加载 `web/frontend-react/dist/index.html`。
+   - 旧 `web/frontend` 已归档删除，不再作为 fallback 或产品入口。
    - 首页提供新游戏、读档、教程、设置、邀请码注册入口和背景音乐开关。
    - 新游戏允许访客直接进入角色创建；读档/设置打开弹窗，不再强制跳登录页。
    - Web 端不执行“关闭程序”，结束本局只清理当前局状态并返回首页。
@@ -97,7 +98,7 @@ Browser UI
 - PostgreSQL 启动后可补充 catalog 种子数据，但不能依赖应用隐式建表。
 - 状态变更 API 需要同源/允许来源校验。
 - 生产模式关闭 `/docs`、`/redoc`、`/openapi.json`，并启用 Host 白名单。
-- 当前 Alpha 实现仍是引导模式：A/B/C 模型选项 + D 自由输入，支持访客新局 + 邀请码存档。游戏模式 v5 规格见 `docs/GAME_MODE_SPEC.md`。
+- 当前 React 主入口已切到游戏模式 v5 Alpha：A/B/C/D 四按钮固定语义，支持访客新局 + 邀请码账号存档。
 - 境界顺序固定为：练气、筑基、金丹、元婴、化神、合体、大乘、渡劫、飞升。
 
 ## 验证

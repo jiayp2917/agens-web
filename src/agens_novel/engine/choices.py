@@ -24,6 +24,29 @@ def normalize_choices(raw_choices: Any) -> list[str]:
     return dedupe_strings(choices)[: len(CHOICE_LABELS)]
 
 
+def complete_choices(raw_choices: Any, session: GameSession) -> list[str]:
+    """Return exactly 4 choices with stable A/B/C/D semantics.
+
+    Model output may still contain only A/B/C. Game-mode v5 keeps those
+    choices when present, then fills missing slots with local semantic
+    fallbacks so D is always the luck/fate path.
+    """
+    choices = normalize_choices(raw_choices)
+    if not choices:
+        return []
+    if len(choices) >= len(CHOICE_LABELS):
+        return choices[: len(CHOICE_LABELS)]
+
+    fallbacks = fallback_choices(session)
+    completed: list[str] = []
+    for index in range(len(CHOICE_LABELS)):
+        if index < len(choices) and choices[index]:
+            completed.append(choices[index])
+        else:
+            completed.append(fallbacks[index])
+    return completed[: len(CHOICE_LABELS)]
+
+
 def fallback_choices(session: GameSession) -> list[str]:
     """Generate 4 grounded fallback choices (A/B/C/D semantics) when model choices are unavailable."""
     location = session.location or "当前地点"
@@ -55,7 +78,7 @@ def _choice_text(item: Any) -> str:
     else:
         text = ""
     text = text.strip()
-    for prefix in ("A.", "B.", "C.", "A、", "B、", "C、", "A:", "B:", "C:"):
+    for prefix in ("A.", "B.", "C.", "D.", "A、", "B、", "C、", "D、", "A:", "B:", "C:", "D:"):
         if text.upper().startswith(prefix):
             text = text[len(prefix):].strip()
             break

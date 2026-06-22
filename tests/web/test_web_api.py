@@ -135,7 +135,7 @@ def test_web_api_minimum_game_flow(tmp_path: Path, monkeypatch) -> None:
         ).json()
         assert started["game_started"] is True
         assert started["fallback_prompt"]["active"] is False
-        assert started["choices"] == ["拜见执事", "观察山门", "询问路人"]
+        assert started["choices"] == ["拜见执事", "观察山门", "询问路人", "【气运】随缘而行，听天命、赌因果"]
         assert started["character"]["name"] == "许满"
 
         chosen = client.post(
@@ -145,11 +145,11 @@ def test_web_api_minimum_game_flow(tmp_path: Path, monkeypatch) -> None:
         assert chosen["turn_count"] == 1
         # Rule engine produces experience in range 5-15 for choice A (稳妥)
         assert 5 <= chosen["character"]["experience"] <= 50
-        assert chosen["choices"] == ["继续请教", "前往住处", "查看木牌"]
+        assert chosen["choices"] == ["继续请教", "前往住处", "查看木牌", "【气运】随缘而行，听天命、赌因果"]
 
         acted = client.post(
-            f"/api/sessions/{session_id}/action",
-            json={"action": "查看木牌"},
+            f"/api/sessions/{session_id}/choice",
+            json={"choice_index": 3},
         ).json()
         assert acted["turn_count"] == 2
         assert acted["panels"]["status"]
@@ -194,7 +194,7 @@ def test_web_save_load_restores_snapshot_and_chat_history(tmp_path: Path, monkey
 
         loaded = client.post(f"/api/sessions/{session_id}/load", json={"name": "slot_1"}).json()
         assert loaded["character"]["name"] == "许满"
-        assert loaded["choices"] == ["拜见执事", "观察山门", "询问路人"]
+        assert loaded["choices"] == ["拜见执事", "观察山门", "询问路人", "【气运】随缘而行，听天命、赌因果"]
 
     db_text = (tmp_path / "agens_web.sqlite3").read_bytes()
     assert b"sk-test-web-api" not in db_text

@@ -6,17 +6,18 @@
 
 ## 当前结论
 
+- 2026-06-22 更新：React 主入口已切到游戏模式 v5 Alpha，A/B/C/D 四按钮固定语义，D 为气运/天命路线，不再是自由输入。
+- 2026-06-22 更新：旧纯 HTML/CSS/JS 前端 `web/frontend` 已删除，图片和 BGM 资产迁入 `web/frontend-react/public/assets`。
+- 2026-06-22 更新：新增 Alembic `20260622_0003` 覆盖 `game_runs`、`game_turns`、`player_progress`；服务层已写入回合日志和终局进度。
 - 本地 SQLite + React 主入口已经具备最小游玩闭环。
-- 当前玩法仍是引导模式 Alpha：A/B/C 为模型生成选项，D 为玩家自由输入。
 - 访客可以直接新开一局并游玩，但不提供云端存档；邀请码账号可以保存和读档。
-- 项目还不能直接宣称“公网稳定可玩”，因为 PostgreSQL smoke、Docker Compose、Caddy/Cloudflare Tunnel 和真实浏览器多宽度验收尚未完成。
-- 游戏模式 v5 仍是下一阶段规格，不代表当前代码已经切换。
+- 项目还不能直接宣称“公网稳定可玩”，因为服务器生产库 `20260622_0003`、公网部署包和真实浏览器多宽度验收仍需逐项确认。
 
 ## 验证证据
 
 - `.\.venv\Scripts\python.exe -m compileall -q src tests web scripts migrations`：通过。
-- `.\.venv\Scripts\python.exe -m pytest -q tests\web`：`33 passed, 1 skipped`。
-- `.\.venv\Scripts\python.exe -m pytest -q`：`539 passed, 1 skipped`。
+- 2026-06-22 本地复核：`.\.venv\Scripts\python.exe -m pytest -q tests\web`：`37 passed, 1 skipped`。
+- 2026-06-22 本地复核：`.\.venv\Scripts\python.exe -m pytest -q`：`548 passed, 1 skipped`。
 - `cd D:\chat\agens-web\web\frontend-react; npm run build`：通过。
 - 唯一跳过项：`TEST_DATABASE_URL` 未配置，PostgreSQL smoke 未跑。
 - 本机未发现 `docker` 命令，Docker Compose 构建和容器启动未验证。
@@ -45,7 +46,7 @@
    - 邀请码注册游玩：登录后可保存/读档，服务端按用户隔离。
 
 6. BGM 功能已恢复。
-   - BGM 文件放在 `web/frontend/assets/audio/bgm.flac`。
+   - BGM 文件放在 `web/frontend-react/public/assets/audio/bgm.flac`。
    - React 顶栏常驻小喇叭按钮，用户点击后播放/暂停。浏览器禁止无手势自动播放是预期限制。
 
 7. 品牌已改为 `jiayp2917`。
@@ -70,6 +71,9 @@
 - 生产模式增加配置 fail-fast：默认 `SESSION_SECRET`、缺少 `DATABASE_URL`、缺少 `INVITE_ADMIN_CODE`、缺少 `AGENS_ALLOWED_ORIGINS` 都不能启动。
 - 生产模式隐藏 `/docs`、`/redoc`、`/openapi.json`，并启用 Host 白名单。
 - A/B/C、D 输入和兜底按钮增加 busy guard，降低重复提交风险。
+- React 主入口改为 A/B/C/D 固定语义，D 为气运/天命路线。
+- 旧 `web/frontend` 已删除，后端不再提供 legacy fallback。
+- v5 回合日志表和进度表已加入 Alembic `20260622_0003`，服务层写入 `game_turns` 和 `game_runs`。
 
 ## 成功经验
 
@@ -95,18 +99,19 @@
 - 读档、设置、教程等按钮曾经存在“入口可见但行为不完整”的情况，后续 UI 新入口必须同步补交互和测试。
 - 安全设计曾经分散在计划里，落地前缺少启动 fail-fast、Host、Origin、body limit 等可执行门槛。
 - 文档一度混合当前 Alpha 和未来游戏模式 v5，容易让后续智能体误把草案当实现。
+- 删除旧前端前必须先迁移 `/assets`，否则 React 构建产物中引用的图片和 BGM 会在运行时 404。
 
 ## 剩余风险
 
 - 访客局只在单进程内存中，多 worker 或容器重启会丢失；Alpha 可接受，正式多人部署需要共享会话存储或明确提示。
 - 匿名玩家仍可能消耗模型额度；应在公网前增加访客回合限额、IP/设备限额和模型预算保护。
-- PostgreSQL schema 还需要评审索引、JSONB 字段边界、迁移回滚和备份恢复。
+- PostgreSQL schema 还需要确认服务器生产库已升级到 `20260622_0003`，并继续评审索引、JSONB 字段边界、迁移回滚和备份恢复。
 - 安全头、Host 校验、OpenAPI 生产暴露、边缘 body limit、访问日志脱敏还需要在 Caddy/Cloudflare 配置中实测。
 - 当前 UI 是一轮修复，不是完整设计系统；后续应拆组件并用浏览器截图做 375/768/1440 验收。
 
 ## 后续执行规则
 
-- 任何公网开放前，必须先跑通 PostgreSQL smoke，并确认空库 `alembic upgrade head` 后能注册、登录、开局、A/B/C、D、保存、读档、结束和查询 catalog。
+- 任何公网开放前，必须先跑通 PostgreSQL smoke，并确认空库 `alembic upgrade head` 后能注册、登录、开局、A/B/C/D、保存、读档、结束、写入 `game_turns` 和查询 catalog。
 - 任何部署报告必须区分本地测试、容器测试、反代测试和公网测试，不能用其中一个替代全部。
 - 任何新增首页按钮、弹窗入口或游戏操作，都必须同时补前端契约测试或浏览器验收记录。
 - 任何数据库字段、索引或表结构变化，都必须先进 Alembic migration，再考虑 SQLite 测试兼容。

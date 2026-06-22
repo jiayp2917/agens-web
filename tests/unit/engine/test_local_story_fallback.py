@@ -1,4 +1,4 @@
-"""Tests for local preset story fallback."""
+﻿"""Tests for local preset story fallback."""
 
 from __future__ import annotations
 
@@ -28,7 +28,7 @@ def test_profile_model_failure_enters_local_story(monkeypatch, tmp_path) -> None
 
     assert engine.game_session.local_story_active is True
     assert engine.game_session.local_story_id == DEFAULT_STORY_ID
-    assert len(engine.game_session.last_choices) == 3
+    assert len(engine.game_session.last_choices) == 4
     assert any("天道紊乱" in msg for msg in infos)
     assert narratives and "因果残影" in narratives[0]
 
@@ -50,7 +50,7 @@ def test_local_story_choice_advances_node_and_delta(monkeypatch, tmp_path) -> No
 
     assert engine.game_session.local_story_node_id == "outer_gate"
     assert engine.game_session.insight >= 6
-    assert len(engine.game_session.last_choices) == 3
+    assert len(engine.game_session.last_choices) == 4
     assert any(quest.get("name") == "外门入门试炼" for quest in engine.game_session.active_quests)
 
 
@@ -113,7 +113,7 @@ def test_loaded_local_story_can_continue_from_saved_node(monkeypatch, tmp_path) 
 
     assert engine.game_session.local_story_active is True
     assert engine.game_session.local_story_node_id == "preparation"
-    assert len(engine.game_session.last_choices) == 3
+    assert len(engine.game_session.last_choices) == 4
     assert any(item.get("name") == "残页筑基心得" for item in engine.game_session.inventory)
 
 
@@ -134,7 +134,7 @@ def test_engine_load_rebuilds_local_story_choices(monkeypatch, tmp_path) -> None
 
     assert loaded.game_session.local_story_active is True
     assert loaded.game_session.local_story_node_id == "outer_gate"
-    assert len(loaded.game_session.last_choices) == 3
+    assert len(loaded.game_session.last_choices) == 4
     assert any("筑基" in choice for choice in loaded.game_session.last_choices)
 
 
@@ -157,4 +157,4 @@ def test_local_story_can_reach_first_major_breakthrough(monkeypatch, tmp_path) -
 
     assert engine.game_session.realm == "筑基"
     assert engine.game_session.local_story_active is True
-    assert len(engine.game_session.last_choices) == 3
+    assert len(engine.game_session.last_choices) == 4

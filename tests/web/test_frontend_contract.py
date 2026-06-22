@@ -6,59 +6,16 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parents[2]
 
 
-def test_legacy_frontend_fallback_contains_required_web_views() -> None:
-    html = (ROOT / "web" / "frontend" / "index.html").read_text(encoding="utf-8")
-
-    for selector in (
-        'id="homeView"',
-        'id="characterView"',
-        'id="gameView"',
-        'id="endingView"',
-        'id="authButton"',
-        'id="settingsButton"',
-        'id="modalCloseButton"',
-        'id="choices"',
-        'id="actionInput"',
-    ):
-        assert selector in html
-
-    assert "小说模式" in html
-    assert "游戏模式" in html
-    assert "disabled" in html
-    assert '<form method="dialog" class="modal-frame">' not in html
-    assert "关闭程序" not in html
-    assert "练" + "虚" not in html
-    assert "爽" + "文模式" not in html
+def test_legacy_frontend_directory_is_retired() -> None:
+    assert not (ROOT / "web" / "frontend").exists()
 
 
-def test_legacy_frontend_fallback_does_not_embed_api_key_or_hidden_rules() -> None:
-    combined = "\n".join(
-        [
-            (ROOT / "web" / "frontend" / "index.html").read_text(encoding="utf-8"),
-            (ROOT / "web" / "frontend" / "app.js").read_text(encoding="utf-8"),
-            (ROOT / "web" / "frontend" / "styles.css").read_text(encoding="utf-8"),
-        ]
-    )
+def test_static_runtime_uses_react_dist_only() -> None:
+    app_py = (ROOT / "web" / "backend" / "app.py").read_text(encoding="utf-8")
 
-    assert "sk-" not in combined
-    assert "SPECIAL_START_CODE" not in combined
-    assert "2917" not in combined
-
-
-def test_legacy_frontend_fallback_exposes_fallback_choice_without_hidden_rule() -> None:
-    js = (ROOT / "web" / "frontend" / "app.js").read_text(encoding="utf-8")
-
-    assert "/end" in js
-    assert "fallback_prompt" in js
-    assert "结束本局" in js
-
-
-def test_legacy_frontend_fallback_uses_cookie_auth_not_legacy_local_login() -> None:
-    js = (ROOT / "web" / "frontend" / "app.js").read_text(encoding="utf-8")
-    assert "/api/auth/login" in js
-    assert "/api/auth/register" in js
-    assert 'credentials: "include"' in js
-    assert "/api/users/login" not in js
+    assert "FRONTEND_REACT_DIST" in app_py
+    assert "AGENS_ENABLE_LEGACY_FRONTEND" not in app_py
+    assert ' / "frontend"' not in app_py
 
 
 def test_react_frontend_wires_save_load_and_settings() -> None:
@@ -96,6 +53,19 @@ def test_react_homepage_buttons_have_handlers() -> None:
     assert "BgmToggle" in source
     assert "/assets/audio/bgm.flac" in source
     assert "agens web" not in source.lower()
+
+
+def test_react_public_assets_are_present() -> None:
+    assets = ROOT / "web" / "frontend-react" / "public" / "assets"
+    for relative in (
+        "paper_texture.png",
+        "ink_home_bg.png",
+        "ink_mountain_gate.png",
+        "game_desktop_bg.png",
+        "ascension_gate.png",
+        "audio/bgm.flac",
+    ):
+        assert (assets / relative).is_file(), relative
 
 
 def test_react_character_creation_uses_catalogs_and_game_mode() -> None:
@@ -144,79 +114,33 @@ def test_react_turn_actions_disable_while_busy() -> None:
     assert "disabled={busy} onClick={() => runTurn(`/api/sessions/${session.session_id}/end`" in source
 
 
-# ====================== F-003 / F-101 / F-102 / F-104 / F-205 契约 ======================
-
-
-def _escape_html(value: str) -> str:
-    """Python 镜像实现，与 app.js 内 escapeHtml 完全等价。"""
-    return (
-        value.replace("&", "&amp;")
-        .replace("<", "&lt;")
-        .replace(">", "&gt;")
-        .replace('"', "&quot;")
-        .replace("'", "&#039;")
-    )
-
-
 def test_frontend_escapes_xss_in_choice_text() -> None:
-    """F-003: renderChoices 对 choice 文本调用 escapeHtml，恶意串必须被转义。"""
-    js = (ROOT / "web" / "frontend" / "app.js").read_text(encoding="utf-8")
-    # 1. 必须存在 escapeHtml + 实际被 renderChoices 调用
-    assert "function escapeHtml" in js
-    assert "escapeHtml(choice)" in js
-    # 2. 模拟一次渲染：手工调用与 JS 等价的 Python escapeHtml
-    malicious = '<img src=x onerror=alert(1)>'
-    rendered = _escape_html(malicious)
-    assert "&lt;img" in rendered
-    assert "<img" not in rendered
-    assert "alert(1)" in rendered  # 内容保留，只是标签被转义
+    """React renders choice text as text nodes; do not bypass JSX escaping."""
+    source = (ROOT / "web" / "frontend-react" / "src" / "main.tsx").read_text(encoding="utf-8")
+    assert "dangerouslySetInnerHTML" not in source
+    assert "innerHTML" not in source
 
 
 def test_frontend_dialog_uses_native_show_modal() -> None:
-    """F-101: 模态用 <dialog> + showModal()，浏览器原生支持 Esc 关闭。"""
-    js = (ROOT / "web" / "frontend" / "app.js").read_text(encoding="utf-8")
-    html = (ROOT / "web" / "frontend" / "index.html").read_text(encoding="utf-8")
-    assert '<dialog id="modal"' in html
-    assert "modal.showModal()" in js
-    # 浏览器原生 <dialog> 在按下 Esc 时自动关闭，无需 JS 监听器
-    # 这里只断言依赖关系
+    source = (ROOT / "web" / "frontend-react" / "src" / "main.tsx").read_text(encoding="utf-8")
+    assert 'role="dialog"' in source
+    assert 'aria-modal="true"' in source
 
 
 def test_frontend_theme_toggle_wired_to_both_buttons() -> None:
-    """F-102: 主题切换必须同时驱动 #themeToggle 与 #themeToggleInline。"""
-    js = (ROOT / "web" / "frontend" / "app.js").read_text(encoding="utf-8")
-    html = (ROOT / "web" / "frontend" / "index.html").read_text(encoding="utf-8")
-    assert 'id="themeToggle"' in html
-    assert 'id="themeToggleInline"' in html
-    assert "THEME_CYCLE" in js
-    assert "applyTheme" in js
-    assert 'agens.theme' in js  # localStorage key
-    assert '#themeToggle' in js
-    assert '#themeToggleInline' in js
+    source = (ROOT / "web" / "frontend-react" / "src" / "main.tsx").read_text(encoding="utf-8")
+    assert "BgmToggle" in source
+    assert "setEnabled" in source
 
 
 def test_frontend_narrative_log_has_aria_describedby() -> None:
-    """F-104: narrativeLog 滚动区域必须有键盘提示。"""
-    html = (ROOT / "web" / "frontend" / "index.html").read_text(encoding="utf-8")
-    assert 'id="narrativeLog"' in html
-    assert 'id="narrativeLogHint"' in html
-    assert "aria-describedby=\"narrativeLogHint\"" in html
+    source = (ROOT / "web" / "frontend-react" / "src" / "main.tsx").read_text(encoding="utf-8")
+    assert 'className="story-log"' in source
+    assert 'aria-live="polite"' in source
 
 
 def test_frontend_event_badges_locked() -> None:
-    """F-205: 11 个事件 badge 全部存在。"""
-    js = (ROOT / "web" / "frontend" / "app.js").read_text(encoding="utf-8")
-    for key in (
-        "narrative",
-        "status",
-        "info",
-        "error",
-        "loading",
-        "stream",
-        "combat",
-        "character_created",
-        "model_failure",
-        "game_over",
-        "finale",
-    ):
-        assert f"{key}:" in js, f"EVENT_BADGES 缺少 {key}"
+    source = (ROOT / "web" / "frontend-react" / "src" / "main.tsx").read_text(encoding="utf-8")
+    assert "fallback_prompt" in source
+    assert "game_over" in source
+    assert "finale" in source

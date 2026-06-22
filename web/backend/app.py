@@ -33,7 +33,6 @@ from .security import BodySizeLimitMiddleware, RateLimiter, client_key, enforce_
 from .service import GUEST_USER_PREFIX, WebGameService, is_guest_user_id
 from .catalog_seed import catalog_as_json
 
-FRONTEND_DIR = Path(__file__).resolve().parents[1] / "frontend"
 FRONTEND_REACT_DIST = Path(__file__).resolve().parents[1] / "frontend-react" / "dist"
 SAFE_ERROR = "请求无法完成，请稍后再试。"
 
@@ -514,17 +513,9 @@ def create_app(db_path: Path | None = None) -> FastAPI:
     ) -> dict[str, Any]:
         return service.update_model_settings(payload.model_dump())
 
-    legacy_frontend_enabled = os.environ.get("AGENS_ENABLE_LEGACY_FRONTEND", "").strip().lower() in (
-        "1",
-        "true",
-        "yes",
-    )
     frontend_dir = FRONTEND_REACT_DIST if FRONTEND_REACT_DIST.exists() else None
-    if frontend_dir is None and legacy_frontend_enabled:
-        frontend_dir = FRONTEND_DIR
     if frontend_dir is not None and frontend_dir.exists():
-        legacy_assets_dir = FRONTEND_DIR / "assets"
-        assets_dir = legacy_assets_dir if legacy_assets_dir.exists() else frontend_dir / "assets"
+        assets_dir = frontend_dir / "assets"
         if assets_dir.exists():
             app.mount("/assets", StaticFiles(directory=assets_dir), name="assets")
         app.mount("/static", StaticFiles(directory=frontend_dir), name="static")

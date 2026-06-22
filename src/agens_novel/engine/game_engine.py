@@ -39,6 +39,7 @@ from .action_delta_policy import (
 )
 from .choices import (
     CHOICE_FALLBACK_NOTICE,
+    complete_choices,
     fallback_choices,
     normalize_choices,
 )
@@ -156,7 +157,7 @@ class GameEngine:
         emit_local_story_narrative: bool = False,
     ) -> bool:
         """Set current choices from model output, falling back only when empty."""
-        choices = normalize_choices(raw_choices)
+        choices = complete_choices(raw_choices, self.game_session)
         if choices:
             self.game_session.last_choices = choices
             return False
@@ -420,7 +421,7 @@ class GameEngine:
         if world_profile.get("initial_situation"):
             self.game_session.lore_facts.insert(0, world_profile["initial_situation"])
 
-        profile_choices = normalize_choices(profile.get("choices"))
+        profile_choices = complete_choices(profile.get("choices"), self.game_session)
         self._emit("on_loading", "天道推演开局中...")
         generated_opening, generated_choices = self._generate_profile_opening(profile, special)
         if self.game_session.game_over:
@@ -556,7 +557,7 @@ class GameEngine:
             self.game_session.day_count = world.get("day_count", self.game_session.day_count)
 
         opening = str(generated.get("opening_narrative") or result.get("opening_narrative") or "")
-        return opening, normalize_choices(generated.get("choices"))
+        return opening, complete_choices(generated.get("choices"), self.game_session)
 
     def handle_action(self, text: str) -> None:
         """Process a player action through Narrator + Judge.
