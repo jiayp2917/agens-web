@@ -12,6 +12,7 @@ import {
   Send,
   Settings,
   ShieldAlert,
+  Sparkles,
   Upload,
   UserRound,
   Volume2,
@@ -23,6 +24,13 @@ import "./styles.css";
 type View = "home" | "auth" | "character" | "game" | "ending";
 type AuthMode = "login" | "register";
 type DialogMode = "settings" | "saves";
+type ChoiceMode = "manual" | "random";
+type CatalogItem = {
+  name: string;
+  rarity?: string;
+  grade?: string;
+  description?: string;
+};
 
 const attributes = [
   ["root_bone", "根骨"],
@@ -32,6 +40,45 @@ const attributes = [
   ["physique", "体魄"],
   ["spiritual_sense", "神识"],
 ] as const;
+
+const fallbackCatalogs = {
+  talents: [
+    { name: "平平无奇", rarity: "白" },
+    { name: "草木亲和", rarity: "绿" },
+    { name: "剑心微明", rarity: "蓝" },
+    { name: "惊雷骨", rarity: "紫" },
+    { name: "天命道胎", rarity: "橙" },
+  ],
+  spiritRoots: [
+    { name: "金灵根", grade: "白" },
+    { name: "木灵根", grade: "绿" },
+    { name: "水灵根", grade: "蓝" },
+    { name: "火灵根", grade: "紫" },
+    { name: "冰灵根", grade: "橙" },
+    { name: "雷灵根", grade: "红" },
+  ],
+  families: [
+    { name: "农家", rarity: "白" },
+    { name: "寒门", rarity: "绿" },
+    { name: "小族", rarity: "蓝" },
+    { name: "宗门旁支", rarity: "紫" },
+    { name: "隐世仙族", rarity: "橙" },
+  ],
+  difficulties: [{ name: "简单" }, { name: "普通" }, { name: "困难" }],
+} satisfies Record<string, CatalogItem[]>;
+
+const manualTalentNames = new Set(["平平无奇", "草木亲和", "剑心微明", "惊雷骨"]);
+const manualSpiritRootNames = new Set(["金灵根", "木灵根", "水灵根", "火灵根", "土灵根", "冰灵根", "雷灵根", "风灵根"]);
+const manualFamilyNames = new Set(["农家", "寒门", "小族", "宗门旁支"]);
+const randomOnlySpiritRootNames = new Set(["阴阳灵根", "混沌灵根"]);
+const manualAttributeBudget = 300;
+const manualAttributeMin = 20;
+const manualAttributeMax = 80;
+
+const randomBetween = (min: number, max: number) => Math.floor(Math.random() * (max - min + 1)) + min;
+const pickRandom = <T,>(items: T[]) => items[Math.floor(Math.random() * items.length)];
+const isManualRarity = (item: CatalogItem) => !["传说", "橙", "红"].includes(String(item.rarity || item.grade || ""));
+const uniqueByName = (items: CatalogItem[]) => Array.from(new Map(items.map((item) => [item.name, item])).values());
 
 function App() {
   const [user, setUser] = useState<User | null>(null);
@@ -108,6 +155,12 @@ function App() {
     setView("home");
   };
 
+  const returnHome = () => {
+    setDialogMode(null);
+    setSession(null);
+    setView("home");
+  };
+
   return (
     <main className="app">
       <header className="topbar">
@@ -149,6 +202,7 @@ function App() {
         <CharacterCreatePage
           session={session}
           runTurn={runTurn}
+          busy={busy}
           onBack={() => setView("home")}
         />
       )}
@@ -158,6 +212,7 @@ function App() {
           busy={busy}
           runTurn={runTurn}
           openDialog={openDialog}
+          onHome={returnHome}
         />
       )}
       {view === "ending" && session && (
@@ -332,26 +387,99 @@ function AuthPage({
 function CharacterCreatePage({
   session,
   runTurn,
+  busy,
   onBack,
 }: {
   session: Session;
   runTurn: (path: string, body: unknown) => Promise<void>;
+  busy: boolean;
   onBack: () => void;
 }) {
-  const [randomize, setRandomize] = useState(true);
+  const [choiceMode, setChoiceMode] = useState<ChoiceMode>("manual");
+  const [talents, setTalents] = useState<CatalogItem[]>(fallbackCatalogs.talents);
+  const [spiritRoots, setSpiritRoots] = useState<CatalogItem[]>(fallbackCatalogs.spiritRoots);
+  const [families, setFamilies] = useState<CatalogItem[]>(fallbackCatalogs.families);
+  const [difficulties, setDifficulties] = useState<CatalogItem[]>(fallbackCatalogs.difficulties);
+  const [talent, setTalent] = useState("平平无奇");
+  const [spiritRoot, setSpiritRoot] = useState("金灵根");
+  const [familyBackground, setFamilyBackground] = useState("农家");
+  const [difficulty, setDifficulty] = useState("普通");
+  const [attrValues, setAttrValues] = useState<Record<(typeof attributes)[number][0], number>>(() =>
+    Object.fromEntries(attributes.map(([key]) => [key, 50])) as Record<(typeof attributes)[number][0], number>,
+  );
+  const manualTalents = useMemo(
+    () => uniqueByName([...fallbackCatalogs.talents.filter((item) => manualTalentNames.has(item.name)), ...talents.filter(isManualRarity)]),
+    [talents],
+  );
+  const randomTalents = useMemo(() => talents.length ? talents : fallbackCatalogs.talents, [talents]);
+  const manualRoots = useMemo(
+    () => uniqueByName([
+      ...fallbackCatalogs.spiritRoots.filter((item) => manualSpiritRootNames.has(item.name)),
+      ...spiritRoots.filter((item) => !randomOnlySpiritRootNames.has(item.name)),
+    ]),
+    [spiritRoots],
+  );
+  const randomRoots = useMemo(() => spiritRoots.length ? spiritRoots : fallbackCatalogs.spiritRoots, [spiritRoots]);
+  const manualFamilies = useMemo(
+    () => uniqueByName([...fallbackCatalogs.families.filter((item) => manualFamilyNames.has(item.name)), ...families.filter(isManualRarity)]),
+    [families],
+  );
+  const randomFamilies = useMemo(() => families.length ? families : fallbackCatalogs.families, [families]);
+  const attrTotal = attributes.reduce((sum, [key]) => sum + attrValues[key], 0);
+  const remainingPoints = manualAttributeBudget - attrTotal;
+
+  const loadCatalog = <T extends CatalogItem>(path: string, fallback: T[], setter: (items: T[]) => void) => {
+    api<T[]>(path)
+      .then((items) => setter(items.length ? items : fallback))
+      .catch(() => setter(fallback));
+  };
+
+  useEffect(() => {
+    loadCatalog("/api/catalog/talents", fallbackCatalogs.talents, setTalents);
+    loadCatalog("/api/catalog/spirit_roots", fallbackCatalogs.spiritRoots, setSpiritRoots);
+    loadCatalog("/api/catalog/family_backgrounds", fallbackCatalogs.families, setFamilies);
+    loadCatalog("/api/catalog/difficulties", fallbackCatalogs.difficulties, setDifficulties);
+  }, []);
+
+  useEffect(() => {
+    if (choiceMode === "manual") {
+      if (!manualTalents.some((item) => item.name === talent)) setTalent(manualTalents[0]?.name || "平平无奇");
+      if (!manualRoots.some((item) => item.name === spiritRoot)) setSpiritRoot(manualRoots[0]?.name || "金灵根");
+      if (!manualFamilies.some((item) => item.name === familyBackground)) setFamilyBackground(manualFamilies[0]?.name || "农家");
+    }
+  }, [choiceMode, manualTalents, manualRoots, manualFamilies, talent, spiritRoot, familyBackground]);
+
+  const rollRandom = () => {
+    setChoiceMode("random");
+    setTalent(pickRandom(randomTalents).name);
+    setSpiritRoot(pickRandom(randomRoots).name);
+    setFamilyBackground(pickRandom(randomFamilies).name);
+    setDifficulty(pickRandom(difficulties.length ? difficulties : fallbackCatalogs.difficulties).name);
+    setAttrValues(Object.fromEntries(attributes.map(([key]) => [key, randomBetween(18, 99)])) as Record<(typeof attributes)[number][0], number>);
+  };
+
+  const setAttr = (key: (typeof attributes)[number][0], nextValue: number) => {
+    setAttrValues((current) => {
+      const value = Math.max(manualAttributeMin, Math.min(manualAttributeMax, nextValue));
+      const others = attributes.reduce((sum, [itemKey]) => sum + (itemKey === key ? 0 : current[itemKey]), 0);
+      const capped = Math.min(value, manualAttributeBudget - others);
+      return { ...current, [key]: Math.max(manualAttributeMin, capped) };
+    });
+  };
+
   const submit = async (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault();
     const form = new FormData(event.currentTarget);
-    const attrs = Object.fromEntries(attributes.map(([key]) => [key, Number(form.get(key) || 50)]));
+    const randomizeAttributes = choiceMode === "random";
     await runTurn(`/api/sessions/${session.session_id}/start`, {
       game_name: String(form.get("game_name") || ""),
       char_name: String(form.get("char_name") || ""),
-      talent: String(form.get("talent") || ""),
-      spirit_root: String(form.get("spirit_root") || ""),
-      family_background: String(form.get("family_background") || ""),
-      difficulty: String(form.get("difficulty") || "普通"),
-      randomize_attributes: randomize,
-      attributes: randomize ? {} : attrs,
+      talent,
+      spirit_root: spiritRoot,
+      family_background: familyBackground,
+      difficulty,
+      randomize_attributes: randomizeAttributes,
+      attributes: randomizeAttributes ? {} : attrValues,
     });
   };
 
@@ -364,23 +492,60 @@ function CharacterCreatePage({
         </div>
         <h2>角色信息<span className="seal">始</span></h2>
         <div className="mode-grid" aria-label="游玩模式">
-          <button type="button" className="active-mode">引导模式</button>
+          <button type="button" className="active-mode">游戏模式 Alpha</button>
           <button type="button" disabled>小说模式</button>
-          <button type="button" disabled>游戏模式</button>
+          <button type="button" disabled>引导模式</button>
+        </div>
+        <div className="creation-mode" aria-label="开局方式">
+          <button type="button" className={choiceMode === "manual" ? "selected-tool" : ""} onClick={() => setChoiceMode("manual")}>自行选择</button>
+          <button type="button" className={choiceMode === "random" ? "selected-tool" : ""} onClick={rollRandom}><Sparkles size={16} />随机生成</button>
         </div>
         <div className="form-grid">
           <label>游戏名称<input name="game_name" placeholder="本局世界种子" /></label>
           <label>角色名<input name="char_name" placeholder="留空则自动生成" /></label>
-          <label>天赋<select name="talent"><option>平平无奇</option><option>剑心微明</option><option>天命道胎</option></select></label>
-          <label>灵根<select name="spirit_root"><option>金灵根</option><option>木灵根</option><option>水灵根</option><option>火灵根</option><option>雷灵根</option></select></label>
-          <label>家世<select name="family_background"><option>农家</option><option>寒门</option><option>小族</option><option>宗门旁支</option></select></label>
-          <label>难度<select name="difficulty"><option>简单</option><option>普通</option><option>困难</option></select></label>
+          <label>天赋<select name="talent" value={talent} disabled={choiceMode === "random"} onChange={(event) => setTalent(event.target.value)}>
+            {(choiceMode === "manual" ? manualTalents : randomTalents).map((item) => <option key={item.name}>{item.name}</option>)}
+          </select></label>
+          <label>灵根<select name="spirit_root" value={spiritRoot} disabled={choiceMode === "random"} onChange={(event) => setSpiritRoot(event.target.value)}>
+            {(choiceMode === "manual" ? manualRoots : randomRoots).map((item) => <option key={item.name}>{item.name}</option>)}
+          </select></label>
+          <label>家世<select name="family_background" value={familyBackground} disabled={choiceMode === "random"} onChange={(event) => setFamilyBackground(event.target.value)}>
+            {(choiceMode === "manual" ? manualFamilies : randomFamilies).map((item) => <option key={item.name}>{item.name}</option>)}
+          </select></label>
+          <label>难度<select name="difficulty" value={difficulty} onChange={(event) => setDifficulty(event.target.value)}>
+            {difficulties.map((item) => <option key={item.name}>{item.name}</option>)}
+          </select></label>
         </div>
-        <label className="toggle"><input type="checkbox" checked={randomize} onChange={(event) => setRandomize(event.target.checked)} />随机属性</label>
+        <div className="selection-preview" aria-live="polite">
+          <span className="rarity-chip rarity-purple">手选最高：紫</span>
+          <span className="rarity-chip rarity-red">随机可出：白/绿/蓝/紫/橙/红</span>
+          <span>当前：{talent} · {spiritRoot} · {familyBackground}</span>
+        </div>
+        <div className="unlock-note">通关和结局奖励会逐步解锁更高阶天赋、家世和灵根。</div>
+        <div className="attr-budget">
+          <strong>{choiceMode === "manual" ? `手动点数 ${attrTotal}/${manualAttributeBudget}` : "随机属性已生成"}</strong>
+          <span>{choiceMode === "manual" ? `单项 ${manualAttributeMin}-${manualAttributeMax}` : "随机不占用手动点数预算"}</span>
+          {choiceMode === "manual" && <span>{remainingPoints >= 0 ? `剩余 ${remainingPoints}` : `超出 ${Math.abs(remainingPoints)}`}</span>}
+        </div>
         <div className="attr-grid">
-          {attributes.map(([key, label]) => <label key={key}>{label}<input disabled={randomize} name={key} type="range" min="0" max="100" defaultValue="50" /></label>)}
+          {attributes.map(([key, label]) => (
+            <label key={key}>
+              <span className="attr-label"><span>{label}</span><output>{attrValues[key]}</output></span>
+              <input
+                disabled={choiceMode === "random"}
+                name={key}
+                type="range"
+                min={manualAttributeMin}
+                max={manualAttributeMax}
+                value={Math.min(manualAttributeMax, attrValues[key])}
+                onChange={(event) => setAttr(key, Number(event.target.value))}
+              />
+            </label>
+          ))}
         </div>
-        <button className="primary-btn" type="submit">开始修行</button>
+        <button className="primary-btn start-btn" disabled={busy || (choiceMode === "manual" && attrTotal > manualAttributeBudget)} type="submit">
+          {busy ? "推演中..." : "开始修行"}
+        </button>
       </form>
     </section>
   );
@@ -391,11 +556,13 @@ function GamePage({
   busy,
   runTurn,
   openDialog,
+  onHome,
 }: {
   session: Session;
   busy: boolean;
   runTurn: (path: string, body: unknown) => Promise<void>;
   openDialog: (mode: DialogMode) => void;
+  onHome: () => void;
 }) {
   const character = session.character || {};
   const world = session.world || {};
@@ -419,6 +586,7 @@ function GamePage({
           <span className="session-mode">{session.guest ? "访客局 · 不提供云端存档" : "账号局 · 可存档"}</span>
         </div>
         <div className="summary-actions">
+          <button className="plain-btn return-home-btn" type="button" onClick={onHome}><Home size={16} />返回首页</button>
           <button className="icon-btn" onClick={() => openDialog("saves")} aria-label="存档"><Save size={20} /></button>
           <button className="icon-btn" onClick={() => openDialog("settings")} aria-label="设置"><Settings size={20} /></button>
         </div>
@@ -426,8 +594,15 @@ function GamePage({
       <div className="game-grid">
         <aside className="status-panel">
           <strong>{world.location || "山门"}</strong>
-          <p>气血 {character.hp || 0}/{character.hp_max || 0}</p>
-          <p>灵力 {character.mp || 0}/{character.mp_max || 0}</p>
+          <div className="stat-stack">
+            <StatLine label="气血" value={Number(character.hp || 0)} max={Number(character.hp_max || 0)} />
+            <StatLine label="灵力" value={Number(character.mp || 0)} max={Number(character.mp_max || 0)} />
+          </div>
+          <dl className="character-meta">
+            <dt>年龄</dt><dd>{character.age || 16}</dd>
+            <dt>灵根</dt><dd>{character.spirit_root || "未明"}</dd>
+            <dt>天赋</dt><dd>{character.talent || "平平无奇"}</dd>
+          </dl>
           <div className="tool-grid">
             {([
               ["status", "状态"],
@@ -440,7 +615,18 @@ function GamePage({
               <button key={key} className={panel === key ? "selected-tool" : ""} onClick={() => setPanel(key)}>{label}</button>
             ))}
           </div>
-          <pre className="panel-output">{String(session.panels?.[panel] || "暂无内容。")}</pre>
+          {panel === "status" ? (
+            <dl className="panel-summary">
+              <dt>境界</dt><dd>{character.realm || "练气"}{character.realm_stage || 1}层</dd>
+              <dt>气运</dt><dd>{character.luck || "平稳"}</dd>
+              <dt>经验</dt><dd>{character.experience ?? 0}/{character.experience_to_next ?? 100}</dd>
+              <dt>感悟</dt><dd>{character.insight ?? 0}/{character.insight_required ?? 30}</dd>
+              <dt>寿元</dt><dd>{character.lifespan || 100} 年</dd>
+              <dt>灵石</dt><dd>{character.gold ?? 0}</dd>
+            </dl>
+          ) : (
+            <pre className="panel-output">{String(session.panels?.[panel] || "暂无内容。")}</pre>
+          )}
         </aside>
         <section className="story-panel">
           {session.fallback_prompt?.active && <FallbackBanner session={session} busy={busy} runTurn={runTurn} />}
@@ -462,6 +648,20 @@ function GamePage({
         <button className="primary-btn" disabled={busy} type="submit"><Send size={18} />{busy ? "推演中" : "发送"}</button>
       </form>
     </section>
+  );
+}
+
+function StatLine({ label, value, max }: { label: string; value: number; max: number }) {
+  const safeMax = Math.max(0, Number(max) || 0);
+  const safeValue = Math.max(0, Math.min(Number(value) || 0, safeMax || Number(value) || 0));
+  const percent = safeMax ? Math.round((safeValue / safeMax) * 100) : 0;
+  return (
+    <div className="stat-line">
+      <span><span>{label}</span><strong>{safeValue}/{safeMax}</strong></span>
+      <div className="stat-meter" role="meter" aria-label={label} aria-valuenow={safeValue} aria-valuemin={0} aria-valuemax={safeMax}>
+        <i style={{ width: `${percent}%` }} />
+      </div>
+    </div>
   );
 }
 

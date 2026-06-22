@@ -494,6 +494,43 @@ def test_model_failure_events_are_public_safe(tmp_path: Path, monkeypatch) -> No
     assert "模型暂不可用，当前以本地故事继续。" in body
 
 
+def test_start_accepts_seeded_catalog_character_options(tmp_path: Path, monkeypatch) -> None:
+    monkeypatch.setenv("AGNES_API_KEY", "sk-test-web-api")
+    monkeypatch.setenv("SESSION_COOKIE_SECURE", "0")
+    app = create_app(tmp_path / "agens_web.sqlite3")
+    client = TestClient(app)
+    _create_invite(app)
+    _register(client)
+    session_id = client.post("/api/sessions", json={}).json()["session_id"]
+
+    with patch("agens_novel.engine.game_engine.run_turn_sync", side_effect=_runner):
+        started = client.post(
+            f"/api/sessions/{session_id}/start",
+            json={
+                "char_name": "许满",
+                "talent": "万法归宗",
+                "spirit_root": "混沌灵根",
+                "family_background": "隐世仙族",
+                "difficulty": "普通",
+                "randomize_attributes": False,
+                "attributes": {
+                    "root_bone": 50,
+                    "comprehension": 50,
+                    "luck": 50,
+                    "willpower": 50,
+                    "physique": 50,
+                    "spiritual_sense": 50,
+                },
+            },
+        ).json()
+
+    assert started["game_started"] is True
+    assert started["character"]["talent"] == "万法归宗"
+    assert started["character"]["spirit_root"] == "混沌灵根"
+    assert started["character"]["spirit_root_grade"] == "天"
+    assert started["character"]["family_background"] == "隐世仙族"
+
+
 @pytest.mark.skipif(not os.environ.get("TEST_DATABASE_URL"), reason="TEST_DATABASE_URL not configured")
 def test_postgres_database_url_smoke(monkeypatch) -> None:
     from alembic import command

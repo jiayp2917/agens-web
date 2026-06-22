@@ -94,6 +94,38 @@ def test_react_homepage_buttons_have_handlers() -> None:
     assert "agens web" not in source.lower()
 
 
+def test_react_character_creation_uses_catalogs_and_game_mode() -> None:
+    source = (ROOT / "web" / "frontend-react" / "src" / "main.tsx").read_text(encoding="utf-8")
+    css = (ROOT / "web" / "frontend-react" / "src" / "styles.css").read_text(encoding="utf-8")
+
+    for path in (
+        "/api/catalog/talents",
+        "/api/catalog/spirit_roots",
+        "/api/catalog/family_backgrounds",
+        "/api/catalog/difficulties",
+    ):
+        assert path in source
+    assert "游戏模式 Alpha" in source
+    assert "自行选择" in source
+    assert "随机生成" in source
+    assert "手选最高：紫" in source
+    assert "推演中..." in source
+    assert "choice_card_mountain.png" not in css
+    assert 'url("/assets/ink_mountain_gate.png")' in css
+
+
+def test_react_game_page_has_escape_route_and_stable_meters() -> None:
+    source = (ROOT / "web" / "frontend-react" / "src" / "main.tsx").read_text(encoding="utf-8")
+    css = (ROOT / "web" / "frontend-react" / "src" / "styles.css").read_text(encoding="utf-8")
+
+    assert "onHome={returnHome}" in source
+    assert "返回首页" in source
+    assert "function StatLine" in source
+    assert "role=\"meter\"" in source
+    assert ".stat-meter" in css
+    assert "grid-template-rows: auto minmax(0, 1fr) auto;" in css
+
+
 def test_react_turn_actions_disable_while_busy() -> None:
     source = (ROOT / "web" / "frontend-react" / "src" / "main.tsx").read_text(encoding="utf-8")
 

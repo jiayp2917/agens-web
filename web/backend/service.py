@@ -465,14 +465,48 @@ class WebGameService:
             if not isinstance(attrs, dict):
                 normalized["attributes"] = dict(DEFAULT_ATTRIBUTES)
 
-        normalized["talent"] = _pick(str(normalized.get("talent") or ""), TALENT_OPTIONS)
-        normalized["family_background"] = _pick(
-            str(normalized.get("family_background") or ""), FAMILY_BACKGROUNDS
+        catalog_talents = self._catalog_names("catalog_talents")
+        catalog_families = self._catalog_names("catalog_family_backgrounds")
+        catalog_roots = self._catalog_names("catalog_spirit_roots")
+        catalog_difficulties = self._catalog_names("catalog_difficulties")
+
+        normalized["talent"] = _pick(
+            str(normalized.get("talent") or ""), TALENT_OPTIONS + catalog_talents
         )
-        normalized["difficulty"] = _pick(str(normalized.get("difficulty") or ""), DIFFICULTY_OPTIONS)
+        normalized["family_background"] = _pick(
+            str(normalized.get("family_background") or ""), FAMILY_BACKGROUNDS + catalog_families
+        )
+        normalized["difficulty"] = _pick(
+            str(normalized.get("difficulty") or ""), DIFFICULTY_OPTIONS + catalog_difficulties
+        )
         roots = [item["name"] for item in SPIRIT_ROOTS]
-        normalized["spirit_root"] = _pick(str(normalized.get("spirit_root") or ""), roots)
+        normalized["spirit_root"] = _pick(
+            str(normalized.get("spirit_root") or ""), roots + catalog_roots
+        )
+        if not normalized.get("spirit_root_grade"):
+            normalized["spirit_root_grade"] = self._catalog_spirit_root_grade(
+                normalized["spirit_root"]
+            )
         return normalized
+
+    def _catalog_names(self, table: str) -> list[str]:
+        try:
+            return [
+                str(row.get("name") or "")
+                for row in self.db.list_catalog(table)
+                if str(row.get("name") or "")
+            ]
+        except Exception:
+            return []
+
+    def _catalog_spirit_root_grade(self, name: str) -> str:
+        try:
+            for row in self.db.list_catalog("catalog_spirit_roots"):
+                if row.get("name") == name:
+                    return str(row.get("grade") or "")
+        except Exception:
+            return ""
+        return ""
 
     def _choice_text(self, runner: WebRunner, payload: dict[str, Any]) -> str:
         choices = list(runner.engine.game_session.last_choices or [])
