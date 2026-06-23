@@ -1,5 +1,5 @@
 import { FormEvent, useEffect, useMemo, useState } from "react";
-import { Home, Sparkles } from "lucide-react";
+import { CheckCircle2, ChevronRight, Dice5, Home, Minus, Plus, Sparkles } from "lucide-react";
 import { api, type Session } from "../lib/api";
 import {
   CatalogItem,
@@ -21,6 +21,7 @@ import {
   colorLabel,
   rarityToColor,
 } from "../lib/util";
+import { RarityDot, rarityClassName } from "../components/RarityDot";
 
 type ChoiceMode = "manual" | "random";
 
@@ -69,6 +70,9 @@ export function CharacterCreatePage({
   const randomFamilies = useMemo(() => families.length ? families : fallbackCatalogs.families, [families]);
   const attrTotal = attributes.reduce((sum, [key]) => sum + attrValues[key], 0);
   const remainingPoints = manualAttributeBudget - attrTotal;
+  const selectedTalent = (choiceMode === "manual" ? manualTalents : randomTalents).find((item) => item.name === talent);
+  const selectedRoot = (choiceMode === "manual" ? manualRoots : randomRoots).find((item) => item.name === spiritRoot);
+  const selectedFamily = (choiceMode === "manual" ? manualFamilies : randomFamilies).find((item) => item.name === familyBackground);
 
   const loadCatalog = <T extends CatalogItem>(path: string, fallback: T[], setter: (items: T[]) => void) => {
     api<T[]>(path)
@@ -108,6 +112,31 @@ export function CharacterCreatePage({
     });
   };
 
+  const adjustAttr = (key: (typeof attributes)[number][0], delta: number) => setAttr(key, attrValues[key] + delta);
+
+  const renderCatalogOption = (
+    item: CatalogItem,
+    selected: boolean,
+    onSelect: (name: string) => void,
+    disabled: boolean,
+  ) => {
+    const color = rarityToColor(item.rarity || item.grade);
+    return (
+      <button
+        type="button"
+        key={item.name}
+        className={`catalog-row ${selected ? "is-selected" : ""}`}
+        onClick={() => onSelect(item.name)}
+        disabled={disabled}
+      >
+        <RarityDot color={color} />
+        <span>{item.name}</span>
+        <em className={rarityClassName(color)}>{color}</em>
+        {selected && <CheckCircle2 size={18} aria-hidden="true" />}
+      </button>
+    );
+  };
+
   const submit = async (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault();
     const form = new FormData(event.currentTarget);
@@ -125,67 +154,85 @@ export function CharacterCreatePage({
 
   return (
     <section className="character-page">
-      <form className="character-form" onSubmit={submit}>
-        <div className="form-topline">
-          <p className="eyebrow">开局设定</p>
+      <form className="character-form creation-layout" onSubmit={submit}>
+        <div className="creation-hero-bar">
+          <a className="brand creation-brand" href="https://www.jiayp2917.xyz/" target="_blank" rel="noreferrer">jiayp</a>
           <button className="plain-btn" type="button" onClick={onBack}><Home size={16} />返回首页</button>
         </div>
-        <h2>角色信息<span className="seal">始</span></h2>
-        <div className="mode-grid" aria-label="游玩模式">
-          <button type="button" className="active-mode">游戏模式 Alpha</button>
-          <button type="button" disabled>小说模式</button>
-          <button type="button" disabled>引导模式</button>
-        </div>
-        <div className="creation-mode" aria-label="开局方式">
-          <button type="button" className={choiceMode === "manual" ? "selected-tool" : ""} onClick={() => setChoiceMode("manual")}>自行选择</button>
-          <button type="button" className={choiceMode === "random" ? "selected-tool" : ""} onClick={rollRandom}><Sparkles size={16} />随机生成</button>
-        </div>
-        <div className="form-grid">
-          <label>角色名<input name="char_name" placeholder="留空则自动生成" /></label>
-          <label>天赋<select name="talent" value={talent} disabled={choiceMode === "random"} onChange={(event) => setTalent(event.target.value)}>
-            {(choiceMode === "manual" ? manualTalents : randomTalents).map((item) => <option key={item.name} value={item.name}>{colorLabel(item)}</option>)}
-          </select></label>
-          <label>灵根<select name="spirit_root" value={spiritRoot} disabled={choiceMode === "random"} onChange={(event) => setSpiritRoot(event.target.value)}>
-            {(choiceMode === "manual" ? manualRoots : randomRoots).map((item) => <option key={item.name} value={item.name}>{colorLabel(item)}</option>)}
-          </select></label>
-          <label>家世<select name="family_background" value={familyBackground} disabled={choiceMode === "random"} onChange={(event) => setFamilyBackground(event.target.value)}>
-            {(choiceMode === "manual" ? manualFamilies : randomFamilies).map((item) => <option key={item.name} value={item.name}>{colorLabel(item)}</option>)}
-          </select></label>
-          <label>难度<select name="difficulty" value={difficulty} onChange={(event) => setDifficulty(event.target.value)}>
-            {difficulties.map((item) => <option key={item.name}>{item.name}</option>)}
-          </select></label>
-        </div>
-        <div className="selection-preview" aria-live="polite">
-          <span className="rarity-chip rarity-purple">手选最高：紫</span>
-          <span className="rarity-chip rarity-red">随机可出：白/绿/蓝/紫/橙/红</span>
-          <span>难度：{difficulty}</span>
-          <span>当前：{talent} · {spiritRoot} · {familyBackground}</span>
-        </div>
-        <div className="unlock-note">通关和结局奖励会逐步解锁更高阶天赋、家世和灵根。</div>
-        <div className="attr-budget">
-          <strong>{choiceMode === "manual" ? `手动点数 ${attrTotal}/${manualAttributeBudget}` : "随机属性已生成"}</strong>
-          <span>{choiceMode === "manual" ? `单项 ${manualAttributeMin}-${manualAttributeMax}` : "随机不占用手动点数预算"}</span>
-          {choiceMode === "manual" && <span>{remainingPoints >= 0 ? `剩余 ${remainingPoints}` : `超出 ${Math.abs(remainingPoints)}`}</span>}
-        </div>
-        <div className="attr-grid">
-          {attributes.map(([key, label]) => (
-            <label key={key}>
-              <span className="attr-label"><span>{label}</span><output>{attrValues[key]}</output></span>
-              <input
-                disabled={choiceMode === "random"}
-                name={key}
-                type="range"
-                min={manualAttributeMin}
-                max={manualAttributeMax}
-                value={Math.min(manualAttributeMax, attrValues[key])}
-                onChange={(event) => setAttr(key, Number(event.target.value))}
-              />
-            </label>
-          ))}
-        </div>
-        <button className="primary-btn start-btn" disabled={busy || (choiceMode === "manual" && attrTotal > manualAttributeBudget)} type="submit">
-          {busy ? "进入中..." : "开始修行"}
-        </button>
+
+        <section className="creation-panel character-panel">
+          <header>
+            <h2>主角<span className="seal">始</span></h2>
+          </header>
+          <label className="field-block">角色名<input name="char_name" placeholder="留空则自动生成" /></label>
+          <div className="difficulty-list" aria-label="难度选择">
+            {difficulties.map((item) => (
+              <button type="button" key={item.name} className={difficulty === item.name ? "is-selected" : ""} onClick={() => setDifficulty(item.name)}>
+                <span>{item.name}</span>
+                {difficulty === item.name && <CheckCircle2 size={18} />}
+              </button>
+            ))}
+          </div>
+          <div className="creation-mode" aria-label="开局方式">
+            <button type="button" className={choiceMode === "manual" ? "selected-tool" : ""} onClick={() => setChoiceMode("manual")}>自行选择</button>
+            <button type="button" className={choiceMode === "random" ? "selected-tool" : ""} onClick={rollRandom}><Dice5 size={16} />随机角色</button>
+          </div>
+          <div className="selection-preview" aria-live="polite">
+            <span className="rarity-chip rarity-purple">手选最高：紫</span>
+            <span className="rarity-chip rarity-red">随机可出：白/绿/蓝/紫/橙/红</span>
+            <span>难度：{difficulty}</span>
+          </div>
+          <button className="primary-btn start-btn" disabled={busy || (choiceMode === "manual" && attrTotal > manualAttributeBudget)} type="submit">
+            {busy ? "进入中..." : <>开始修行<ChevronRight size={22} /></>}
+          </button>
+        </section>
+
+        <section className="creation-panel fate-panel">
+          <header>
+            <h2>命数<span className="seal">命</span></h2>
+          </header>
+          <div className="catalog-group">
+            <h3><Sparkles size={18} />天赋</h3>
+            {(choiceMode === "manual" ? manualTalents : randomTalents).map((item) => renderCatalogOption(item, item.name === talent, setTalent, choiceMode === "random"))}
+          </div>
+          <div className="catalog-group">
+            <h3>灵根</h3>
+            {(choiceMode === "manual" ? manualRoots : randomRoots).map((item) => renderCatalogOption(item, item.name === spiritRoot, setSpiritRoot, choiceMode === "random"))}
+          </div>
+          <div className="catalog-group">
+            <h3>家世</h3>
+            {(choiceMode === "manual" ? manualFamilies : randomFamilies).map((item) => renderCatalogOption(item, item.name === familyBackground, setFamilyBackground, choiceMode === "random"))}
+          </div>
+          <p className="unlock-note">当前：{colorLabel(selectedTalent || { name: talent })} · {colorLabel(selectedRoot || { name: spiritRoot })} · {colorLabel(selectedFamily || { name: familyBackground })}</p>
+        </section>
+
+        <section className="creation-panel attribute-panel">
+          <header>
+            <h2>六维<span className="seal">体</span></h2>
+            <p>可分配点数：<strong>{Math.max(0, remainingPoints)}</strong>/{manualAttributeBudget}</p>
+          </header>
+          <div className="attr-grid">
+            {attributes.map(([key, label]) => (
+              <label key={key} className={key === "luck" ? "luck-attr" : ""}>
+                <span className="attr-icon" aria-hidden="true">{label.slice(0, 1)}</span>
+                <span className="attr-label"><span>{label}</span><output>{attrValues[key]}</output></span>
+                <button type="button" disabled={choiceMode === "random"} onClick={() => adjustAttr(key, -1)} aria-label={`${label}减少`}><Minus size={18} /></button>
+                <input
+                  disabled={choiceMode === "random"}
+                  name={key}
+                  type="range"
+                  min={manualAttributeMin}
+                  max={manualAttributeMax}
+                  value={Math.min(manualAttributeMax, attrValues[key])}
+                  onChange={(event) => setAttr(key, Number(event.target.value))}
+                />
+                <button type="button" disabled={choiceMode === "random"} onClick={() => adjustAttr(key, 1)} aria-label={`${label}增加`}><Plus size={18} /></button>
+              </label>
+            ))}
+          </div>
+          <p className="attr-help">{choiceMode === "manual" ? `单项 ${manualAttributeMin}-${manualAttributeMax}，总和不超过 ${manualAttributeBudget}` : "随机属性已生成，不占用手动点数预算。"}</p>
+          {choiceMode === "manual" && remainingPoints < 0 && <p className="attr-error">点数超出 {Math.abs(remainingPoints)}，请降低属性后开始。</p>}
+        </section>
       </form>
     </section>
   );

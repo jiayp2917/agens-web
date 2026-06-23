@@ -10,6 +10,7 @@
 - `docs/PROJECT_AUDIT.md`：结构边界、技术债、归档和瘦身方向。
 - `docs/GAME_MODE_SPEC.md`：游戏模式 v5 规格——当前构建目标。代码随此规格切换到游戏模式。
 - `docs/ARCHITECTURE.md`：项目模块架构说明（web/backend + src/agens_novel + web/frontend-react 三层模块地图与串联流程；面向开发者与想了解全局的读者）。
+- `docs/UI_REFACTOR_PLAN.md`：已审核通过的编年史 UI 原型图、页面拆分、组件样式和重构验收标准。
 - `docs/USER_TUTORIAL.md`：面向玩家的完整中文入门教程，从访客/账号选择到飞升/死亡全流程。
 - `docs/ALPHA_REVIEW_AND_LESSONS.md`：Alpha 问题确认、已修内容、成功/失败经验、剩余风险和后续执行规则。
 - `README.md`：最短启动说明和项目入口。
@@ -28,6 +29,7 @@
 | 结构清理 / 技术债 | `docs/PROJECT_AUDIT.md`、`docs/INDEX.md` |
 | Alpha 复盘 / 成功失败经验 | `docs/ALPHA_REVIEW_AND_LESSONS.md`、`CHANGELOG.md` |
 | 游戏模式 v5 设计 | `docs/GAME_MODE_SPEC.md` |
+| UI 重构 / 原型落地 | `docs/UI_REFACTOR_PLAN.md`、`docs/ui-prototypes/`、`web/frontend-react/src/pages/`、`web/frontend-react/src/styles.css` |
 | 模块地图 / 接手项目 | `docs/ARCHITECTURE.md`、`docs/PROJECT_AUDIT.md`、`web/backend/app.py` |
 | 新玩家教程 / 用户支持 | `docs/USER_TUTORIAL.md`、`web/frontend-react/src/components/TutorialDialog.tsx` |
 | 历史待办核对 | `docs/archive/2026-06-20-claude-followups.md`、`docs/ALPHA_REVIEW_AND_LESSONS.md` |

@@ -109,9 +109,12 @@ def test_react_character_creation_uses_catalogs_and_game_mode() -> None:
         "/api/catalog/difficulties",
     ):
         assert path in source
-    assert "游戏模式 Alpha" in source
+    assert "creation-layout" in source
+    assert "character-panel" in source
+    assert "fate-panel" in source
+    assert "attribute-panel" in source
     assert "自行选择" in source
-    assert "随机生成" in source
+    assert "随机角色" in source
     assert "手选最高：紫" in source
     assert "进入中..." in source
     assert "难度：{difficulty}" in source
@@ -135,6 +138,9 @@ def test_react_game_page_has_escape_route_and_stable_meters() -> None:
         "main.tsx",
         "pages/GamePage.tsx",
         "components/StatLine.tsx",
+        "components/LifespanBar.tsx",
+        "components/ChronicleItem.tsx",
+        "components/ChoiceButton.tsx",
         "lib/catalog.ts",
     )
     css = (SRC / "styles.css").read_text(encoding="utf-8")
@@ -145,9 +151,12 @@ def test_react_game_page_has_escape_route_and_stable_meters() -> None:
     assert 'role="meter"' in source
     assert "realmLifespanCap" in source
     assert "value={remainingLifespan}" in source
+    assert "ChronicleItem" in source
+    assert "ChoiceButton" in source
+    assert "往事时间轴" in source
     assert ".stat-meter" in css
-    assert "grid-template-rows: auto minmax(0, 1fr) auto;" in css
-    assert 'grid-template-columns: auto minmax(0, 1fr);' in css
+    assert "grid-template-rows: auto minmax(0, 1fr) auto auto;" in css
+    assert "grid-template-columns: 58px minmax(0, 1fr) auto;" in css
     # v5 cleanup: lifespan reads the remaining value, not the realm cap; UI shows remaining/max.
     assert "character.remaining_lifespan" in source
     assert "{remainingLifespan}/{lifespanMax}" in source
