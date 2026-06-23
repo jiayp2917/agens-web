@@ -47,21 +47,6 @@ def build_prompt(state: dict[str, Any]) -> dict[str, Any]:
         raise FileNotFoundError(f"System prompt not found: {system_path}")
     system_message = system_path.read_text(encoding="utf-8").strip()
 
-    # If in combat, append combat narrator instructions.
-    combat = None
-    char_state = state.get("game_state_json", "{}")
-    try:
-        parsed = json.loads(char_state) if isinstance(char_state, str) else char_state
-        combat = parsed.get("character", {}).get("combat")
-    except (json.JSONDecodeError, ValueError):
-        pass
-
-    if combat and combat.get("phase") not in (None, "idle", ""):
-        combat_prompt_path = paths.system_prompt_path("combat_narrator")
-        if combat_prompt_path.exists():
-            combat_addendum = combat_prompt_path.read_text(encoding="utf-8").strip()
-            system_message = system_message + "\n\n" + combat_addendum
-
     user_input = state.get("user_input", "").strip()
     if not user_input:
         raise ValueError("user_input is required.")

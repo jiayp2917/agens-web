@@ -13,28 +13,22 @@ from typing import Any
 from ..game.constants import (
     DEFAULT_ATTRIBUTES,
     DEFAULT_EQUIPMENT_SLOTS,
-    DEFAULT_GAME_MODE,
+    REALM_LIFESPANS,
     REALM_ORDER,
 )
 
 log = logging.getLogger(__name__)
 
-
-# Fields removed from game-mode v5: HP/MP/luck/round-combat. Kept here ONLY as
-# soft-compat names so legacy tests, fuzzers and old saves can read/write them
-# without crashing. See docs/GAME_MODE_SPEC.md §4 ("no HP/MP").
-_LEGACY_NUMERIC_FIELDS: frozenset[str] = frozenset(
-    {"hp", "hp_max", "mp", "mp_max", "luck"}
-)
-_LEGACY_CONTAINER_FIELDS: frozenset[str] = frozenset({"combat"})
-_LEGACY_DEFAULTS: dict[str, Any] = {
-    "hp": 100, "hp_max": 100, "mp": 50, "mp_max": 50, "luck": 50,
-    "combat": None,
-}
+_LEGACY_CHARACTER_FIELDS = {"hp", "hp_max", "mp", "mp_max", "combat", "luck", "game_mode"}
 
 
 @dataclass
 class GameSession:
+    def __setattr__(self, name: str, value: Any) -> None:
+        if name in _LEGACY_CHARACTER_FIELDS:
+            raise AttributeError(f"{name} is not part of the game-mode v5 session")
+        super().__setattr__(name, value)
+
     """Stateful session for the xianxia cultivation simulator."""
 
     # ── Persistence ──
@@ -53,7 +47,6 @@ class GameSession:
     talent: str = ""
     family_background: str = ""
     difficulty: str = "普通"
-    game_mode: str = DEFAULT_GAME_MODE
     attributes: dict[str, int] = field(default_factory=lambda: dict(DEFAULT_ATTRIBUTES))
     experience: int = 0
     experience_to_next: int = 100
@@ -121,7 +114,6 @@ class GameSession:
                 "talent": self.talent,
                 "family_background": self.family_background,
                 "difficulty": self.difficulty,
-                "game_mode": self.game_mode,
                 "attributes": self.attributes,
                 "experience": self.experience,
                 "experience_to_next": self.experience_to_next,
@@ -132,6 +124,7 @@ class GameSession:
                 "inventory": self.inventory,
                 "status_effects": self.status_effects,
                 "lifespan": self.lifespan,
+                "remaining_lifespan": self.remaining_lifespan,
                 "equipment_slots": self.equipment_slots,
             },
             "world": {
@@ -229,8 +222,6 @@ class GameSession:
             self.family_background = char_delta["family_background"]
         if "difficulty" in char_delta and isinstance(char_delta["difficulty"], str):
             self.difficulty = char_delta["difficulty"]
-        if "game_mode" in char_delta and isinstance(char_delta["game_mode"], str):
-            self.game_mode = DEFAULT_GAME_MODE
         if "attributes" in char_delta and isinstance(char_delta["attributes"], dict):
             merged = dict(self.attributes)
             for key, value in char_delta["attributes"].items():
@@ -308,12 +299,6 @@ class GameSession:
                         self.equipment_slots[k] = v
                     else:
                         log.warning("apply_delta: unknown equipment slot %r, ignoring", k)
-
-        # Combat state — event-based only; no round-based HP combat.
-        if "combat" in char_delta:
-            combat_delta = char_delta["combat"]
-            log.warning("apply_delta: combat delta ignored (HP/MP removed, combat is event-based)")
-            pass  # silently drop — game-mode combat is event/probability-based
 
         world_delta = delta.get("world", {})
         for key in ("location", "region", "current_scene", "day_count"):
@@ -397,7 +382,6 @@ class GameSession:
                 "talent": self.talent,
                 "family_background": self.family_background,
                 "difficulty": self.difficulty,
-                "game_mode": self.game_mode,
                 "attributes": self.attributes,
                 "experience": self.experience,
                 "experience_to_next": self.experience_to_next,
@@ -407,6 +391,7 @@ class GameSession:
                 "inventory": self.inventory,
                 "status_effects": self.status_effects,
                 "lifespan": self.lifespan,
+                "remaining_lifespan": self.remaining_lifespan,
                 "equipment_slots": self.equipment_slots,
             },
             "world": {
@@ -448,7 +433,6 @@ class GameSession:
         session.talent = char.get("talent", "")
         session.family_background = char.get("family_background", "")
         session.difficulty = char.get("difficulty", "普通")
-        session.game_mode = DEFAULT_GAME_MODE
         attrs = char.get("attributes", {})
         if isinstance(attrs, dict):
             merged_attrs = dict(DEFAULT_ATTRIBUTES)
@@ -496,41 +480,11 @@ class GameSession:
         """Clear all state for a new game."""
         self.__init__()
 
-    # ── Soft-compat shim for legacy HP/MP/luck/combat fields ──────────────
-    # Game-mode v5 dropped these fields (see GAME_MODE_SPEC.md §4). To keep
-    # legacy tests and old save dicts from crashing, allow attribute access:
-    # - legacy writes are stored in a private side-dict;
-    # - legacy reads return the stored value or a default (0 / None);
-    # - the engine never reads these names; they're isolated from real state.
-    # This lets us migrate one batch of legacy tests at a time without a
-    # flag-day rewrite.
-
-    @staticmethod
-    def _legacy_default(name: str) -> Any:
-        return _LEGACY_DEFAULTS.get(name)
-
-    def __getattr__(self, name: str) -> Any:
-        # __getattr__ only fires when normal lookup fails.
-        if name.startswith("_legacy_"):
-            raise AttributeError(name)
-        if name in _LEGACY_NUMERIC_FIELDS or name in _LEGACY_CONTAINER_FIELDS:
-            legacy = self.__dict__.get("_legacy")
-            if legacy is None:
-                return _LEGACY_DEFAULTS.get(name)
-            return legacy.get(name, _LEGACY_DEFAULTS.get(name))
-        raise AttributeError(
-            f"{type(self).__name__!r} object has no attribute {name!r}"
-        )
-
-    def __setattr__(self, name: str, value: Any) -> None:
-        if name in _LEGACY_NUMERIC_FIELDS or name in _LEGACY_CONTAINER_FIELDS:
-            legacy = self.__dict__.get("_legacy")
-            if legacy is None:
-                legacy = {}
-                object.__setattr__(self, "_legacy", legacy)
-            legacy[name] = value
-            return
-        object.__setattr__(self, name, value)
+    @property
+    def remaining_lifespan(self) -> int:
+        """Remaining years before natural death under the current realm cap."""
+        cap = int(self.lifespan or REALM_LIFESPANS.get(self.realm, 100))
+        return max(0, cap - int(self.age or 0))
 
 
 def _dedupe_strings(values: list[Any]) -> list[str]:

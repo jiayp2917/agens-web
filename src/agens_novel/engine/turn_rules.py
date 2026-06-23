@@ -12,6 +12,8 @@ from __future__ import annotations
 import random
 from typing import Any
 
+from ..game.constants import REALM_LIFESPANS
+
 # ── Realm → base years per turn ─────────────────────────────────────────────
 # Higher realms mean longer time spans for each pivotal decision.
 
@@ -41,20 +43,6 @@ _RISK_YEAR_MULTIPLIER: dict[str, float] = {
     "机遇": 1.0,
     "风险": 1.5,
     "气运": 1.0,
-}
-
-# ── Lifespan by realm ───────────────────────────────────────────────────────
-
-_REALM_LIFESPAN: dict[str, int] = {
-    "练气": 100,
-    "筑基": 200,
-    "金丹": 500,
-    "元婴": 1000,
-    "化神": 2000,
-    "合体": 4000,
-    "大乘": 5000,
-    "渡劫": 6000,
-    "飞升": 9999,
 }
 
 # ── Choice → attribute impact ───────────────────────────────────────────────
@@ -116,7 +104,7 @@ def settle_turn(
 
     Returns:
         dict with keys:
-            character: state changes (experience, age, lifespan, hp, etc.)
+            character: state changes (experience, age, attributes, etc.)
             world: world state changes (current_scene, lore_add, etc.)
             meta: game_over, game_over_reason, elapsed_years
             turn_summary: human-readable summary for model prompt
@@ -162,31 +150,26 @@ def settle_turn(
         # Use explicit int values (not "+N" strings) for apply_delta compatibility
         char_delta["attributes"] = attr_delta
 
-    # Age and lifespan
+    # Age. ``lifespan`` is the current realm cap, not a decreasing counter.
     char_delta["age"] = f"+{elapsed_years}"
-    char_delta["lifespan"] = f"-{elapsed_years}"
 
     # ── Check for lifespan death ──
     new_age = session.age + elapsed_years
-    new_lifespan = session.lifespan - elapsed_years
+    lifespan_cap = int(getattr(session, "lifespan", 0) or get_realm_lifespan(realm))
+    remaining_lifespan = lifespan_cap - new_age
     game_over = False
     game_over_reason = ""
 
-    if new_lifespan <= 0 and session.realm != "飞升":
+    if remaining_lifespan <= 0 and session.realm != "飞升":
         game_over = True
         game_over_reason = "寿元耗尽，坐化而去。"
-
-    # Update realm max lifespan on breakthrough
-    realm_lifespan = _REALM_LIFESPAN.get(realm, 100)
-    if session.lifespan < realm_lifespan:
-        char_delta["lifespan"] = str(realm_lifespan - session.lifespan)
 
     # ── Build turn summary for model prompt ──
     turn_summary = (
         f"本回合类别：{category}；"
         f"时间流逝：{elapsed_years}年；"
         f"角色年龄：{session.age}→{new_age}岁；"
-        f"剩余寿元：{new_lifespan}年；"
+        f"剩余寿元：{max(0, remaining_lifespan)}年；"
         f"获得修为：{exp_gain}点。"
     )
     if game_over:
@@ -212,7 +195,7 @@ def settle_turn(
 
 def get_realm_lifespan(realm: str) -> int:
     """Return the base lifespan for a given realm."""
-    return _REALM_LIFESPAN.get(realm, 100)
+    return REALM_LIFESPANS.get(realm, 100)
 
 
 def get_realm_year_range(realm: str) -> tuple[int, int]:

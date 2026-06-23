@@ -12,11 +12,6 @@ from typing import Any
 # Gameplay / character creation constants
 # ─────────────────────────────────────────────────────────────────────────────
 
-
-# Kept only as a legacy save-field value. The UI now has one mode:
-# A/B/C model choices plus D typed input.
-DEFAULT_GAME_MODE = "abcd"
-
 TALENT_OPTIONS: list[str] = [
     "平平无奇",
     "草木亲和",
@@ -64,10 +59,23 @@ REALM_ORDER: list[str] = [
     "合体", "大乘", "渡劫", "飞升",             # 预留
 ]
 
+REALM_LIFESPANS: dict[str, int] = {
+    "练气": 100,
+    "筑基": 200,
+    "金丹": 500,
+    "元婴": 1000,
+    "化神": 2000,
+    "合体": 4000,
+    "大乘": 5000,
+    "渡劫": 6000,
+    "飞升": 9999,
+}
+
 # Realm configuration: each realm's stage count, breakthrough thresholds, etc.
 REALM_CONFIGS: dict[str, dict[str, Any]] = {
     "练气": {
         "name": "练气",
+        "lifespan": REALM_LIFESPANS["练气"],
         "stages": 9,
         "experience_required": 100,
         "insight_required": 30,
@@ -82,6 +90,7 @@ REALM_CONFIGS: dict[str, dict[str, Any]] = {
     },
     "筑基": {
         "name": "筑基",
+        "lifespan": REALM_LIFESPANS["筑基"],
         "stages": 4,
         "experience_required": 300,
         "insight_required": 60,
@@ -96,6 +105,7 @@ REALM_CONFIGS: dict[str, dict[str, Any]] = {
     },
     "金丹": {
         "name": "金丹",
+        "lifespan": REALM_LIFESPANS["金丹"],
         "stages": 4,
         "experience_required": 600,
         "insight_required": 100,
@@ -110,6 +120,7 @@ REALM_CONFIGS: dict[str, dict[str, Any]] = {
     },
     "元婴": {
         "name": "元婴",
+        "lifespan": REALM_LIFESPANS["元婴"],
         "stages": 4,
         "experience_required": 1200,
         "insight_required": 150,
@@ -124,6 +135,7 @@ REALM_CONFIGS: dict[str, dict[str, Any]] = {
     },
     "化神": {
         "name": "化神",
+        "lifespan": REALM_LIFESPANS["化神"],
         "stages": 4,
         "experience_required": 2500,
         "insight_required": 200,
@@ -139,6 +151,7 @@ REALM_CONFIGS: dict[str, dict[str, Any]] = {
     # ── Reserved realms (data only, no gameplay logic yet) ──
     "合体": {
         "name": "合体",
+        "lifespan": REALM_LIFESPANS["合体"],
         "stages": 4,
         "experience_required": 5000,
         "insight_required": 260,
@@ -153,6 +166,7 @@ REALM_CONFIGS: dict[str, dict[str, Any]] = {
     },
     "大乘": {
         "name": "大乘",
+        "lifespan": REALM_LIFESPANS["大乘"],
         "stages": 4,
         "experience_required": 10000,
         "insight_required": 330,
@@ -167,6 +181,7 @@ REALM_CONFIGS: dict[str, dict[str, Any]] = {
     },
     "渡劫": {
         "name": "渡劫",
+        "lifespan": REALM_LIFESPANS["渡劫"],
         "stages": 4,
         "experience_required": 20000,
         "insight_required": 400,
@@ -182,6 +197,7 @@ REALM_CONFIGS: dict[str, dict[str, Any]] = {
     },
     "飞升": {
         "name": "飞升",
+        "lifespan": REALM_LIFESPANS["飞升"],
         "stages": 1,
         "experience_required": 999999,
         "insight_required": 0,
@@ -215,10 +231,9 @@ SPIRIT_ROOT_MAP: dict[str, dict[str, Any]] = {sr["name"]: sr for sr in SPIRIT_RO
 SPIRIT_ROOT_GRADES: list[str] = ["天", "地", "玄", "黄"]
 
 # ─────────────────────────────────────────────────────────────────────────────
-# Rarity levels
+# Catalog rarity tiers (白绿蓝紫橙红) for talents, family backgrounds, spirit roots
 # ─────────────────────────────────────────────────────────────────────────────
 
-# ── Catalog rarity tiers (白绿蓝紫橙红) for talents, family backgrounds, spirit roots ──
 # Random pool always includes 白绿蓝; 红 requires 1 run to appear in random.
 # Self-select: ≤蓝 always; 紫 after 1 run; 橙 after 1 飞升; 红 after 2 飞升.
 # Weights sum to 200 for normalization.
@@ -250,16 +265,6 @@ def rarity_unlocked_for(runs_completed: int, ascension_count: int, *,
             unlocked.append(tier["key"])
     return unlocked
 
-RARITY_ORDER: list[str] = ["凡品", "良品", "上品", "极品", "仙品"]
-
-RARITY_MULTIPLIER: dict[str, float] = {
-    "凡品": 1.0,
-    "良品": 1.3,
-    "上品": 1.6,
-    "极品": 2.0,
-    "仙品": 3.0,
-}
-
 # ─────────────────────────────────────────────────────────────────────────────
 # Equipment slots
 # ─────────────────────────────────────────────────────────────────────────────
@@ -268,14 +273,6 @@ EQUIPMENT_SLOTS: list[str] = ["weapon", "armor", "accessory"]
 
 # Default empty equipment slots dict.
 DEFAULT_EQUIPMENT_SLOTS: dict[str, Any] = {slot: None for slot in EQUIPMENT_SLOTS}
-
-# ─────────────────────────────────────────────────────────────────────────────
-# Combat constants
-# ─────────────────────────────────────────────────────────────────────────────
-
-COMBAT_ACTIONS: list[str] = ["attack", "technique", "item", "defend", "flee"]
-
-COMBAT_PHASES: list[str] = ["idle", "player_turn", "enemy_turn", "resolve", "victory", "defeat"]
 
 # NPC affinity defaults
 NPC_AFFINITY_NEUTRAL: int = 0

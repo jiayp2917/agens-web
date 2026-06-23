@@ -4,6 +4,18 @@ from pathlib import Path
 
 
 ROOT = Path(__file__).resolve().parents[2]
+SRC = ROOT / "web" / "frontend-react" / "src"
+
+
+def _read(*relatives: str) -> str:
+    """Concatenate the text of several frontend source files.
+
+    After the v5 SPA split, the strings the contract tests look for live in
+    many modules, not just `main.tsx`. Each call passes the modules a given
+    test cares about; the empty-tuple case degrades to `main.tsx` only.
+    """
+    paths = [SRC / r for r in (("main.tsx",) + relatives if relatives else ("main.tsx",))]
+    return "\n".join(p.read_text(encoding="utf-8") for p in paths)
 
 
 def test_legacy_frontend_directory_is_retired() -> None:
@@ -19,8 +31,8 @@ def test_static_runtime_uses_react_dist_only() -> None:
 
 
 def test_react_frontend_wires_save_load_and_settings() -> None:
-    source = (ROOT / "web" / "frontend-react" / "src" / "main.tsx").read_text(encoding="utf-8")
-    client = (ROOT / "web" / "frontend-react" / "src" / "api" / "client.ts").read_text(encoding="utf-8")
+    source = _read("components/SettingsSaveDialog.tsx", "lib/catalog.ts", "lib/util.ts")
+    client = (SRC / "api" / "client.ts").read_text(encoding="utf-8")
 
     assert "/api/saves" in source
     assert '/load`' in source
@@ -37,7 +49,13 @@ def test_react_frontend_wires_save_load_and_settings() -> None:
 
 
 def test_react_homepage_buttons_have_handlers() -> None:
-    source = (ROOT / "web" / "frontend-react" / "src" / "main.tsx").read_text(encoding="utf-8")
+    source = _read(
+        "main.tsx",
+        "components/BgmToggle.tsx",
+        "components/TutorialDialog.tsx",
+        "pages/HomePage.tsx",
+        "components/FallbackBanner.tsx",
+    )
 
     assert "onLoad" in source
     assert "onTutorial" in source
@@ -59,18 +77,18 @@ def test_react_public_assets_are_present() -> None:
     assets = ROOT / "web" / "frontend-react" / "public" / "assets"
     for relative in (
         "paper_texture.png",
-        "ink_home_bg.png",
         "ink_mountain_gate.png",
         "game_desktop_bg.png",
         "ascension_gate.png",
+        "qq_group.png",
         "audio/bgm.flac",
     ):
         assert (assets / relative).is_file(), relative
 
 
 def test_react_character_creation_uses_catalogs_and_game_mode() -> None:
-    source = (ROOT / "web" / "frontend-react" / "src" / "main.tsx").read_text(encoding="utf-8")
-    css = (ROOT / "web" / "frontend-react" / "src" / "styles.css").read_text(encoding="utf-8")
+    source = _read("pages/CharacterCreatePage.tsx", "lib/catalog.ts", "lib/util.ts")
+    css = (SRC / "styles.css").read_text(encoding="utf-8")
 
     for path in (
         "/api/catalog/talents",
@@ -83,25 +101,40 @@ def test_react_character_creation_uses_catalogs_and_game_mode() -> None:
     assert "自行选择" in source
     assert "随机生成" in source
     assert "手选最高：紫" in source
-    assert "推演中..." in source
+    assert "进入中..." in source
+    assert "难度：{difficulty}" in source
     assert "choice_card_mountain.png" not in css
     assert 'url("/assets/ink_mountain_gate.png")' in css
 
 
 def test_react_game_page_has_escape_route_and_stable_meters() -> None:
-    source = (ROOT / "web" / "frontend-react" / "src" / "main.tsx").read_text(encoding="utf-8")
-    css = (ROOT / "web" / "frontend-react" / "src" / "styles.css").read_text(encoding="utf-8")
+    source = _read(
+        "main.tsx",
+        "pages/GamePage.tsx",
+        "components/StatLine.tsx",
+        "lib/catalog.ts",
+    )
+    css = (SRC / "styles.css").read_text(encoding="utf-8")
 
     assert "onHome={returnHome}" in source
     assert "返回首页" in source
     assert "function StatLine" in source
-    assert "role=\"meter\"" in source
+    assert 'role="meter"' in source
+    assert "realmLifespanCap" in source
+    assert "value={remainingLifespan}" in source
     assert ".stat-meter" in css
     assert "grid-template-rows: auto minmax(0, 1fr) auto;" in css
 
 
 def test_react_turn_actions_disable_while_busy() -> None:
-    source = (ROOT / "web" / "frontend-react" / "src" / "main.tsx").read_text(encoding="utf-8")
+    source = _read(
+        "main.tsx",
+        "pages/GamePage.tsx",
+        "pages/HomePage.tsx",
+        "components/FallbackBanner.tsx",
+        "lib/catalog.ts",
+        "pages/CharacterCreatePage.tsx",
+    )
 
     assert "disabled={busy}" in source
     assert "runTurn(`/api/sessions/${session.session_id}/choice`" in source
@@ -116,31 +149,62 @@ def test_react_turn_actions_disable_while_busy() -> None:
 
 def test_frontend_escapes_xss_in_choice_text() -> None:
     """React renders choice text as text nodes; do not bypass JSX escaping."""
-    source = (ROOT / "web" / "frontend-react" / "src" / "main.tsx").read_text(encoding="utf-8")
+    source = _read("pages/GamePage.tsx")
     assert "dangerouslySetInnerHTML" not in source
     assert "innerHTML" not in source
 
 
 def test_frontend_dialog_uses_native_show_modal() -> None:
-    source = (ROOT / "web" / "frontend-react" / "src" / "main.tsx").read_text(encoding="utf-8")
+    source = _read("components/TutorialDialog.tsx", "components/SettingsSaveDialog.tsx")
     assert 'role="dialog"' in source
     assert 'aria-modal="true"' in source
 
 
 def test_frontend_theme_toggle_wired_to_both_buttons() -> None:
-    source = (ROOT / "web" / "frontend-react" / "src" / "main.tsx").read_text(encoding="utf-8")
+    source = _read("components/BgmToggle.tsx")
     assert "BgmToggle" in source
     assert "setEnabled" in source
 
 
+def test_frontend_filters_model_stream_fragments_and_exposes_provider_presets() -> None:
+    source = _read(
+        "lib/util.ts",
+        "lib/catalog.ts",
+        "components/SettingsSaveDialog.tsx",
+    )
+
+    assert "visibleEventTypes" in source
+    assert "isReadableEvent" in source
+    assert "modelPresets" in source
+    for provider in ("DeepSeek", "Qwen", "GLM"):
+        assert provider in source
+    assert "可选择预设，也可自行填写兼容 OpenAI" in source
+
+
+def test_frontend_homepage_shows_qq_group() -> None:
+    source = _read("pages/HomePage.tsx")
+    css = (SRC / "styles.css").read_text(encoding="utf-8")
+
+    assert "QQ群：985776771" in source
+    assert "/assets/qq_group.png" in source
+    assert ".community-card" in css
+
+
 def test_frontend_narrative_log_has_aria_describedby() -> None:
-    source = (ROOT / "web" / "frontend-react" / "src" / "main.tsx").read_text(encoding="utf-8")
+    source = _read("pages/GamePage.tsx", "pages/CharacterCreatePage.tsx")
     assert 'className="story-log"' in source
     assert 'aria-live="polite"' in source
 
 
 def test_frontend_event_badges_locked() -> None:
-    source = (ROOT / "web" / "frontend-react" / "src" / "main.tsx").read_text(encoding="utf-8")
+    source = _read("pages/EndingPage.tsx", "pages/GamePage.tsx", "lib/api.ts")
     assert "fallback_prompt" in source
     assert "game_over" in source
     assert "finale" in source
+
+
+def test_ending_page_fetches_death_summary() -> None:
+    """P2 SPA split: EndingPage overlays server-authored death summary."""
+    source = _read("pages/EndingPage.tsx", "lib/api.ts")
+    assert "fetchDeathSummary" in source
+    assert "/death_summary" in source

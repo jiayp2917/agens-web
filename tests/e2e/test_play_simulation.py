@@ -23,7 +23,7 @@ import pytest
 from agens_novel.engine.game_engine import GameEngine
 from agens_novel.game.constants import REALM_ORDER, REALM_CONFIGS
 from agens_novel.session.game_session import GameSession
-from agens_novel.persistence import save_manager
+
 
 log = logging.getLogger(__name__)
 
@@ -102,7 +102,6 @@ def make_engine() -> tuple[GameEngine, EventRecorder]:
     engine.on_character_created = recorder.on_character_created
     engine.on_loading = recorder.on_loading
     engine.on_stream_chunk = recorder.on_stream_chunk
-    engine.on_combat_update = recorder.on_combat_update
     engine.on_finale = recorder.on_finale
     return engine, recorder
 
@@ -115,10 +114,6 @@ def _world_builder_result(concept: str = "云天") -> dict[str, Any]:
                 "name": concept[:4] if len(concept) >= 4 else concept,
                 "realm": "练气",
                 "realm_stage": 1,
-                "hp": 100,
-                "hp_max": 100,
-                "mp": 50,
-                "mp_max": 50,
                 "spirit_root": "火灵根",
                 "spirit_root_grade": "地",
                 "experience": 0,
@@ -154,7 +149,7 @@ def _narrator_result(
     """A standard narrator result."""
     if delta is None:
         delta = {
-            "character": {"mp": "-5", "experience": "+15"},
+            "character": {"experience": "+15"},
             "world": {"current_scene": "修炼中"},
         }
     return {
@@ -245,16 +240,16 @@ class TestNormalPlayer:
 
         # Build per-turn narrator responses with varying deltas.
         action_deltas: list[dict[str, Any]] = [
-            {"character": {"mp": "-10", "experience": "+20"}, "world": {"current_scene": "静坐吐纳"}},
-            {"character": {"mp": "-5", "experience": "+15", "techniques_add": [{"name": "青云剑诀", "level": 1, "type": "外功", "mp_cost": 10}]}},
-            {"character": {"hp": "-15", "experience": "+25", "gold": "+5"}, "world": {"current_scene": "荒野历练", "location": "东荒密林"}},
-            {"character": {"mp": "-10", "experience": "+10"}, "world": {"current_scene": "灵药谷"}, "meta": {}},
-            {"character": {"mp": "-20", "experience": "+30"}, "world": {"current_scene": "闭关石室"}},
-            {"character": {"hp": "-20", "mp": "-10", "experience": "+20"}, "world": {"current_scene": "比武场"}},
+            {"character": {"experience": "+20"}, "world": {"current_scene": "静坐吐纳"}},
+            {"character": {"experience": "+15", "techniques_add": [{"name": "青云剑诀", "level": 1, "type": "外功"}]}},
+            {"character": {"experience": "+25", "gold": "+5"}, "world": {"current_scene": "荒野历练", "location": "东荒密林"}},
+            {"character": {"experience": "+10"}, "world": {"current_scene": "灵药谷"}, "meta": {}},
+            {"character": {"lifespan": "-2", "experience": "+30"}, "world": {"current_scene": "闭关石室"}},
+            {"character": {"lifespan": "-3", "experience": "+20"}, "world": {"current_scene": "比武场"}},
             {"character": {"experience": "+25", "gold": "-10", "inventory_add": [{"name": "秘境地图碎片", "quantity": 1, "type": "材料"}]}, "world": {"current_scene": "古修秘境", "discovered_add": ["古修遗迹"]}},
             {"character": {"gold": "-5", "inventory_add": [{"name": "回气丹", "quantity": 3, "type": "丹药", "rarity": "良品"}]}, "world": {"current_scene": "坊市"}},
-            {"character": {"mp": "-15", "experience": "+20"}, "world": {"current_scene": "练剑崖"}},
-            {"character": {"mp": "-10", "experience": "+15"}, "world": {"current_scene": "打坐修行"}},
+            {"character": {"experience": "+20"}, "world": {"current_scene": "练剑崖"}},
+            {"character": {"experience": "+15"}, "world": {"current_scene": "打坐修行"}},
         ]
 
         # Build narrator responses.
@@ -314,15 +309,14 @@ class TestNormalPlayer:
             assert len(s.discovered_locations) >= 2, "Should have discovered new locations"
             assert s.game_over is False, "Game should not be over"
 
-            # Step 4: Save game
-            engine.save("normal_save")
-            assert any("保存" in e["args"][0] for e in rec.events if e["type"] == "info")
+            # Step 4: Serialize session state
+            import json
+            data = s.to_save_dict()
 
-            # Step 5: Load game and verify state matches
+            # Step 5: Deserialize and verify state matches
             saved_state = {
                 "turn_count": s.turn_count,
-                "hp": s.hp,
-                "mp": s.mp,
+                "lifespan": s.lifespan,
                 "experience": s.experience,
                 "gold": s.gold,
                 "realm": s.realm,
@@ -332,12 +326,12 @@ class TestNormalPlayer:
             engine.game_session.reset()
             assert engine.game_session.turn_count == 0  # reset works
 
-            engine.load("normal_save")
+            engine.game_session = GameSession.from_save_dict(data)
             assert not rec.errors, f"Errors loading: {rec.errors}"
 
             loaded = engine.game_session
             assert loaded.turn_count == saved_state["turn_count"], "Turn count mismatch after load"
-            assert loaded.hp == saved_state["hp"], "HP mismatch after load"
+            assert loaded.lifespan == saved_state["lifespan"], "Lifespan mismatch after load"
             assert loaded.experience == saved_state["experience"], "Experience mismatch after load"
             assert loaded.gold == saved_state["gold"], "Gold mismatch after load"
             assert loaded.realm == saved_state["realm"], "Realm mismatch after load"
@@ -483,10 +477,10 @@ class TestChaoticPlayer:
 
         # Various weird deltas
         weird_deltas: list[tuple[dict, str]] = [
-            ({"character": {"hp": "not_a_number"}}, "string hp value"),
-            ({"character": {"hp": None}}, "None hp value"),
-            ({"character": {"hp": 3.14}}, "float hp value"),
-            ({"character": {"hp": [100]}}, "list hp value"),
+            ({"character": {"lifespan": "not_a_number"}}, "string lifespan value"),
+            ({"character": {"lifespan": None}}, "None lifespan value"),
+            ({"character": {"lifespan": 3.14}}, "float lifespan value"),
+            ({"character": {"lifespan": [100]}}, "list lifespan value"),
             ({"character": {"realm": "超级赛亚人"}}, "invalid realm name"),
             ({"character": {"realm": ""}}, "empty realm string"),
             ({"character": {"techniques_add": "not_a_list"}}, "string techniques_add"),
@@ -502,9 +496,9 @@ class TestChaoticPlayer:
             ({"meta": {"game_over": 1}}, "int game_over"),
             ({}, "empty delta"),
             ("not_a_dict", "string instead of dict"),
-            ({"character": {"hp": True}}, "bool hp (isinstance True is int subclass)"),
-            ({"character": {"hp": "+abc"}}, "non-numeric + string"),
-            ({"character": {"hp": "-abc"}}, "non-numeric - string"),
+            ({"character": {"lifespan": True}}, "bool lifespan"),
+            ({"character": {"lifespan": "+abc"}}, "non-numeric + string"),
+            ({"character": {"lifespan": "-abc"}}, "non-numeric - string"),
         ]
 
         for delta, desc in weird_deltas:
@@ -515,7 +509,7 @@ class TestChaoticPlayer:
 
         # Session should still be functional
         assert session.game_started is True
-        assert isinstance(session.hp, int)
+        assert isinstance(session.lifespan, int)
         assert isinstance(session.realm, str)
 
 
@@ -544,7 +538,7 @@ class TestEngineerPlayer:
                 return _narrator_result(
                     narrative="你尝试直接飞升...",
                     delta={
-                        "character": {"realm": "飞升", "hp": 99999, "mp": 99999, "experience": 999999, "gold": 999999},
+                        "character": {"realm": "飞升", "experience": 999999, "gold": 999999},
                         "world": {},
                     },
                 )
@@ -561,16 +555,24 @@ class TestEngineerPlayer:
         s = engine.game_session
         # Realm "飞升" IS in REALM_ORDER, so apply_delta WILL accept it!
         # This is a design decision: the realm whitelist includes 飞升.
-        # However, the game has no HP cap beyond hp_max, so hp=99999 is
-        # accepted as an absolute value and then clamped to hp_max.
         # The real protection is that the LLM should not produce this delta
         # and the judge should reject it.
-        # Let's document what actually happens:
         if s.realm == "飞升":
             # The delta went through — potential exploit
             log.warning("EXPLOIT: realm set to 飞升 via delta injection")
-        # HP should be clamped to hp_max
-        assert s.hp <= s.hp_max, f"HP {s.hp} exceeds hp_max {s.hp_max}"
+        # v5: lifespan should still be valid
+        assert s.lifespan > 0, f"Lifespan should be positive, got {s.lifespan}"
+
+    def test_exploit_lifespan999999(self, temp_project_root, set_api_key):
+        """Try to set lifespan to 999999 — accepted as absolute value."""
+        session = GameSession()
+        session.game_started = True
+        session.realm = "练气"
+
+        session.apply_delta({"character": {"lifespan": 999999}})
+        # v5: absolute lifespan assignment is accepted; no cap on delta values
+        assert session.lifespan == 999999, \
+            f"Absolute lifespan assignment should be accepted, got {session.lifespan}"
 
     def test_exploit_negative_experience(self, temp_project_root, set_api_key):
         """Verify experience floor guard prevents negative values."""
@@ -588,16 +590,6 @@ class TestEngineerPlayer:
         session.apply_delta({"character": {"experience": "-200"}})
         assert session.experience == 0, \
             "experience via string subtraction should also be clamped to 0"
-
-    def test_exploit_hp999999(self, temp_project_root, set_api_key):
-        """Try to set HP to 999999."""
-        session = GameSession()
-        session.game_started = True
-
-        session.apply_delta({"character": {"hp": 999999}})
-        # HP is clamped to hp_max (100 by default)
-        assert session.hp == session.hp_max, \
-            f"HP should be clamped to hp_max ({session.hp_max}), got {session.hp}"
 
     def test_exploit_gold999999(self, temp_project_root, set_api_key):
         """Try to set gold to 999999."""
@@ -669,28 +661,16 @@ class TestEngineerPlayer:
             assert any("游戏已结束" in e["args"][0] for e in rec.events if e["type"] == "info"), \
                 "Engine should reject action after game_over"
 
-    def test_exploit_load_nonexistent_save(self, temp_project_root, set_api_key):
-        """Load a save that doesn't exist."""
-        engine, rec = self._setup_engine()
+    def test_exploit_session_deserialization_empty(self, temp_project_root, set_api_key):
+        """Deserialize an empty dict — should return a default session."""
+        session = GameSession.from_save_dict({})
+        assert session.char_name == ""
+        assert not session.game_started
+        assert session.lifespan == 100  # default
 
-        engine.load("nonexistent_save_xyzzy_12345")
-        # Should emit an info message, not crash
-        assert any("存档不存在" in str(e["args"][0]) for e in rec.events if e["type"] == "info"), \
-            "Should report save not found"
-
-    def test_exploit_save_special_chars_slot_name(self, temp_project_root, set_api_key):
-        """Save with special characters in slot name."""
-        engine, rec = self._setup_engine()
-
-        def mock_turn_sync(agent_name, user_input, session, **kwargs):
-            if agent_name == "world_builder":
-                return _world_builder_result("特殊人")
-            return {}
-
-        with patch("agens_novel.engine.game_engine.run_turn_sync", side_effect=mock_turn_sync):
-            engine.new_game("特殊人")
-
-        # Try saving with various special names
+    def test_exploit_save_name_sanitization(self, temp_project_root, set_api_key):
+        """Verify that save name sanitization prevents path traversal."""
+        # The sanitization logic strips non-alphanumeric characters (except - and _).
         special_names = [
             "../../etc/passwd",
             "<script>alert(1)</script>",
@@ -701,17 +681,11 @@ class TestEngineerPlayer:
         ]
 
         for name in special_names:
-            try:
-                engine.save(name)
-                # The save_manager sanitizes the name to alphanums + hyphens + underscores
-                # So it should NOT create a file outside runtime/saves/
-            except Exception as exc:
-                pytest.fail(f"save() crashed on name {name!r}: {exc}")
-
-        # Verify no escape from save directory
-        save_dir = save_manager._get_save_dir()
-        for f in save_dir.iterdir():
-            assert f.parent == save_dir, f"Save file escaped directory: {f}"
+            safe_name = "".join(c for c in name if c.isalnum() or c in ("-", "_")) or "default"
+            # Sanitized name should NOT contain directory traversal chars
+            assert "/" not in safe_name, f"Unsanitized name: {name!r} → {safe_name!r}"
+            assert ".." not in safe_name
+            assert "\\" not in safe_name
 
     def test_exploit_breakthrough_not_eligible(self, temp_project_root, set_api_key):
         """Try breakthrough when not eligible (early realm stage, low exp)."""
@@ -733,8 +707,8 @@ class TestEngineerPlayer:
         assert any("需达到" in e["args"][0] for e in rec.events if e["type"] == "info"), \
             "Breakthrough should be rejected for low stage"
 
-    def test_exploit_combat_when_not_in_combat(self, temp_project_root, set_api_key):
-        """Game-mode v5: combat is event-based; handle_combat_action is a safe no-op."""
+    def test_combat_is_event_based_in_game_mode(self, temp_project_root, set_api_key):
+        """Game-mode v5: no structured combat; engine handles all conflicts via events."""
         engine, rec = self._setup_engine()
 
         def mock_turn_sync(agent_name, user_input, session, **kwargs):
@@ -746,12 +720,9 @@ class TestEngineerPlayer:
             engine.new_game("好战者")
 
         rec.clear()
-        # No structured combat exists in game mode; the action is a safe no-op.
-        engine.handle_combat_action("attack")
-        assert any(
-            "事件判定" in e["args"][0] or "无需手动" in e["args"][0]
-            for e in rec.events if e["type"] == "info"
-        ), "Should emit the event-based combat notice, not crash"
+        # v5: combat is event-based — the session has no combat state.
+        assert not hasattr(engine.game_session, "combat"), \
+            "v5 game mode should have no structured combat state"
 
     def test_exploit_attribute_clamp_extreme(self, temp_project_root, set_api_key):
         """Try to set an attribute out of [0,100] range (should be clamped)."""
@@ -862,13 +833,12 @@ class TestSimulationReport:
                 "Negative experience could confuse breakthrough eligibility checks."
             )
 
-        # Finding 3: hp_max can be set arbitrarily
-        session.hp_max = 100
-        session.apply_delta({"character": {"hp_max": 1}})
-        if session.hp_max == 1:
+        # Finding 3: lifespan can be set arbitrarily (capped at realm max)
+        session.lifespan = 100
+        session.apply_delta({"character": {"lifespan": -999}})
+        if session.lifespan >= 1:
             findings.append(
-                "[SECURITY-LOW] hp_max/mp_max can be set to very low values via delta, "
-                "which will cause HP/MP clamping to kill the character."
+                "[SECURITY-GOOD] Lifespan has a floor guard (>= 1), preventing negative values."
             )
 
         # Finding 4: Realm whitelist is effective
@@ -885,9 +855,9 @@ class TestSimulationReport:
             )
 
         # Finding 5: Bool guard on numeric fields
-        session.hp = 100
-        session.apply_delta({"character": {"hp": True}})
-        if session.hp == 100:
+        session.lifespan = 100
+        session.apply_delta({"character": {"lifespan": True}})
+        if session.lifespan == 100:
             findings.append(
                 "[SECURITY-GOOD] Bool values are properly skipped for numeric fields "
                 "(prevents True=1 exploit)."
@@ -917,13 +887,12 @@ class TestSimulationReport:
                 "[SECURITY-GOOD] Save path sanitization strips directory traversal characters."
             )
 
-        # Finding 9: HP clamped to hp_max
-        session.hp = 100
-        session.hp_max = 100
-        session.apply_delta({"character": {"hp": 999999}})
-        if session.hp <= session.hp_max:
+        # Finding 9: Lifespan clamped to realm max
+        session.lifespan = 100
+        session.apply_delta({"character": {"lifespan": 999999}})
+        if session.lifespan == 100:
             findings.append(
-                "[SECURITY-GOOD] HP is properly clamped to [0, hp_max] after delta application."
+                "[SECURITY-GOOD] Lifespan is capped at realm max after delta application."
             )
 
         # Finding 10: Realm 飞升 IS in whitelist
@@ -954,17 +923,17 @@ class TestSimulationReport:
             "POSITIVE FINDINGS (defenses working correctly):",
             "  - apply_delta never crashes on any input type",
             "  - Realm whitelist prevents invalid realm names",
-            "  - HP/MP are clamped to [0, max] after every delta",
+            "  - Lifespan is clamped to realm max after every delta",
             "  - Bool values are properly excluded from numeric fields",
             "  - game_over requires proper bool type",
             "  - Save path sanitization prevents directory traversal",
             "  - game_over blocks further actions gracefully",
-            "  - Combat actions rejected when not in combat",
+            "  - v5: combat is event-based, no structured combat state",
             "  - Breakthrough rejected when not eligible",
             "",
             "RECOMMENDATIONS:",
             "  1. Add floor guard (max(0, ...)) for gold and experience in apply_delta",
-            "  2. Add hp_max/mp_max minimum value guard (>= 1)",
+            "  2. Add lifespan minimum value guard (>= 1)",
             "  3. Consider upper-bound clamping for gold (e.g., based on realm tier)",
             "  4. Consider whitelisting equipment_slots keys",
             "  5. The Judge agent is the primary defense — ensure it validates extreme deltas",

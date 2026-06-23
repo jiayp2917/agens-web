@@ -19,7 +19,6 @@ class Technique(TypedDict, total=False):
     name: str
     level: int
     type: str       # "内功" | "外功" | "术法" | "身法" | ...
-    mp_cost: int    # MP cost to use this technique in combat
     element: str    # elemental affinity: 金/木/水/火/土/冰/雷/风
 
 
@@ -27,8 +26,8 @@ class InventoryItem(TypedDict, total=False):
     name: str
     quantity: int
     type: str       # "武器" | "防具" | "丹药" | "材料" | "其他"
-    rarity: str     # "凡品" | "良品" | "上品" | "极品" | "仙品"
-    effects: dict   # item effects, e.g. {"hp": "+50", "mp": "+20"}
+    rarity: str     # 白/绿/蓝/紫/橙/红
+    effects: dict   # item effects, e.g. {"experience": "+50", "insight": "+5"}
     equipped: bool  # whether currently equipped
     slot: str       # equipment slot: "weapon" | "armor" | "accessory"
 
@@ -54,44 +53,16 @@ class QuestInfo(TypedDict, total=False):
     giver: str        # NPC name who gave the quest
 
 
-class CombatActor(TypedDict, total=False):
-    name: str
-    hp: int
-    hp_max: int
-    mp: int
-    mp_max: int
-    realm: str
-    techniques: list[Technique]
-    consumables: list[InventoryItem]
-    is_defending: bool
-
-
-class CombatState(TypedDict, total=False):
-    phase: str                  # "idle" | "player_turn" | "enemy_turn" | "resolve" | "victory" | "defeat"
-    player: CombatActor
-    enemy: CombatActor
-    available_actions: list[str]  # ["attack", "technique", "item", "defend", "flee"]
-    turn_count: int
-    result: str                 # "" | "victory" | "defeat" | "fled"
-    narrative: str              # latest combat narrative snippet
-
-
 class CharacterState(TypedDict, total=False):
     name: str
     realm: str
     realm_stage: int
-    hp: int
-    hp_max: int
-    mp: int
-    mp_max: int
     spirit_root: str
     spirit_root_grade: str
     age: int
     talent: str
     family_background: str
-    luck: str
     difficulty: str
-    game_mode: str
     attributes: dict
     techniques: list[Technique]
     inventory: list[InventoryItem]
@@ -102,8 +73,8 @@ class CharacterState(TypedDict, total=False):
     gold: int
     status_effects: list[str]
     lifespan: int
+    remaining_lifespan: int
     equipment_slots: dict       # {"weapon": InventoryItem|None, "armor": ..., "accessory": ...}
-    combat: CombatState         # None when not in combat
 
 
 class WorldState(TypedDict, total=False):

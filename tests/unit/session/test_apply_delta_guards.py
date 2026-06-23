@@ -119,10 +119,10 @@ class TestApplyDeltaDefensive:
         """Game-mode v5: structured combat is event-based; combat delta is dropped."""
         s = GameSession()
         s.apply_delta({"character": {"combat": None}})
-        assert s.combat is None
+        assert not hasattr(s, "combat")
 
     def test_combat_start_ignored(self):
         """A structured combat delta does not create structured combat state."""
         s = GameSession()
         s.apply_delta({"character": {"combat": {"phase": "player_turn", "enemy": {"name": "妖兽"}}}})
-        assert s.combat is None  # game-mode combat is event-based; no struct kept
+        assert not hasattr(s, "combat")

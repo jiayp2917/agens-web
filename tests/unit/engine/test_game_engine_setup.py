@@ -20,7 +20,6 @@ def _canned_world_builder() -> dict[str, Any]:
         "generated_data": {
             "character": {
                 "name": "许满", "realm": "练气", "realm_stage": 1,
-                "hp": 100, "hp_max": 100, "mp": 50, "mp_max": 50,
                 "spirit_root": "火木双灵根", "spirit_root_grade": "地",
                 "experience": 0, "experience_to_next": 100, "gold": 10,
                 "breakthrough_flags": [],
@@ -46,7 +45,7 @@ def _canned_world_builder() -> dict[str, Any]:
 def _canned_narrator() -> dict[str, Any]:
     return {
         "narrative": "你静坐吐纳，灵气缓缓涌入。",
-        "state_delta": {"character": {"mp": "-10", "experience": "+15"}},
+        "state_delta": {"character": {"experience": "+15"}},
         "choices": [],
         "output_path": "", "audit_path": "", "finished_at": "", "llm_error": "",
     }
@@ -94,7 +93,8 @@ class TestGameEngineNewGame:
         assert engine.game_session.game_started is True
         assert engine.game_session.char_name == "许满"
         assert engine.game_session.realm == "练气"
-        assert engine.game_session.hp == 100
+        assert not hasattr(engine.game_session, "hp")
+        assert not hasattr(engine.game_session, "mp")
         assert engine.game_session.last_choices == ["留在山门吐纳", "询问接引弟子", "观察灵气流向", "【气运】随缘而行，听天命、赌因果"]
         assert len(narratives) == 1
 
@@ -165,7 +165,7 @@ class TestGameEngineNewGame:
             engine.handle_action("观察")
 
         assert len(engine.game_session.last_choices) == 4
-        assert any("天道紊乱" in msg for msg in infos)
+        assert any("未返回可用" in msg for msg in infos)
 
     def test_new_game_without_api_key_uses_agent_error(self, monkeypatch) -> None:
         """World Builder reports a config error when no API key is set."""

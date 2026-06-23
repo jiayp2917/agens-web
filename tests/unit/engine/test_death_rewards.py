@@ -29,7 +29,7 @@ def _make_session(**overrides: Any) -> GameSession:
 
 class TestCategorizeDeath:
     def test_finale_takes_precedence(self) -> None:
-        session = _make_session(game_over=True, finale=True, hp=0)
+        session = _make_session(game_over=True, finale=True)
         assert categorize_death(session) == DEATH_BY_FINALE
 
     def test_event_death_from_trial(self) -> None:
@@ -41,15 +41,15 @@ class TestCategorizeDeath:
         assert categorize_death(session) == DEATH_BY_KARMA
 
     def test_lifespan_death(self) -> None:
-        session = _make_session(game_over=True, hp=100, lifespan=0)
+        session = _make_session(game_over=True, lifespan=0)
         assert categorize_death(session) == DEATH_BY_LIFESPAN
 
     def test_player_quit(self) -> None:
-        session = _make_session(game_over=True, hp=100, lifespan=100, error="玩家结束本局。")
+        session = _make_session(game_over=True, lifespan=100, error="玩家结束本局。")
         assert categorize_death(session) == DEATH_BY_PLAYER
 
     def test_not_game_over_returns_empty(self) -> None:
-        session = _make_session(game_over=False, hp=0)
+        session = _make_session(game_over=False)
         assert categorize_death(session) == ""
 
 

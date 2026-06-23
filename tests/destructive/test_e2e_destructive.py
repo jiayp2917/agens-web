@@ -26,11 +26,6 @@ from unittest.mock import patch, MagicMock
 
 from agens_novel.engine.game_engine import GameEngine
 from agens_novel.session.game_session import GameSession
-from agens_novel.persistence.save_manager import (
-    save_game, load_game, list_saves, delete_save, get_manual_save_slots,
-    set_save_dir, AUTOSAVE_NAME,
-)
-from agens_novel.game.combat import CombatEngine
 from agens_novel.game.realm import RealmSystem
 from agens_novel.game.constants import REALM_ORDER, REALM_CONFIGS, SPIRIT_ROOT_MAP
 
@@ -51,11 +46,13 @@ ALL_BREAKTHROUGH_FLAGS = [
 # ─── Fixtures ──────────────────────────────────────────────────────────────
 
 @pytest.fixture
-def tmp_save_dir(tmp_path):
+def tmp_save_dir(tmp_path, monkeypatch):
     """Redirect saves to a temp directory."""
-    set_save_dir(tmp_path)
-    yield tmp_path
-    set_save_dir(None)  # reset
+    from agens_novel import paths
+    save_dir = tmp_path / "saves"
+    save_dir.mkdir(parents=True, exist_ok=True)
+    monkeypatch.setattr(paths, "SAVE_DIR", save_dir)
+    yield save_dir
 
 
 @pytest.fixture
@@ -77,7 +74,6 @@ def engine():
     e.on_character_created = _capture("character_created")
     e.on_loading = _capture("loading")
     e.on_stream_chunk = _capture("stream_chunk")
-    e.on_combat_update = _capture("combat_update")
     return e, events
 
 
@@ -97,7 +93,6 @@ def _new_game_result(**overrides):
         "generated_data": {
             "character": {
                 "name": "测试修士", "realm": "练气", "realm_stage": 1,
-                "hp": 100, "hp_max": 100, "mp": 50, "mp_max": 50,
                 "spirit_root": "木灵根", "spirit_root_grade": "地级",
                 "experience": 0, "experience_to_next": 100,
                 "gold": 0, "techniques": [], "inventory": [],
@@ -140,7 +135,7 @@ class TestEngineLifecycle:
         eng, events = engine
         mock_run.side_effect = [
             _new_game_result(),
-            _narrator_result("你修炼了一会。", {"character": {"mp": "-5"}}),
+            _narrator_result("你修炼了一会。", {"character": {"experience": "+5"}}),
         ]
 
         # New game.
@@ -152,13 +147,16 @@ class TestEngineLifecycle:
         eng.handle_action("静坐吐纳")
         assert eng.game_session.turn_count == 1
 
-        # Save.
-        eng.save("test_slot")
+        # Save session via serialization.
+        import json
+        data = eng.game_session.to_save_dict()
+        (tmp_save_dir / "test_slot.json").write_text(json.dumps(data, ensure_ascii=False), encoding="utf-8")
         assert (tmp_save_dir / "test_slot.json").exists()
 
-        # Load.
+        # Load session from serialization.
         eng.game_session.turn_count = 99  # corrupt
-        eng.load("test_slot")
+        loaded_data = json.loads((tmp_save_dir / "test_slot.json").read_text(encoding="utf-8"))
+        eng.game_session = GameSession.from_save_dict(loaded_data)
         assert eng.game_session.turn_count == 1  # restored
 
         # Reset.
@@ -172,16 +170,23 @@ class TestEngineLifecycle:
 
         eng.new_game("角色A")
         eng.game_session.char_name = "角色A"
-        eng.save("slot_1")
+        import json
+        (tmp_save_dir / "slot_1.json").write_text(
+            json.dumps(eng.game_session.to_save_dict(), ensure_ascii=False), encoding="utf-8")
 
         eng.game_session.char_name = "角色B"
         eng.game_session.realm = "金丹"
-        eng.save("slot_2")
+        (tmp_save_dir / "slot_2.json").write_text(
+            json.dumps(eng.game_session.to_save_dict(), ensure_ascii=False), encoding="utf-8")
 
-        eng.load("slot_1")
+        # Load slot 1.
+        loaded_1 = json.loads((tmp_save_dir / "slot_1.json").read_text(encoding="utf-8"))
+        eng.game_session = GameSession.from_save_dict(loaded_1)
         assert eng.game_session.char_name == "角色A"
 
-        eng.load("slot_2")
+        # Load slot 2.
+        loaded_2 = json.loads((tmp_save_dir / "slot_2.json").read_text(encoding="utf-8"))
+        eng.game_session = GameSession.from_save_dict(loaded_2)
         assert eng.game_session.realm == "金丹"
 
     def test_action_without_new_game(self, engine):
@@ -217,11 +222,11 @@ class TestEngineLifecycle:
         assert eng.game_session.turn_count == 0  # rolled back
 
     @patch("agens_novel.engine.game_engine.run_turn_sync")
-    def test_game_over_on_hp_zero(self, mock_run, engine):
+    def test_game_over_on_lifespan_depleted(self, mock_run, engine):
         eng, events = engine
         mock_run.return_value = _narrator_result(
-            "你被击倒了。",
-            {"character": {"hp": "-999"}, "meta": {"game_over": True}},
+            "寿元耗尽，你倒下了。",
+            {"character": {"lifespan": "-999"}, "meta": {"game_over": True}},
         )
         eng.game_session.game_started = True
 
@@ -274,7 +279,7 @@ class TestDestructiveInputs:
             delta = {}
             # Random character fields.
             char = {}
-            for key in ("hp", "mp", "experience", "gold", "realm", "name"):
+            for key in ("experience", "gold", "realm", "name"):
                 r = random.random()
                 if r < 0.3:
                     char[key] = random.randint(-1000, 1000)
@@ -296,7 +301,7 @@ class TestDestructiveInputs:
             s.apply_delta(delta)  # should not crash
 
         # Session should still be usable.
-        assert isinstance(s.hp, int)
+        assert isinstance(s.lifespan, int)
         assert isinstance(s.realm, str)
 
     @patch("agens_novel.engine.game_engine.run_turn_sync")
@@ -312,43 +317,7 @@ class TestDestructiveInputs:
         assert eng.game_session.game_started  # still valid
 
 
-# ─── 3. Combat engine ──────────────────────────────────────────────────────
-
-class TestCombatEdgeCases:
-    """Game-mode v5: combat is event-based; handle_combat_action is a no-op."""
-
-    def test_combat_action_emits_event_based_notice(self, engine):
-        eng, events = engine
-        eng.handle_combat_action("attack")
-        # Combat is resolved via events, not manual rounds.
-        assert any("事件判定" in str(e) or "无需手动" in str(e) for e in events)
-
-    def test_combat_engine_start_and_resolve(self):
-        """The legacy CombatEngine still constructs an internal state (zombie code),
-        but the GameEngine never invokes it in game mode. Verify it doesn't crash."""
-        s = GameSession()
-        s.realm = "练气"
-        s.techniques = [{"name": "基础剑法", "mp_cost": 5}]
-
-        ce = CombatEngine()
-        enemy = {"name": "妖兽", "hp": 50, "hp_max": 50, "attack": 10}
-
-        combat = ce.start_combat(s, enemy)
-        assert combat["phase"] in ("player_turn", "active")
-        assert combat["enemy"]["name"] == "妖兽"
-
-    def test_combat_action_with_no_combat(self):
-        """Engine-side: handle_combat_action is a safe no-op in game mode."""
-        eng = GameEngine()
-        events = []
-        eng.on_info = lambda msg: events.append(msg)
-        eng.handle_combat_action("attack")
-        # Emits the event-based notice, never crashes.
-        assert events
-        assert all(isinstance(e, str) for e in events)
-
-
-# ─── 4. Realm system ──────────────────────────────────────────────────────
+# ─── 3. Realm system ──────────────────────────────────────────────────────
 
 class TestRealmEdgeCases:
 
@@ -497,101 +466,7 @@ class TestTurnRunnerStreamIsolation:
         assert results[0] is None
 
 
-# ─── 6. Save manager ──────────────────────────────────────────────────────
-
-class TestSaveManager:
-
-    def test_save_and_load_roundtrip(self, tmp_save_dir):
-        s = GameSession()
-        s.char_name = "修仙者"
-        s.realm = "金丹"
-        s.lifespan = 200
-        s.turn_count = 42
-
-        save_game(s, "test_roundtrip")
-        loaded = load_game("test_roundtrip")
-
-        assert loaded.char_name == "修仙者"
-        assert loaded.realm == "金丹"
-        assert loaded.lifespan == 200
-        assert loaded.turn_count == 42
-
-    def test_list_saves(self, tmp_save_dir):
-        s = GameSession()
-        s.char_name = "角色A"
-        save_game(s, "slot_1")
-
-        s.char_name = "角色B"
-        save_game(s, "slot_2")
-
-        saves = list_saves()
-        names = {sv["name"] for sv in saves}
-        assert "slot_1" in names
-        assert "slot_2" in names
-
-    def test_load_nonexistent_raises(self, tmp_save_dir):
-        with pytest.raises(FileNotFoundError):
-            load_game("nonexistent_slot")
-
-    def test_delete_save(self, tmp_save_dir):
-        s = GameSession()
-        save_game(s, "to_delete")
-        assert (tmp_save_dir / "to_delete.json").exists()
-
-        delete_save("to_delete")
-        assert not (tmp_save_dir / "to_delete.json").exists()
-
-    def test_delete_nonexistent_raises(self, tmp_save_dir):
-        with pytest.raises(FileNotFoundError):
-            delete_save("nonexistent")
-
-    def test_manual_save_slots(self, tmp_save_dir):
-        s = GameSession()
-        s.char_name = "角色X"
-        s.realm = "元婴"
-
-        save_game(s, "slot_3")
-
-        slots = get_manual_save_slots()
-        assert len(slots) == 5
-
-        slot_3 = slots[2]
-        assert slot_3["name"] == "slot_3"
-        assert slot_3["occupied"] is True
-        assert slot_3["char_name"] == "角色X"
-        assert slot_3["realm"] == "元婴"
-
-    def test_corrupt_save_file(self, tmp_save_dir):
-        """Corrupt JSON file should be listed but marked as error."""
-        (tmp_save_dir / "corrupt.json").write_text("{invalid json", encoding="utf-8")
-
-        saves = list_saves()
-        corrupt = next(s for s in saves if s["name"] == "corrupt")
-        assert corrupt.get("error") == "corrupt"
-
-    def test_empty_save_dir(self, tmp_save_dir):
-        saves = list_saves()
-        assert saves == []
-
-    def test_special_chars_in_slot_name(self, tmp_save_dir):
-        """Slot names with special chars should be sanitized."""
-        s = GameSession()
-        save_game(s, "test/slot")
-        # "/" should be stripped to "testslot" or similar.
-        saves = list_saves()
-        names = {sv["name"] for sv in saves}
-        assert any("test" in n for n in names)
-
-    def test_autosave_distinguished(self, tmp_save_dir):
-        s = GameSession()
-        save_game(s, "autosave")
-
-        saves = list_saves()
-        auto = next(s for s in saves if s["name"] == "autosave")
-        assert auto["is_autosave"] is True
-
-
-# ─── 7. GameSession stress ────────────────────────────────────────────────
+# ─── 6. GameSession stress ────────────────────────────────────────────────
 
 class TestGameSessionStress:
 
@@ -608,7 +483,7 @@ class TestGameSessionStress:
         assert s.char_name == ""
         assert s.realm == "练气"
         assert s.lifespan == 100  # back to default
-        assert s.combat is None
+        assert not hasattr(s, "combat")
         assert not s.game_started
         assert not s.game_over
         assert not s.finale
@@ -634,12 +509,12 @@ class TestGameSessionStress:
         for i in range(1000):
             s.apply_delta({
                 "character": {
-                    "hp": f"-{i % 10}",
+                    "lifespan": f"-{i % 10}",
                     "experience": "+1",
                 },
             })
         # Should survive.
-        assert isinstance(s.hp, int)
+        assert isinstance(s.lifespan, int)
         assert s.experience >= 0
 
     def test_chat_history_trimming(self):

@@ -19,26 +19,14 @@ def test_start_from_profile_initializes_session(tmp_path, monkeypatch):
     engine = GameEngine()
     narratives = []
     engine.on_narrative = lambda text, turn: narratives.append((text, turn))
-
-    def runner(agent_name, user_input, session, **kwargs):
-        assert agent_name == "world_builder"
-        return {
-            "generated_data": {
-                "opening_narrative": "天道初开。",
-                "choices": ["留在山门吐纳", "询问接引弟子", "观察灵气流向"],
-            },
-            "llm_error": "",
-        }
-
-    with patch("agens_novel.engine.game_engine.run_turn_sync", side_effect=runner):
-        engine.start_from_profile({
-            "char_name": "许满",
-            "talent": "剑心微明",
-            "spirit_root": "火灵根",
-            "family_background": "寒门",
-            "difficulty": "普通",
-            "attributes": {key: 60 for key in ATTRIBUTE_KEYS},
-        })
+    engine.start_from_profile({
+        "char_name": "许满",
+        "talent": "剑心微明",
+        "spirit_root": "火灵根",
+        "family_background": "寒门",
+        "difficulty": "普通",
+        "attributes": {key: 60 for key in ATTRIBUTE_KEYS},
+    })
 
     s = engine.game_session
     assert s.game_started is True
@@ -46,8 +34,9 @@ def test_start_from_profile_initializes_session(tmp_path, monkeypatch):
     assert s.talent == "剑心微明"
     assert s.spirit_root == "火灵根"
     assert s.family_background == "寒门"
-    assert s.game_mode == "abcd"
-    assert s.last_choices == ["留在山门吐纳", "询问接引弟子", "观察灵气流向", "【气运】随缘而行，听天命、赌因果"]
+    assert not hasattr(s, "game_mode")
+    assert len(s.last_choices) == 4
+    assert s.last_choices[-1] == "【气运】随缘而行，听天命、赌因果"
     assert narratives and narratives[0][1] == 0
 
 
@@ -113,6 +102,8 @@ def test_special_profile_result_can_be_built_without_pre_reveal(tmp_path, monkey
 def test_start_from_profile_generates_opening_choices_from_model(tmp_path, monkeypatch):
     from agens_novel import paths
     monkeypatch.setattr(paths, "SAVE_DIR", tmp_path)
+    monkeypatch.setenv("AGENS_START_MODEL_OPENING", "1")
+    monkeypatch.setenv("AGENS_API_KEY", "sk-test-1234567890")
 
     engine = GameEngine()
 
@@ -136,6 +127,8 @@ def test_start_from_profile_generates_opening_choices_from_model(tmp_path, monke
 def test_start_from_profile_model_failure_uses_tiandao_fallback(tmp_path, monkeypatch):
     from agens_novel import paths
     monkeypatch.setattr(paths, "SAVE_DIR", tmp_path)
+    monkeypatch.setenv("AGENS_START_MODEL_OPENING", "1")
+    monkeypatch.setenv("AGENS_API_KEY", "sk-test-1234567890")
     engine = GameEngine()
     infos: list[str] = []
     engine.on_info = lambda msg: infos.append(msg)
@@ -154,6 +147,8 @@ def test_start_from_profile_model_failure_uses_tiandao_fallback(tmp_path, monkey
 def test_start_from_profile_model_failure_can_end_run(tmp_path, monkeypatch):
     from agens_novel import paths
     monkeypatch.setattr(paths, "SAVE_DIR", tmp_path)
+    monkeypatch.setenv("AGENS_START_MODEL_OPENING", "1")
+    monkeypatch.setenv("AGENS_API_KEY", "sk-test-1234567890")
     engine = GameEngine()
     game_overs: list[str] = []
     engine.on_model_failure_choice = lambda source, reason: "end"
@@ -173,6 +168,8 @@ def test_start_from_profile_model_failure_can_end_run(tmp_path, monkeypatch):
 def test_start_from_profile_model_failure_enters_local_story_not_profile_choices(tmp_path, monkeypatch):
     from agens_novel import paths
     monkeypatch.setattr(paths, "SAVE_DIR", tmp_path)
+    monkeypatch.setenv("AGENS_START_MODEL_OPENING", "1")
+    monkeypatch.setenv("AGENS_API_KEY", "sk-test-1234567890")
     engine = GameEngine()
     infos: list[str] = []
     engine.on_info = lambda msg: infos.append(msg)
@@ -196,6 +193,8 @@ def test_start_from_profile_model_failure_enters_local_story_not_profile_choices
 def test_game_name_is_sent_to_world_builder_prompt(tmp_path, monkeypatch):
     from agens_novel import paths
     monkeypatch.setattr(paths, "SAVE_DIR", tmp_path)
+    monkeypatch.setenv("AGENS_START_MODEL_OPENING", "1")
+    monkeypatch.setenv("AGENS_API_KEY", "sk-test-1234567890")
     engine = GameEngine()
     seen_inputs: list[str] = []
 

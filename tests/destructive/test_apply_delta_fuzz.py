@@ -131,7 +131,7 @@ class TestDestructiveApplyDelta:
         """Game-mode v5: structured combat delta is dropped (event-based)."""
         s = GameSession()
         s.apply_delta({"character": {"combat": {}}})
-        assert s.combat is None
+        assert not hasattr(s, "combat")
 
     def test_name_update(self):
         s = GameSession()

@@ -13,6 +13,8 @@ def test_profile_model_failure_enters_local_story(monkeypatch, tmp_path) -> None
     from agens_novel import paths
 
     monkeypatch.setattr(paths, "SAVE_DIR", tmp_path)
+    monkeypatch.setenv("AGENS_START_MODEL_OPENING", "1")
+    monkeypatch.setenv("AGNES_API_KEY", "sk-test-1234567890")
     engine = GameEngine()
     engine.on_model_failure_choice = lambda source, reason: "fallback"
     infos: list[str] = []
@@ -37,6 +39,8 @@ def test_local_story_choice_advances_node_and_delta(monkeypatch, tmp_path) -> No
     from agens_novel import paths
 
     monkeypatch.setattr(paths, "SAVE_DIR", tmp_path)
+    monkeypatch.setenv("AGENS_START_MODEL_OPENING", "1")
+    monkeypatch.setenv("AGNES_API_KEY", "sk-test-1234567890")
     engine = GameEngine()
     engine.on_model_failure_choice = lambda source, reason: "fallback"
     with patch(
@@ -62,6 +66,8 @@ def test_local_story_d_keyword_match_and_no_match_keep_choices(monkeypatch, tmp_
     from agens_novel import paths
 
     monkeypatch.setattr(paths, "SAVE_DIR", tmp_path)
+    monkeypatch.setenv("AGENS_START_MODEL_OPENING", "1")
+    monkeypatch.setenv("AGNES_API_KEY", "sk-test-1234567890")
     engine = GameEngine()
     engine.on_model_failure_choice = lambda source, reason: "fallback"
     infos: list[str] = []
@@ -117,25 +123,22 @@ def test_loaded_local_story_can_continue_from_saved_node(monkeypatch, tmp_path) 
     assert any(item.get("name") == "残页筑基心得" for item in engine.game_session.inventory)
 
 
-def test_engine_load_rebuilds_local_story_choices(monkeypatch, tmp_path) -> None:
-    from agens_novel import paths
+def test_loaded_local_story_rebuilds_choices_when_empty() -> None:
+    session = GameSession()
+    session.game_started = True
+    session.local_story_active = True
+    session.local_story_id = DEFAULT_STORY_ID
+    session.local_story_node_id = "outer_gate"
+    session.last_choices = []
 
-    monkeypatch.setattr(paths, "SAVE_DIR", tmp_path)
     engine = GameEngine()
-    engine.game_session.game_started = True
-    engine.game_session.local_story_active = True
-    engine.game_session.local_story_id = DEFAULT_STORY_ID
-    engine.game_session.local_story_node_id = "outer_gate"
-    engine.game_session.last_choices = []
-    engine.save("local_story_slot")
+    engine.game_session = GameSession.from_save_dict(session.to_save_dict())
+    engine.handle_action("请教师兄如何准备筑基")
 
-    loaded = GameEngine()
-    loaded.load("local_story_slot")
-
-    assert loaded.game_session.local_story_active is True
-    assert loaded.game_session.local_story_node_id == "outer_gate"
-    assert len(loaded.game_session.last_choices) == 4
-    assert any("筑基" in choice for choice in loaded.game_session.last_choices)
+    assert engine.game_session.local_story_active is True
+    assert engine.game_session.local_story_node_id == "preparation"
+    assert len(engine.game_session.last_choices) == 4
+    assert any("筑基" in choice for choice in engine.game_session.last_choices)
 
 
 def test_local_story_can_reach_first_major_breakthrough(monkeypatch, tmp_path) -> None:
@@ -143,6 +146,8 @@ def test_local_story_can_reach_first_major_breakthrough(monkeypatch, tmp_path) -
 
     monkeypatch.setattr(paths, "SAVE_DIR", tmp_path)
     monkeypatch.setattr("agens_novel.game.realm.random.random", lambda: 0.0)
+    monkeypatch.setenv("AGENS_START_MODEL_OPENING", "1")
+    monkeypatch.setenv("AGNES_API_KEY", "sk-test-1234567890")
     engine = GameEngine()
     engine.on_model_failure_choice = lambda source, reason: "fallback"
     with patch(

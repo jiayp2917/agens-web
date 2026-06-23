@@ -20,7 +20,6 @@ def _canned_world_builder() -> dict[str, Any]:
         "generated_data": {
             "character": {
                 "name": "许满", "realm": "练气", "realm_stage": 1,
-                "hp": 100, "hp_max": 100, "mp": 50, "mp_max": 50,
                 "spirit_root": "火木双灵根", "spirit_root_grade": "地",
                 "experience": 0, "experience_to_next": 100, "gold": 10,
                 "breakthrough_flags": [],
@@ -70,45 +69,39 @@ def _patch_turn_runner(call_log: list | None = None) -> Any:
 # Tests
 # ═══════════════════════════════════════════════════════════════════════════════
 
-class TestGameEngineSaveLoad:
-    def test_save_and_load(self, monkeypatch, tmp_path) -> None:
-        from agens_novel import paths
-        monkeypatch.setattr(paths, "SAVE_DIR", tmp_path / "saves")
+class TestGameSessionRoundtrip:
+    """Session serialization roundtrip via to_save_dict / from_save_dict."""
+
+    def test_session_serialization_roundtrip(self, monkeypatch) -> None:
         monkeypatch.setenv("AGNES_API_KEY", "sk-test-1234567890")
 
         engine = GameEngine()
         with _patch_turn_runner():
             engine.new_game("许满")
 
-        infos: list[str] = []
-        engine.on_info = lambda msg: infos.append(msg)
+        data = engine.game_session.to_save_dict()
+        restored = GameSession.from_save_dict(data)
 
-        engine.save("test")
-        assert "已保存" in infos[-1]
+        assert restored.char_name == "许满"
+        assert restored.game_started is True
+        assert restored.realm == "练气"
 
-        # Load into new engine.
-        engine2 = GameEngine()
-        engine2.on_info = lambda msg: infos.append(msg)
-        engine2.load("test")
-        assert engine2.game_session.char_name == "许满"
-        assert "已加载" in infos[-1]
+    def test_session_from_empty_dict(self) -> None:
+        session = GameSession.from_save_dict({})
+        assert session.char_name == ""
+        assert not session.game_started
 
-    def test_save_without_game(self, monkeypatch) -> None:
-        engine = GameEngine()
-        infos: list[str] = []
-        engine.on_info = lambda msg: infos.append(msg)
-        engine.save("test")
-        assert "没有进行中" in infos[0]
-
-    def test_load_nonexistent(self, monkeypatch, tmp_path) -> None:
-        from agens_novel import paths
-        monkeypatch.setattr(paths, "SAVE_DIR", tmp_path / "saves")
+    def test_session_serialization_excludes_legacy_fields(self, monkeypatch) -> None:
+        monkeypatch.setenv("AGNES_API_KEY", "sk-test-1234567890")
 
         engine = GameEngine()
-        infos: list[str] = []
-        engine.on_info = lambda msg: infos.append(msg)
-        engine.load("nonexistent")
-        assert "不存在" in infos[0] or "找不到" in infos[0]
+        with _patch_turn_runner():
+            engine.new_game("许满")
+
+        data = engine.game_session.to_save_dict()
+        assert "hp" not in data.get("character", data)
+        assert "mp" not in data.get("character", data)
+        assert "combat" not in data.get("character", data)
 
 
 class TestFinaleCallback:

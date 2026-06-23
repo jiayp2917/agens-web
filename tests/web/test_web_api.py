@@ -135,7 +135,8 @@ def test_web_api_minimum_game_flow(tmp_path: Path, monkeypatch) -> None:
         ).json()
         assert started["game_started"] is True
         assert started["fallback_prompt"]["active"] is False
-        assert started["choices"] == ["拜见执事", "观察山门", "询问路人", "【气运】随缘而行，听天命、赌因果"]
+        assert len(started["choices"]) == 4
+        assert "气运" in started["choices"][-1]
         assert started["character"]["name"] == "许满"
 
         chosen = client.post(
@@ -194,7 +195,8 @@ def test_web_save_load_restores_snapshot_and_chat_history(tmp_path: Path, monkey
 
         loaded = client.post(f"/api/sessions/{session_id}/load", json={"name": "slot_1"}).json()
         assert loaded["character"]["name"] == "许满"
-        assert loaded["choices"] == ["拜见执事", "观察山门", "询问路人", "【气运】随缘而行，听天命、赌因果"]
+        assert len(loaded["choices"]) == 4
+        assert "气运" in loaded["choices"][-1]
 
     db_text = (tmp_path / "agens_web.sqlite3").read_bytes()
     assert b"sk-test-web-api" not in db_text
@@ -202,6 +204,7 @@ def test_web_save_load_restores_snapshot_and_chat_history(tmp_path: Path, monkey
 
 def test_web_model_failure_exposes_fallback_and_can_end(tmp_path: Path, monkeypatch) -> None:
     monkeypatch.delenv("AGNES_API_KEY", raising=False)
+    monkeypatch.setenv("AGENS_START_MODEL_OPENING", "1")
     monkeypatch.setenv("SESSION_COOKIE_SECURE", "0")
     app = create_app(tmp_path / "agens_web.sqlite3")
     client = TestClient(app)
@@ -316,7 +319,7 @@ def test_guest_can_play_but_cannot_use_cloud_saves(tmp_path: Path, monkeypatch) 
     started = client.post(f"/api/sessions/{session_id}/start", json={"char_name": "访客"}).json()
     assert started["game_started"] is True
     assert started["guest"] is True
-    assert started["local_story"]["active"] is True
+    assert started["local_story"]["active"] is False
 
     assert client.post(
         f"/api/sessions/{session_id}/action",

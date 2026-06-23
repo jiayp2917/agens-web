@@ -6,7 +6,7 @@
 
 - 产品入口是浏览器 Web UI + FastAPI 后端。
 - 当前核心游戏逻辑继续复用 `src/agens_novel/`。
-- 当前只开放游戏模式 v5 Alpha：A/B/C/D 四按钮固定语义，A 稳妥 / B 机遇 / C 风险 / D 气运。
+- 当前只开放游戏模式（v5 已实现 / 阶段 7/8 联调收尾中）：A/B/C/D 四按钮固定语义，A 稳妥 / B 机遇 / C 风险 / D 气运。
 - 引导模式、小说模式只作为禁用入口保留，不开放运行逻辑。
 - 模型失败、无 key、无有效选项时，用户可选择本地故事兜底继续或结束本局。
 - 境界顺序固定为：练气、筑基、金丹、元婴、化神、合体、大乘、渡劫、飞升。
@@ -76,11 +76,11 @@ Browser UI
 | P1 | 模型返回文本但缺少结构化选项时，容易进入兜底或阻断流程。 | 保持格式修复重试，并在 API 响应中区分请求失败、输出不完整、审核失败和本地兜底。 |
 | P2 | 本地故事兜底只达到最小可玩。 | 改成数据文件化故事节点，逐步扩展多套故事。 |
 | P2 | Web 多用户会引入会话隔离和密钥安全问题。 | API 层统一鉴权、限流、脱敏日志和 per-user session 存储。 |
-| P2 | PostgreSQL 设计和 Alembic 迁移已经补齐 Alpha 必需表，但仍需确认服务器生产库已升级到 `20260622_0003`，并继续做索引评审、备份恢复和回滚演练。 | 设置 `TEST_DATABASE_URL` 跑空库迁移和账号游玩链路；服务器确认 `game_runs`、`game_turns`、`player_progress` 存在。 |
+| P2 | PostgreSQL 设计和 Alembic 迁移已经补齐 Alpha 必需表，但仍需确认服务器生产库已升级到 `20260622_0004_ddl_disallow_production` 及之后，并继续做索引评审、备份恢复和回滚演练。 | 设置 `TEST_DATABASE_URL` 跑空库迁移和账号游玩链路；服务器确认 `game_runs`、`game_turns`、`player_progress` 存在；生产运行时 `APP_ENV=production` 自动拒绝 `AGENS_PG_AUTO_DDL=1`。 |
 | P2 | 访客局只在单进程内存中，容器重启、多 worker 或多副本会丢失。 | Alpha 阶段明确提示；正式多人部署前引入共享会话存储或只允许账号局跨进程恢复。 |
 | P2 | 匿名访客仍可能消耗模型额度。 | 增加访客日限额、IP/设备限额、模型预算保护和边缘层限流。 |
 | P3 | 测试目录需继续从旧产品分类迁移到 Web 分类。 | 保留核心测试，新增 API 和浏览器测试，删除旧 UI 契约测试。 |
-| P3 | React 主入口仍偏重，后续 UI 迭代容易互相影响。 | 拆出认证、首页、角色创建、游戏页、设置/存档弹窗、BGM 和终局页组件。 |
+| P2 | React 主入口仍偏重，后续 UI 迭代容易互相影响。 | P2 已拆分认证、首页、角色创建、游戏页、设置/存档弹窗、BGM 和终局页组件；下一步按需继续抽 lib/ 与 hooks/。 |
 
 ## 验证入口
 
@@ -95,6 +95,6 @@ Browser UI
 - 当前生产入口使用 `web/frontend-react/dist`；旧 `web/frontend` 已删除，React public assets 位于 `web/frontend-react/public/assets`。
 - PostgreSQL 生产 schema 必须由 Alembic 创建。`database_postgres.py` 的 `AGENS_PG_AUTO_DDL` 只允许作为显式兼容开关，不作为生产默认路径。
 - Alembic 初始和桥接迁移覆盖运行时会访问的 catalog、死亡奖励和 v5 回合表：`catalog_*`、`run_achievements`、`account_rewards`、`legacy_bonuses`、`game_runs`、`game_turns`、`player_progress`。
-- React 主入口仍偏重，`web/frontend-react/src/main.tsx` 同时承担认证、首页、角色创建、游戏页、设置存档弹窗和终局页；后续应拆组件。
+- React 主入口 P2 已拆分：认证、首页、角色创建、游戏页、设置存档弹窗、BGM 和终局页各自独立组件，归口 `pages/` 与 `components/`。
 - 文档分层以 `docs/INDEX.md` 为准：`RUNTIME_FLOW.md` 描述当前运行流程，`GAME_MODE_SPEC.md` 描述游戏模式 v5 规格和实现状态。
 - Alpha 复盘和成功/失败经验以 `docs/ALPHA_REVIEW_AND_LESSONS.md` 为准。后续上线报告必须区分本地测试、PostgreSQL smoke、Docker Compose、反代和公网验证。

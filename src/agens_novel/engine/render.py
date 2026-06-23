@@ -72,7 +72,7 @@ def format_status_bar(session: GameSession) -> str:
     prep_met, prep_total = _breakthrough_requirement_count(session)
     prep_str = f" | 准备:{prep_met}/{prep_total}" if prep_total else ""
     loc = session.location or "未知"
-    return f"[{realm_str} | {age}岁 | 寿元:{remaining}年 | {insight_str}{prep_str} | 地点:{loc} | 第{session.turn_count}回合]"
+    return f"[{realm_str} | {age}岁 | 寿元:{remaining}/{lifespan}年 | {insight_str}{prep_str} | 地点:{loc} | 第{session.turn_count}回合]"
 
 
 def format_status_card(session: GameSession) -> str:
@@ -89,7 +89,7 @@ def format_status_card(session: GameSession) -> str:
 
     lines = [
         f"  姓名:   {session.char_name or '未命名'}",
-        f"  年龄:   {age} / 寿元 {lifespan} 年（剩余 {remaining} 年）",
+        f"  年龄:   {age} / 寿元 {remaining}/{lifespan} 年",
         f"  境界:   {realm_str}",
         f"  灵根:   {_spirit_root_str(session)}",
         f"  天赋:   {getattr(session, 'talent', '') or '未显'}",
@@ -142,13 +142,10 @@ def format_skills(session: GameSession) -> str:
             name = tech.get("name", "?")
             level = tech.get("level", 1)
             typ = tech.get("type", "")
-            mp_cost = tech.get("mp_cost", "")
             element = tech.get("element", "")
             parts = [f"  · {name} Lv.{level}"]
             if typ:
                 parts.append(f"[{typ}]")
-            if mp_cost:
-                parts.append(f"MP:{mp_cost}")
             if element:
                 parts.append(f"({element})")
             lines.append(" ".join(parts))
@@ -197,44 +194,6 @@ def format_log(session: GameSession, count: int = 5) -> str:
             narrative = narrative[:147] + "..."
         parts.append(f"── 第 {turn} 回合 ──\n{narrative}")
     return "\n\n".join(parts)
-
-
-def format_combat(session: GameSession) -> str:
-    """Game mode: combat is event-based — no round-based combat display."""
-    return "  (战斗通过事件判定结算)"
-
-    phase = combat.get("phase", "idle")
-    player = combat.get("player", {})
-    enemy = combat.get("enemy", {})
-    turn = combat.get("turn_count", 0)
-
-    lines = [
-        f"  ⚔ 战斗 - 第 {turn} 回合 ({phase})",
-        f"  ┌ {player.get('name', '你')}",
-        f"  │ HP: {_bar(player.get('hp', 0), player.get('hp_max', 1))} {player.get('hp', 0)}/{player.get('hp_max', 0)}",
-        f"  │ MP: {_bar(player.get('mp', 0), player.get('mp_max', 1))} {player.get('mp', 0)}/{player.get('mp_max', 0)}",
-        f"  └ 境界: {player.get('realm', '?')}",
-        "  VS",
-        f"  ┌ {enemy.get('name', '敌人')}",
-        f"  │ HP: {_bar(enemy.get('hp', 0), enemy.get('hp_max', 1))} {enemy.get('hp', 0)}/{enemy.get('hp_max', 0)}",
-        f"  │ MP: {_bar(enemy.get('mp', 0), enemy.get('mp_max', 1))} {enemy.get('mp', 0)}/{enemy.get('mp_max', 0)}",
-        f"  └ 境界: {enemy.get('realm', '?')}",
-    ]
-
-    narrative = combat.get("narrative", "")
-    if narrative:
-        lines.append(f"  > {narrative}")
-
-    actions = combat.get("available_actions", [])
-    if actions:
-        action_names = {
-            "attack": "普攻", "technique": "功法", "item": "丹药",
-            "defend": "防御", "flee": "逃跑",
-        }
-        labels = [action_names.get(a, a) for a in actions]
-        lines.append(f"  可用操作: {' / '.join(labels)}")
-
-    return "\n".join(lines)
 
 
 def format_realm(session: GameSession) -> str:

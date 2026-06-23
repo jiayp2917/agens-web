@@ -6,9 +6,10 @@
 
 ## 当前结论
 
-- 2026-06-22 更新：React 主入口已切到游戏模式 v5 Alpha，A/B/C/D 四按钮固定语义，D 为气运/天命路线，不再是自由输入。
-- 2026-06-22 更新：旧纯 HTML/CSS/JS 前端 `web/frontend` 已删除，图片和 BGM 资产迁入 `web/frontend-react/public/assets`。
-- 2026-06-22 更新：新增 Alembic `20260622_0003` 覆盖 `game_runs`、`game_turns`、`player_progress`；服务层已写入回合日志和终局进度。
+- 2026-06-22 状态：v5 已实现 / 阶段 7/8 联调收尾中。
+  - React 主入口已切到游戏模式 v5，A/B/C/D 四按钮固定语义，D 为气运/天命路线，不再是自由输入。
+  - 旧纯 HTML/CSS/JS 前端 `web/frontend` 已删除，图片和 BGM 资产迁入 `web/frontend-react/public/assets`。
+  - 新增 Alembic `20260622_0003` 覆盖 `game_runs`、`game_turns`、`player_progress`，以及 `20260622_0004_ddl_disallow_production` 标记 PG 生产库 DDL 治理策略；服务层已写入回合日志和终局进度。
 - 本地 SQLite + React 主入口已经具备最小游玩闭环。
 - 访客可以直接新开一局并游玩，但不提供云端存档；邀请码账号可以保存和读档。
 - 项目还不能直接宣称“公网稳定可玩”，因为服务器生产库 `20260622_0003`、公网部署包和真实浏览器多宽度验收仍需逐项确认。

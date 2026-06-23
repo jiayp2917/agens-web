@@ -8,7 +8,7 @@ from ..session.game_session import GameSession
 
 CHOICE_LABELS = ("A", "B", "C", "D")
 CHOICE_FALLBACK_NOTICE = "天道紊乱，暂以因果残影指引。"
-# D语义: "气运" — 随缘/天命，强绑定 luck 属性。UI 固定为第4按钮。
+# D 语义: "气运" - 随缘/天命，强绑定 luck 属性。UI 固定为第 4 按钮。
 
 
 def normalize_choices(raw_choices: Any) -> list[str]:
@@ -48,12 +48,12 @@ def complete_choices(raw_choices: Any, session: GameSession) -> list[str]:
 
 
 def fallback_choices(session: GameSession) -> list[str]:
-    """Generate 4 grounded fallback choices (A/B/C/D semantics) when model choices are unavailable."""
+    """Generate 4 grounded fallback choices (A/B/C/D semantics)."""
     location = session.location or "当前地点"
     return [
         f"【稳妥】在{location}稳住气息，观察灵气与地势变化",
         f"【机遇】寻找附近修士交谈，打听当前机缘与风险",
-        f"【风险】检查随身物品、功法与破境准备",
+        "【风险】检查随身物品、功法与破境准备",
         "【气运】随缘而行，听天命、赌因果",
     ]
 

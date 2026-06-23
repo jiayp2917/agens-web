@@ -18,6 +18,10 @@
   box-sizing: border-box;
 }
 
+html {
+  overflow-x: hidden;
+}
+
 body {
   margin: 0;
   color: var(--ink);
@@ -161,30 +165,30 @@ button:disabled {
   min-height: calc(100dvh - 76px);
   display: grid;
   align-items: center;
-  padding: clamp(20px, 5vw, 56px);
+  padding: clamp(16px, 3vw, 36px);
   background:
     linear-gradient(90deg, rgba(245, 239, 225, 0.98) 0%, rgba(245, 239, 225, 0.82) 42%, rgba(245, 239, 225, 0.18) 100%),
-    url("/assets/ink_home_bg.png") center bottom / cover no-repeat;
+    url("/assets/ink_mountain_gate.png") center bottom / cover no-repeat;
 }
 
 .home-shell {
-  width: min(1180px, 100%);
+  width: min(1120px, 100%);
   margin: 0 auto;
   display: grid;
-  grid-template-columns: minmax(300px, 440px) minmax(0, 1fr);
+  grid-template-columns: minmax(300px, 420px) minmax(0, 1fr);
   align-items: center;
-  gap: clamp(24px, 5vw, 72px);
+  gap: clamp(20px, 4vw, 56px);
 }
 
 .hero {
   display: grid;
-  gap: 18px;
+  gap: 14px;
   text-align: left;
 }
 
 .hero h1 {
   margin: 0;
-  font-size: clamp(42px, 7vw, 78px);
+  font-size: clamp(40px, 6vw, 68px);
   line-height: 1.04;
 }
 
@@ -236,7 +240,7 @@ button:disabled {
 
 .home-preview {
   margin: 0;
-  min-height: min(56dvh, 520px);
+  min-height: min(50dvh, 470px);
   border: 1px solid rgba(216, 200, 167, 0.62);
   border-radius: 8px;
   overflow: hidden;
@@ -249,6 +253,38 @@ button:disabled {
   height: 100%;
   min-height: inherit;
   display: block;
+  object-fit: cover;
+}
+
+.community-card {
+  width: min(360px, 100%);
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) 84px;
+  align-items: center;
+  gap: 12px;
+  padding: 10px 12px;
+  border: 1px solid rgba(216, 200, 167, 0.72);
+  border-radius: 8px;
+  background: rgba(255, 250, 240, 0.76);
+}
+
+.community-card strong,
+.community-card span {
+  display: block;
+}
+
+.community-card span {
+  margin-top: 4px;
+  color: var(--muted);
+  font-size: 13px;
+}
+
+.community-card img {
+  width: 84px;
+  height: 84px;
+  display: block;
+  border-radius: 6px;
+  background: #fff;
   object-fit: cover;
 }
 
@@ -439,7 +475,7 @@ select {
   align-items: center;
   justify-content: space-between;
   gap: 12px;
-  padding: 18px clamp(16px, 4vw, 44px);
+  padding: 12px clamp(14px, 3vw, 32px);
 }
 
 .game-summary h2,
@@ -478,9 +514,10 @@ select {
 
 .game-grid {
   display: grid;
-  gap: 16px;
+  gap: 12px;
   min-height: 0;
-  padding: 0 clamp(16px, 4vw, 44px) 16px;
+  width: 100%;
+  padding: 0 clamp(14px, 3vw, 32px) 12px;
   overflow: hidden;
 }
 
@@ -493,14 +530,14 @@ select {
 }
 
 .status-panel {
-  padding: 16px;
+  padding: 12px;
   overflow: hidden;
 }
 
 .stat-stack {
   display: grid;
-  gap: 12px;
-  margin-top: 14px;
+  gap: 10px;
+  margin-top: 10px;
 }
 
 .stat-line {
@@ -539,7 +576,7 @@ select {
   display: grid;
   grid-template-columns: auto minmax(0, 1fr);
   gap: 6px 12px;
-  margin: 14px 0 0;
+  margin: 12px 0 0;
   color: var(--muted);
 }
 
@@ -562,7 +599,7 @@ select {
 
 .tool-grid {
   grid-template-columns: repeat(2, minmax(0, 1fr));
-  margin-top: 12px;
+  margin-top: 10px;
 }
 
 .tool-grid button {
@@ -589,9 +626,9 @@ select {
 .panel-summary {
   display: grid;
   grid-template-columns: auto minmax(0, 1fr);
-  gap: 8px 12px;
-  margin: 14px 0 0;
-  padding: 12px;
+  gap: 6px 10px;
+  margin: 10px 0 0;
+  padding: 10px;
   border: 1px solid rgba(216, 200, 167, 0.72);
   border-radius: 8px;
   background: rgba(255, 250, 240, 0.7);
@@ -619,14 +656,14 @@ select {
 .story-log {
   min-height: 0;
   overflow: auto;
-  padding: 20px;
+  padding: 14px;
   background: linear-gradient(rgba(255, 250, 240, 0.62), rgba(255, 250, 240, 0.88));
 }
 
 .story-log article {
-  max-width: 70ch;
-  margin: 0 auto 14px;
-  padding: 14px 16px;
+  max-width: 62ch;
+  margin: 0 auto 10px;
+  padding: 12px 14px;
   border: 1px solid rgba(216, 200, 167, 0.82);
   border-radius: 8px;
   background: rgba(255, 250, 240, 0.92);
@@ -634,7 +671,7 @@ select {
 }
 
 .choice-list {
-  padding: 14px;
+  padding: 12px;
   border-top: 1px solid rgba(216, 200, 167, 0.72);
   background: rgba(255, 250, 240, 0.92);
 }
@@ -645,6 +682,7 @@ select {
   grid-template-columns: 34px 1fr;
   align-items: center;
   gap: 10px;
+  min-height: 76px;
   overflow-wrap: anywhere;
 }
 
@@ -672,23 +710,6 @@ select {
 
 .fallback svg {
   color: var(--cinnabar);
-}
-
-.action-bar-react {
-  display: grid;
-  grid-template-columns: auto 1fr auto;
-  gap: 12px;
-  align-items: center;
-  padding: 14px clamp(16px, 4vw, 44px);
-  border-top: 1px solid var(--border);
-  background: rgba(255, 250, 240, 0.94);
-  position: sticky;
-  bottom: 0;
-  z-index: 8;
-}
-
-.action-bar-react label {
-  white-space: nowrap;
 }
 
 .modal-scrim {
@@ -784,6 +805,24 @@ select {
   width: 100%;
   display: grid;
   gap: 10px;
+}
+
+.preset-grid {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 8px;
+}
+
+.preset-grid button {
+  min-width: 0;
+  background: #242a30;
+  color: #ece6d6;
+  border-color: #38414a;
+}
+
+.field-help {
+  color: #b5ad9b;
+  line-height: 1.55;
 }
 
 .settings-form label {
@@ -917,12 +956,12 @@ select {
   }
 
   .game-grid {
-    grid-template-columns: 280px minmax(0, 1fr);
+    grid-template-columns: 260px minmax(0, 1fr);
     align-items: stretch;
   }
 
   .choice-list {
-    grid-template-columns: repeat(3, minmax(0, 1fr));
+    grid-template-columns: repeat(2, minmax(0, 1fr));
   }
 }
 
@@ -935,7 +974,7 @@ select {
   .home {
     background:
       linear-gradient(180deg, rgba(245, 239, 225, 0.96), rgba(245, 239, 225, 0.82)),
-      url("/assets/ink_home_bg.png") center bottom / cover no-repeat;
+      url("/assets/ink_mountain_gate.png") center bottom / cover no-repeat;
   }
 
   .home-preview {
@@ -960,7 +999,20 @@ select {
   .auth-screen,
   .character-page,
   .ending-page {
-    padding: 16px;
+    padding: 12px;
+  }
+
+  .home-preview {
+    display: none;
+  }
+
+  .community-card {
+    grid-template-columns: minmax(0, 1fr) 72px;
+  }
+
+  .community-card img {
+    width: 72px;
+    height: 72px;
   }
 
   .hero h1 {
@@ -970,7 +1022,6 @@ select {
   .mode-grid,
   .creation-mode,
   .game-summary,
-  .action-bar-react,
   .fallback,
   .ending-actions {
     grid-template-columns: 1fr;
@@ -1001,7 +1052,7 @@ select {
   }
 
   .story-panel {
-    min-height: 58dvh;
+    min-height: 54dvh;
   }
 
   .story-log {
@@ -1010,6 +1061,10 @@ select {
 
   .choice-list {
     grid-template-columns: 1fr;
+  }
+
+  .choice-list button {
+    min-height: 58px;
   }
 
   .fallback {
@@ -1032,6 +1087,10 @@ select {
 
   .protected-settings {
     display: grid;
+  }
+
+  .preset-grid {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
   }
 }
 

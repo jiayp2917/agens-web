@@ -20,7 +20,6 @@ def _canned_world_builder() -> dict[str, Any]:
         "generated_data": {
             "character": {
                 "name": "许满", "realm": "练气", "realm_stage": 1,
-                "hp": 100, "hp_max": 100, "mp": 50, "mp_max": 50,
                 "spirit_root": "火木双灵根", "spirit_root_grade": "地",
                 "experience": 0, "experience_to_next": 100, "gold": 10,
                 "breakthrough_flags": [],
@@ -46,7 +45,7 @@ def _canned_world_builder() -> dict[str, Any]:
 def _canned_narrator() -> dict[str, Any]:
     return {
         "narrative": "你静坐吐纳，灵气缓缓涌入。",
-        "state_delta": {"character": {"mp": "-10", "experience": "+15"}},
+        "state_delta": {"character": {"experience": "+15"}},
         "choices": ["继续吐纳", "请教师兄", "观察灵气流向"],
         "output_path": "", "audit_path": "", "finished_at": "", "llm_error": "",
     }
@@ -114,7 +113,7 @@ class TestGameEngineHandleAction:
                 seen_inputs.append(user_input)
                 return {
                     "narrative": "你向接引弟子行礼。",
-                    "state_delta": {"character": {"mp": "-5"}},
+                    "state_delta": {"character": {"insight": "+5"}},
                     "choices": ["继续询问", "返回山门", "观察弟子神色"],
                     "llm_error": "",
                 }
@@ -268,7 +267,7 @@ class TestGameEngineHandleAction:
             if agent_name == "narrator":
                 return {
                     "narrative": "你获得一枚清灵丹，又习得云水诀。",
-                    "state_delta": {"character": {"mp": "-5"}},
+                    "state_delta": {"character": {"insight": "+5"}},
                     "choices": ["查看丹药", "演练功法", "拜谢师兄"],
                     "llm_error": "",
                 }
@@ -281,7 +280,7 @@ class TestGameEngineHandleAction:
 
         assert engine.game_session.inventory == []
         assert engine.game_session.techniques == []
-        assert engine.game_session.mp == 50
+        assert not hasattr(engine.game_session, "mp")
         assert narratives == []
         assert any("状态栏为准" in msg for msg in infos)
 
@@ -371,7 +370,12 @@ class TestGameEngineHandleAction:
         def selective_runner(agent_name, user_input, session, **kw):
             call_log.append(agent_name)
             if agent_name == "narrator":
-                return _canned_narrator()
+                return {
+                    "narrative": "你得了一笔不该存在的灵石。",
+                    "state_delta": {"character": {"gold": "+77"}},
+                    "choices": ["继续吐纳", "请教师兄", "观察灵气流向"],
+                    "output_path": "", "audit_path": "", "finished_at": "", "llm_error": "",
+                }
             if agent_name == "judge":
                 raise ConnectionError("Judge down")
             return {}
@@ -380,8 +384,8 @@ class TestGameEngineHandleAction:
             engine.handle_action("修炼")
 
         assert engine.game_session.turn_count == 1
-        # Judge exception → approved=False by default → delta NOT applied
-        assert engine.game_session.mp == 50  # unchanged
+        # Judge exception -> model delta is not applied; v5 rule settlement may still advance the turn.
+        assert engine.game_session.gold == 10
 
     def test_judge_rejects(self, monkeypatch) -> None:
         monkeypatch.setenv("AGNES_API_KEY", "sk-test-1234567890")
@@ -450,8 +454,9 @@ class TestGameEngineHandleAction:
             engine.handle_action("修炼")
 
         assert narratives == []
-        assert any("审判未通过" in msg for msg in infos)
+        assert any("基础规则结算" in msg for msg in infos)
         assert engine.game_session.current_scene == "晨雾中的青云山外门"
+        assert engine.game_session.turn_count == 1
 
     def test_judge_reject_without_correction_keeps_model_choices(self, monkeypatch) -> None:
         monkeypatch.setenv("AGNES_API_KEY", "sk-test-1234567890")
@@ -467,7 +472,7 @@ class TestGameEngineHandleAction:
             if agent_name == "narrator":
                 return {
                     "narrative": "你试图强闯内门。",
-                    "state_delta": {"character": {"mp": "-20"}},
+                    "state_delta": {"character": {"insight": "+5"}},
                     "choices": ["向执事解释来意", "退回山门等候", "寻找外门任务"],
                     "llm_error": "",
                 }
@@ -485,8 +490,9 @@ class TestGameEngineHandleAction:
             engine.handle_action("强闯内门")
 
         assert engine.game_session.last_choices == ["向执事解释来意", "退回山门等候", "寻找外门任务", "【气运】随缘而行，听天命、赌因果"]
-        assert any("审判未通过" in msg for msg in infos)
+        assert any("基础规则结算" in msg for msg in infos)
         assert not any("天道紊乱" in msg for msg in infos)
+        assert engine.game_session.turn_count == 1
 
     def test_action_delta_filters_identity_and_reset_scene(self, monkeypatch) -> None:
         monkeypatch.setenv("AGNES_API_KEY", "sk-test-1234567890")
@@ -506,7 +512,6 @@ class TestGameEngineHandleAction:
                             "spirit_root": "undetermined",
                             "inventory": [],
                             "techniques": [],
-                            "mp": "-5",
                             "experience": "+10",
                         },
                         "world": {"current_scene": "混沌虚空", "day_count": 2},
@@ -563,10 +568,8 @@ class TestGameEngineHandleAction:
                 "techniques": [{"name": "基础吐纳术", "level": 1, "type": "内功"}],
             })
 
-        # No typed combat action parsing in game mode.
-        assert engine._parse_typed_combat_action("施展基础吐纳术攻击妖兽") is None
-        # Game-mode v5: no structured combat state on the session ever.
-        assert engine.game_session.combat is None
+        assert not hasattr(engine, "_parse_typed_combat_action")
+        assert not hasattr(engine.game_session, "combat")
 
     def test_narrator_combat_delta_is_dropped_in_game_mode(self, monkeypatch, tmp_path) -> None:
         """Game-mode v5: a structured combat delta in the narrator output is
@@ -607,7 +610,8 @@ class TestGameEngineHandleAction:
             engine.handle_action("查看山门外的异响")
 
         # Game-mode v5: structured combat delta is dropped; no combat state kept.
-        assert engine.game_session.combat is None
+        assert not hasattr(engine.game_session, "combat")
+        assert "combat" not in engine.game_session.to_save_dict()["character"]
 
 
 class TestStageAdvancement:
@@ -657,7 +661,7 @@ class TestStageAdvancement:
                 return {
                     "narrative": "修炼大进！",
                     "state_delta": {
-                        "character": {"mp": "-5", "experience": "+500"},
+                        "character": {"experience": "+500"},
                     },
                     "choices": ["继续吐纳", "检查瓶颈", "出门历练"],
                     "output_path": "", "audit_path": "", "finished_at": "", "llm_error": "",

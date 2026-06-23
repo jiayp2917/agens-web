@@ -21,7 +21,8 @@ class TestGameSessionInit:
         assert s.talent == ""
         assert s.family_background == ""
         assert s.difficulty == "普通"
-        assert s.game_mode == "abcd"
+        for legacy in ("game_mode", "hp", "hp_max", "mp", "mp_max", "combat"):
+            assert not hasattr(s, legacy)
         assert s.attributes == DEFAULT_ATTRIBUTES
         assert s.attributes["luck"] == 50
         assert s.last_choices == []
@@ -63,7 +64,7 @@ class TestGameSessionApplyDelta:
         assert s.talent == "剑心微明"
         assert s.family_background == "寒门"
         assert s.difficulty == "困难"
-        assert s.game_mode == "abcd"
+        assert not hasattr(s, "game_mode")
         assert s.attributes["root_bone"] == 75
         assert s.attributes["luck"] == 100
         assert "bad" not in s.attributes
@@ -74,7 +75,7 @@ class TestGameSessionApplyDelta:
         combat = {"phase": "player_turn", "enemy": {"name": "妖兽"}}
         s.apply_delta({"character": {"combat": combat}})
         # No structured combat state on the session; the engine never reads it.
-        assert s.combat is None
+        assert not hasattr(s, "combat")
 
     def test_apply_equipment_slots(self):
         s = GameSession()
@@ -190,7 +191,6 @@ class TestGameSessionSerialization:
         s.talent = "剑心微明"
         s.family_background = "寒门"
         s.difficulty = "困难"
-        s.game_mode = "abcd"
         s.attributes = {key: 66 for key in DEFAULT_ATTRIBUTES}
         s.last_choices = ["探查异动", "通知同门"]
         s.experience = 500
@@ -226,7 +226,7 @@ class TestGameSessionSerialization:
         assert s2.talent == "剑心微明"
         assert s2.family_background == "寒门"
         assert s2.difficulty == "困难"
-        assert s2.game_mode == "abcd"
+        assert not hasattr(s2, "game_mode")
         assert s2.attributes == {key: 66 for key in DEFAULT_ATTRIBUTES}
         assert s2.last_choices == ["探查异动", "通知同门"]
         assert s2.experience == 500
@@ -253,7 +253,10 @@ class TestGameSessionSerialization:
         data = s.to_save_dict()
         assert "combat" not in data["character"]
         s2 = GameSession.from_save_dict(data)
-        assert s2.combat is None
+        assert not hasattr(s2, "combat")
+        for legacy in ("hp", "hp_max", "mp", "mp_max", "game_mode"):
+            assert legacy not in data["character"]
+            assert not hasattr(s2, legacy)
 
     def test_round_trip_default_equipment_slots(self):
         s = GameSession()
@@ -265,16 +268,33 @@ class TestGameSessionSerialization:
         data = {
             "turn_count": 3,
             "game_started": True,
-            "character": {"name": "旧角色", "realm": "练气"},
+            "character": {
+                "name": "旧角色",
+                "realm": "练气",
+                "hp": 1,
+                "hp_max": 1,
+                "mp": 1,
+                "mp_max": 1,
+                "combat": {"phase": "player_turn"},
+                "game_mode": "legacy",
+            },
             "world": {},
         }
         s = GameSession.from_save_dict(data)
         assert s.char_name == "旧角色"
         assert s.age == 16
         assert s.attributes["luck"] == 50
-        assert s.game_mode == "abcd"
+        for legacy in ("game_mode", "hp", "hp_max", "mp", "mp_max", "combat"):
+            assert not hasattr(s, legacy)
         assert s.attributes == DEFAULT_ATTRIBUTES
         assert s.chat_history == []
+
+    def test_remaining_lifespan_is_cap_minus_age(self):
+        s = GameSession()
+        s.realm = "练气"
+        s.lifespan = 100
+        s.age = 18
+        assert s.remaining_lifespan == 82
 
 
 class TestGameSessionReset:

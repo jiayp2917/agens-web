@@ -63,7 +63,7 @@ def fake_narrator_llm() -> AsyncMock:
         "你感受到体内灵气涌动，丹田中一团温热的力量缓缓凝聚。\n"
         "周围的灵气向你汇聚，树叶微微颤动。\n"
         "<state_update>\n"
-        '{"character": {"mp": "-10", "experience": "+15"}, '
+        '{"character": {"experience": "+15", "insight": "+3"}, '
         '"world": {"current_scene": "修炼中的灵气感应", "day_count": 1}}\n'
         "</state_update>"
     )
@@ -101,7 +101,6 @@ def fake_world_builder_llm() -> AsyncMock:
     canned_data = {
         "character": {
             "name": "许满", "realm": "练气", "realm_stage": 1,
-            "hp": 100, "hp_max": 100, "mp": 50, "mp_max": 50,
             "spirit_root": "火木双灵根", "spirit_root_grade": "地",
             "experience": 0, "experience_to_next": 100, "gold": 10,
             "techniques": [{"name": "基础吐纳术", "level": 1, "type": "内功"}],

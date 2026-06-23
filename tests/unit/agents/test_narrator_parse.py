@@ -13,12 +13,12 @@ class TestNarratorParse:
             "你静坐吐纳，灵气缓缓涌入丹田。\n"
             "周围的空气微微震颤。\n"
             "<state_update>\n"
-            '{"character": {"mp": "-10", "experience": "+15"}}\n'
+            '{"character": {"experience": "+15", "insight": "+3"}}\n'
             "</state_update>"
         )
         narrative, delta, choices = _parse_narrator_output(text)
         assert "吐纳" in narrative
-        assert delta == {"character": {"mp": "-10", "experience": "+15"}}
+        assert delta == {"character": {"experience": "+15", "insight": "+3"}}
         assert choices == []
 
     def test_choices_tag_json_array(self) -> None:
@@ -131,14 +131,14 @@ class TestNarratorParse:
     def test_complex_delta(self) -> None:
         import json
         data = {
-            "character": {"hp": "-20", "mp": "-30", "experience": "+25"},
+            "character": {"status_effects_add": ["轻伤"], "experience": "+25"},
             "world": {"location": "秘境入口", "current_scene": "发现一座古老的石门"},
             "meta": {"game_over": False},
         }
         text = f"你遭遇了一只妖兽！\n<state_update>\n{json.dumps(data, ensure_ascii=False)}\n</state_update>"
         narrative, delta, choices = _parse_narrator_output(text)
         assert "妖兽" in narrative
-        assert delta["character"]["hp"] == "-20"
+        assert delta["character"]["status_effects_add"] == ["轻伤"]
         assert delta["world"]["location"] == "秘境入口"
 
     def test_multiline_narrative(self) -> None:
@@ -167,11 +167,11 @@ class TestNarrativeViewStreamFilter:
         """Verify the _parse_narrator_output correctly strips state_update."""
         from agens_novel.agents.narrator.nodes import _parse_narrator_output
 
-        text = "你静坐吐纳，灵气入体。\n\n<state_update>\n{\"character\": {\"mp\": \"-5\"}}\n</state_update>"
+        text = "你静坐吐纳，灵气入体。\n\n<state_update>\n{\"character\": {\"experience\": \"+5\"}}\n</state_update>"
         narrative, delta, choices = _parse_narrator_output(text)
 
         assert narrative == "你静坐吐纳，灵气入体。"
-        assert delta == {"character": {"mp": "-5"}}
+        assert delta == {"character": {"experience": "+5"}}
         assert "<state_update>" not in narrative
 
     def test_state_tag_at_beginning(self):

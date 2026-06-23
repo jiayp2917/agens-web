@@ -15,10 +15,8 @@ import os
 from collections.abc import Callable
 from typing import Any
 
-from ..game.combat import CombatEngine
 from ..game.constants import (
     DEFAULT_ATTRIBUTES,
-    DEFAULT_GAME_MODE,
     DIFFICULTY_OPTIONS,
     FAMILY_BACKGROUNDS,
     SPECIAL_START_ATTRIBUTES,
@@ -28,7 +26,6 @@ from ..game.constants import (
 )
 from ..game.realm import RealmSystem
 from ..session.game_session import GameSession
-from ..persistence.save_manager import delete_save, list_saves, load_game, rename_save, save_game
 from .action_delta_policy import (
     INSIGHT_BASE_GAIN,
     apply_breakthrough_flag_rule,
@@ -63,7 +60,6 @@ from .profile_opening import (
 )
 from .turn_runner import run_turn_sync
 from .render import (
-    format_combat,
     format_equipment,
     format_inventory,
     format_log,
@@ -83,6 +79,8 @@ Callback = Callable[..., None]
 MODEL_FAILURE_PROMPT = "天道紊乱，是否以因果残影继续推演？"
 MODEL_FAILURE_CONTINUE = "fallback"
 MODEL_FAILURE_END = "end"
+START_MODEL_WORLD_ENV = "AGENS_START_MODEL_WORLD"
+START_MODEL_OPENING_ENV = "AGENS_START_MODEL_OPENING"
 
 
 def _safe_log_reason(reason: str, limit: int = 220) -> str:
@@ -108,12 +106,10 @@ class GameEngine:
         on_character_created(session: GameSession)
         on_loading(message: str)
         on_stream_chunk(text: str)
-        on_combat_update(combat_state: dict | None)
     """
 
     def __init__(self) -> None:
         self.game_session = GameSession()
-        self.combat_engine = CombatEngine()
         self.realm_system = RealmSystem()
 
         # Callbacks — set by the UI layer.
@@ -125,7 +121,6 @@ class GameEngine:
         self.on_character_created: Callback | None = None
         self.on_loading: Callback | None = None
         self.on_stream_chunk: Callback | None = None
-        self.on_combat_update: Callback | None = None
         self.on_finale: Callback | None = None
         self.on_model_failure_choice: Callable[[str, str], str] | None = None
 
@@ -316,7 +311,6 @@ class GameEngine:
             self.game_session.talent = char_data.get("talent", self.game_session.talent)
             self.game_session.family_background = char_data.get("family_background", self.game_session.family_background)
             self.game_session.difficulty = char_data.get("difficulty", self.game_session.difficulty)
-            self.game_session.game_mode = DEFAULT_GAME_MODE
             attrs = char_data.get("attributes")
             if isinstance(attrs, dict):
                 merged_attrs = dict(self.game_session.attributes)
@@ -373,10 +367,10 @@ class GameEngine:
     def start_from_profile(self, profile: dict[str, Any]) -> None:
         """Create a deterministic game from the character form.
 
-        This keeps character creation on the same engine path
-        as every other UI operation. When the profile does not already carry
-        opening choices, the engine asks World Builder for a first 天道 scene;
-        local fallback is used only if that model call fails.
+        This keeps character creation on the same engine path as every other
+        UI operation. Public Alpha starts from local templates by default so
+        the first screen is not blocked by model latency; model-generated
+        world/opening can be opted into with runtime env switches.
         """
         special = bool(profile.get("special_start"))
         attrs = dict(SPECIAL_START_ATTRIBUTES if special else DEFAULT_ATTRIBUTES)
@@ -399,7 +393,6 @@ class GameEngine:
         self.game_session.spirit_root_grade = str(profile.get("spirit_root_grade") or "")
         self.game_session.family_background = str(profile.get("family_background") or FAMILY_BACKGROUNDS[0])
         self.game_session.difficulty = str(profile.get("difficulty") or DIFFICULTY_OPTIONS[1])
-        self.game_session.game_mode = DEFAULT_GAME_MODE
         self.game_session.attributes = attrs
         self.game_session.gold = int(profile.get("gold") or (9999 if special else 20))
         self.game_session.techniques = list(profile.get("techniques") or [{"name": "基础吐纳术", "level": 1, "type": "内功"}])
@@ -412,7 +405,7 @@ class GameEngine:
         self.game_session.lore_facts = [default_lore]
 
         # ── World profile generation (P2) ──
-        self._emit("on_loading", "推演天道，生成世界中...")
+        self._emit("on_loading", "开局生成中...")
         world_profile = self._generate_world_profile(profile)
         self.game_session.world_profile = world_profile
         # Enrich world fields from the generated profile
@@ -422,7 +415,7 @@ class GameEngine:
             self.game_session.lore_facts.insert(0, world_profile["initial_situation"])
 
         profile_choices = complete_choices(profile.get("choices"), self.game_session)
-        self._emit("on_loading", "天道推演开局中...")
+        self._emit("on_loading", "准备开局中...")
         generated_opening, generated_choices = self._generate_profile_opening(profile, special)
         if self.game_session.game_over:
             return
@@ -436,7 +429,7 @@ class GameEngine:
             )
         )
         if self._set_choices(
-            generated_choices or profile_choices,
+            profile_choices or generated_choices,
             source="profile_opening",
             fallback_notice=True,
             require_choice=True,
@@ -452,7 +445,7 @@ class GameEngine:
     def _generate_world_profile(self, profile: dict[str, Any]) -> dict[str, Any]:
         """Generate a structured world profile for the character session.
 
-        Uses the model if an API key is available; otherwise falls back to
+        Uses the model only when explicitly enabled; otherwise falls back to
         a local template. The world profile is stored in the session and
         used to contextualize subsequent turns.
         """
@@ -463,6 +456,9 @@ class GameEngine:
         )
 
         fallback = build_world_fallback(profile)
+
+        if os.environ.get(START_MODEL_WORLD_ENV) != "1":
+            return fallback
 
         if not os.environ.get("AGNES_API_KEY"):
             self._emit("on_info", "未检测到 API Key，使用本地模板生成世界观。")
@@ -491,6 +487,9 @@ class GameEngine:
 
     def _generate_profile_opening(self, profile: dict[str, Any], special: bool) -> tuple[str, list[str]]:
         """Ask World Builder for the first scene after form creation."""
+        if os.environ.get(START_MODEL_OPENING_ENV) != "1":
+            return "", fallback_choices(self.game_session)
+
         if not os.environ.get("AGNES_API_KEY"):
             reason = "AGNES_API_KEY 未设置。"
             if self._confirm_local_fallback("profile_opening_missing_key", reason):
@@ -562,7 +561,7 @@ class GameEngine:
     def handle_action(self, text: str) -> None:
         """Process a player action through Narrator + Judge.
 
-        Supports streaming (via on_stream_chunk callback) and combat detection.
+        Supports streaming via ``on_stream_chunk``.
         """
         if not self._has_api_key():
             self._emit("on_error", "AGNES_API_KEY 未设置。请先配置 API Key。")
@@ -588,12 +587,6 @@ class GameEngine:
         # so "突破" during combat is still treated as breakthrough.
         if self._parse_breakthrough_action(text):
             self.attempt_breakthrough()
-            return
-
-        combat_action = self._parse_typed_combat_action(text)
-        if combat_action is not None:
-            action, target = combat_action
-            self.handle_combat_action(action, target)
             return
 
         self.game_session.turn_count += 1
@@ -727,13 +720,15 @@ class GameEngine:
                 if corrected:
                     state_delta = corrected
                 else:
-                    # Judge rejected and no corrected delta — skip applying.
+                    # Judge rejected and no corrected delta — discard model
+                    # state changes but keep the rule-engine settlement so
+                    # public Alpha gameplay does not stall on provider format
+                    # drift.
                     note = judge_result.get("judgment_note", "")
                     log.info("Judge rejected (no corrected delta): %s", note)
-                    self._emit("on_info", "天道审判未通过，行动结果暂不生效。")
-                    self._emit("on_status_bar", format_status_bar(self.game_session))
-                    self._auto_save()
-                    return
+                    self._emit("on_info", "本回合以基础规则结算，模型状态变更未采用。")
+                    narrative = ""
+                    state_delta = {"character": {}, "world": {}, "meta": {}}
                 note = judge_result.get("judgment_note", "")
                 if note:
                     log.info("Judge corrected: %s", note)
@@ -755,13 +750,10 @@ class GameEngine:
         state_delta = self._apply_insight_rule(text, state_delta)
         state_delta = self._apply_breakthrough_flag_rule(text, state_delta, is_cultivation)
 
-        combat_delta_seen = False
-        combat_delta = None
         char_delta = state_delta.get("character")
         if isinstance(char_delta, dict) and "combat" in char_delta:
-            combat_delta_seen = True
             char_delta = dict(char_delta)
-            combat_delta = char_delta.pop("combat")
+            char_delta.pop("combat", None)
             state_delta = {**state_delta, "character": char_delta}
 
         # ── P3: Merge rule engine delta (authoritative numbers) ──
@@ -783,10 +775,6 @@ class GameEngine:
         # Step 3.6: Nudge players who keep meditating at max layer — pure
         # cultivation alone cannot break through; they need 感悟 from real deeds.
         self._maybe_emit_insight_hint(is_cultivation)
-
-        # Step 4: Handle combat state changes.
-        if combat_delta_seen:
-            self._handle_combat_start_or_update(combat_delta)
 
         # Step 5: Check game over.
         if self._check_game_over():
@@ -877,21 +865,12 @@ class GameEngine:
         elif result == "failure":
             self._emit("on_info", "突破失败，受到反噬。")
 
-    # ─── Combat handling ──────────────────────────────────────────────
-
-    def handle_combat_action(self, action: str, target: str = "") -> None:
-        """Game mode: combat is event-based — no round-based combat actions."""
-        self._emit("on_info", "战斗已通过事件判定结算，无需手动操作。")
-
     def _parse_breakthrough_action(self, text: str) -> bool:
         """Detect natural-language breakthrough intent.
 
-        Allows players to type "突破", "尝试突破", "冲击筑基",
-        "准备渡劫飞升", etc. instead of relying on a command syntax.
+        Allows option text to include "突破", "尝试突破", "冲击筑基",
+        "准备渡劫飞升", etc. without relying on a command syntax.
         """
-        if False:  # game mode — combat is event-based
-            return False  # can't attempt breakthrough during combat
-
         compact = "".join(text.strip().lower().split())
         keywords = (
             "突破", "尝试突破", "冲击下一境界", "准备渡劫",
@@ -975,22 +954,6 @@ class GameEngine:
                 f"修为已满，然闭门造车难以寸进。需外出历练、参悟机缘，"
                 f"积累感悟（{insight}/{cfg.insight_required}）方可突破。",
             )
-
-    def _parse_typed_combat_action(self, text: str) -> tuple[str, str] | None:
-        """Game mode: combat is event-based — no typed combat actions."""
-        return None
-
-    def _extract_named_combat_target(self, text: str, collection_key: str, verbs: tuple[str, ...]) -> str:
-        """Game mode: no typed combat targets."""
-        return ""
-
-    def _handle_combat_start_or_update(self, combat_delta: Any) -> None:
-        """Game mode: combat handled through events — silently drop combat deltas."""
-        pass
-
-    def _resolve_combat(self) -> None:
-        """Game mode: combat resolved through events — no-op."""
-        pass
 
     # ─── Breakthrough ─────────────────────────────────────────────────
 
@@ -1145,66 +1108,10 @@ class GameEngine:
 
         return False
 
-    # ─── Save/Load ────────────────────────────────────────────────────
-
-    def save(self, name: str = "autosave") -> None:
-        """Save current game."""
-        if not self.game_session.game_started:
-            self._emit("on_info", "没有进行中的游戏。")
-            return
-        name = name.strip() or "autosave"
-        try:
-            save_game(self.game_session, name)
-            self._emit("on_info", f"进度已保存: {name}")
-        except Exception as e:
-            self._emit("on_error", f"保存失败: {e}")
-
-    def load(self, name: str = "autosave") -> None:
-        """Load a saved game."""
-        name = name.strip() or "autosave"
-        try:
-            loaded = load_game(name)
-            if loaded is None:
-                self._emit("on_info", f"存档已损坏，无法加载: {name}")
-                return
-            self.game_session = loaded
-            if self.game_session.local_story_active:
-                self.game_session.last_choices = current_local_story_choices(self.game_session)
-            self._emit("on_info", f"已加载存档: {name}")
-            self._emit("on_status_bar", format_status_bar(self.game_session))
-        except FileNotFoundError as e:
-            self._emit("on_info", str(e))
-        except Exception as e:
-            self._emit("on_error", f"加载失败: {e}")
-
     def reset(self) -> None:
         """Reset the game session."""
         self.game_session.reset()
         self._emit("on_info", "游戏已重置。请返回角色创建重新开始。")
-
-    # ─── Multi-slot save management ──────────────────────────────────
-
-    def list_saves(self) -> list[dict[str, Any]]:
-        """Return a list of available saves with metadata."""
-        return list_saves()
-
-    def delete_save(self, name: str) -> None:
-        """Delete a save file."""
-        try:
-            delete_save(name)
-            self._emit("on_info", f"已删除存档: {name}")
-        except FileNotFoundError:
-            self._emit("on_info", f"存档不存在: {name}")
-        except Exception as e:
-            self._emit("on_error", f"删除失败: {e}")
-
-    def rename_save(self, old_name: str, new_name: str) -> None:
-        """Rename a save file."""
-        try:
-            rename_save(old_name, new_name)
-            self._emit("on_info", f"已重命名存档: {old_name} → {new_name}")
-        except Exception as e:
-            self._emit("on_error", f"重命名失败: {e}")
 
     # ─── World expansion ─────────────────────────────────────────────
 
@@ -1274,12 +1181,8 @@ class GameEngine:
     # ─── Internal helpers ──────────────────────────────────────────────
 
     def _auto_save(self) -> None:
-        """Auto-save if game is active."""
-        if self.game_session.game_started:
-            try:
-                save_game(self.game_session, "autosave")
-            except Exception:
-                log.warning("Auto-save failed", exc_info=True)
+        """Web persistence is owned by ``web.backend.service``."""
+        return
 
     def _record_opening_context(self, opening: str) -> None:
         """Seed chat history so the first player action cannot look like a blank world."""
@@ -1300,7 +1203,7 @@ class GameEngine:
 
         LLM output is intentionally high variance, but web free actions must
         not re-open the world or replace the player's established profile.
-        Breakthroughs and combat resolution use dedicated engine paths.
+        Breakthroughs use a dedicated engine path.
         """
         if not isinstance(delta, dict):
             return {}
@@ -1317,9 +1220,7 @@ class GameEngine:
                 "spirit_root_grade",
                 "talent",
                 "family_background",
-                "luck",
                 "difficulty",
-                "game_mode",
                 "attributes",
                 "inventory",
                 "techniques",

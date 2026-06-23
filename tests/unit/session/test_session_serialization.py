@@ -48,7 +48,8 @@ class TestSerializationRoundtrip:
         assert len(restored.techniques) == 1
         assert restored.techniques[0]["name"] == "火球术"
         # Game-mode v5: no structured combat is serialized.
-        assert restored.combat is None
+        assert not hasattr(restored, "combat")
+        assert "combat" not in data["character"]
         assert restored.turn_count == 42
         assert restored.location == "青云山"
         assert restored.day_count == 15

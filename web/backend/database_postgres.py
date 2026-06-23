@@ -21,7 +21,19 @@ class PostgresWebDatabase:
         if not self.database_url:
             raise RuntimeError("DATABASE_URL is required when DATABASE_BACKEND=postgresql")
         self.engine: Engine = create_engine(self.database_url, pool_pre_ping=True, future=True)
-        if os.environ.get("AGENS_PG_AUTO_DDL", "").strip().lower() in ("1", "true", "yes"):
+        auto_ddl_requested = os.environ.get("AGENS_PG_AUTO_DDL", "").strip().lower() in ("1", "true", "yes")
+        app_env = os.environ.get("APP_ENV", "").strip().lower()
+        # P3 DDL demotion: production runtime must never auto-DDL. The schema is
+        # owned by alembic (revision 20260622_0004_ddl_disallow_production and later).
+        # Fail closed instead of silently mutating the production schema.
+        if app_env == "production":
+            if auto_ddl_requested:
+                raise RuntimeError(
+                    "AGENS_PG_AUTO_DDL=1 is not allowed when APP_ENV=production. "
+                    "Run `alembic upgrade head` against the production database instead."
+                )
+            seed_catalogs(self)
+        elif auto_ddl_requested:
             self.initialize()
         else:
             seed_catalogs(self)

@@ -39,6 +39,7 @@ def test_e2e_new_game_action_save_load(cleanup_saves):
     the test is marked xfail rather than failing the suite.
     """
     from agens_novel.engine.game_engine import GameEngine
+    from agens_novel.session.game_session import GameSession
 
     engine = GameEngine()
 
@@ -60,26 +61,30 @@ def test_e2e_new_game_action_save_load(cleanup_saves):
         )
 
     assert engine.game_session.char_name, "Character name is empty"
-    assert engine.game_session.hp > 0, f"HP is {engine.game_session.hp}"
+    assert engine.game_session.lifespan > 0, f"Lifespan is {engine.game_session.lifespan}"
 
     char_name = engine.game_session.char_name
-    saved_hp = engine.game_session.hp
+    saved_lifespan = engine.game_session.lifespan
 
     # Step 2: Perform an action via Narrator + Judge.
     engine.handle_action("静坐吐纳，感受天地灵气")
 
-    # Step 3: Save.
-    engine.save("e2e_test")
+    # Step 3: Save session state via serialization.
+    import json
+    data = engine.game_session.to_save_dict()
     save_path = pathlib.Path("runtime/saves/e2e_test.json")
+    save_path.parent.mkdir(parents=True, exist_ok=True)
+    save_path.write_text(json.dumps(data, ensure_ascii=False), encoding="utf-8")
     assert save_path.exists(), "Save file not created"
 
-    saved_hp_after = engine.game_session.hp
+    saved_lifespan_after = engine.game_session.lifespan
     saved_exp = engine.game_session.experience
 
-    # Step 4: Reset and reload.
+    # Step 4: Reset and reload from serialized data.
     engine.reset()
 
-    engine.load("e2e_test")
+    loaded_data = json.loads(save_path.read_text(encoding="utf-8"))
+    engine.game_session = GameSession.from_save_dict(loaded_data)
     assert engine.game_session.char_name == char_name, "Character name not restored"
-    assert engine.game_session.hp == saved_hp_after, "HP not restored"
+    assert engine.game_session.lifespan == saved_lifespan_after, "Lifespan not restored"
     assert engine.game_session.experience == saved_exp, "Experience not restored"

@@ -12,7 +12,7 @@ import logging
 from dataclasses import dataclass, field
 from typing import Any
 
-from .constants import REALM_ORDER, REALM_CONFIGS, SPIRIT_ROOT_MAP
+from .constants import REALM_ORDER, REALM_CONFIGS, REALM_LIFESPANS, SPIRIT_ROOT_MAP
 
 log = logging.getLogger(__name__)
 
@@ -25,6 +25,7 @@ class RealmConfig:
     stages: int = 1
     experience_required: int = 100
     insight_required: int = 0
+    lifespan: int = 100
     breakthrough_base_rate: float = 0.80
     spirit_root_bonus: dict[str, float] = field(default_factory=dict)
     breakthrough_requirements: list[dict[str, str]] = field(default_factory=list)
@@ -37,6 +38,7 @@ class RealmConfig:
             stages=data.get("stages", 1),
             experience_required=data.get("experience_required", 100),
             insight_required=data.get("insight_required", 0),
+            lifespan=data.get("lifespan", 100),
             breakthrough_base_rate=data.get("breakthrough_base_rate", 0.80),
             spirit_root_bonus=data.get("spirit_root_bonus", {}),
             breakthrough_requirements=list(data.get("breakthrough_requirements", [])),
@@ -183,7 +185,7 @@ class RealmSystem:
         """Execute a breakthrough attempt.
 
         Returns a delta dict to be applied via ``apply_delta``.  On success
-        the realm advances; on failure HP drops and a debuff is added.
+            the realm advances; on failure experience drops and a debuff is added.
         """
         can, reason = self.can_attempt_breakthrough(session)
         if not can:
@@ -204,6 +206,7 @@ class RealmSystem:
                     "realm_stage": 1,
                     "experience": "-50",  # consume some experience
                     "experience_to_next": next_cfg.experience_required,
+                    "lifespan": REALM_LIFESPANS.get(next_realm, next_cfg.lifespan),
                     "insight": 0,  # reset insight — new realm, new bottleneck
                 },
                 "meta": {

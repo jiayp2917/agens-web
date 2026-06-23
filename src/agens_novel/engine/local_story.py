@@ -67,7 +67,7 @@ _STORIES: dict[str, dict[str, LocalStoryNode]] = {
                 LocalStoryOption(
                     text="留在山门石阶吐纳，先稳住丹田气息",
                     next_node="cultivation",
-                    delta={"character": {"experience": "+35", "mp": "+5"}},
+                    delta={"character": {"experience": "+35"}},
                     result="你在石阶旁静坐，山雾化作细流入体，丹田渐稳。",
                     keywords=("吐纳", "修炼", "打坐", "丹田"),
                 ),
@@ -144,7 +144,7 @@ _STORIES: dict[str, dict[str, LocalStoryNode]] = {
                 LocalStoryOption(
                     text="继续吐纳一夜，稳步提升修为",
                     next_node="cultivation",
-                    delta={"character": {"experience": "+45", "mp": "+8"}},
+                    delta={"character": {"experience": "+45"}},
                     result="灵气循环一周天，你的修为稳稳增长。",
                     keywords=("吐纳", "修炼", "闭关", "周天"),
                 ),
@@ -193,7 +193,7 @@ _STORIES: dict[str, dict[str, LocalStoryNode]] = {
                 LocalStoryOption(
                     text="追踪兽影磨炼胆魄",
                     next_node="preparation",
-                    delta={"character": {"experience": "+30", "insight": "+12", "hp": "-8"}},
+                    delta={"character": {"experience": "+30", "insight": "+12", "status_effects_add": ["轻伤"]}},
                     result="你与山兽周旋半夜，受了轻伤，却也明白了临危不乱的要义。",
                     keywords=("兽影", "追踪", "战斗", "磨炼"),
                 ),
