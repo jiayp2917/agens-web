@@ -583,8 +583,8 @@ class GameEngine:
             self._handle_local_story_action(text)
             return
 
-        # Route natural-language breakthrough intent before combat check
-        # so "突破" during combat is still treated as breakthrough.
+        # Route natural-language breakthrough intent before event resolution
+        # so "突破" mid-event is still treated as breakthrough.
         if self._parse_breakthrough_action(text):
             self.attempt_breakthrough()
             return
@@ -759,7 +759,7 @@ class GameEngine:
         # ── P3: Merge rule engine delta (authoritative numbers) ──
         state_delta = _merge_rule_delta(state_delta, rule_delta)
 
-        # Step 3: Apply non-combat delta.
+        # Step 3: Apply rule-engine delta.
         self.game_session.apply_delta(state_delta)
 
         # Step 3.5: Auto-advance small layers — chain until no more advancement.
@@ -1181,7 +1181,7 @@ class GameEngine:
     # ─── Internal helpers ──────────────────────────────────────────────
 
     def _auto_save(self) -> None:
-        """Web persistence is owned by ``web.backend.service``."""
+        """Web save/load is owned by ``web.backend.service``."""
         return
 
     def _record_opening_context(self, opening: str) -> None:

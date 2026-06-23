@@ -58,6 +58,13 @@ Browser UI
 - 移动端运行产物说明
 - 本项目不再使用的 BGM 适配层
 - 旧纯 HTML/CSS/JS 前端 `web/frontend/`
+- 游戏模式 combat 子系统：`src/agens_novel/game/combat.py` 与 `config/prompts/system/combat_narrator.md`（v5 已切换到事件判定）
+- 旧的 `src/agens_novel/persistence/` 空壳（早期 save_manager 已下线）
+- 早期 Web-only 路线文档 `docs/WEB_ITERATION_PLAN.md`
+- Android APK 打包 skill `.agents/skills/build-apk/`（非本仓库职能）
+- 冗余 `.venv311/` 虚拟环境（与 `.venv/` 共存）
+- `web/frontend-react/.tmp/` 一次性 Playwright smoke 脚本
+- 孤立 `__pycache__/*.pyc`（combat / persistence / test_combat / test_bgm 来源已删）
 
 保留：
 
@@ -98,3 +105,12 @@ Browser UI
 - React 主入口 P2 已拆分：认证、首页、角色创建、游戏页、设置存档弹窗、BGM 和终局页各自独立组件，归口 `pages/` 与 `components/`。
 - 文档分层以 `docs/INDEX.md` 为准：`RUNTIME_FLOW.md` 描述当前运行流程，`GAME_MODE_SPEC.md` 描述游戏模式 v5 规格和实现状态。
 - Alpha 复盘和成功/失败经验以 `docs/ALPHA_REVIEW_AND_LESSONS.md` 为准。后续上线报告必须区分本地测试、PostgreSQL smoke、Docker Compose、反代和公网验证。
+
+## 2026-06-23 内测收尾：UI 紧凑 + 寿元语义 + 颜色体系 + 死代码清理
+
+- 首页去冗余：删除 eyebrow 段和 A/B/C/D 描述段；品牌 `jiayp2917` → `jiayp`；删除 `.brand::after` 玉色绿点；`.home-preview` 高度从 470px 降到 360px。1080p 桌面端首屏内可见（无强滚动）。
+- 角色创建下拉切换到 6 色（白/绿/蓝/紫/橙/红）字 + 同色色点：`util.ts` 新增 `rarityToColor` + `colorLabel`，`styles.css` 新增 `.rarity-white/-green/-blue/-orange` 并复用既有 `.rarity-purple/-red`。
+- 游戏页选项按钮压缩：`.choice-list button` 76px → 60px，徽标 32px → 28px；移动端 58px → 56px；叙事面板阅读权重高于按钮。
+- 寿元语义修正：`GamePage` 读 `character.remaining_lifespan`（fallback `lifespan - age`，`Math.min` 兜底）；面板摘要改为 `{remainingLifespan}/{lifespanMax} 年`，与 `StatLine` 一致。
+- 死代码清理：combat 子系统（`src/agens_novel/game/combat.py` 与 `combat_narrator.md`）、`persistence/` 空壳、`WEB_ITERATION_PLAN.md`、`build-apk/` skill、`web/frontend-react/.tmp/` smoke 脚本、`.venv311/` 冗余虚拟环境、孤立 `__pycache__/*.pyc`、累计 uvicorn 日志全部删除；10 处 `combat` / `persistence` 陈旧注释替换为规则引擎 / 存档语义。
+- 契约测试 `tests/web/test_frontend_contract.py` 新增：首页 eyebrow 段删除、品牌精简、6 色字面量、`character.remaining_lifespan` 读取、`{remainingLifespan}/{lifespanMax}` 显示。验证：`compileall -q src tests web` 干净；`pytest -q` 466 passed；`npm run build` 1590 modules / 15.18 kB css / 179.71 kB js。

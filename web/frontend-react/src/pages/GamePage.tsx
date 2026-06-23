@@ -22,8 +22,18 @@ export function GamePage({
   const character = session.character || {};
   const world = session.world || {};
   const [panel, setPanel] = useState<keyof Session["panels"]>("status");
-  const remainingLifespan = toPositiveNumber(character.lifespan, 100);
-  const lifespanMax = Math.max(realmLifespanCap[String(character.realm || "")] || 100, remainingLifespan);
+  const lifespanCap = toPositiveNumber(character.lifespan, realmLifespanCap[String(character.realm || "")] || 100);
+  const lifespanMax = Math.max(realmLifespanCap[String(character.realm || "")] || 100, lifespanCap);
+  const remainingLifespan = Math.max(
+    0,
+    Math.min(
+      toPositiveNumber(
+        character.remaining_lifespan,
+        Math.max(0, lifespanCap - (Number(character.age) || 0)),
+      ),
+      lifespanMax,
+    ),
+  );
   const events = useMemo(() => session.events.filter(isReadableEvent), [session.events]);
 
   return (
@@ -71,7 +81,7 @@ export function GamePage({
               <dt>气运</dt><dd>{character.attributes?.luck ?? "平稳"}</dd>
               <dt>经验</dt><dd>{character.experience ?? 0}/{character.experience_to_next ?? 100}</dd>
               <dt>感悟</dt><dd>{character.insight ?? 0}/{character.insight_required ?? 30}</dd>
-              <dt>寿元</dt><dd>{remainingLifespan} 年</dd>
+              <dt>寿元</dt><dd>{remainingLifespan}/{lifespanMax} 年</dd>
               <dt>灵石</dt><dd>{character.gold ?? 0}</dd>
             </dl>
           ) : (

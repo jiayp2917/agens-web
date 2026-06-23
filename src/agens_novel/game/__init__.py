@@ -1,1 +1,1 @@
-"""Game systems package — constants, realm, and combat modules."""
+"""Game systems package — constants and realm modules."""

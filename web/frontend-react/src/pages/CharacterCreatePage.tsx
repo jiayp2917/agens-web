@@ -19,6 +19,7 @@ import {
   pickRandom,
   randomBetween,
   uniqueByName,
+  colorLabel,
 } from "../lib/util";
 
 type ChoiceMode = "manual" | "random";
@@ -142,13 +143,13 @@ export function CharacterCreatePage({
           <label>游戏名称<input name="game_name" placeholder="本局世界种子" /></label>
           <label>角色名<input name="char_name" placeholder="留空则自动生成" /></label>
           <label>天赋<select name="talent" value={talent} disabled={choiceMode === "random"} onChange={(event) => setTalent(event.target.value)}>
-            {(choiceMode === "manual" ? manualTalents : randomTalents).map((item) => <option key={item.name} value={item.name}>{itemLabel(item)}</option>)}
+            {(choiceMode === "manual" ? manualTalents : randomTalents).map((item) => <option key={item.name} value={item.name}>{colorLabel(item)}</option>)}
           </select></label>
           <label>灵根<select name="spirit_root" value={spiritRoot} disabled={choiceMode === "random"} onChange={(event) => setSpiritRoot(event.target.value)}>
-            {(choiceMode === "manual" ? manualRoots : randomRoots).map((item) => <option key={item.name} value={item.name}>{itemLabel(item)}</option>)}
+            {(choiceMode === "manual" ? manualRoots : randomRoots).map((item) => <option key={item.name} value={item.name}>{colorLabel(item)}</option>)}
           </select></label>
           <label>家世<select name="family_background" value={familyBackground} disabled={choiceMode === "random"} onChange={(event) => setFamilyBackground(event.target.value)}>
-            {(choiceMode === "manual" ? manualFamilies : randomFamilies).map((item) => <option key={item.name} value={item.name}>{itemLabel(item)}</option>)}
+            {(choiceMode === "manual" ? manualFamilies : randomFamilies).map((item) => <option key={item.name} value={item.name}>{colorLabel(item)}</option>)}
           </select></label>
           <label>难度<select name="difficulty" value={difficulty} onChange={(event) => setDifficulty(event.target.value)}>
             {difficulties.map((item) => <option key={item.name}>{item.name}</option>)}

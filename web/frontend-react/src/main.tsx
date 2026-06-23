@@ -104,7 +104,7 @@ function App() {
     <main className="app">
       <header className="topbar">
         <a className="brand" href="https://www.jiayp2917.xyz/" target="_blank" rel="noreferrer">
-          jiayp2917
+          jiayp
         </a>
         <div className="topbar-actions">
           <BgmToggle />

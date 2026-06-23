@@ -31,13 +31,13 @@ class GameSession:
 
     """Stateful session for the xianxia cultivation simulator."""
 
-    # ── Persistence ──
+    # ── Save metadata ──
     save_file: str = ""
     turn_count: int = 0
     game_started: bool = False
     game_over: bool = False
 
-    # ── Character ── (game mode: no HP/MP; combat is event-based)
+    # ── Character ── (game mode: no HP/MP; death events are rule-driven)
     char_name: str = ""
     realm: str = "练气"
     realm_stage: int = 1
@@ -368,7 +368,7 @@ class GameSession:
     # ─────────────────────────────────────────────────────────────────────────
 
     def to_save_dict(self) -> dict[str, Any]:
-        """Serialize the full session for JSON persistence."""
+        """Serialize the full session for JSON save export."""
         return {
             "turn_count": self.turn_count,
             "game_started": self.game_started,

@@ -6,8 +6,9 @@ After a run ends, this module evaluates the player's final state and produces:
 - a compact run summary for the ending UI
 - legacy bonuses that apply to the player's NEXT character
 
-For guest sessions the same evaluation runs but persistence is skipped at the
-service layer — guests see the summary but receive no DB-backed bonuses.
+For guest sessions the same evaluation runs but DB-backed bonuses are
+skipped at the service layer — guests see the summary but receive no
+persistent rewards.
 """
 
 from __future__ import annotations
@@ -36,7 +37,7 @@ def categorize_death(session: Any) -> str:
     - finale > event_death/karma_death > lifespan > player
     - event_death: 斗法、禁地、心魔、天劫 etc.
     - karma_death: D气运 path extreme failure
-    - No HP check — combat is event-based.
+    - No HP check — death events are decided by the rule engine.
     """
     if getattr(session, "finale", False):
         return DEATH_BY_FINALE
@@ -233,7 +234,7 @@ def compute_rewards(
 # ── Legacy bonus representation ─────────────────────────────────────────────
 
 def bonuses_to_legacy(rewards: list[dict[str, Any]]) -> list[dict[str, Any]]:
-    """Convert raw reward dicts into legacy_bonus rows for persistence.
+    """Convert raw reward dicts into legacy_bonus rows for the rewards bridge.
 
     Each row carries the bonus type, the value to apply, and a
     runs_remaining counter (defaults to 1 — the bonus is consumed on

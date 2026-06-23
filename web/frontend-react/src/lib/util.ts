@@ -8,6 +8,19 @@ export const itemLabel = (item: CatalogItem) => {
   const mark = item.rarity || item.grade;
   return mark ? `${item.name} · ${mark}` : item.name;
 };
+// Map any legacy/internal rarity or grade string into the 6-color palette.
+export const rarityToColor = (mark?: string) => {
+  const m = String(mark || "");
+  if (m === "白" || m === "黄" || m === "地" || m === "普通") return "白";
+  if (m === "绿" || m === "玄" || m === "优秀") return "绿";
+  if (m === "蓝" || m === "稀有") return "蓝";
+  if (m === "紫" || m === "天" || m === "史诗") return "紫";
+  if (m === "橙" || m === "传说") return "橙";
+  if (m === "红" || m === "神话") return "红";
+  return "白";
+};
+// Render a catalog item label using the unified color palette.
+export const colorLabel = (item: CatalogItem) => `${item.name} · ${rarityToColor(item.rarity || item.grade)}`;
 export const toPositiveNumber = (value: unknown, fallback: number) => {
   const number = Number(value);
   return Number.isFinite(number) && number > 0 ? number : fallback;

@@ -1,5 +1,40 @@
 # Changelog
 
+## 2026-06-23
+
+### Added
+
+- `rarityToColor` / `colorLabel` helpers in `web/frontend-react/src/lib/util.ts` map legacy/internal rarity or grade strings into the unified 6-color palette (白/绿/蓝/紫/橙/红).
+- CSS classes `.rarity-white`, `.rarity-green`, `.rarity-blue`, `.rarity-orange` in `styles.css`, alongside the existing `.rarity-purple` and `.rarity-red`.
+- Contract-test assertions in `tests/web/test_frontend_contract.py` covering the homepage eyebrow removal, the short brand label `jiayp`, the 6 palette colors, the lifespan `remaining/cap` display, and the front-end reading `character.remaining_lifespan`.
+- Project docs `docs/ARCHITECTURE.md` and `docs/USER_TUTORIAL.md` registered in `docs/INDEX.md`.
+
+### Changed
+
+- Homepage (`HomePage.tsx`) drops the eyebrow line `WEB · 文字修仙模拟器` and the four-button descriptive paragraph; the brand link in `main.tsx` shortens to `jiayp` (the underlying URL `https://www.jiayp2917.xyz/` is preserved).
+- `styles.css` removes the `.brand::after` jade dot, trims `.home` / `.home-shell` / `.home-preview` / `.hero` spacing so the page fits in a 1080p viewport.
+- Character-creation `<option>` labels now render as `${name} · ${rarityToColor}`; the same colored dot is drawn on the host `<label>` because native `<option>` cannot host CSS consistently across browsers.
+- Game-page choices are tighter: `.choice-list button` min-height 76 → 60 px, A/B/C/D badge 32 → 28 px; mobile breakpoint 58 → 56 px.
+- `GamePage` reads `character.remaining_lifespan` first (fallback `lifespan - age`, clamped by `Math.min`); the summary now shows `${remainingLifespan}/${lifespanMax} 年`, matching `StatLine`.
+- Source comments and docstrings in `death_rewards.py`, `game_engine.py`, `game_session.py`, and `game/__init__.py` no longer reference the removed combat / persistence modules.
+
+### Removed
+
+- `src/agens_novel/game/combat.py` remnants in git history plus the dead `config/prompts/system/combat_narrator.md`.
+- Empty `src/agens_novel/persistence/` shell and its leftover `__pycache__/`.
+- `docs/WEB_ITERATION_PLAN.md` (superseded by `RUNTIME_FLOW.md` and `PROJECT_AUDIT.md`).
+- Android APK skill `.agents/skills/build-apk/` (out of scope for the Web-only project).
+- One-off Playwright smoke scripts under `web/frontend-react/.tmp/`.
+- Redundant `.venv311/` Python 3.14 virtual environment alongside the active `.venv/`.
+- Orphaned `__pycache__/*.pyc` files whose `.py` source had already been removed.
+- Local `runtime/uvicorn-local.{err,out}.log` files.
+
+### Verification
+
+- `python -m compileall -q src tests web` clean.
+- `pytest -q` → 466 passed, 1 skipped (no regressions).
+- `npm run build` → 1590 modules, 15.18 kB CSS, 179.71 kB JS.
+
 ## 2026-06-22
 
 ### Added

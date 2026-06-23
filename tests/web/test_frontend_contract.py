@@ -71,6 +71,12 @@ def test_react_homepage_buttons_have_handlers() -> None:
     assert "BgmToggle" in source
     assert "/assets/audio/bgm.flac" in source
     assert "agens web" not in source.lower()
+    # v5 cleanup: homepage must not carry the WEB· eyebrow or the four-button description paragraph.
+    assert "WEB · 文字修仙模拟器" not in source
+    assert "从山门晨雾开始。A 稳妥、B 机遇、C 风险、D 气运，四选一推进修行岁月" not in source
+    # Brand text trimmed to the short form on topbar; the homepage URL link still mentions jiayp2917.
+    # `_read` de-duplicates "main.tsx" from the explicit list, so the URL appears exactly once.
+    assert "jiayp\n" in source and ">jiayp2917<" not in source and ">jiayp2917\n" not in source
 
 
 def test_react_public_assets_are_present() -> None:
@@ -105,6 +111,13 @@ def test_react_character_creation_uses_catalogs_and_game_mode() -> None:
     assert "难度：{difficulty}" in source
     assert "choice_card_mountain.png" not in css
     assert 'url("/assets/ink_mountain_gate.png")' in css
+    # v5 cleanup: dropdown labels use the unified 6-color palette, not legacy rarity strings.
+    assert "rarityToColor" in source
+    assert "colorLabel" in source
+    for color in ("白", "绿", "蓝", "紫", "橙", "红"):
+        assert f'"{color}"' in source, f"missing palette color {color} in util.ts"
+    for slug in ("white", "green", "blue", "purple", "orange", "red"):
+        assert f".rarity-{slug}" in css, f"missing rarity-{slug} class in styles.css"
 
 
 def test_react_game_page_has_escape_route_and_stable_meters() -> None:
@@ -124,6 +137,9 @@ def test_react_game_page_has_escape_route_and_stable_meters() -> None:
     assert "value={remainingLifespan}" in source
     assert ".stat-meter" in css
     assert "grid-template-rows: auto minmax(0, 1fr) auto;" in css
+    # v5 cleanup: lifespan reads the remaining value, not the realm cap; UI shows remaining/max.
+    assert "character.remaining_lifespan" in source
+    assert "{remainingLifespan}/{lifespanMax}" in source
 
 
 def test_react_turn_actions_disable_while_busy() -> None:
@@ -132,6 +148,7 @@ def test_react_turn_actions_disable_while_busy() -> None:
         "pages/GamePage.tsx",
         "pages/HomePage.tsx",
         "components/FallbackBanner.tsx",
+        "components/TutorialDialog.tsx",
         "lib/catalog.ts",
         "pages/CharacterCreatePage.tsx",
     )
@@ -139,6 +156,11 @@ def test_react_turn_actions_disable_while_busy() -> None:
     assert "disabled={busy}" in source
     assert "runTurn(`/api/sessions/${session.session_id}/choice`" in source
     # Game-mode v5: A/B/C/D fixed choices only; no free-text input element.
+    # The labels are defined as `choiceSemantics` entries (key + label pairs).
+    assert "choiceSemantics" in source
+    for key, label in (("A", "稳妥"), ("B", "机遇"), ("C", "风险"), ("D", "气运")):
+        assert f'key: "{key}", label: "{label}"' in source
+    # TutorialDialog carries the canonical player-facing labels.
     for label in ("A 稳妥", "B 机遇", "C 风险", "D 气运"):
         assert label in source
     assert "FallbackBanner session={session} busy={busy} runTurn={runTurn}" in source
