@@ -59,7 +59,7 @@ npm run build
 ## 文档
 
 - [docs/INDEX.md](docs/INDEX.md)：文档入口。
-- [docs/WEB_ITERATION_PLAN.md](docs/WEB_ITERATION_PLAN.md)：Web-only 迭代计划。
+- [docs/UI_REFACTOR_PLAN.md](docs/UI_REFACTOR_PLAN.md)：已确认 UI 原型和重构验收标准。
 - [docs/PROJECT_AUDIT.md](docs/PROJECT_AUDIT.md)：结构边界、瘦身清单和技术债。
 - [docs/RUNTIME_FLOW.md](docs/RUNTIME_FLOW.md)：当前核心运行流程。
 - [docs/security.md](docs/security.md)：密钥与安全边界。

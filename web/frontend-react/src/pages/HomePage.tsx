@@ -33,7 +33,7 @@ export function HomePage({
             <button onClick={() => onAuth("register")}><KeyRound size={20} />邀请码注册</button>
           </div>
           <aside className="community-card" aria-label="玩家交流群">
-            <span className="qq-icon" aria-hidden="true">Q</span>
+            <span className="qq-icon" aria-hidden="true">仙</span>
             <div>
               <strong>QQ群：985776771</strong>
               <span>与道友交流心得，获取最新资讯</span>

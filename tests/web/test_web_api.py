@@ -652,6 +652,8 @@ def test_death_summary_persists_for_registered_user(tmp_path: Path, monkeypatch)
     assert summary_resp["is_guest"] is False
     summary = summary_resp["summary"]
     assert summary["death_cause"] == "玩家结束本局"
+    achievement_keys = {a["key"] for a in summary.get("achievements", [])}
+    assert "long_lived_mortal" not in achievement_keys
     # At minimum, base attribute_points are always granted.
     types = {r["type"] for r in summary.get("rewards", [])}
     assert "attribute_points" in types

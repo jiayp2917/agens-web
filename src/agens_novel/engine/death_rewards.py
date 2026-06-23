@@ -73,7 +73,7 @@ def evaluate_achievements(session: Any) -> list[dict[str, str]]:
     inventory = getattr(session, "inventory", []) or []
     techniques = getattr(session, "techniques", []) or []
     discovered = getattr(session, "discovered_locations", []) or []
-    lifespan = max(0, getattr(session, "lifespan", 0))
+    age = max(0, getattr(session, "age", 0))
 
     achievements: list[dict[str, str]] = []
 
@@ -110,7 +110,7 @@ def evaluate_achievements(session: Any) -> list[dict[str, str]]:
         })
 
     # Longevity.
-    if lifespan >= 80 and realm == "练气":
+    if age >= 80 and realm == "练气":
         achievements.append({
             "key": "long_lived_mortal",
             "name": "凡人长寿",

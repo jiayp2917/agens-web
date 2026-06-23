@@ -387,8 +387,9 @@ class WebGameService:
     ) -> dict[str, Any]:
         """Return the most recent death summary for a session.
 
-        For registered users: pull from DB (run_achievements + account_rewards).
-        For guest sessions: rebuild from the live runner.
+        Prefer a live rebuild so the UI reflects current achievement rules even
+        when older rows were persisted before a rule fix. Fall back to DB rows
+        only when the runner/session snapshot is no longer available.
         """
         if is_guest_user_id(user_id) or user_id is None:
             runner = self._runner(session_id, user_id=user_id)
@@ -398,6 +399,17 @@ class WebGameService:
                 "is_guest": True,
                 "summary": summary or {},
             }
+        try:
+            runner = self._runner(session_id, user_id=user_id)
+            summary = build_death_summary(runner.engine.game_session)
+            if summary is not None:
+                return {
+                    "session_id": session_id,
+                    "is_guest": False,
+                    "summary": summary,
+                }
+        except (KeyError, PermissionError):
+            raise
         achievements = self.db.list_run_achievements(user_id, session_id)
         rewards = [
             r

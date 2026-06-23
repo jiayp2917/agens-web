@@ -43,6 +43,7 @@ export function GamePage({
   const age = Number(character.age) || 16;
   const realm = `${character.realm || "练气"}${character.realm_stage || 1}层`;
   const luck = character.attributes?.luck ?? character.luck ?? "平稳";
+  const cleanChoiceText = (choice: string) => String(choice || "").replace(/^【(?:稳妥|机遇|风险|气运)】\s*/, "").trim();
   const chronicleRecords = useMemo<ChronicleRecord[]>(() => {
     const baseAge = Math.max(1, age - Math.max(events.length - 1, 0));
     if (!events.length) {
@@ -140,13 +141,11 @@ export function GamePage({
             {session.choices.map((choice, index) => {
               const semantic = choiceSemantics[index];
               const letter = semantic?.key || String.fromCharCode(65 + index);
-              const label = semantic?.label || "行动";
               return (
                 <ChoiceButton
                   key={`${choice}-${index}`}
                   letter={letter}
-                  label={label}
-                  text={choice}
+                  text={cleanChoiceText(choice)}
                   hint={semantic?.hint}
                   disabled={busy}
                   onClick={() => runTurn(`/api/sessions/${session.session_id}/choice`, { choice_index: index })}

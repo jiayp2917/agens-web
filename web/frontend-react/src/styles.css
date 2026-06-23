@@ -241,10 +241,12 @@ button:focus-visible {
 }
 
 .home {
-  min-height: 100dvh;
+  height: 100dvh;
+  min-height: 720px;
   display: grid;
   place-items: center;
-  padding: calc(var(--topbar-height) + 8px) clamp(18px, 4vw, 64px) 24px;
+  padding: calc(var(--topbar-height) + 4px) clamp(18px, 4vw, 64px) 18px;
+  overflow: hidden;
   background:
     linear-gradient(90deg, rgba(245, 239, 226, 0.94) 0%, rgba(245, 239, 226, 0.72) 44%, rgba(245, 239, 226, 0.34) 100%),
     var(--ink-gate) center bottom / cover no-repeat;
@@ -252,7 +254,7 @@ button:focus-visible {
 
 .home-shell {
   width: min(1120px, 100%);
-  min-height: calc(100dvh - var(--topbar-height) - 32px);
+  min-height: 0;
   display: grid;
   place-items: center;
   position: relative;
@@ -266,49 +268,46 @@ button:focus-visible {
   width: min(520px, 100%);
   display: grid;
   justify-items: center;
-  gap: 18px;
+  gap: 12px;
   text-align: center;
-  transform: translateY(-1.5vh);
+  transform: translateY(-0.5vh);
 }
 
 .hero h1 {
   margin: 0;
-  font-size: clamp(48px, 5.8vw, 80px);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 10px;
+  white-space: nowrap;
+  font-size: clamp(50px, 4.7vw, 78px);
   font-weight: 800;
   line-height: 1.08;
 }
 
 .hero-rule {
   width: min(360px, 78vw);
-  height: 12px;
+  height: 4px;
   border-top: 1px solid rgba(32, 27, 21, 0.24);
   position: relative;
 }
 
 .hero-rule::after {
-  content: "";
-  position: absolute;
-  top: -5px;
-  left: 50%;
-  width: 8px;
-  height: 8px;
-  border-radius: 50%;
-  background: var(--cinnabar);
-  transform: translateX(-50%);
+  content: none;
 }
 
 .home-actions {
   width: min(420px, 100%);
   display: grid;
-  gap: 12px;
+  gap: 10px;
 }
 
 .home-actions button {
-  min-height: 64px;
-  display: grid;
-  grid-template-columns: 58px minmax(0, 1fr);
+  min-height: 60px;
+  position: relative;
+  display: flex;
   align-items: center;
-  justify-items: center;
+  justify-content: center;
   padding: 8px 20px 8px 12px;
   font-size: 28px;
   font-weight: 600;
@@ -319,6 +318,8 @@ button:focus-visible {
 }
 
 .home-actions button svg {
+  position: absolute;
+  left: 20px;
   width: 32px;
   height: 32px;
   padding: 7px;
@@ -340,19 +341,20 @@ button:focus-visible {
   grid-template-columns: 42px minmax(0, 1fr) 98px 28px;
   align-items: center;
   gap: 12px;
-  margin-top: 8px;
-  padding-top: 14px;
+  margin-top: 2px;
+  padding-top: 10px;
   border-top: 1px solid rgba(32, 27, 21, 0.2);
 }
 
 .qq-icon {
-  width: 36px;
-  height: 36px;
+  width: 38px;
+  height: 38px;
   display: inline-grid;
   place-items: center;
   border-radius: 50%;
   background: var(--ink);
   color: #fffaf0;
+  font-size: 18px;
   font-weight: 700;
 }
 
@@ -449,6 +451,7 @@ button:focus-visible {
 .character-page {
   display: grid;
   align-items: center;
+  overflow: hidden;
 }
 
 .creation-layout {
@@ -456,7 +459,7 @@ button:focus-visible {
   max-height: calc(100dvh - var(--topbar-height) - 44px);
   margin: 0 auto;
   display: grid;
-  grid-template-columns: minmax(300px, 0.82fr) minmax(360px, 1fr) minmax(430px, 1.45fr);
+  grid-template-columns: minmax(300px, 0.82fr) minmax(390px, 1.04fr) minmax(430px, 1.45fr);
   grid-template-rows: auto minmax(0, 1fr);
   gap: 12px;
 }
@@ -555,7 +558,7 @@ button:focus-visible {
 
 .selection-preview {
   display: grid;
-  gap: 8px;
+  gap: 6px;
   font-size: 14px;
 }
 
@@ -581,23 +584,71 @@ button:focus-visible {
   font-size: 30px;
 }
 
-.catalog-group {
-  display: grid;
-  gap: 7px;
+.fate-panel {
+  grid-template-rows: auto repeat(3, minmax(0, 1fr)) auto;
 }
 
-.catalog-group h3 {
+.catalog-group {
+  min-height: 0;
+  display: grid;
+  grid-template-rows: auto minmax(0, 1fr);
+  gap: 6px;
+}
+
+.catalog-group summary {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  list-style: none;
+  cursor: pointer;
+  font-size: 18px;
+  font-weight: 700;
+}
+
+.catalog-group summary::-webkit-details-marker {
+  display: none;
+}
+
+.catalog-group summary::after {
+  content: "收";
+  color: var(--ink-soft);
+  font-size: 13px;
+  font-weight: 400;
+}
+
+.catalog-group:not([open]) summary::after {
+  content: "展";
+}
+
+.catalog-group summary span {
   display: flex;
   align-items: center;
   gap: 8px;
-  margin: 0;
-  font-size: 18px;
+}
+
+.catalog-list {
+  min-height: 0;
+  display: grid;
+  align-content: start;
+  gap: 7px;
+  overflow: auto;
+  padding-right: 3px;
 }
 
 .catalog-row {
-  grid-template-columns: auto minmax(0, 1fr) auto auto;
+  grid-template-columns: 20px auto minmax(0, 1fr) auto;
   min-height: 40px;
   padding: 6px 10px;
+}
+
+.selection-check {
+  color: var(--jade);
+}
+
+.selection-check.empty {
+  width: 17px;
+  height: 17px;
 }
 
 .catalog-row span:not(.rarity-dot) {
@@ -733,11 +784,13 @@ button:focus-visible {
 }
 
 .game-page {
-  min-height: 100dvh;
+  height: 100dvh;
+  min-height: 0;
   display: grid;
   grid-template-rows: auto minmax(0, 1fr);
   gap: 14px;
   padding: calc(var(--topbar-height) + 8px) clamp(18px, 2vw, 34px) 18px;
+  overflow: hidden;
   background:
     linear-gradient(180deg, rgba(245, 239, 226, 0.78), rgba(245, 239, 226, 0.94)),
     var(--game-bg) center bottom / cover no-repeat;
@@ -1097,16 +1150,13 @@ button:focus-visible {
 .choice-copy {
   min-width: 0;
   display: grid;
-  gap: 4px;
-}
-
-.choice-copy strong {
-  font-size: 20px;
+  gap: 0;
 }
 
 .choice-copy em {
   overflow: hidden;
-  color: var(--ink-soft);
+  color: var(--ink);
+  font-size: 18px;
   font-style: normal;
   line-height: 1.45;
   text-overflow: ellipsis;
@@ -1288,6 +1338,10 @@ button:focus-visible {
 }
 
 @media (max-width: 1180px) {
+  .character-page {
+    overflow: visible;
+  }
+
   .creation-layout {
     max-height: none;
     grid-template-columns: 1fr;
@@ -1323,8 +1377,10 @@ button:focus-visible {
   }
 
   .home {
+    height: auto;
     min-height: 100dvh;
     padding: calc(var(--topbar-height) + 10px) 16px 24px;
+    overflow: visible;
   }
 
   .hero {
@@ -1382,9 +1438,12 @@ button:focus-visible {
   }
 
   .game-page {
+    height: auto;
+    min-height: 100dvh;
     grid-template-rows: auto minmax(0, 1fr);
     gap: 10px;
     padding: 12px;
+    overflow: visible;
   }
 
   .mobile-top-summary {
@@ -1483,10 +1542,6 @@ button:focus-visible {
     display: none;
   }
 
-  .choice-copy strong {
-    display: none;
-  }
-
   .choice-copy em {
     color: var(--ink);
     font-size: 20px;
@@ -1513,7 +1568,6 @@ button:focus-visible {
   }
 
   .home-actions button {
-    grid-template-columns: 52px minmax(0, 1fr);
     font-size: 22px;
   }
 

@@ -114,3 +114,11 @@ Browser UI
 - 寿元语义修正：`GamePage` 读 `character.remaining_lifespan`（fallback `lifespan - age`，`Math.min` 兜底）；面板摘要改为 `{remainingLifespan}/{lifespanMax} 年`，与 `StatLine` 一致。
 - 死代码清理：combat 子系统（`src/agens_novel/game/combat.py` 与 `combat_narrator.md`）、`persistence/` 空壳、`WEB_ITERATION_PLAN.md`、`build-apk/` skill、`web/frontend-react/.tmp/` smoke 脚本、`.venv311/` 冗余虚拟环境、孤立 `__pycache__/*.pyc`、累计 uvicorn 日志全部删除；10 处 `combat` / `persistence` 陈旧注释替换为规则引擎 / 存档语义。
 - 契约测试 `tests/web/test_frontend_contract.py` 新增：首页 eyebrow 段删除、品牌精简、6 色字面量、`character.remaining_lifespan` 读取、`{remainingLifespan}/{lifespanMax}` 显示。验证：`compileall -q src tests web` 干净；`pytest -q` 466 passed；`npm run build` 1590 modules / 15.18 kB css / 179.71 kB js。
+
+## 2026-06-23 UI 截图二次修复与只读复盘
+
+- 首页：标题保持单行，删除标题下方红点；入口按钮文字按整颗按钮居中，图标左侧辅助；QQ群左侧圆形标识从 `Q` 改为“仙”。
+- 角色创建页：命数列表选中标识前置；天赋、灵根、家世改为可收缩区块，列表内部滚动，避免家世内容被 2K 高度挤出；去掉撞色的提示胶囊，改为普通说明文本。
+- 终局摘要：`凡人长寿` 成就从“寿元上限 >= 80”改为“实际年龄 >= 80”；注册用户 `/death_summary` 优先基于当前 session 重算摘要，旧数据库成就只作为兜底，避免 16 岁角色显示“撑过八十载”。
+- 只读复盘线程 `019ee96e-5685-7223-8796-55c1c7b52205` 结论：P0/P1 仍是 UI 批次验收、生产 Alembic/PG smoke、真实浏览器/公网游玩链路；冗余清理优先缓存、构建产物、历史归档；技术债集中在 React 大样式文件、后端服务边界、SQLite/PostgreSQL 双轨和源码字符串测试假绿。
+- 背景素材暂未替换；新首页/角色页背景提示词已补入 `docs/UI_REFACTOR_PLAN.md`。

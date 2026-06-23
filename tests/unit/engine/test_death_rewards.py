@@ -73,9 +73,14 @@ class TestEvaluateAchievements:
         assert "qi_refinement_persistent" in keys
 
     def test_long_lived_mortal(self) -> None:
-        session = _make_session(realm="练气", realm_stage=3, lifespan=80, turn_count=10)
+        session = _make_session(realm="练气", realm_stage=3, age=80, lifespan=100, turn_count=10)
         keys = [a["key"] for a in evaluate_achievements(session)]
         assert "long_lived_mortal" in keys
+
+    def test_long_lived_mortal_uses_age_not_lifespan_cap(self) -> None:
+        session = _make_session(realm="练气", realm_stage=3, age=16, lifespan=100, turn_count=2)
+        keys = [a["key"] for a in evaluate_achievements(session)]
+        assert "long_lived_mortal" not in keys
 
     def test_veteran_wanderer(self) -> None:
         session = _make_session(realm="练气", realm_stage=3, turn_count=30, lifespan=100)

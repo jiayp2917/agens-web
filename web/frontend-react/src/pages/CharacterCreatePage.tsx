@@ -1,4 +1,4 @@
-import { FormEvent, useEffect, useMemo, useState } from "react";
+import { FormEvent, ReactNode, useEffect, useMemo, useState } from "react";
 import { CheckCircle2, ChevronRight, Dice5, Home, Minus, Plus, Sparkles } from "lucide-react";
 import { api, type Session } from "../lib/api";
 import {
@@ -129,13 +129,30 @@ export function CharacterCreatePage({
         onClick={() => onSelect(item.name)}
         disabled={disabled}
       >
+        {selected ? <CheckCircle2 className="selection-check" size={17} aria-hidden="true" /> : <span className="selection-check empty" aria-hidden="true" />}
         <RarityDot color={color} />
         <span>{item.name}</span>
         <em className={rarityClassName(color)}>{color}</em>
-        {selected && <CheckCircle2 size={18} aria-hidden="true" />}
       </button>
     );
   };
+
+  const renderCatalogGroup = (
+    title: string,
+    items: CatalogItem[],
+    selectedName: string,
+    onSelect: (name: string) => void,
+    icon?: ReactNode,
+  ) => (
+    <details className="catalog-group" open>
+      <summary>
+        <span>{icon}{title}</span>
+      </summary>
+      <div className="catalog-list">
+        {items.map((item) => renderCatalogOption(item, item.name === selectedName, onSelect, choiceMode === "random"))}
+      </div>
+    </details>
+  );
 
   const submit = async (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault();
@@ -178,9 +195,8 @@ export function CharacterCreatePage({
             <button type="button" className={choiceMode === "random" ? "selected-tool" : ""} onClick={rollRandom}><Dice5 size={16} />随机角色</button>
           </div>
           <div className="selection-preview" aria-live="polite">
-            <span className="rarity-chip rarity-purple">手选最高：紫</span>
-            <span className="rarity-chip rarity-red">随机可出：白/绿/蓝/紫/橙/红</span>
-            <span>难度：{difficulty}</span>
+            <span>手选最高：紫；随机可出：白 / 绿 / 蓝 / 紫 / 橙 / 红</span>
+            <span>当前难度：{difficulty}</span>
           </div>
           <button className="primary-btn start-btn" disabled={busy || (choiceMode === "manual" && attrTotal > manualAttributeBudget)} type="submit">
             {busy ? "进入中..." : <>开始修行<ChevronRight size={22} /></>}
@@ -191,18 +207,9 @@ export function CharacterCreatePage({
           <header>
             <h2>命数<span className="seal">命</span></h2>
           </header>
-          <div className="catalog-group">
-            <h3><Sparkles size={18} />天赋</h3>
-            {(choiceMode === "manual" ? manualTalents : randomTalents).map((item) => renderCatalogOption(item, item.name === talent, setTalent, choiceMode === "random"))}
-          </div>
-          <div className="catalog-group">
-            <h3>灵根</h3>
-            {(choiceMode === "manual" ? manualRoots : randomRoots).map((item) => renderCatalogOption(item, item.name === spiritRoot, setSpiritRoot, choiceMode === "random"))}
-          </div>
-          <div className="catalog-group">
-            <h3>家世</h3>
-            {(choiceMode === "manual" ? manualFamilies : randomFamilies).map((item) => renderCatalogOption(item, item.name === familyBackground, setFamilyBackground, choiceMode === "random"))}
-          </div>
+          {renderCatalogGroup("天赋", choiceMode === "manual" ? manualTalents : randomTalents, talent, setTalent, <Sparkles size={18} />)}
+          {renderCatalogGroup("灵根", choiceMode === "manual" ? manualRoots : randomRoots, spiritRoot, setSpiritRoot)}
+          {renderCatalogGroup("家世", choiceMode === "manual" ? manualFamilies : randomFamilies, familyBackground, setFamilyBackground)}
           <p className="unlock-note">当前：{colorLabel(selectedTalent || { name: talent })} · {colorLabel(selectedRoot || { name: spiritRoot })} · {colorLabel(selectedFamily || { name: familyBackground })}</p>
         </section>
 

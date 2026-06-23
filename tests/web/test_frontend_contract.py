@@ -77,6 +77,7 @@ def test_react_homepage_buttons_have_handlers() -> None:
     assert "BgmToggle" in source
     assert 'assetUrl("assets/audio/bgm.flac")' in source
     assert "agens web" not in source.lower()
+    assert '<span className="qq-icon" aria-hidden="true">仙</span>' in source
     # v5 cleanup: homepage must not carry the WEB· eyebrow or the four-button description paragraph.
     assert "WEB · 文字修仙模拟器" not in source
     assert "从山门晨雾开始。A 稳妥、B 机遇、C 风险、D 气运，四选一推进修行岁月" not in source
@@ -117,13 +118,18 @@ def test_react_character_creation_uses_catalogs_and_game_mode() -> None:
     assert "随机角色" in source
     assert "手选最高：紫" in source
     assert "进入中..." in source
-    assert "难度：{difficulty}" in source
+    assert "当前难度：{difficulty}" in source
+    assert 'details className="catalog-group"' in source
+    assert "catalog-list" in source
+    assert "selection-check" in source
     assert "choice_card_mountain.png" not in css
     assert "game_name" not in source
     assert "游戏名称" not in source
     assert "var(--ink-gate)" in css
     assert 'url("/assets/ink_mountain_gate.png")' not in css
     assert 'url("/static/assets/ink_mountain_gate.png")' not in css
+    assert "hero-rule::after" in css and "content: none;" in css
+    assert ".home-actions button svg" in css and "position: absolute;" in css
     # v5 cleanup: dropdown labels use the unified 6-color palette, not legacy rarity strings.
     assert "rarityToColor" in source
     assert "colorLabel" in source
@@ -153,8 +159,11 @@ def test_react_game_page_has_escape_route_and_stable_meters() -> None:
     assert "value={remainingLifespan}" in source
     assert "ChronicleItem" in source
     assert "ChoiceButton" in source
+    assert "cleanChoiceText" in source
     assert "往事时间轴" in source
     assert ".stat-meter" in css
+    assert "height: 100dvh;" in css
+    assert "overflow: hidden;" in css
     assert "grid-template-rows: auto minmax(0, 1fr) auto auto;" in css
     assert "grid-template-columns: 58px minmax(0, 1fr) auto;" in css
     # v5 cleanup: lifespan reads the remaining value, not the realm cap; UI shows remaining/max.
@@ -170,6 +179,7 @@ def test_react_turn_actions_disable_while_busy() -> None:
         "pages/GamePage.tsx",
         "pages/HomePage.tsx",
         "components/FallbackBanner.tsx",
+        "components/ChoiceButton.tsx",
         "components/TutorialDialog.tsx",
         "lib/catalog.ts",
         "pages/CharacterCreatePage.tsx",
@@ -177,6 +187,8 @@ def test_react_turn_actions_disable_while_busy() -> None:
 
     assert "disabled={busy}" in source
     assert "runTurn(`/api/sessions/${session.session_id}/choice`" in source
+    assert "aria-label={`${letter}：${text}`}" in source
+    assert "<strong>{label}</strong>" not in source
     # Game-mode v5: A/B/C/D fixed choices only; no free-text input element.
     # The labels are defined as `choiceSemantics` entries (key + label pairs).
     assert "choiceSemantics" in source
