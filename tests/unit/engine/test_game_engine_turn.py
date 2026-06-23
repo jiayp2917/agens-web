@@ -21,7 +21,6 @@ def _canned_world_builder() -> dict[str, Any]:
             "character": {
                 "name": "许满", "realm": "练气", "realm_stage": 1,
                 "spirit_root": "火木双灵根", "spirit_root_grade": "地",
-                "experience": 0, "experience_to_next": 100, "gold": 10,
                 "breakthrough_flags": [],
                 "techniques": [{"name": "基础吐纳术", "level": 1, "type": "内功"}],
                 "inventory": [{"name": "粗布道袍", "quantity": 1, "type": "防具"}],
@@ -45,7 +44,7 @@ def _canned_world_builder() -> dict[str, Any]:
 def _canned_narrator() -> dict[str, Any]:
     return {
         "narrative": "你静坐吐纳，灵气缓缓涌入。",
-        "state_delta": {"character": {"experience": "+15"}},
+        "state_delta": {"character": {"attributes": {"willpower": 1}}},
         "choices": ["继续吐纳", "请教师兄", "观察灵气流向"],
         "output_path": "", "audit_path": "", "finished_at": "", "llm_error": "",
     }
@@ -89,14 +88,15 @@ class TestGameEngineHandleAction:
         # Set up a started game.
         with _patch_turn_runner():
             engine.new_game("许满")
+        engine.game_session.last_choices = ["留在山门吐纳", "询问接引弟子", "强闯禁地", "随缘听天命"]
 
         with _patch_turn_runner(call_log):
-            engine.handle_action("修炼吐纳")
+            engine.handle_action("C")
 
         assert call_log == ["narrator", "judge"]
         assert engine.game_session.turn_count == 1
-        # Game-mode v5: mp removed; experience gained (rule engine + narrator delta).
-        assert engine.game_session.experience >= 15
+        assert not hasattr(engine.game_session, "experience")
+        assert engine.game_session.age > 16
 
     def test_choice_letter_routes_to_current_choice(self, monkeypatch) -> None:
         monkeypatch.setenv("AGNES_API_KEY", "sk-test-1234567890")
@@ -113,7 +113,7 @@ class TestGameEngineHandleAction:
                 seen_inputs.append(user_input)
                 return {
                     "narrative": "你向接引弟子行礼。",
-                    "state_delta": {"character": {"insight": "+5"}},
+                    "state_delta": {"character": {"attributes": {"willpower": 1}}},
                     "choices": ["继续询问", "返回山门", "观察弟子神色"],
                     "llm_error": "",
                 }
@@ -179,7 +179,6 @@ class TestGameEngineHandleAction:
         assert engine.game_session.local_story_active is True
         assert len(engine.game_session.last_choices) == 4
         assert any("天道紊乱" in msg for msg in infos)
-
     def test_narrator_exception_can_end_run_from_ui_choice(self, monkeypatch) -> None:
         monkeypatch.setenv("AGNES_API_KEY", "sk-test-1234567890")
         engine = GameEngine()
@@ -267,7 +266,7 @@ class TestGameEngineHandleAction:
             if agent_name == "narrator":
                 return {
                     "narrative": "你获得一枚清灵丹，又习得云水诀。",
-                    "state_delta": {"character": {"insight": "+5"}},
+                    "state_delta": {"character": {"attributes": {"willpower": 1}}},
                     "choices": ["查看丹药", "演练功法", "拜谢师兄"],
                     "llm_error": "",
                 }
@@ -364,6 +363,7 @@ class TestGameEngineHandleAction:
 
         with _patch_turn_runner():
             engine.new_game("许满")
+        engine.game_session.last_choices = ["留在山门吐纳", "询问接引弟子", "强闯禁地", "随缘听天命"]
 
         call_log: list[str] = []
 
@@ -371,7 +371,7 @@ class TestGameEngineHandleAction:
             call_log.append(agent_name)
             if agent_name == "narrator":
                 return {
-                    "narrative": "你得了一笔不该存在的灵石。",
+                    "narrative": "你得了一笔不该存在的秘宝。",
                     "state_delta": {"character": {"gold": "+77"}},
                     "choices": ["继续吐纳", "请教师兄", "观察灵气流向"],
                     "output_path": "", "audit_path": "", "finished_at": "", "llm_error": "",
@@ -381,11 +381,11 @@ class TestGameEngineHandleAction:
             return {}
 
         with patch("agens_novel.engine.game_engine.run_turn_sync", side_effect=selective_runner):
-            engine.handle_action("修炼")
+            engine.handle_action("C")
 
         assert engine.game_session.turn_count == 1
         # Judge exception -> model delta is not applied; v5 rule settlement may still advance the turn.
-        assert engine.game_session.gold == 10
+        assert not hasattr(engine.game_session, "gold")
 
     def test_judge_rejects(self, monkeypatch) -> None:
         monkeypatch.setenv("AGNES_API_KEY", "sk-test-1234567890")
@@ -393,6 +393,7 @@ class TestGameEngineHandleAction:
 
         with _patch_turn_runner():
             engine.new_game("许满")
+        engine.game_session.last_choices = ["留在山门吐纳", "询问接引弟子", "强闯禁地", "随缘听天命"]
 
         def selective_runner(agent_name, user_input, session, **kw):
             if agent_name == "narrator":
@@ -400,25 +401,17 @@ class TestGameEngineHandleAction:
             if agent_name == "judge":
                 return {
                     "approved": False,
-                    "corrected_delta": {"character": {"experience": "-5"}},
-                    "judgment_note": "经验获取过大",
+                    "corrected_delta": {"character": {"status_effects_add": ["轻伤"]}},
+                    "judgment_note": "状态变更过大",
                     "review_score": 3,
                     "output_path": "", "audit_path": "", "finished_at": "", "llm_error": "",
                 }
             return {}
 
         with patch("agens_novel.engine.game_engine.run_turn_sync", side_effect=selective_runner):
-            engine.handle_action("修炼")
+            engine.handle_action("C")
 
-        # Game-mode v5: corrected_delta uses a real field (experience); mp removed.
-        # The judge's correction overrides the narrator's proposed experience,
-        # so the final experience differs from the approved path.
-        baseline_engine = GameEngine()
-        with _patch_turn_runner():
-            baseline_engine.new_game("许满")
-        with _patch_turn_runner():
-            baseline_engine.handle_action("修炼")  # approved baseline
-        assert engine.game_session.experience != baseline_engine.game_session.experience
+        assert "轻伤" in engine.game_session.status_effects
 
     def test_judge_reject_without_correction_suppresses_drift_narrative(self, monkeypatch) -> None:
         monkeypatch.setenv("AGNES_API_KEY", "sk-test-1234567890")
@@ -426,6 +419,7 @@ class TestGameEngineHandleAction:
 
         with _patch_turn_runner():
             engine.new_game("许满")
+        engine.game_session.last_choices = ["留在山门吐纳", "询问接引弟子", "强闯内门", "随缘听天命"]
 
         narratives: list[tuple[str, int]] = []
         infos: list[str] = []
@@ -472,7 +466,7 @@ class TestGameEngineHandleAction:
             if agent_name == "narrator":
                 return {
                     "narrative": "你试图强闯内门。",
-                    "state_delta": {"character": {"insight": "+5"}},
+                    "state_delta": {"character": {"attributes": {"willpower": 1}}},
                     "choices": ["向执事解释来意", "退回山门等候", "寻找外门任务"],
                     "llm_error": "",
                 }
@@ -487,11 +481,11 @@ class TestGameEngineHandleAction:
             return {}
 
         with patch("agens_novel.engine.game_engine.run_turn_sync", side_effect=selective_runner):
-            engine.handle_action("强闯内门")
+            engine.handle_action("C")
 
         assert engine.game_session.last_choices == ["向执事解释来意", "退回山门等候", "寻找外门任务", "【气运】随缘而行，听天命、赌因果"]
-        assert any("基础规则结算" in msg for msg in infos)
         assert not any("天道紊乱" in msg for msg in infos)
+        assert engine.game_session.current_scene == "晨雾中的青云山外门"
         assert engine.game_session.turn_count == 1
 
     def test_action_delta_filters_identity_and_reset_scene(self, monkeypatch) -> None:
@@ -534,8 +528,7 @@ class TestGameEngineHandleAction:
         assert s.techniques == [{"name": "基础吐纳术", "level": 1, "type": "内功"}]
         assert s.current_scene == "晨雾中的青云山外门"
         assert s.day_count == 2
-        # Game-mode v5: mp removed; experience gain applies.
-        assert s.experience >= 5
+        assert not hasattr(s, "experience")
 
     def test_start_from_profile_seeds_opening_chat_history(self, monkeypatch, tmp_path) -> None:
         from agens_novel import paths
@@ -617,22 +610,20 @@ class TestGameEngineHandleAction:
 class TestStageAdvancement:
     """Tests for auto-advancing small layers within a realm."""
 
-    def test_advance_stage_on_xp_threshold(self, monkeypatch) -> None:
-        """When XP reaches experience_to_next, stage auto-advances."""
+    def test_advance_stage_on_rule_chance(self, monkeypatch) -> None:
+        """Stage advancement is event-like and probability-driven, not XP-driven."""
         monkeypatch.setenv("AGNES_API_KEY", "sk-test-1234567890")
         engine = GameEngine()
         with _patch_turn_runner():
             engine.new_game("许满")
 
-        # Give just enough XP to advance from stage 1 to stage 2.
-        engine.game_session.experience = 100
-        engine.game_session.experience_to_next = 100
-        delta = engine.realm_system.try_advance_stage(engine.game_session)
+        with patch("agens_novel.game.realm.random.random", return_value=0.0):
+            delta = engine.realm_system.try_advance_stage(engine.game_session)
         assert delta is not None
         assert delta["character"]["realm_stage"] == 2
         engine.game_session.apply_delta(delta)
         assert engine.game_session.realm_stage == 2
-        assert engine.game_session.experience == 0  # XP consumed
+        assert not hasattr(engine.game_session, "experience")
 
     def test_no_advance_at_max_stage(self, monkeypatch) -> None:
         """At max stage, try_advance_stage returns None (needs breakthrough)."""
@@ -641,28 +632,22 @@ class TestStageAdvancement:
         with _patch_turn_runner():
             engine.new_game("许满")
 
-        # Set to max stage of 练气 (9) with enough XP.
         engine.game_session.realm_stage = 9
-        engine.game_session.experience = 200
-        engine.game_session.experience_to_next = 100
         delta = engine.realm_system.try_advance_stage(engine.game_session)
         assert delta is None
 
     def test_chain_multiple_stages_in_action(self, monkeypatch) -> None:
-        """Pure cultivation caps large XP so one action does not skip the journey."""
+        """One action can emit at most one small-stage advancement."""
         monkeypatch.setenv("AGNES_API_KEY", "sk-test-1234567890")
         engine = GameEngine()
         infos: list[str] = []
         engine.on_info = lambda msg: infos.append(msg)
 
-        # Create a narrator that grants huge XP.
-        def huge_xp_narrator(agent_name, user_input, session, **kw):
+        def runner(agent_name, user_input, session, **kw):
             if agent_name == "narrator":
                 return {
                     "narrative": "修炼大进！",
-                    "state_delta": {
-                        "character": {"experience": "+500"},
-                    },
+                    "state_delta": {"character": {"attributes": {"willpower": 1}}},
                     "choices": ["继续吐纳", "检查瓶颈", "出门历练"],
                     "output_path": "", "audit_path": "", "finished_at": "", "llm_error": "",
                 }
@@ -672,9 +657,10 @@ class TestStageAdvancement:
                 return _canned_world_builder()
             return {}
 
-        with patch("agens_novel.engine.game_engine.run_turn_sync", side_effect=huge_xp_narrator):
+        with patch("agens_novel.engine.game_engine.run_turn_sync", side_effect=runner):
             engine.new_game("许满")
-            engine.handle_action("闭关修炼")
+            with patch("agens_novel.game.realm.random.random", return_value=0.0):
+                engine.handle_action("闭关修炼")
 
         assert engine.game_session.realm_stage == 2
         stage_msgs = [m for m in infos if "修为精进" in m]
@@ -718,8 +704,8 @@ class TestBreakthroughRouting:
         assert any("需达到" in m for m in infos) or any("未满" in m for m in infos)
 
 
-class TestInsightGate:
-    """Tests for the 感悟 breakthrough gate and cultivation classification."""
+class TestBreakthroughPreparationGate:
+    """Tests for the v5 breakthrough preparation gate and cultivation classification."""
 
     def test_is_pure_cultivation_detection(self) -> None:
         """Meditation phrases are pure cultivation; other deeds are not."""
@@ -736,12 +722,12 @@ class TestInsightGate:
         assert engine._is_pure_cultivation("打坐参悟") is False
         assert engine._is_pure_cultivation("") is False
 
-    def test_pure_cultivation_grants_no_insight(self, monkeypatch) -> None:
-        """闭关修炼 drops even LLM-granted insight — meditation yields no 感悟."""
+    def test_legacy_insight_delta_is_ignored(self, monkeypatch) -> None:
+        """Legacy insight/experience deltas do not create removed fields."""
         monkeypatch.setenv("AGNES_API_KEY", "sk-test-1234567890")
         engine = GameEngine()
 
-        def narrator_with_insight(agent_name, user_input, session, **kwargs):
+        def narrator_with_legacy_fields(agent_name, user_input, session, **kwargs):
             if agent_name == "world_builder":
                 return _canned_world_builder()
             if agent_name == "narrator":
@@ -754,38 +740,15 @@ class TestInsightGate:
                 return _canned_judge()
             return {}
 
-        with patch("agens_novel.engine.game_engine.run_turn_sync", side_effect=narrator_with_insight):
+        with patch("agens_novel.engine.game_engine.run_turn_sync", side_effect=narrator_with_legacy_fields):
             engine.new_game("许满")
             engine.handle_action("闭关修炼")
 
-        assert engine.game_session.insight == 0, \
-            "Pure cultivation must grant no insight even if the LLM offered some"
+        assert not hasattr(engine.game_session, "insight")
+        assert not hasattr(engine.game_session, "experience")
 
-    def test_non_cultivation_grants_insight(self, monkeypatch) -> None:
-        """A non-cultivation deed grants baseline 感悟 on top of any LLM amount."""
-        monkeypatch.setenv("AGNES_API_KEY", "sk-test-1234567890")
-        engine = GameEngine()
-        engine.game_session.game_started = True
-        engine.game_session.char_name = "许满"
-        engine.game_session.realm = "练气"
-        engine.game_session.experience_to_next = 999999  # avoid stage auto-advance noise
-
-        def narrator_plain(agent_name, user_input, session, **kwargs):
-            if agent_name == "narrator":
-                return _canned_narrator()  # no insight in delta
-            if agent_name == "judge":
-                return _canned_judge()
-            return {}
-
-        with patch("agens_novel.engine.game_engine.run_turn_sync", side_effect=narrator_plain):
-            engine.handle_action("外出历练")
-
-        from agens_novel.engine.game_engine import INSIGHT_BASE_GAIN
-        assert engine.game_session.insight == INSIGHT_BASE_GAIN, \
-            "Non-cultivation action must grant the baseline insight"
-
-    def test_breakthrough_blocked_without_insight(self, monkeypatch) -> None:
-        """Max layer + full XP but zero 感悟 → breakthrough blocked with a 感悟 hint."""
+    def test_breakthrough_blocked_without_preparation(self, monkeypatch) -> None:
+        """Max layer without breakthrough preparation is blocked."""
         monkeypatch.setenv("AGNES_API_KEY", "sk-test-1234567890")
         engine = GameEngine()
         infos: list[str] = []
@@ -794,18 +757,15 @@ class TestInsightGate:
         engine.game_session.game_started = True
         engine.game_session.realm = "练气"
         engine.game_session.realm_stage = 9  # max layer
-        engine.game_session.experience = 500
-        engine.game_session.experience_to_next = 100
-        engine.game_session.insight = 0  # 练气 requires 30
+        engine.game_session.breakthrough_flags = []
 
         engine.attempt_breakthrough()
 
         assert engine.game_session.realm == "练气", "Breakthrough must be blocked"
-        assert any("感悟" in m for m in infos), \
-            f"Blocked message must mention 感悟, got: {infos}"
+        assert any("破境准备不足" in m for m in infos), infos
 
-    def test_breakthrough_allowed_with_insight(self, monkeypatch) -> None:
-        """Max layer + full XP + sufficient 感悟 → breakthrough succeeds."""
+    def test_breakthrough_allowed_with_preparation(self, monkeypatch) -> None:
+        """Max layer + required preparation can break through."""
         monkeypatch.setenv("AGNES_API_KEY", "sk-test-1234567890")
         engine = GameEngine()
 
@@ -814,9 +774,6 @@ class TestInsightGate:
 
         engine.game_session.realm = "练气"
         engine.game_session.realm_stage = 9
-        engine.game_session.experience = 500
-        engine.game_session.experience_to_next = 100
-        engine.game_session.insight = 999  # well past the 30 gate
         engine.game_session.breakthrough_flags = ["foundation_aid"]
 
         with _patch_turn_runner():
@@ -837,9 +794,6 @@ class TestInsightGate:
 
         engine.game_session.realm = "练气"
         engine.game_session.realm_stage = 9
-        engine.game_session.experience = 500
-        engine.game_session.experience_to_next = 100
-        engine.game_session.insight = 999
         engine.game_session.breakthrough_flags = ["foundation_aid"]
 
         def runner(agent_name, user_input, session, **kw):
@@ -872,9 +826,6 @@ class TestInsightGate:
 
         engine.game_session.realm = "练气"
         engine.game_session.realm_stage = 9
-        engine.game_session.experience = 500
-        engine.game_session.experience_to_next = 100
-        engine.game_session.insight = 999
         engine.game_session.breakthrough_flags = ["foundation_aid"]
 
         def runner(agent_name, user_input, session, **kw):
@@ -888,43 +839,3 @@ class TestInsightGate:
         assert engine.game_session.realm == "练气"
         assert len(engine.game_session.last_choices) == 4
         assert any("天道紊乱" in msg for msg in infos)
-
-    def test_insight_resets_on_breakthrough(self, monkeypatch) -> None:
-        """A successful breakthrough zeroes 感悟 (new realm, new bottleneck)."""
-        monkeypatch.setenv("AGNES_API_KEY", "sk-test-1234567890")
-        engine = GameEngine()
-
-        with _patch_turn_runner():
-            engine.new_game("许满")
-
-        engine.game_session.realm = "练气"
-        engine.game_session.realm_stage = 9
-        engine.game_session.experience = 500
-        engine.game_session.experience_to_next = 100
-        engine.game_session.insight = 999
-        engine.game_session.breakthrough_flags = ["foundation_aid"]
-
-        with _patch_turn_runner():
-            with patch("agens_novel.game.realm.random.random", return_value=0.001):
-                engine.attempt_breakthrough()
-
-        assert engine.game_session.realm == "筑基"
-        assert engine.game_session.insight == 0, \
-            "Insight must reset to 0 after a successful breakthrough"
-
-    def test_insight_serialization_roundtrip(self) -> None:
-        """save/load preserves the 感悟 value."""
-        session = GameSession()
-        session.insight = 137
-        data = session.to_save_dict()
-        assert data["character"]["insight"] == 137
-
-        restored = GameSession.from_save_dict(data)
-        assert restored.insight == 137
-
-    def test_insight_floor_guard(self) -> None:
-        """Insight is floored at 0 — cannot go negative."""
-        session = GameSession()
-        session.insight = 5
-        session.apply_delta({"character": {"insight": "-50"}})
-        assert session.insight == 0

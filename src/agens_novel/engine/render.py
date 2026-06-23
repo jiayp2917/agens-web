@@ -36,18 +36,6 @@ def _spirit_root_str(session: GameSession) -> str:
     return " ".join(parts) if parts else "未觉醒"
 
 
-def _insight_required(session: GameSession) -> int:
-    """Insight needed to break out of the current realm (0 if unknown/terminal)."""
-    from ..game.constants import REALM_CONFIGS
-    cfg = REALM_CONFIGS.get(getattr(session, "realm", ""))
-    if not isinstance(cfg, dict):
-        return 0
-    try:
-        return int(cfg.get("insight_required", 0))
-    except (TypeError, ValueError):
-        return 0
-
-
 def _breakthrough_requirement_count(session: GameSession) -> tuple[int, int]:
     """Return (met, total) lightweight breakthrough preparation requirements."""
     from ..game.realm import RealmSystem
@@ -66,22 +54,15 @@ def format_status_bar(session: GameSession) -> str:
     age = getattr(session, "age", 16)
     lifespan = getattr(session, "lifespan", 100)
     remaining = max(0, lifespan - age)
-    insight = getattr(session, "insight", 0)
-    insight_req = _insight_required(session)
-    insight_str = f"感悟:{insight}/{insight_req}" if insight_req else f"感悟:{insight}"
     prep_met, prep_total = _breakthrough_requirement_count(session)
     prep_str = f" | 准备:{prep_met}/{prep_total}" if prep_total else ""
     loc = session.location or "未知"
-    return f"[{realm_str} | {age}岁 | 寿元:{remaining}/{lifespan}年 | {insight_str}{prep_str} | 地点:{loc} | 第{session.turn_count}回合]"
+    return f"[{realm_str} | {age}岁 | 寿元:{remaining}/{lifespan}年{prep_str} | 地点:{loc} | 第{session.turn_count}回合]"
 
 
 def format_status_card(session: GameSession) -> str:
     """Multi-line character card — game mode (no HP/MP)."""
     realm_str = f"{session.realm}{_stage_suffix(session.realm_stage)}"
-    xp_bar = _bar(session.experience, session.experience_to_next)
-    insight = getattr(session, "insight", 0)
-    insight_req = _insight_required(session)
-    insight_bar = _bar(insight, insight_req) if insight_req else ""
     prep_met, prep_total = _breakthrough_requirement_count(session)
     age = getattr(session, "age", 16)
     lifespan = getattr(session, "lifespan", 100)
@@ -94,10 +75,7 @@ def format_status_card(session: GameSession) -> str:
         f"  灵根:   {_spirit_root_str(session)}",
         f"  天赋:   {getattr(session, 'talent', '') or '未显'}",
         f"  家世:   {getattr(session, 'family_background', '') or '凡俗'}",
-        f"  经验:   {xp_bar} {session.experience}/{session.experience_to_next}",
-        f"  感悟:   {insight_bar} {insight}/{insight_req}" if insight_req else f"  感悟:   {insight}",
         f"  准备:   {prep_met}/{prep_total}（破境资源/机缘）" if prep_total else "  准备:   无额外要求",
-        f"  灵石:   {session.gold}",
         f"  地点:   {session.location or '未知'}" + (f" - {session.region}" if session.region else ""),
         f"  回合:   {session.turn_count}",
     ]
@@ -201,17 +179,10 @@ def format_realm(session: GameSession) -> str:
     from ..game.constants import REALM_ORDER
 
     realm_str = f"{session.realm}{_stage_suffix(session.realm_stage)}"
-    xp_bar = _bar(session.experience, session.experience_to_next)
-    insight = getattr(session, "insight", 0)
-    insight_req = _insight_required(session)
-    insight_bar = _bar(insight, insight_req) if insight_req else ""
 
     lines = [
         f"  境界: {realm_str}",
-        f"  经验: {xp_bar} {session.experience}/{session.experience_to_next}",
     ]
-    if insight_req:
-        lines.append(f"  感悟: {insight_bar} {insight}/{insight_req}（突破所需）")
     prep_met, prep_total = _breakthrough_requirement_count(session)
     if prep_total:
         lines.append(f"  破境准备: {prep_met}/{prep_total}")

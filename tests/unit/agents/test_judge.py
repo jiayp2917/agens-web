@@ -1,4 +1,4 @@
-"""Tests for Judge agent — default rejection on parse failure."""
+﻿"""Tests for Judge agent — default rejection on parse failure."""
 
 from __future__ import annotations
 
@@ -20,11 +20,11 @@ class TestParseJudgeOutput:
         assert score == 8
 
     def test_clean_json_rejected(self):
-        text = '{"approved": false, "corrected_delta": {"character": {"experience": "+5"}}, "judgment_note": "经验调整过大", "review_score": 3}'
+        text = '{"approved": false, "corrected_delta": {"character": {"attributes": {"luck": 1}}}, "judgment_note": "属性调整过大", "review_score": 3}'
         approved, delta, note, score = _parse_judge_output(text)
         assert approved is False
         assert "character" in delta
-        assert "经验" in note
+        assert "属性" in note
         assert score == 3
 
     def test_fenced_json(self):

@@ -25,9 +25,6 @@ from agens_novel.game.constants import (
     DEFAULT_ATTRIBUTES,
     DIFFICULTY_OPTIONS,
     FAMILY_BACKGROUNDS,
-    SPECIAL_START_ATTRIBUTES,
-    SPECIAL_START_CODE,
-    SPECIAL_START_NAME,
     SPIRIT_ROOTS,
     TALENT_OPTIONS,
 )
@@ -558,7 +555,7 @@ class WebGameService:
                 elapsed_years=elapsed_years,
                 end_age=int(session.age),
                 lifespan=int(session.lifespan),
-                remaining_lifespan=max(0, int(session.lifespan)),
+                remaining_lifespan=session.remaining_lifespan,
                 choice_taken=choice_taken,
                 choices=list(turn.get("choices") or session.last_choices or []),
                 state_delta=delta,
@@ -573,13 +570,7 @@ class WebGameService:
 
     def _normalize_profile(self, profile: dict[str, Any]) -> dict[str, Any]:
         normalized = dict(profile)
-        game_name = str(normalized.get("game_name") or "").strip()
-        special = game_name == SPECIAL_START_CODE
-        if special:
-            normalized["special_start"] = True
-            normalized["char_name"] = SPECIAL_START_NAME
-            normalized["attributes"] = dict(SPECIAL_START_ATTRIBUTES)
-        elif normalized.get("randomize_attributes"):
+        if normalized.get("randomize_attributes"):
             normalized["attributes"] = _random_attributes()
         else:
             attrs = normalized.get("attributes")

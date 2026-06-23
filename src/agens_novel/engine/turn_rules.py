@@ -3,7 +3,7 @@
 Model *only* polishes narrative and choice text. The rule engine decides:
 - elapsed_years
 - attribute changes
-- lifespan consumption
+- lifespan/death checks
 - breakthrough / death / opportunity outcomes
 """
 
@@ -50,23 +50,19 @@ _RISK_YEAR_MULTIPLIER: dict[str, float] = {
 _CHOICE_ATTRIBUTE_IMPACT: dict[str, dict[str, Any]] = {
     "稳妥": {
         "attributes": {"willpower": (0, 2), "comprehension": (0, 1)},
-        "experience_range": (5, 15),
         "breakthrough_chance": 0.1,
     },
     "机遇": {
         "attributes": {"luck": (0, 2), "comprehension": (0, 2)},
-        "experience_range": (10, 25),
         "breakthrough_chance": 0.05,
     },
     "风险": {
         "attributes": {"physique": (-2, 2), "willpower": (0, 3)},
-        "experience_range": (20, 50),
         "breakthrough_chance": 0.15,
         "death_risk": 0.05,
     },
     "气运": {
         "attributes": {"luck": (-3, 5)},
-        "experience_range": (5, 40),
         "breakthrough_chance": 0.08,
         "luck_driven": True,
     },
@@ -104,7 +100,7 @@ def settle_turn(
 
     Returns:
         dict with keys:
-            character: state changes (experience, age, attributes, etc.)
+            character: state changes (age, attributes, etc.)
             world: world state changes (current_scene, lore_add, etc.)
             meta: game_over, game_over_reason, elapsed_years
             turn_summary: human-readable summary for model prompt
@@ -127,18 +123,9 @@ def settle_turn(
     base_years = random.randint(year_min, year_max)
     elapsed_years = max(1, int(base_years * risk_mult * diff_mult))
 
-    # ── Compute attribute/experience changes ──
+    # ── Compute attribute changes ──
     impact = _CHOICE_ATTRIBUTE_IMPACT.get(category, _CHOICE_ATTRIBUTE_IMPACT["机遇"])
     char_delta: dict[str, Any] = {}
-
-    # Experience gain
-    exp_min, exp_max = impact["experience_range"]
-    exp_gain = random.randint(exp_min, exp_max)
-    if difficulty == "简单":
-        exp_gain = int(exp_gain * 0.8)
-    elif difficulty == "困难":
-        exp_gain = int(exp_gain * 1.2)
-    char_delta["experience"] = f"+{exp_gain}"
 
     # Attribute fluctuations
     attr_delta: dict[str, int] = {}
@@ -169,8 +156,7 @@ def settle_turn(
         f"本回合类别：{category}；"
         f"时间流逝：{elapsed_years}年；"
         f"角色年龄：{session.age}→{new_age}岁；"
-        f"剩余寿元：{max(0, remaining_lifespan)}年；"
-        f"获得修为：{exp_gain}点。"
+        f"剩余寿元：{max(0, remaining_lifespan)}年。"
     )
     if game_over:
         turn_summary += f" 结局：{game_over_reason}"

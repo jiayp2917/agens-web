@@ -19,18 +19,13 @@ from ..game.constants import (
     DEFAULT_ATTRIBUTES,
     DIFFICULTY_OPTIONS,
     FAMILY_BACKGROUNDS,
-    SPECIAL_START_ATTRIBUTES,
-    SPECIAL_START_NAME,
     SPIRIT_ROOTS,
     TALENT_OPTIONS,
 )
 from ..game.realm import RealmSystem
 from ..session.game_session import GameSession
 from .action_delta_policy import (
-    INSIGHT_BASE_GAIN,
     apply_breakthrough_flag_rule,
-    apply_cultivation_limit,
-    apply_insight_rule,
     is_pure_cultivation,
     validate_narrative_delta_consistency,
 )
@@ -318,9 +313,6 @@ class GameEngine:
                     if isinstance(key, str) and isinstance(value, int) and not isinstance(value, bool):
                         merged_attrs[key] = max(0, min(100, value))
                 self.game_session.attributes = merged_attrs
-            self.game_session.experience = char_data.get("experience", 0)
-            self.game_session.experience_to_next = char_data.get("experience_to_next", 100)
-            self.game_session.gold = char_data.get("gold", 0)
             self.game_session.techniques = char_data.get("techniques", [])
             self.game_session.inventory = char_data.get("inventory", [])
             self.game_session.status_effects = char_data.get("status_effects", [])
@@ -372,8 +364,7 @@ class GameEngine:
         the first screen is not blocked by model latency; model-generated
         world/opening can be opted into with runtime env switches.
         """
-        special = bool(profile.get("special_start"))
-        attrs = dict(SPECIAL_START_ATTRIBUTES if special else DEFAULT_ATTRIBUTES)
+        attrs = dict(DEFAULT_ATTRIBUTES)
         incoming_attrs = profile.get("attributes", {})
         if isinstance(incoming_attrs, dict):
             for key, value in incoming_attrs.items():
@@ -384,7 +375,7 @@ class GameEngine:
         self.game_session.game_started = True
         self.game_session.game_over = False
         self.game_session.turn_count = 0
-        self.game_session.char_name = str(profile.get("char_name") or (SPECIAL_START_NAME if special else "无名"))
+        self.game_session.char_name = str(profile.get("char_name") or "无名")
         self.game_session.realm = "练气"
         self.game_session.realm_stage = 1
         self.game_session.age = int(profile.get("age") or 16)
@@ -394,7 +385,6 @@ class GameEngine:
         self.game_session.family_background = str(profile.get("family_background") or FAMILY_BACKGROUNDS[0])
         self.game_session.difficulty = str(profile.get("difficulty") or DIFFICULTY_OPTIONS[1])
         self.game_session.attributes = attrs
-        self.game_session.gold = int(profile.get("gold") or (9999 if special else 20))
         self.game_session.techniques = list(profile.get("techniques") or [{"name": "基础吐纳术", "level": 1, "type": "内功"}])
         self.game_session.inventory = list(profile.get("inventory") or [{"name": "粗布道袍", "quantity": 1, "type": "防具"}])
         default_scene, default_location, default_region, default_lore = profile_default_world(profile)
@@ -416,7 +406,7 @@ class GameEngine:
 
         profile_choices = complete_choices(profile.get("choices"), self.game_session)
         self._emit("on_loading", "准备开局中...")
-        generated_opening, generated_choices = self._generate_profile_opening(profile, special)
+        generated_opening, generated_choices = self._generate_profile_opening(profile)
         if self.game_session.game_over:
             return
         opening = str(
@@ -424,8 +414,6 @@ class GameEngine:
             or generated_opening
             or profile_opening(
                 self.game_session,
-                special=special,
-                game_name=str(profile.get("game_name") or "").strip(),
             )
         )
         if self._set_choices(
@@ -485,7 +473,7 @@ class GameEngine:
         merged.update({k: v for k, v in parsed.items() if v})
         return merged
 
-    def _generate_profile_opening(self, profile: dict[str, Any], special: bool) -> tuple[str, list[str]]:
+    def _generate_profile_opening(self, profile: dict[str, Any]) -> tuple[str, list[str]]:
         """Ask World Builder for the first scene after form creation."""
         if os.environ.get(START_MODEL_OPENING_ENV) != "1":
             return "", fallback_choices(self.game_session)
@@ -498,7 +486,7 @@ class GameEngine:
             self._end_model_failure_run(reason)
             return "", []
 
-        concept = profile_concept(profile, special=special)
+        concept = profile_concept(profile)
         try:
             result = run_turn_sync(
                 "world_builder", concept, self.game_session,
@@ -613,7 +601,7 @@ class GameEngine:
             narrator_result = run_turn_sync(
                 "narrator", narrator_input, self.game_session,
                 stream_callback=self._stream_callback if self.on_stream_chunk else None,
-                repair_incomplete_output=True,
+                repair_incomplete_output=False,
             )
         except Exception:
             log.exception("narrator error")
@@ -680,8 +668,8 @@ class GameEngine:
                 self.game_session.turn_count -= 1
                 return
 
-        # Step 2: Run judge (if there is a delta to validate).
-        if state_delta:
+        # Step 2: Run judge only for high-risk or continuity-sensitive deltas.
+        if state_delta and self._should_run_judge(text, state_delta, rule_delta):
             self._emit("on_loading", "天道审判中...")
             try:
                 judge_result = run_turn_sync(
@@ -743,11 +731,7 @@ class GameEngine:
 
         state_delta = self._sanitize_action_delta(state_delta)
 
-        # Apply the 感悟 (insight) rule: pure cultivation grants no insight;
-        # any other action gains a baseline (plus whatever the LLM granted).
         is_cultivation = self._is_pure_cultivation(text)
-        state_delta = self._apply_cultivation_limit(state_delta, is_cultivation)
-        state_delta = self._apply_insight_rule(text, state_delta)
         state_delta = self._apply_breakthrough_flag_rule(text, state_delta, is_cultivation)
 
         char_delta = state_delta.get("character")
@@ -762,19 +746,13 @@ class GameEngine:
         # Step 3: Apply rule-engine delta.
         self.game_session.apply_delta(state_delta)
 
-        # Step 3.5: Auto-advance small layers — chain until no more advancement.
-        while True:
-            stage_delta = self.realm_system.try_advance_stage(self.game_session)
-            if stage_delta is None:
-                break
+        # Step 3.5: Auto-advance small layers as event-style progression.
+        stage_delta = self.realm_system.try_advance_stage(self.game_session)
+        if stage_delta is not None:
             self.game_session.apply_delta(stage_delta)
             new_stage = stage_delta.get("meta", {}).get("new_stage", 0)
             max_stage = stage_delta.get("meta", {}).get("max_stage", 0)
             self._emit("on_info", f"修为精进！{self.game_session.realm}第{new_stage}层（{new_stage}/{max_stage}）")
-
-        # Step 3.6: Nudge players who keep meditating at max layer — pure
-        # cultivation alone cannot break through; they need 感悟 from real deeds.
-        self._maybe_emit_insight_hint(is_cultivation)
 
         # Step 5: Check game over.
         if self._check_game_over():
@@ -814,10 +792,8 @@ class GameEngine:
 
         if result.delta:
             self.game_session.apply_delta(result.delta)
-            while True:
-                stage_delta = self.realm_system.try_advance_stage(self.game_session)
-                if stage_delta is None:
-                    break
+            stage_delta = self.realm_system.try_advance_stage(self.game_session)
+            if stage_delta is not None:
                 self.game_session.apply_delta(stage_delta)
                 new_stage = stage_delta.get("meta", {}).get("new_stage", 0)
                 max_stage = stage_delta.get("meta", {}).get("max_stage", 0)
@@ -905,19 +881,6 @@ class GameEngine:
         """Return True if the typed action is pure meditation/cultivation."""
         return is_pure_cultivation(text)
 
-    def _apply_insight_rule(self, text: str, delta: dict[str, Any]) -> dict[str, Any]:
-        """Enforce the 感悟 gate on an action's state delta."""
-        return apply_insight_rule(text, delta)
-
-    def _apply_cultivation_limit(self, delta: dict[str, Any], is_cultivation: bool) -> dict[str, Any]:
-        """Cap pure-cultivation XP so one meditation turn cannot skip the journey."""
-        return apply_cultivation_limit(
-            delta,
-            is_cultivation=is_cultivation,
-            session=self.game_session,
-            realm_system=self.realm_system,
-        )
-
     def _apply_breakthrough_flag_rule(
         self,
         text: str,
@@ -931,29 +894,6 @@ class GameEngine:
             is_cultivation=is_cultivation,
             session=self.game_session,
         )
-
-    def _maybe_emit_insight_hint(self, is_cultivation: bool) -> None:
-        """Nudge the player when stuck at max layer — only after pure cultivation."""
-        if not is_cultivation:
-            return
-        cfg = self.realm_system.get_realm_config(self.game_session.realm)
-        if cfg is None:
-            return
-        if self.game_session.realm_stage < cfg.stages:
-            return  # still has layers to gain via cultivation
-        insight = self.game_session.insight
-        if insight >= cfg.insight_required:
-            can, reason = self.realm_system.can_attempt_breakthrough(self.game_session)
-            if can:
-                self._emit("on_info", "修为圆满、感悟通透，可尝试突破。")
-            else:
-                self._emit("on_info", reason)
-        else:
-            self._emit(
-                "on_info",
-                f"修为已满，然闭门造车难以寸进。需外出历练、参悟机缘，"
-                f"积累感悟（{insight}/{cfg.insight_required}）方可突破。",
-            )
 
     # ─── Breakthrough ─────────────────────────────────────────────────
 
@@ -1198,6 +1138,55 @@ class GameEngine:
             }
         ]
 
+    def _should_run_judge(
+        self,
+        text: str,
+        state_delta: dict[str, Any],
+        rule_delta: dict[str, Any],
+    ) -> bool:
+        """Reserve model judging for risky or continuity-sensitive outcomes."""
+        if not isinstance(state_delta, dict):
+            return False
+        meta = state_delta.get("meta") if isinstance(state_delta.get("meta"), dict) else {}
+        rule_meta = rule_delta.get("meta") if isinstance(rule_delta.get("meta"), dict) else {}
+        if meta.get("game_over") or meta.get("finale") or meta.get("breakthrough_result"):
+            return True
+        if rule_meta.get("choice_category") == "风险":
+            return True
+        compact = "".join(text.strip().lower().split())
+        if any(word in compact for word in ("突破", "破境", "渡劫", "飞升", "斗法", "禁地", "豪赌")):
+            return True
+
+        char_delta = state_delta.get("character")
+        if isinstance(char_delta, dict):
+            sensitive = {
+                "name",
+                "realm",
+                "realm_stage",
+                "spirit_root",
+                "spirit_root_grade",
+                "talent",
+                "family_background",
+                "difficulty",
+                "inventory",
+                "techniques",
+                "breakthrough_flags",
+            }
+            if any(key in char_delta for key in sensitive):
+                return True
+            additions = char_delta.get("inventory_add")
+            if isinstance(additions, list):
+                for item in additions:
+                    if isinstance(item, dict) and str(item.get("rarity") or "") in {"紫", "橙", "红", "上品", "极品", "仙品"}:
+                        return True
+
+        world_delta = state_delta.get("world")
+        if isinstance(world_delta, dict):
+            for key in ("location", "region", "current_scene"):
+                if key in world_delta and self._looks_like_world_reset(world_delta.get(key)):
+                    return True
+        return False
+
     def _sanitize_action_delta(self, delta: dict[str, Any]) -> dict[str, Any]:
         """Drop ordinary-turn updates that reset character identity or continuity.
 
@@ -1224,6 +1213,15 @@ class GameEngine:
                 "attributes",
                 "inventory",
                 "techniques",
+                "experience",
+                "experience_to_next",
+                "insight",
+                "gold",
+                "combat",
+                "hp",
+                "hp_max",
+                "mp",
+                "mp_max",
             ):
                 char_delta.pop(key, None)
             sanitized["character"] = char_delta
@@ -1256,7 +1254,6 @@ def _merge_rule_delta(
     """Merge authoritative rule-engine delta on top of model-generated delta.
 
     Rule engine owns: age, lifespan, game_over, game_over_reason, elapsed_years.
-    For experience: rule engine provides a floor; model can grant more.
     Model owns: narrative text, choices, world enrichments (lore, npcs, quests).
     """
     if not isinstance(model_delta, dict):
@@ -1266,22 +1263,14 @@ def _merge_rule_delta(
 
     merged = dict(model_delta)
 
-    # ── Character: rule engine authoritative for age and lifespan;
-    #     experience uses max(model, rule) so model can grant more ──
+    # ── Character: rule engine authoritative for age, lifespan, and attributes.
     rule_char = rule_delta.get("character", {})
     if isinstance(rule_char, dict) and rule_char:
         merged_char = dict(merged.get("character", {}))
 
-        # Age and lifespan: rule engine ALWAYS authoritative
         for key in ("age", "lifespan"):
             if key in rule_char:
                 merged_char[key] = rule_char[key]
-
-        # Experience: rule engine = floor, model can add more
-        if "experience" in rule_char:
-            model_exp = _parse_delta_int(merged_char.get("experience"))
-            rule_exp = _parse_delta_int(rule_char["experience"])
-            merged_char["experience"] = f"+{max(model_exp, rule_exp)}"
 
         if "attributes" in rule_char:
             merged_char["attributes"] = rule_char["attributes"]

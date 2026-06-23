@@ -35,13 +35,14 @@ export function GamePage({
     ),
   );
   const events = useMemo(() => session.events.filter(isReadableEvent), [session.events]);
+  const chronicleYear = Number(world.day_count || 1);
 
   return (
     <section className="game-page">
       <header className="game-summary">
         <div>
           <h2>{character.name || "无名"}</h2>
-          <p>{character.realm || "练气"}{character.realm_stage || 1}层 · 回合 {session.turn_count}</p>
+          <p>{character.realm || "练气"}{character.realm_stage || 1}层 · 编年 {chronicleYear} 年 · 回合 {session.turn_count}</p>
           <span className="session-mode">{session.guest ? "访客局 · 不提供云端存档" : "账号局 · 可存档"}</span>
         </div>
         <div className="summary-actions">
@@ -55,13 +56,13 @@ export function GamePage({
           <strong>{world.location || "山门"}</strong>
           <div className="stat-stack">
             <StatLine label="寿元" value={remainingLifespan} max={lifespanMax} />
-            <StatLine label="经验" value={Number(character.experience || 0)} max={Number(character.experience_to_next || 100)} />
           </div>
           <dl className="character-meta">
             <dt>年龄</dt><dd>{character.age || 16}</dd>
             <dt>境界</dt><dd>{character.realm || "练气"}{character.realm_stage || 1}层</dd>
             <dt>灵根</dt><dd>{character.spirit_root || "未明"}</dd>
             <dt>天赋</dt><dd>{character.talent || "平平无奇"}</dd>
+            <dt>家世</dt><dd>{character.family_background || "凡俗"}</dd>
           </dl>
           <div className="tool-grid">
             {([
@@ -79,10 +80,8 @@ export function GamePage({
             <dl className="panel-summary">
               <dt>境界</dt><dd>{character.realm || "练气"}{character.realm_stage || 1}层</dd>
               <dt>气运</dt><dd>{character.attributes?.luck ?? "平稳"}</dd>
-              <dt>经验</dt><dd>{character.experience ?? 0}/{character.experience_to_next ?? 100}</dd>
-              <dt>感悟</dt><dd>{character.insight ?? 0}/{character.insight_required ?? 30}</dd>
               <dt>寿元</dt><dd>{remainingLifespan}/{lifespanMax} 年</dd>
-              <dt>灵石</dt><dd>{character.gold ?? 0}</dd>
+              <dt>家世</dt><dd>{character.family_background || "凡俗"}</dd>
             </dl>
           ) : (
             <pre className="panel-output">{String(session.panels?.[panel] || "暂无内容。")}</pre>
@@ -90,7 +89,7 @@ export function GamePage({
         </aside>
         <section className="story-panel">
           {session.fallback_prompt?.active && <FallbackBanner session={session} busy={busy} runTurn={runTurn} />}
-          <div className="story-log">
+          <div className="story-log chronicle-log" aria-live="polite">
             {events.length === 0 ? <p>叙事将在这里展开。</p> : events.map((event, idx) => <article key={idx}>{eventText(event)}</article>)}
           </div>
           <div className="choice-list">
@@ -99,7 +98,8 @@ export function GamePage({
               const label = semantic ? `${semantic.key} ${semantic.label}` : String.fromCharCode(65 + index);
               return (
               <button key={`${choice}-${index}`} disabled={busy} title={semantic?.hint} aria-label={`${label}：${choice}`} onClick={() => runTurn(`/api/sessions/${session.session_id}/choice`, { choice_index: index })}>
-                <span>{label}</span>{choice}
+                <span>{semantic?.key || String.fromCharCode(65 + index)}</span>
+                <em><strong>{semantic?.label || "行动"}</strong>{choice}</em>
               </button>
               );
             })}

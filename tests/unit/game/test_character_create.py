@@ -5,11 +5,7 @@ from __future__ import annotations
 from unittest.mock import patch
 
 from agens_novel.engine.game_engine import GameEngine
-from agens_novel.game.constants import ATTRIBUTE_KEYS, SPECIAL_START_ATTRIBUTES
-
-SPECIAL_TALENT = "天命道胎"
-SPECIAL_FAMILY = "隐世仙族"
-SPECIAL_ROOT = "混沌天灵根"
+from agens_novel.game.constants import ATTRIBUTE_KEYS
 
 
 def test_start_from_profile_initializes_session(tmp_path, monkeypatch):
@@ -40,63 +36,27 @@ def test_start_from_profile_initializes_session(tmp_path, monkeypatch):
     assert narratives and narratives[0][1] == 0
 
 
-def test_hidden_2917_result_profile(tmp_path, monkeypatch):
+def test_unknown_profile_seed_is_not_special(tmp_path, monkeypatch):
     from agens_novel import paths
     monkeypatch.setattr(paths, "SAVE_DIR", tmp_path)
 
     engine = GameEngine()
     engine.start_from_profile({
-        "game_name": "2917",
-        "char_name": "阿清",
+        "unknown_seed": "removed-special-start",
+        "char_name": "许满",
         "talent": "天命道胎",
-        "spirit_root": "混沌天灵根",
+        "spirit_root": "火灵根",
         "family_background": "隐世仙族",
-        "attributes": dict(SPECIAL_START_ATTRIBUTES),
-        "special_start": True,
+        "attributes": {key: 50 for key in ATTRIBUTE_KEYS},
     })
 
     s = engine.game_session
-    assert s.char_name == "阿清"
-    assert s.attributes == SPECIAL_START_ATTRIBUTES
+    assert s.char_name == "许满"
+    assert s.attributes == {key: 50 for key in ATTRIBUTE_KEYS}
     assert s.family_background == "隐世仙族"
     assert s.talent == "天命道胎"
-    assert s.spirit_root == "混沌天灵根"
-    # Game-mode v5: no HP/MP; special start grants bonus gold + maxed attributes.
-    assert s.gold == 9999
-    assert all(v >= 80 for v in s.attributes.values())
-
-
-def test_special_profile_result_can_be_built_without_pre_reveal(tmp_path, monkeypatch):
-    from agens_novel import paths
-    monkeypatch.setattr(paths, "SAVE_DIR", tmp_path)
-
-    engine = GameEngine()
-    visible_form = {
-        "game_name": "2917",
-        "char_name": "许满",
-        "talent": "剑心微明",
-        "spirit_root": "火灵根",
-        "family_background": "寒门",
-        "attributes": {key: 50 for key in ATTRIBUTE_KEYS},
-        "special_start": True,
-    }
-    start_profile = {
-        **visible_form,
-        "char_name": "阿清",
-        "talent": SPECIAL_TALENT,
-        "spirit_root": SPECIAL_ROOT,
-        "family_background": SPECIAL_FAMILY,
-        "attributes": dict(SPECIAL_START_ATTRIBUTES),
-    }
-
-    engine.start_from_profile(start_profile)
-
-    s = engine.game_session
-    assert visible_form["char_name"] == "许满"
-    assert s.char_name == "阿清"
-    assert s.talent == SPECIAL_TALENT
-    assert s.spirit_root == SPECIAL_ROOT
-    assert s.family_background == SPECIAL_FAMILY
+    assert s.spirit_root == "火灵根"
+    assert not hasattr(s, "gold")
 
 
 def test_start_from_profile_generates_opening_choices_from_model(tmp_path, monkeypatch):
@@ -190,7 +150,7 @@ def test_start_from_profile_model_failure_enters_local_story_not_profile_choices
     assert any("天道紊乱" in msg for msg in infos)
 
 
-def test_game_name_is_sent_to_world_builder_prompt(tmp_path, monkeypatch):
+def test_unknown_profile_seed_is_not_sent_to_world_builder_prompt(tmp_path, monkeypatch):
     from agens_novel import paths
     monkeypatch.setattr(paths, "SAVE_DIR", tmp_path)
     monkeypatch.setenv("AGENS_START_MODEL_OPENING", "1")
@@ -211,22 +171,22 @@ def test_game_name_is_sent_to_world_builder_prompt(tmp_path, monkeypatch):
         }
 
     with patch("agens_novel.engine.game_engine.run_turn_sync", side_effect=runner):
-        engine.start_from_profile({"game_name": "星河剑宗", "char_name": "许满"})
+        engine.start_from_profile({"unknown_seed": "星河剑宗", "char_name": "许满"})
 
-    assert seen_inputs and "星河剑宗" in seen_inputs[0]
+    assert seen_inputs and "星河剑宗" not in seen_inputs[0]
     assert engine.game_session.location == "星河剑宗山门"
 
 
-def test_game_name_changes_local_fallback_opening(tmp_path, monkeypatch):
+def test_unknown_profile_seed_does_not_change_local_fallback_opening(tmp_path, monkeypatch):
     from agens_novel import paths
     monkeypatch.setattr(paths, "SAVE_DIR", tmp_path)
     monkeypatch.delenv("AGNES_API_KEY", raising=False)
 
     first = GameEngine()
-    first.start_from_profile({"game_name": "云海纪", "char_name": "许满"})
+    first.start_from_profile({"unknown_seed": "云海纪", "char_name": "许满"})
     second = GameEngine()
-    second.start_from_profile({"game_name": "赤霄录", "char_name": "许满"})
+    second.start_from_profile({"unknown_seed": "赤霄录", "char_name": "许满"})
 
-    assert first.game_session.location != second.game_session.location
-    assert "云海纪" in first.game_session.location or "云海纪" in first.game_session.lore_facts[0]
-    assert "赤霄录" in second.game_session.location or "赤霄录" in second.game_session.lore_facts[0]
+    assert first.game_session.location == second.game_session.location
+    assert "云海纪" not in first.game_session.location
+    assert "赤霄录" not in second.game_session.location

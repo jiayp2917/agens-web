@@ -1,4 +1,4 @@
-"""Tests for narrator output parsing (<state_update> extraction)."""
+﻿"""Tests for narrator output parsing (<state_update> extraction)."""
 
 from __future__ import annotations
 
@@ -13,25 +13,25 @@ class TestNarratorParse:
             "你静坐吐纳，灵气缓缓涌入丹田。\n"
             "周围的空气微微震颤。\n"
             "<state_update>\n"
-            '{"character": {"experience": "+15", "insight": "+3"}}\n'
+            '{"character": {"attributes": {"willpower": 1, "root_bone": 1}}}\n'
             "</state_update>"
         )
         narrative, delta, choices = _parse_narrator_output(text)
         assert "吐纳" in narrative
-        assert delta == {"character": {"experience": "+15", "insight": "+3"}}
+        assert delta == {"character": {"attributes": {"willpower": 1, "root_bone": 1}}}
         assert choices == []
 
     def test_choices_tag_json_array(self) -> None:
         text = (
             "山门雾气渐开。\n"
-            "<state_update>{\"character\": {\"experience\": \"+5\"}}</state_update>\n"
+            "<state_update>{\"character\": {\"attributes\": {\"luck\": 1}}}</state_update>\n"
             "<choices>\n"
             "[\"留在山门吐纳\", \"询问接引弟子\", \"观察灵气流向\"]\n"
             "</choices>"
         )
         narrative, delta, choices = _parse_narrator_output(text)
         assert narrative == "山门雾气渐开。"
-        assert delta["character"]["experience"] == "+5"
+        assert delta["character"]["attributes"]["luck"] == 1
         assert choices == ["留在山门吐纳", "询问接引弟子", "观察灵气流向"]
 
     def test_choices_from_state_update_meta(self) -> None:
@@ -131,7 +131,7 @@ class TestNarratorParse:
     def test_complex_delta(self) -> None:
         import json
         data = {
-            "character": {"status_effects_add": ["轻伤"], "experience": "+25"},
+            "character": {"status_effects_add": ["轻伤"], "attributes": {"physique": 1}},
             "world": {"location": "秘境入口", "current_scene": "发现一座古老的石门"},
             "meta": {"game_over": False},
         }
@@ -147,13 +147,13 @@ class TestNarratorParse:
             "第二段叙事。\n\n"
             "第三段。\n"
             "<state_update>\n"
-            '{"character": {"experience": "+5"}}\n'
+            '{"character": {"attributes": {"luck": 1}}}\n'
             "</state_update>"
         )
         narrative, delta, choices = _parse_narrator_output(text)
         assert "第一段" in narrative
         assert "第三段" in narrative
-        assert delta["character"]["experience"] == "+5"
+        assert delta["character"]["attributes"]["luck"] == 1
 
 
 class TestNarrativeViewStreamFilter:
@@ -167,11 +167,11 @@ class TestNarrativeViewStreamFilter:
         """Verify the _parse_narrator_output correctly strips state_update."""
         from agens_novel.agents.narrator.nodes import _parse_narrator_output
 
-        text = "你静坐吐纳，灵气入体。\n\n<state_update>\n{\"character\": {\"experience\": \"+5\"}}\n</state_update>"
+        text = "你静坐吐纳，灵气入体。\n\n<state_update>\n{\"character\": {\"attributes\": {\"luck\": 1}}}\n</state_update>"
         narrative, delta, choices = _parse_narrator_output(text)
 
         assert narrative == "你静坐吐纳，灵气入体。"
-        assert delta == {"character": {"experience": "+5"}}
+        assert delta == {"character": {"attributes": {"luck": 1}}}
         assert "<state_update>" not in narrative
 
     def test_state_tag_at_beginning(self):

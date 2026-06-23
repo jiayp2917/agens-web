@@ -53,7 +53,6 @@ class CreateSessionRequest(BaseModel):
 
 
 class StartRequest(BaseModel):
-    game_name: str = ""
     char_name: str = ""
     talent: str = ""
     spirit_root: str = ""

@@ -21,15 +21,12 @@ class TestGameSessionInit:
         assert s.talent == ""
         assert s.family_background == ""
         assert s.difficulty == "普通"
-        for legacy in ("game_mode", "hp", "hp_max", "mp", "mp_max", "combat"):
+        for legacy in ("game_mode", "hp", "hp_max", "mp", "mp_max", "combat", "experience", "experience_to_next", "insight", "gold"):
             assert not hasattr(s, legacy)
         assert s.attributes == DEFAULT_ATTRIBUTES
         assert s.attributes["luck"] == 50
         assert s.last_choices == []
-        assert s.experience == 0
-        assert s.experience_to_next == 100
         assert s.breakthrough_flags == []
-        assert s.gold == 0
         assert s.techniques == []
         assert s.inventory == []
         assert s.status_effects == []
@@ -57,7 +54,7 @@ class TestGameSessionApplyDelta:
                 "family_background": "寒门",
                 "difficulty": "困难",
                 "game_mode": "mid",
-                "attributes": {"root_bone": 75, "luck": 101, "bad": True},
+                "attributes": {"root_bone": 25, "luck": "+51", "bad": True},
             }
         })
         assert s.age == 18
@@ -109,17 +106,15 @@ class TestGameSessionApplyDelta:
         s.apply_delta({"character": {"lifespan": "-50"}})
         assert s.lifespan == 1  # floor guard, not zero
 
-    def test_apply_experience_add(self):
+    def test_apply_experience_is_ignored(self):
         s = GameSession()
-        s.experience = 50
         s.apply_delta({"character": {"experience": "+30"}})
-        assert s.experience == 80
+        assert not hasattr(s, "experience")
 
-    def test_apply_gold_add(self):
+    def test_apply_gold_is_ignored(self):
         s = GameSession()
-        s.gold = 10
         s.apply_delta({"character": {"gold": "+5"}})
-        assert s.gold == 15
+        assert not hasattr(s, "gold")
 
     def test_apply_techniques_add(self):
         s = GameSession()
@@ -193,10 +188,7 @@ class TestGameSessionSerialization:
         s.difficulty = "困难"
         s.attributes = {key: 66 for key in DEFAULT_ATTRIBUTES}
         s.last_choices = ["探查异动", "通知同门"]
-        s.experience = 500
-        s.experience_to_next = 300
         s.breakthrough_flags = ["foundation_aid"]
-        s.gold = 50
         s.techniques = [{"name": "火球术", "type": "术法"}]
         s.inventory = [{"name": "回血丹", "type": "丹药"}]
         s.status_effects = ["中毒"]
@@ -229,10 +221,7 @@ class TestGameSessionSerialization:
         assert not hasattr(s2, "game_mode")
         assert s2.attributes == {key: 66 for key in DEFAULT_ATTRIBUTES}
         assert s2.last_choices == ["探查异动", "通知同门"]
-        assert s2.experience == 500
-        assert s2.experience_to_next == 300
         assert s2.breakthrough_flags == ["foundation_aid"]
-        assert s2.gold == 50
         assert s2.techniques == [{"name": "火球术", "type": "术法"}]
         assert s2.inventory == [{"name": "回血丹", "type": "丹药"}]
         assert s2.status_effects == ["中毒"]
@@ -254,7 +243,7 @@ class TestGameSessionSerialization:
         assert "combat" not in data["character"]
         s2 = GameSession.from_save_dict(data)
         assert not hasattr(s2, "combat")
-        for legacy in ("hp", "hp_max", "mp", "mp_max", "game_mode"):
+        for legacy in ("hp", "hp_max", "mp", "mp_max", "game_mode", "experience", "experience_to_next", "insight", "gold"):
             assert legacy not in data["character"]
             assert not hasattr(s2, legacy)
 

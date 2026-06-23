@@ -17,14 +17,16 @@ class TestRealmConfig:
         cfg = RealmConfig.from_dict(data)
         assert cfg.name == "练气"
         assert cfg.stages == 9
-        assert cfg.experience_required == 100
+        assert cfg.lifespan == 100
+        assert cfg.breakthrough_requirements
         assert cfg.breakthrough_base_rate == 0.80
 
     def test_from_dict_defaults(self):
         cfg = RealmConfig.from_dict({})
         assert cfg.name == ""
         assert cfg.stages == 1
-        assert cfg.experience_required == 100
+        assert cfg.lifespan == 100
+        assert cfg.breakthrough_requirements == []
         assert cfg.breakthrough_base_rate == 0.80
 
     def test_from_dict_preserves_spirit_root_bonus(self):
@@ -81,9 +83,6 @@ def _make_session(**overrides):
     defaults = {
         "realm": "练气",
         "realm_stage": 9,       # final stage of 练气 (9 stages)
-        "experience": 300,
-        "experience_to_next": 100,
-        "insight": 9999,        # enough 感悟 to pass the breakthrough gate by default
         "breakthrough_flags": [
             "foundation_aid",
             "golden_core_aid",
@@ -112,7 +111,7 @@ class TestCanAttemptBreakthrough:
 
     def test_eligible_liangqi_to_zhuji(self):
         rs = RealmSystem()
-        session = _make_session(realm="练气", realm_stage=9, experience=300, experience_to_next=100)
+        session = _make_session(realm="练气", realm_stage=9)
         can, reason = rs.can_attempt_breakthrough(session)
         assert can is True
         assert reason == ""
@@ -139,29 +138,10 @@ class TestCanAttemptBreakthrough:
         assert can is False
         assert "层" in reason
 
-    def test_not_eligible_insufficient_experience(self):
-        rs = RealmSystem()
-        session = _make_session(realm="练气", realm_stage=9, experience=50, experience_to_next=100)
-        can, reason = rs.can_attempt_breakthrough(session)
-        assert can is False
-        assert "经验不足" in reason
-
-    def test_not_eligible_insufficient_insight(self):
-        """Max layer + full XP but insufficient 感悟 → blocked (闭门造车)."""
-        rs = RealmSystem()
-        session = _make_session(
-            realm="练气", realm_stage=9, experience=300,
-            experience_to_next=100, insight=5,  # 练气 requires 30
-        )
-        can, reason = rs.can_attempt_breakthrough(session)
-        assert can is False
-        assert "感悟" in reason
-
     def test_not_eligible_missing_breakthrough_resource(self):
         rs = RealmSystem()
         session = _make_session(
-            realm="练气", realm_stage=9, experience=300,
-            experience_to_next=100, insight=999, breakthrough_flags=[],
+            realm="练气", realm_stage=9, breakthrough_flags=[],
         )
         can, reason = rs.can_attempt_breakthrough(session)
         assert can is False
@@ -171,8 +151,7 @@ class TestCanAttemptBreakthrough:
     def test_inventory_item_can_satisfy_requirement(self):
         rs = RealmSystem()
         session = _make_session(
-            realm="练气", realm_stage=9, experience=300,
-            experience_to_next=100, insight=999,
+            realm="练气", realm_stage=9,
             breakthrough_flags=[],
             inventory=[{"name": "筑基丹", "type": "丹药"}],
         )
@@ -183,8 +162,7 @@ class TestCanAttemptBreakthrough:
     def test_tribulation_to_ascension_requires_elixir_and_protection(self):
         rs = RealmSystem()
         session = _make_session(
-            realm="渡劫", realm_stage=4, experience=30000,
-            experience_to_next=20000, insight=999,
+            realm="渡劫", realm_stage=4,
             breakthrough_flags=["tribulation_elixir"],
         )
         can, reason = rs.can_attempt_breakthrough(session)
@@ -193,7 +171,7 @@ class TestCanAttemptBreakthrough:
 
     def test_not_eligible_max_realm(self):
         rs = RealmSystem()
-        session = _make_session(realm="飞升", realm_stage=1, experience=999999)
+        session = _make_session(realm="飞升", realm_stage=1)
         can, reason = rs.can_attempt_breakthrough(session)
         assert can is False
         assert "最高" in reason
@@ -201,13 +179,13 @@ class TestCanAttemptBreakthrough:
     def test_eligible_reserved_realm_huati(self):
         """v0.4: 合体 (and all 9 realms) are now eligible for breakthrough."""
         rs = RealmSystem()
-        session = _make_session(realm="合体", realm_stage=4, experience=10000, experience_to_next=5000)
+        session = _make_session(realm="合体", realm_stage=4)
         can, reason = rs.can_attempt_breakthrough(session)
         assert can is True
 
     def test_eligible_zhuji_to_jindan(self):
         rs = RealmSystem()
-        session = _make_session(realm="筑基", realm_stage=4, experience=600, experience_to_next=300)
+        session = _make_session(realm="筑基", realm_stage=4)
         can, reason = rs.can_attempt_breakthrough(session)
         assert can is True
 
@@ -275,7 +253,7 @@ class TestAttemptBreakthrough:
 
     def test_success_returns_correct_delta(self):
         rs = RealmSystem()
-        session = _make_session(realm="练气", realm_stage=9, experience=300, experience_to_next=100)
+        session = _make_session(realm="练气", realm_stage=9)
         # Force success
         import agens_novel.game.realm as realm_mod
         original_random = realm_mod.random.random
@@ -292,7 +270,7 @@ class TestAttemptBreakthrough:
 
     def test_failure_returns_correct_delta(self):
         rs = RealmSystem()
-        session = _make_session(realm="练气", realm_stage=9, experience=300, experience_to_next=100)
+        session = _make_session(realm="练气", realm_stage=9)
         # Force failure
         import agens_novel.game.realm as realm_mod
         original_random = realm_mod.random.random
@@ -304,7 +282,7 @@ class TestAttemptBreakthrough:
 
         assert result["meta"]["breakthrough_result"] == "failure"
         assert result["meta"]["status_effect_add"] == "走火入魔"
-        assert result["character"]["experience"] == "-20"
+        assert result["character"] == {}
 
 
 class TestGetSpiritRootModifier:

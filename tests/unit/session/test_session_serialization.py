@@ -1,4 +1,4 @@
-"""Tests for GameSession.to_save_dict / from_save_dict roundtrip."""
+﻿"""Tests for GameSession.to_save_dict / from_save_dict roundtrip."""
 
 from __future__ import annotations
 
@@ -15,9 +15,6 @@ class TestSerializationRoundtrip:
         s.realm_stage = 3
         s.spirit_root = "火灵根"
         s.spirit_root_grade = "天级"
-        s.experience = 500
-        s.experience_to_next = 1000
-        s.gold = 999
         s.techniques = [{"name": "火球术", "level": 1, "type": "术法", "element": "火"}]
         s.inventory = [{"name": "回血丹", "quantity": 3}]
         s.status_effects = ["中毒"]
@@ -30,7 +27,7 @@ class TestSerializationRoundtrip:
         s.npcs_present = [{"name": "老道"}]
         s.active_quests = [{"name": "寻仙草"}]
         s.discovered_locations = ["山洞"]
-        s.lore_facts = ["灵石可提炼"]
+        s.lore_facts = ["山门旧阵可聚灵"]
         s.turn_count = 42
         s.game_started = True
         s.game_over = False
@@ -43,7 +40,8 @@ class TestSerializationRoundtrip:
         assert restored.char_name == "测试角色"
         assert restored.realm == "金丹"
         assert restored.spirit_root == "火灵根"
-        assert restored.gold == 999
+        assert not hasattr(restored, "gold")
+        assert not hasattr(restored, "experience")
         assert restored.lifespan == 500
         assert len(restored.techniques) == 1
         assert restored.techniques[0]["name"] == "火球术"

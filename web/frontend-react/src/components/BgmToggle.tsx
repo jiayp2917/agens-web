@@ -1,5 +1,6 @@
 import { useRef, useState } from "react";
 import { Volume2, VolumeX } from "lucide-react";
+import { assetUrl } from "../lib/assets";
 
 export function BgmToggle() {
   const audioRef = useRef<HTMLAudioElement | null>(null);
@@ -37,7 +38,7 @@ export function BgmToggle() {
       </button>
       <audio
         ref={audioRef}
-        src="/assets/audio/bgm.flac"
+        src={assetUrl("assets/audio/bgm.flac")}
         preload="none"
         loop
         onPlay={() => setEnabled(true)}

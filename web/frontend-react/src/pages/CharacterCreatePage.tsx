@@ -15,11 +15,11 @@ import {
 } from "../lib/catalog";
 import {
   isManualRarity,
-  itemLabel,
   pickRandom,
   randomBetween,
   uniqueByName,
   colorLabel,
+  rarityToColor,
 } from "../lib/util";
 
 type ChoiceMode = "manual" | "random";
@@ -48,7 +48,8 @@ export function CharacterCreatePage({
     Object.fromEntries(attributes.map(([key]) => [key, 50])) as Record<(typeof attributes)[number][0], number>,
   );
   const manualTalents = useMemo(
-    () => uniqueByName([...fallbackCatalogs.talents.filter((item) => manualTalentNames.has(item.name)), ...talents.filter(isManualRarity)]),
+    () => uniqueByName([...fallbackCatalogs.talents.filter((item) => manualTalentNames.has(item.name)), ...talents.filter(isManualRarity)])
+      .filter((item) => !["橙", "红"].includes(rarityToColor(item.rarity || item.grade))),
     [talents],
   );
   const randomTalents = useMemo(() => talents.length ? talents : fallbackCatalogs.talents, [talents]);
@@ -56,12 +57,13 @@ export function CharacterCreatePage({
     () => uniqueByName([
       ...fallbackCatalogs.spiritRoots.filter((item) => manualSpiritRootNames.has(item.name)),
       ...spiritRoots.filter((item) => !randomOnlySpiritRootNames.has(item.name)),
-    ]),
+    ]).filter((item) => !["橙", "红"].includes(rarityToColor(item.rarity || item.grade))),
     [spiritRoots],
   );
   const randomRoots = useMemo(() => spiritRoots.length ? spiritRoots : fallbackCatalogs.spiritRoots, [spiritRoots]);
   const manualFamilies = useMemo(
-    () => uniqueByName([...fallbackCatalogs.families.filter((item) => manualFamilyNames.has(item.name)), ...families.filter(isManualRarity)]),
+    () => uniqueByName([...fallbackCatalogs.families.filter((item) => manualFamilyNames.has(item.name)), ...families.filter(isManualRarity)])
+      .filter((item) => !["橙", "红"].includes(rarityToColor(item.rarity || item.grade))),
     [families],
   );
   const randomFamilies = useMemo(() => families.length ? families : fallbackCatalogs.families, [families]);
@@ -111,7 +113,6 @@ export function CharacterCreatePage({
     const form = new FormData(event.currentTarget);
     const randomizeAttributes = choiceMode === "random";
     await runTurn(`/api/sessions/${session.session_id}/start`, {
-      game_name: String(form.get("game_name") || ""),
       char_name: String(form.get("char_name") || ""),
       talent,
       spirit_root: spiritRoot,
@@ -140,7 +141,6 @@ export function CharacterCreatePage({
           <button type="button" className={choiceMode === "random" ? "selected-tool" : ""} onClick={rollRandom}><Sparkles size={16} />随机生成</button>
         </div>
         <div className="form-grid">
-          <label>游戏名称<input name="game_name" placeholder="本局世界种子" /></label>
           <label>角色名<input name="char_name" placeholder="留空则自动生成" /></label>
           <label>天赋<select name="talent" value={talent} disabled={choiceMode === "random"} onChange={(event) => setTalent(event.target.value)}>
             {(choiceMode === "manual" ? manualTalents : randomTalents).map((item) => <option key={item.name} value={item.name}>{colorLabel(item)}</option>)}

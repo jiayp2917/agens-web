@@ -1,4 +1,4 @@
-"""Game-mode v5 Layer 8: game_runs / game_turns storage + rarity unlock gates.
+﻿"""Game-mode v5 Layer 8: game_runs / game_turns storage + rarity unlock gates.
 
 Spec §8.3 (game_turns JSONB table) and §11 (rarity unlock gates driven by
 runs_completed / ascension_count).
@@ -101,7 +101,7 @@ class TestGameRunAndTurnStorage:
             lifespan=120, remaining_lifespan=99,
             choice_taken="A 稳妥：闭关吐纳",
             choices=["A 闭关吐纳", "B 外出寻机", "C 入险地", "D 听天命"],
-            state_delta={"character": {"experience": "+15"}},
+            state_delta={"character": {"attributes": {"willpower": 1}}},
             state_after={"character": {"realm": "筑基", "age": 21}},
             calendar_summary="筑基三年，灵气渐浓。",
             narrative="你盘膝吐纳，灵气如潮。",

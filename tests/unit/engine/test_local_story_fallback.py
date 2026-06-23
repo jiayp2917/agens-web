@@ -53,9 +53,9 @@ def test_local_story_choice_advances_node_and_delta(monkeypatch, tmp_path) -> No
     engine.handle_action(first_choice)
 
     assert engine.game_session.local_story_node_id == "outer_gate"
-    assert engine.game_session.insight >= 6
     assert len(engine.game_session.last_choices) == 4
     assert any(quest.get("name") == "外门入门试炼" for quest in engine.game_session.active_quests)
+    assert engine.game_session.attributes["willpower"] > 50
 
 
 def test_local_story_graph_has_no_dead_nodes() -> None:
@@ -78,7 +78,7 @@ def test_local_story_d_keyword_match_and_no_match_keep_choices(monkeypatch, tmp_
     ):
         engine.start_from_profile({"char_name": "许满"})
 
-    engine.handle_action("沿灵雾流向观察地势，寻找异常机缘")
+    engine.handle_action(engine.game_session.last_choices[3])
     assert engine.game_session.local_story_node_id == "herb_path"
     choices_after_match = list(engine.game_session.last_choices)
 
@@ -155,8 +155,9 @@ def test_local_story_can_reach_first_major_breakthrough(monkeypatch, tmp_path) -
         return_value={"generated_data": {}, "llm_error": "timeout"},
     ):
         engine.start_from_profile({"char_name": "许满"})
+    engine.game_session.realm_stage = 9
 
-    engine.handle_action("沿灵雾流向观察地势，寻找异常机缘")
+    engine.handle_action(engine.game_session.last_choices[3])
     engine.handle_action("谨慎采摘灵草，炼成简易筑基药引")
     engine.handle_action("稳固心境后尝试冲击筑基")
 

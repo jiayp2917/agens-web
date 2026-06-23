@@ -4,14 +4,14 @@
 
 ## 关键文件
 
-- `realm.py` - 境界系统：境界顺序、阶段推进（`try_advance_stage`）、突破规则、感悟门槛。
-- `constants.py` - 游戏常量：`REALM_ORDER`、境界 stage 上限、六维属性、突破所需经验 / 感悟阈值。
+- `realm.py` - 境界系统：境界顺序、阶段推进（`try_advance_stage`）、突破规则、破境准备判定。
+- `constants.py` - 游戏常量：`REALM_ORDER`、境界 stage 上限、六维属性、突破所需机缘/资源。
 
 ## 主要 API
 
 | 名称 | 签名 | 说明 |
 | --- | --- | --- |
-| `RealmSystem.try_advance_stage(session)` | `-> dict \| None` | 尝试在当前境界内推进一个小阶段，消耗经验；达到上限返回 None |
+| `RealmSystem.try_advance_stage(session)` | `-> dict \| None` | 尝试在当前境界内推进一个小阶段；达到上限返回 None |
 | `REALM_ORDER` | `list[str]` | 境界顺序：练气 -> 筑基 -> 金丹 -> 元婴 -> 化神 -> 合体 -> 大乘 -> 渡劫 -> 飞升 |
 
 ## 测试位置

@@ -55,17 +55,6 @@ game:
     - 渡劫
     - 飞升
 
-  # Combat settings
-  combat:
-    flee_base_rate: 0.80           # 非 Boss 逃跑成功率
-    boss_flee_rate: 0.00           # Boss 战不可逃跑
-    defend_damage_reduction: 0.50  # 防御减伤比例
-    attack_variance: 0.15          # 普攻伤害浮动比例
-    technique_variance: 0.10       # 功法伤害浮动比例
-
   # Breakthrough settings
   breakthrough:
-    failure_hp_loss_rate: 0.15     # 突破失败 HP 损失比例
-    failure_xp_loss: 20            # 突破失败经验损失
     failure_debuff: "走火入魔"     # 突破失败附加状态
-    success_xp_cost: 50            # 突破成功经验消耗

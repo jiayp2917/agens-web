@@ -27,7 +27,7 @@ class InventoryItem(TypedDict, total=False):
     quantity: int
     type: str       # "武器" | "防具" | "丹药" | "材料" | "其他"
     rarity: str     # 白/绿/蓝/紫/橙/红
-    effects: dict   # item effects, e.g. {"experience": "+50", "insight": "+5"}
+    effects: dict   # item effects, e.g. {"physique": "+1"}
     equipped: bool  # whether currently equipped
     slot: str       # equipment slot: "weapon" | "armor" | "accessory"
 
@@ -66,11 +66,7 @@ class CharacterState(TypedDict, total=False):
     attributes: dict
     techniques: list[Technique]
     inventory: list[InventoryItem]
-    experience: int
-    experience_to_next: int
-    insight: int
     breakthrough_flags: list[str]
-    gold: int
     status_effects: list[str]
     lifespan: int
     remaining_lifespan: int

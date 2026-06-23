@@ -50,8 +50,8 @@
    - BGM 文件放在 `web/frontend-react/public/assets/audio/bgm.flac`。
    - React 顶栏常驻小喇叭按钮，用户点击后播放/暂停。浏览器禁止无手势自动播放是预期限制。
 
-7. 品牌已改为 `jiayp2917`。
-   - 顶栏品牌文字改为 `jiayp2917`。
+7. 品牌已改为 `jiayp`。
+   - 顶栏品牌文字改为 `jiayp`。
    - 点击打开 `https://www.jiayp2917.xyz/`，使用 `target="_blank"` 和 `rel="noreferrer"`。
 
 ## 本轮已修
@@ -64,7 +64,7 @@
 - React 读档/设置不再强制登录，弹窗内显示访客不能云存档的明确状态。
 - React 登录页增加返回首页。
 - React 角色页增加返回首页和模式区。
-- React 顶栏品牌改为 `jiayp2917` 外链。
+- React 顶栏品牌改为 `jiayp` 外链。
 - React 顶栏增加 BGM 小喇叭。
 - UI 重新接入现有水墨素材，改善首页、角色页、游戏页和终局页视觉完成度。
 - 文档更新访客局/账号局运行流程。

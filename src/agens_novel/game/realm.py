@@ -23,8 +23,6 @@ class RealmConfig:
 
     name: str = ""
     stages: int = 1
-    experience_required: int = 100
-    insight_required: int = 0
     lifespan: int = 100
     breakthrough_base_rate: float = 0.80
     spirit_root_bonus: dict[str, float] = field(default_factory=dict)
@@ -36,8 +34,6 @@ class RealmConfig:
         return cls(
             name=data.get("name", ""),
             stages=data.get("stages", 1),
-            experience_required=data.get("experience_required", 100),
-            insight_required=data.get("insight_required", 0),
             lifespan=data.get("lifespan", 100),
             breakthrough_base_rate=data.get("breakthrough_base_rate", 0.80),
             spirit_root_bonus=data.get("spirit_root_bonus", {}),
@@ -93,9 +89,6 @@ class RealmSystem:
         """
         realm = getattr(session, "realm", "练气")
         realm_stage = getattr(session, "realm_stage", 1)
-        experience = getattr(session, "experience", 0)
-        experience_to_next = getattr(session, "experience_to_next", 100)
-        insight = getattr(session, "insight", 0)
         game_over = getattr(session, "game_over", False)
 
         if game_over:
@@ -108,18 +101,6 @@ class RealmSystem:
         # Must be at the final stage of the current realm.
         if realm_stage < cfg.stages:
             return False, f"当前境界{realm}第{realm_stage}层，需达到第{cfg.stages}层方可突破。"
-
-        # Must have sufficient experience.
-        if experience < experience_to_next:
-            return False, f"经验不足({experience}/{experience_to_next})，无法突破。"
-
-        # Must have sufficient insight (感悟/心境) — pure cultivation alone cannot
-        # break through.  See the "感悟" gate design in the project notes.
-        if insight < cfg.insight_required:
-            return False, (
-                f"道心未明，感悟不足（{insight}/{cfg.insight_required}）。"
-                "闭门造车难成大道——需外出历练、参悟机缘，方可破境。"
-            )
 
         missing = self._missing_breakthrough_requirements(session, cfg)
         if missing:
@@ -185,7 +166,7 @@ class RealmSystem:
         """Execute a breakthrough attempt.
 
         Returns a delta dict to be applied via ``apply_delta``.  On success
-            the realm advances; on failure experience drops and a debuff is added.
+        the realm advances; on failure a status effect records the backlash.
         """
         can, reason = self.can_attempt_breakthrough(session)
         if not can:
@@ -204,10 +185,7 @@ class RealmSystem:
                 "character": {
                     "realm": next_realm,
                     "realm_stage": 1,
-                    "experience": "-50",  # consume some experience
-                    "experience_to_next": next_cfg.experience_required,
                     "lifespan": REALM_LIFESPANS.get(next_realm, next_cfg.lifespan),
-                    "insight": 0,  # reset insight — new realm, new bottleneck
                 },
                 "meta": {
                     "breakthrough_result": "success",
@@ -223,9 +201,7 @@ class RealmSystem:
         else:
             log.info("Breakthrough failed: %s (rate=%.2f)", realm, rate)
             return {
-                "character": {
-                    "experience": "-20",
-                },
+                "character": {},
                 "meta": {
                     "breakthrough_result": "failure",
                     "status_effect_add": "走火入魔",
@@ -239,27 +215,29 @@ class RealmSystem:
     def try_advance_stage(self, session: Any) -> dict[str, Any] | None:
         """Check if the player can advance to the next small layer.
 
-        Called after every action that may grant experience.  When the player
-        has enough accumulated XP to fill the current layer and is not yet at
-        the realm's maximum stage, they auto-advance one layer.
+        Called after settled chronicle turns. Stage progress is event-like:
+        low-risk choices advance slowly, risky or fortunate turns can advance
+        faster, but no XP resource is tracked.
 
         Returns a delta dict for ``apply_delta``, or ``None`` if no advancement
         is possible right now.
         """
         realm = getattr(session, "realm", "练气")
         stage = getattr(session, "realm_stage", 1)
-        xp = getattr(session, "experience", 0)
-        xp_needed = getattr(session, "experience_to_next", 100)
 
         cfg = self.get_realm_config(realm)
         if cfg is None:
             return None
 
-        if xp < xp_needed:
-            return None
-
         if stage >= cfg.stages:
             return None  # at max layer — need breakthrough, not stage advance
+
+        attrs = getattr(session, "attributes", {}) if hasattr(session, "attributes") else {}
+        comprehension = int(attrs.get("comprehension", 50)) if isinstance(attrs, dict) else 50
+        root_bone = int(attrs.get("root_bone", 50)) if isinstance(attrs, dict) else 50
+        rate = 0.18 + max(0, comprehension - 50) * 0.002 + max(0, root_bone - 50) * 0.002
+        if random.random() > min(0.55, rate):
+            return None
 
         # Advance to next layer within the same realm.
         next_stage = stage + 1
@@ -267,9 +245,6 @@ class RealmSystem:
         delta: dict[str, Any] = {
             "character": {
                 "realm_stage": next_stage,
-                "experience": f"-{xp_needed}",
-                # Keep experience_to_next stable so breakthrough threshold
-                # matches the realm config and doesn't drift upward.
             },
             "meta": {
                 "stage_advanced": True,

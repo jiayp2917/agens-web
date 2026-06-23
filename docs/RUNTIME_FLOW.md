@@ -51,7 +51,7 @@ http://127.0.0.1:8000/
    - 访客会话只保留在当前后端进程内存中，不写入 `users`、`sessions` 或 `saves`。
 
 4. 角色创建
-   - 前端角色页提交游戏名称、角色名、天赋、灵根、家世、难度和属性。
+   - 前端角色页提交角色名、天赋、灵根、家世、难度和六维属性；不再提交游戏名称或隐藏开局码。
    - `POST /api/sessions/{id}/start` 调用 `GameEngine.start_from_profile()`。
    - World Builder 负责开场叙事和 A/B/C/D；无 key 或模型失败时进入本地故事兜底，并在前端提供继续或结束本局。
    - 特殊开局只由后端识别，前端不明示隐藏规则。
@@ -59,7 +59,7 @@ http://127.0.0.1:8000/
 5. 回合推进
    - A/B/C/D 固定按钮调用 `POST /api/sessions/{id}/choice`，D 为气运/天命路线。
    - `POST /api/sessions/{id}/action` 仅保留给兜底“继续本局”和兼容调用，不再作为 React 主入口的自由文本输入。
-   - 后端把行动交给 `GameEngine.handle_action()`，引擎继续负责 Narrator、Judge、状态落账、战斗、突破、死亡和飞升。
+   - 后端把行动交给 `GameEngine.handle_action()`，引擎继续负责 Narrator、必要 Judge、状态落账、事件化斗法、突破、死亡和飞升。
    - API 响应统一返回叙事事件、角色状态、世界状态、A/B/C/D、回合数和终局状态。
 
 6. 存读档

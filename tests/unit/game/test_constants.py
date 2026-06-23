@@ -19,9 +19,6 @@ from agens_novel.game.constants import (
     REALM_CONFIGS,
     REALM_LIFESPANS,
     REALM_ORDER,
-    SPECIAL_START_ATTRIBUTES,
-    SPECIAL_START_CODE,
-    SPECIAL_START_NAME,
     SPIRIT_ROOTS,
     SPIRIT_ROOT_GRADES,
     SPIRIT_ROOT_MAP,
@@ -40,8 +37,6 @@ class TestRealmConstants:
             "name",
             "lifespan",
             "stages",
-            "experience_required",
-            "insight_required",
             "breakthrough_requirements",
             "breakthrough_base_rate",
             "spirit_root_bonus",
@@ -52,7 +47,6 @@ class TestRealmConstants:
             assert cfg["name"] == name
             assert cfg["lifespan"] == REALM_LIFESPANS[name]
             assert cfg["stages"] >= 1
-            assert cfg["experience_required"] > 0
             assert 0.0 <= cfg["breakthrough_base_rate"] <= 1.0
 
     def test_realm_lifespans_are_monotonic_caps(self):
@@ -124,8 +118,9 @@ class TestSupportingConstants:
         assert ATTRIBUTE_LABELS["root_bone"] == "根骨"
         assert ATTRIBUTE_LABELS["soul"] == "神魂"
 
-    def test_hidden_start_constants(self):
-        assert SPECIAL_START_CODE == "2917"
-        assert SPECIAL_START_NAME == "阿清"
-        assert set(SPECIAL_START_ATTRIBUTES) == set(ATTRIBUTE_KEYS)
-        assert all(value == 99 for value in SPECIAL_START_ATTRIBUTES.values())
+    def test_no_hidden_start_constants(self):
+        import agens_novel.game.constants as constants
+
+        assert not hasattr(constants, "SPECIAL_START_CODE")
+        assert not hasattr(constants, "SPECIAL_START_NAME")
+        assert not hasattr(constants, "SPECIAL_START_ATTRIBUTES")

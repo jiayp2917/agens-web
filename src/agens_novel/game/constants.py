@@ -45,10 +45,6 @@ ATTRIBUTE_LABELS: dict[str, str] = {
 
 DEFAULT_ATTRIBUTES: dict[str, int] = {key: 50 for key in ATTRIBUTE_KEYS}
 
-SPECIAL_START_CODE = "2917"
-SPECIAL_START_NAME = "阿清"
-SPECIAL_START_ATTRIBUTES: dict[str, int] = {key: 99 for key in ATTRIBUTE_KEYS}
-
 # ─────────────────────────────────────────────────────────────────────────────
 # Realm system
 # ─────────────────────────────────────────────────────────────────────────────
@@ -71,14 +67,12 @@ REALM_LIFESPANS: dict[str, int] = {
     "飞升": 9999,
 }
 
-# Realm configuration: each realm's stage count, breakthrough thresholds, etc.
+# Realm configuration: each realm's stage count and breakthrough gates.
 REALM_CONFIGS: dict[str, dict[str, Any]] = {
     "练气": {
         "name": "练气",
         "lifespan": REALM_LIFESPANS["练气"],
         "stages": 9,
-        "experience_required": 100,
-        "insight_required": 30,
         "breakthrough_requirements": [
             {"key": "foundation_aid", "label": "筑基丹、师门护持或筑基机缘"},
         ],
@@ -92,8 +86,6 @@ REALM_CONFIGS: dict[str, dict[str, Any]] = {
         "name": "筑基",
         "lifespan": REALM_LIFESPANS["筑基"],
         "stages": 4,
-        "experience_required": 300,
-        "insight_required": 60,
         "breakthrough_requirements": [
             {"key": "golden_core_aid", "label": "结金丹、凝丹机缘或金丹法门"},
         ],
@@ -107,8 +99,6 @@ REALM_CONFIGS: dict[str, dict[str, Any]] = {
         "name": "金丹",
         "lifespan": REALM_LIFESPANS["金丹"],
         "stages": 4,
-        "experience_required": 600,
-        "insight_required": 100,
         "breakthrough_requirements": [
             {"key": "nascent_soul_aid", "label": "化婴丹、生死顿悟或元婴护法"},
         ],
@@ -122,8 +112,6 @@ REALM_CONFIGS: dict[str, dict[str, Any]] = {
         "name": "元婴",
         "lifespan": REALM_LIFESPANS["元婴"],
         "stages": 4,
-        "experience_required": 1200,
-        "insight_required": 150,
         "breakthrough_requirements": [
             {"key": "spirit_transformation_aid", "label": "神魂试炼、心魔明悟或化神契机"},
         ],
@@ -137,10 +125,8 @@ REALM_CONFIGS: dict[str, dict[str, Any]] = {
         "name": "化神",
         "lifespan": REALM_LIFESPANS["化神"],
         "stages": 4,
-        "experience_required": 2500,
-        "insight_required": 200,
         "breakthrough_requirements": [
-            {"key": "unity_law_aid", "label": "天地法则感悟或合体道基"},
+            {"key": "unity_law_aid", "label": "天地法则契机或合体道基"},
         ],
         "breakthrough_base_rate": 0.20,
         "spirit_root_bonus": {
@@ -153,8 +139,6 @@ REALM_CONFIGS: dict[str, dict[str, Any]] = {
         "name": "合体",
         "lifespan": REALM_LIFESPANS["合体"],
         "stages": 4,
-        "experience_required": 5000,
-        "insight_required": 260,
         "breakthrough_requirements": [
             {"key": "mahayana_vow_aid", "label": "宏愿因果、宗门气运或大乘道果"},
         ],
@@ -168,8 +152,6 @@ REALM_CONFIGS: dict[str, dict[str, Any]] = {
         "name": "大乘",
         "lifespan": REALM_LIFESPANS["大乘"],
         "stages": 4,
-        "experience_required": 10000,
-        "insight_required": 330,
         "breakthrough_requirements": [
             {"key": "tribulation_preparation", "label": "雷劫情报、避劫阵基或渡劫场地"},
         ],
@@ -183,8 +165,6 @@ REALM_CONFIGS: dict[str, dict[str, Any]] = {
         "name": "渡劫",
         "lifespan": REALM_LIFESPANS["渡劫"],
         "stages": 4,
-        "experience_required": 20000,
-        "insight_required": 400,
         "breakthrough_requirements": [
             {"key": "tribulation_elixir", "label": "渡劫丹或同等续命丹药"},
             {"key": "ascension_protection", "label": "护身法宝、雷劫阵法或替劫符箓"},
@@ -199,8 +179,6 @@ REALM_CONFIGS: dict[str, dict[str, Any]] = {
         "name": "飞升",
         "lifespan": REALM_LIFESPANS["飞升"],
         "stages": 1,
-        "experience_required": 999999,
-        "insight_required": 0,
         "breakthrough_requirements": [],
         "breakthrough_base_rate": 0.00,
         "spirit_root_bonus": {},

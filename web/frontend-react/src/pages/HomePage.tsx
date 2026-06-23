@@ -1,5 +1,6 @@
 import { BookOpen, Upload, ScrollText, Settings, KeyRound } from "lucide-react";
 import type { AuthMode } from "../lib/api";
+import { assetUrl } from "../lib/assets";
 
 export function HomePage({
   onStart,
@@ -35,11 +36,11 @@ export function HomePage({
               <strong>QQ群：985776771</strong>
               <span>文字修仙模拟器交流与反馈</span>
             </div>
-            <img src="/assets/qq_group.png" alt="文字修仙模拟器 QQ 群二维码" loading="lazy" />
+            <img src={assetUrl("assets/qq_group.png")} alt="文字修仙模拟器 QQ 群二维码" loading="lazy" />
           </aside>
         </div>
         <figure className="home-preview">
-          <img src="/assets/ink_mountain_gate.png" alt="水墨山门视觉" />
+          <img src={assetUrl("assets/ink_mountain_gate.png")} alt="水墨山门视觉" />
         </figure>
       </div>
     </section>

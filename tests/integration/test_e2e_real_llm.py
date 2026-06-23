@@ -78,7 +78,7 @@ def test_e2e_new_game_action_save_load(cleanup_saves):
     assert save_path.exists(), "Save file not created"
 
     saved_lifespan_after = engine.game_session.lifespan
-    saved_exp = engine.game_session.experience
+    saved_age = engine.game_session.age
 
     # Step 4: Reset and reload from serialized data.
     engine.reset()
@@ -87,4 +87,4 @@ def test_e2e_new_game_action_save_load(cleanup_saves):
     engine.game_session = GameSession.from_save_dict(loaded_data)
     assert engine.game_session.char_name == char_name, "Character name not restored"
     assert engine.game_session.lifespan == saved_lifespan_after, "Lifespan not restored"
-    assert engine.game_session.experience == saved_exp, "Experience not restored"
+    assert engine.game_session.age == saved_age, "Age not restored"

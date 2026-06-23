@@ -19,7 +19,19 @@ from ..game.constants import (
 
 log = logging.getLogger(__name__)
 
-_LEGACY_CHARACTER_FIELDS = {"hp", "hp_max", "mp", "mp_max", "combat", "luck", "game_mode"}
+_LEGACY_CHARACTER_FIELDS = {
+    "hp",
+    "hp_max",
+    "mp",
+    "mp_max",
+    "combat",
+    "luck",
+    "game_mode",
+    "experience",
+    "experience_to_next",
+    "insight",
+    "gold",
+}
 
 
 @dataclass
@@ -48,11 +60,7 @@ class GameSession:
     family_background: str = ""
     difficulty: str = "普通"
     attributes: dict[str, int] = field(default_factory=lambda: dict(DEFAULT_ATTRIBUTES))
-    experience: int = 0
-    experience_to_next: int = 100
-    insight: int = 0  # 感悟/心境 — gate resource for major-realm breakthroughs
     breakthrough_flags: list[str] = field(default_factory=list)
-    gold: int = 0
     techniques: list[dict] = field(default_factory=list)
     inventory: list[dict] = field(default_factory=list)
     status_effects: list[str] = field(default_factory=list)
@@ -115,11 +123,7 @@ class GameSession:
                 "family_background": self.family_background,
                 "difficulty": self.difficulty,
                 "attributes": self.attributes,
-                "experience": self.experience,
-                "experience_to_next": self.experience_to_next,
-                "insight": self.insight,
                 "breakthrough_flags": self.breakthrough_flags,
-                "gold": self.gold,
                 "techniques": self.techniques,
                 "inventory": self.inventory,
                 "status_effects": self.status_effects,
@@ -166,10 +170,7 @@ class GameSession:
             return
 
         char_delta = delta.get("character", {})
-        for key in (
-            "experience", "gold", "lifespan", "realm_stage",
-            "experience_to_next", "age", "insight",
-        ):
+        for key in ("lifespan", "realm_stage", "age"):
             if key in char_delta:
                 val = char_delta[key]
                 current = getattr(self, key)
@@ -193,10 +194,7 @@ class GameSession:
                     setattr(self, key, val)
                 # else: silently drop unknown types (None, float, str, list, dict)
 
-        # Floor guards: prevent negative values on key stats.
-        self.experience = max(0, self.experience)
-        self.gold = max(0, self.gold)
-        self.insight = max(0, self.insight)
+        # Floor guards: prevent invalid age/lifespan values.
         self.lifespan = max(1, self.lifespan)
         self.age = max(1, self.age)
 
@@ -226,7 +224,12 @@ class GameSession:
             merged = dict(self.attributes)
             for key, value in char_delta["attributes"].items():
                 if isinstance(key, str) and isinstance(value, int) and not isinstance(value, bool):
-                    merged[key] = max(0, min(100, value))
+                    merged[key] = max(0, min(100, int(merged.get(key, 0)) + value))
+                elif isinstance(key, str) and isinstance(value, str) and value[:1] in {"+", "-"}:
+                    try:
+                        merged[key] = max(0, min(100, int(merged.get(key, 0)) + int(value)))
+                    except ValueError:
+                        log.warning("apply_delta: cannot parse attribute delta %r, ignoring", value)
             self.attributes = merged
         if "techniques_add" in char_delta:
             add = char_delta["techniques_add"]
@@ -383,11 +386,8 @@ class GameSession:
                 "family_background": self.family_background,
                 "difficulty": self.difficulty,
                 "attributes": self.attributes,
-                "experience": self.experience,
-                "experience_to_next": self.experience_to_next,
-                "insight": self.insight,
                 "breakthrough_flags": self.breakthrough_flags,
-                "gold": self.gold, "techniques": self.techniques,
+                "techniques": self.techniques,
                 "inventory": self.inventory,
                 "status_effects": self.status_effects,
                 "lifespan": self.lifespan,
@@ -440,12 +440,8 @@ class GameSession:
                 if isinstance(key, str) and isinstance(value, int) and not isinstance(value, bool):
                     merged_attrs[key] = max(0, min(100, value))
             session.attributes = merged_attrs
-        session.experience = char.get("experience", 0)
-        session.experience_to_next = char.get("experience_to_next", 100)
-        session.insight = char.get("insight", 0)
         flags = char.get("breakthrough_flags", [])
         session.breakthrough_flags = _dedupe_strings(flags) if isinstance(flags, list) else []
-        session.gold = char.get("gold", 0)
         session.techniques = char.get("techniques", [])
         session.inventory = char.get("inventory", [])
         session.status_effects = char.get("status_effects", [])

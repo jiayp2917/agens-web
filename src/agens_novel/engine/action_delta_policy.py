@@ -5,11 +5,9 @@ from __future__ import annotations
 import re
 from typing import Any
 
-from ..game.realm import RealmSystem
 from ..session.game_session import GameSession
 from .choices import dedupe_strings
 
-INSIGHT_BASE_GAIN = 8
 INCONSISTENT_NARRATIVE_NOTICE = "天道记录以状态栏为准：本回合叙事声明的收获缺少结构化记录，行动结果暂不生效。"
 
 
@@ -54,14 +52,14 @@ _CLAIM_RULES: tuple[tuple[tuple[re.Pattern[str], ...], tuple[tuple[str, str], ..
             re.compile(r"(?:修为|境界).{0,8}(?:提升|突破|精进|晋升)"),
             re.compile(r"(?:结成|凝成)金丹|元婴出窍|化神成功|飞升成仙"),
         ),
-        (("character", "realm"), ("character", "realm_stage"), ("character", "experience")),
+        (("character", "realm"), ("character", "realm_stage"), ("meta", "breakthrough_result")),
     ),
     (
         (
             re.compile(r"(?:你|玩家|弟子)?(?:获得|拾得|捡到|购买|收下|得到|领到|领取)(?:了)?[^，。；\n]{0,24}"),
             re.compile(r"(?:奖励|发放|交给)(?:你|玩家|弟子)[^，。；\n]{0,24}"),
         ),
-        (("character", "inventory_add"), ("character", "inventory"), ("character", "gold")),
+        (("character", "inventory_add"), ("character", "inventory")),
     ),
     (
         (
@@ -110,47 +108,6 @@ def is_pure_cultivation(text: str) -> bool:
         return False
     has_activity = any(kw in compact for kw in _ACTIVITY_KEYWORDS)
     return not has_activity
-
-
-def apply_insight_rule(text: str, delta: dict[str, Any]) -> dict[str, Any]:
-    """Enforce the insight gate on an action's state delta."""
-    if not isinstance(delta, dict):
-        return delta
-    char = delta.get("character")
-    char = dict(char) if isinstance(char, dict) else {}
-    llm_insight = parse_delta_int(char.get("insight", 0))
-
-    if is_pure_cultivation(text):
-        char.pop("insight", None)
-    else:
-        total = INSIGHT_BASE_GAIN + max(0, llm_insight)
-        char["insight"] = f"+{total}"
-
-    delta["character"] = char
-    return delta
-
-
-def apply_cultivation_limit(
-    delta: dict[str, Any],
-    *,
-    is_cultivation: bool,
-    session: GameSession,
-    realm_system: RealmSystem,
-) -> dict[str, Any]:
-    """Cap pure-cultivation XP so one meditation turn cannot skip the journey."""
-    if not is_cultivation or not isinstance(delta, dict):
-        return delta
-    char = delta.get("character")
-    if not isinstance(char, dict) or "experience" not in char:
-        return delta
-    cfg = realm_system.get_realm_config(session.realm)
-    cap = max(5, min(session.experience_to_next, (cfg.experience_required if cfg else 100)))
-    gained = parse_delta_int(char.get("experience", 0))
-    if gained > cap:
-        char = dict(char)
-        char["experience"] = f"+{cap}"
-        delta["character"] = char
-    return delta
 
 
 def apply_breakthrough_flag_rule(

@@ -75,7 +75,7 @@ def test_react_homepage_buttons_have_handlers() -> None:
     assert "requireAuth" not in source
     assert 'href="https://www.jiayp2917.xyz/"' in source
     assert "BgmToggle" in source
-    assert "/assets/audio/bgm.flac" in source
+    assert 'assetUrl("assets/audio/bgm.flac")' in source
     assert "agens web" not in source.lower()
     # v5 cleanup: homepage must not carry the WEB· eyebrow or the four-button description paragraph.
     assert "WEB · 文字修仙模拟器" not in source
@@ -116,7 +116,11 @@ def test_react_character_creation_uses_catalogs_and_game_mode() -> None:
     assert "进入中..." in source
     assert "难度：{difficulty}" in source
     assert "choice_card_mountain.png" not in css
-    assert 'url("/assets/ink_mountain_gate.png")' in css
+    assert "game_name" not in source
+    assert "游戏名称" not in source
+    assert "var(--ink-gate)" in css
+    assert 'url("/assets/ink_mountain_gate.png")' not in css
+    assert 'url("/static/assets/ink_mountain_gate.png")' not in css
     # v5 cleanup: dropdown labels use the unified 6-color palette, not legacy rarity strings.
     assert "rarityToColor" in source
     assert "colorLabel" in source
@@ -143,9 +147,12 @@ def test_react_game_page_has_escape_route_and_stable_meters() -> None:
     assert "value={remainingLifespan}" in source
     assert ".stat-meter" in css
     assert "grid-template-rows: auto minmax(0, 1fr) auto;" in css
+    assert 'grid-template-columns: auto minmax(0, 1fr);' in css
     # v5 cleanup: lifespan reads the remaining value, not the realm cap; UI shows remaining/max.
     assert "character.remaining_lifespan" in source
     assert "{remainingLifespan}/{lifespanMax}" in source
+    for removed in ("经验", "感悟", "灵石", "experience", "experience_to_next", "insight", "gold"):
+        assert removed not in source
 
 
 def test_react_turn_actions_disable_while_busy() -> None:
@@ -215,13 +222,13 @@ def test_frontend_homepage_shows_qq_group() -> None:
     css = (SRC / "styles.css").read_text(encoding="utf-8")
 
     assert "QQ群：985776771" in source
-    assert "/assets/qq_group.png" in source
+    assert 'assetUrl("assets/qq_group.png")' in source
     assert ".community-card" in css
 
 
 def test_frontend_narrative_log_has_aria_describedby() -> None:
     source = _read("pages/GamePage.tsx", "pages/CharacterCreatePage.tsx")
-    assert 'className="story-log"' in source
+    assert 'className="story-log chronicle-log"' in source
     assert 'aria-live="polite"' in source
 
 

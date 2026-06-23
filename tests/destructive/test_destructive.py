@@ -37,11 +37,10 @@ class TestApplyDeltaDestructive:
         assert s.lifespan == 80
 
     def test_stat_clamps_survive_extreme_values(self) -> None:
-        s = GameSession(lifespan=100, gold=0)
+        s = GameSession(lifespan=100)
         s.apply_delta({"character": {"lifespan": "+999999", "gold": "-999999"}})
-        # lifespan has no upper clamp (100 + 999999); gold floors at 0.
         assert s.lifespan == 1000099
-        assert s.gold == 0
+        assert not hasattr(s, "gold")
 
     def test_invalid_realm_is_rejected(self) -> None:
         s = GameSession(realm="练气")

@@ -1,4 +1,4 @@
-"""Tests for GameSession.apply_delta defensive guards.
+﻿"""Tests for GameSession.apply_delta defensive guards.
 
 These tests ensure that ``apply_delta`` rejects malformed or out-of-whitelist
 values gracefully, keeping the session object in a consistent state.
@@ -55,17 +55,14 @@ class TestApplyDeltaDefensive:
         s.apply_delta({"character": {"lifespan": "-100"}})
         assert s.lifespan == 1  # floor guard at 1, not 0
 
-    def test_negative_gold_floored(self):
+    def test_gold_delta_is_ignored(self):
         s = GameSession()
-        s.gold = 5
         s.apply_delta({"character": {"gold": "-50"}})
-        assert s.gold == 0
+        assert not hasattr(s, "gold")
 
-    def test_bool_ignored_for_gold(self):
+    def test_legacy_gold_attribute_is_not_available(self):
         s = GameSession()
-        original_gold = s.gold
-        s.apply_delta({"character": {"gold": True}})
-        assert s.gold == original_gold  # bool ignored
+        assert not hasattr(s, "gold")
 
     def test_finale_flag(self):
         s = GameSession()
@@ -100,15 +97,15 @@ class TestApplyDeltaDefensive:
     def test_inventory_add_string(self):
         """Single string should be wrapped, not iterated as 5 chars."""
         s = GameSession()
-        s.apply_delta({"character": {"inventory_add": "灵石"}})
+        s.apply_delta({"character": {"inventory_add": "筑基药引"}})
         assert len(s.inventory) == 1
-        assert s.inventory[0] == "灵石"
+        assert s.inventory[0] == "筑基药引"
 
     def test_inventory_add_list(self):
         s = GameSession()
-        s.apply_delta({"character": {"inventory_add": [{"name": "灵石", "quantity": 5}]}})
+        s.apply_delta({"character": {"inventory_add": [{"name": "筑基药引", "quantity": 1}]}})
         assert len(s.inventory) == 1
-        assert s.inventory[0]["name"] == "灵石"
+        assert s.inventory[0]["name"] == "筑基药引"
 
     def test_equipment_slots_dict(self):
         s = GameSession()

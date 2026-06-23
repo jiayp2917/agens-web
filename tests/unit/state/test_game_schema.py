@@ -61,11 +61,7 @@ class TestCharacterState:
             "family_background",
             "difficulty",
             "attributes",
-            "experience",
-            "experience_to_next",
-            "insight",
             "breakthrough_flags",
-            "gold",
             "techniques",
             "inventory",
             "status_effects",
@@ -77,7 +73,7 @@ class TestCharacterState:
 
     def test_has_no_legacy_hp_mp_or_combat(self):
         annotations = CharacterState.__annotations__
-        for legacy in ("hp", "hp_max", "mp", "mp_max", "combat"):
+        for legacy in ("hp", "hp_max", "mp", "mp_max", "combat", "experience", "experience_to_next", "insight", "gold"):
             assert legacy not in annotations
 
 

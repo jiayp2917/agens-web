@@ -21,7 +21,6 @@ def _canned_world_builder() -> dict[str, Any]:
             "character": {
                 "name": "许满", "realm": "练气", "realm_stage": 1,
                 "spirit_root": "火木双灵根", "spirit_root_grade": "地",
-                "experience": 0, "experience_to_next": 100, "gold": 10,
                 "breakthrough_flags": [],
                 "techniques": [{"name": "基础吐纳术", "level": 1, "type": "内功"}],
                 "inventory": [{"name": "粗布道袍", "quantity": 1, "type": "防具"}],
@@ -119,12 +118,9 @@ class TestFinaleCallback:
         with _patch_turn_runner():
             engine.new_game("许满")
 
-        # Set to max stage of 渡劫 with enough XP and 感悟 (insight) to pass the gate.
+        # Set to max stage of 渡劫 with the required breakthrough resources.
         engine.game_session.realm = "渡劫"
         engine.game_session.realm_stage = 4
-        engine.game_session.experience = 20001
-        engine.game_session.experience_to_next = 20000
-        engine.game_session.insight = 999  # 渡劫 requires 400 感悟 to break through
         engine.game_session.breakthrough_flags = ["tribulation_elixir", "ascension_protection"]
 
         # Mock random and LLM to guarantee deterministic unit behavior.

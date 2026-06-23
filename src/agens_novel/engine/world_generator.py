@@ -49,7 +49,6 @@ JSON 必须严格符合以下结构：
 
 def build_world_prompt(profile: dict[str, Any]) -> str:
     """Build a World Builder prompt from a character creation profile."""
-    game_name = str(profile.get("game_name") or "").strip()
     char_name = str(profile.get("char_name") or "无名")
     talent = str(profile.get("talent") or "平平无奇")
     spirit_root = str(profile.get("spirit_root") or "未明")
@@ -57,7 +56,6 @@ def build_world_prompt(profile: dict[str, Any]) -> str:
     difficulty = str(profile.get("difficulty") or "普通")
 
     parts = [
-        f"世界种子名称：{game_name}" if game_name else "世界种子名称：随机",
         f"角色名：{char_name}",
         f"天赋：{talent}",
         f"灵根：{spirit_root}",
@@ -69,13 +67,12 @@ def build_world_prompt(profile: dict[str, Any]) -> str:
 
 def build_world_fallback(profile: dict[str, Any]) -> dict[str, Any]:
     """Generate a default world profile without calling the model."""
-    game_name = str(profile.get("game_name") or "").strip()
     char_name = str(profile.get("char_name") or "无名")
     family_background = str(profile.get("family_background") or "凡俗")
     talent = str(profile.get("talent") or "平平无奇")
 
-    world_name = game_name[:8] + "界" if game_name else "东荒云界"
-    sect_name = game_name[:6] + "宗" if game_name else "青玄宗"
+    world_name = "东荒云界"
+    sect_name = "青玄宗"
 
     return {
         "world_name": world_name,
@@ -87,7 +84,7 @@ def build_world_fallback(profile: dict[str, Any]) -> dict[str, Any]:
         "sects": [
             {"name": sect_name, "alignment": "正道", "description": f"东荒第一正道宗门，以剑道和丹道闻名。"},
             {"name": "天魔殿", "alignment": "魔道", "description": "北域魔道魁首，信奉弱肉强食的魔道法则。"},
-            {"name": "万宝商会", "alignment": "中立", "description": "横跨正魔两道的商业势力，只认灵石不认人。"},
+            {"name": "万宝商会", "alignment": "中立", "description": "横跨正魔两道的商业势力，只认契约和宝物。"},
         ],
         "cultivation_system": f"{world_name}的修炼体系沿用经典九境：练气、筑基、金丹、元婴、化神、合体、大乘、渡劫、飞升。灵根决定修炼速度和功法属性，天赋影响突破概率和机缘质量。",
         "current_conflicts": [
@@ -96,7 +93,7 @@ def build_world_fallback(profile: dict[str, Any]) -> dict[str, Any]:
         ],
         "initial_situation": f"{char_name}出身{family_background}，身怀{talent}，在{sect_name}山门前准备踏上修仙之路。",
         "world_rules": {
-            "special_rule": f"本局世界种子为「{world_name}」，角色运势受难度「{profile.get('difficulty', '普通')}」影响。"
+            "special_rule": f"本局角色运势受难度「{profile.get('difficulty', '普通')}」影响。"
         },
     }
 

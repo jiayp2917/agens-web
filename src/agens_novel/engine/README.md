@@ -23,7 +23,7 @@
 ## 测试位置
 
 - `tests/unit/engine/test_game_engine_setup.py` — 初始化、查询、重置
-- `tests/unit/engine/test_game_engine_turn.py` — 回合执行、阶段推进、突破、感悟门控
+- `tests/unit/engine/test_game_engine_turn.py` — 回合执行、阶段推进、突破、v5 状态边界
 - `tests/unit/engine/test_game_engine_state.py` — 存档读档、飞升终局
 - `tests/unit/engine/test_stream_context.py` — 流式回调上下文
 - `tests/unit/engine/test_engine_render.py` — 文本渲染

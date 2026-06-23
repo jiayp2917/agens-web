@@ -43,12 +43,12 @@
 | --- | --- | --- |
 | `game_engine.py` | `GameEngine` | 唯一游戏逻辑入口；持有 `GameSession` + `RealmSystem`；11 个回调钩子（`on_narrative` / `on_status_bar` / `on_error` / `on_info` / `on_game_over` / `on_character_created` / `on_loading` / `on_stream_chunk` / `on_finale` / `on_model_failure_choice`）；`start_from_profile()` 与 `handle_action()` 是两个主入口 |
 | `turn_runner.py` | `run_turn_sync(agent_name, user_input, session, **kwargs)` | 同步包装 LangGraph；线程隔离的 `model` / `base_url` / `api_key_set`；通过 `_stream_context.set(callback)` 避免 msgpack 序列化 callable |
-| `turn_rules.py` | `settle_turn(choice_text, session)` | **规则引擎权威结算**：分类 A/B/C/D、按境界抽 elapsed_years、按风险系数与难度系数调整、属性增量、经验增量、寿元扣减、`game_over_reason` 判定 |
-| `action_delta_policy.py` | `apply_insight_rule`, `apply_cultivation_limit`, `apply_breakthrough_flag_rule`, `validate_narrative_delta_consistency` | 纯函数规则引擎；纯闭关不能涨悟性；纯闭关 XP 上限卡到下一境界所需；渡劫境界追加 `tribulation_elixir` / `ascension_protection` 标志；narrative vs delta 一致性校验 |
+| `turn_rules.py` | `settle_turn(choice_text, session)` | **规则引擎权威结算**：分类 A/B/C/D、按境界抽 elapsed_years、按风险系数与难度系数调整、属性增量、剩余寿元、`game_over_reason` 判定 |
+| `action_delta_policy.py` | `apply_breakthrough_flag_rule`, `validate_narrative_delta_consistency` | 纯函数规则引擎；渡劫境界追加 `tribulation_elixir` / `ascension_protection` 标志；narrative vs delta 一致性校验 |
 | `choices.py` | `complete_choices()`, `fallback_choices()`, `normalize_choices()` | A/B/C/D 归一化；模型输出不足 4 个时用 `fallback_choices(session)` 按当前 `location` 兜底；D 固定为气运/天命路线 |
 | `render.py` | `format_status_bar`, `format_status_card`, `format_inventory`, `format_skills`, `format_map`, `format_quests`, `format_log`, `format_realm`, `format_equipment` | 状态 → 面板字符串；`GameEngine.get_*()` 把这些渲染结果填到 `session.panels` |
 | `local_story.py` | `start_local_story()`, `advance_local_story()`, `validate_local_story_graph()` | 模型不可用兜底；`misty_gate` 默认 6 节点图；测试用图完整性校验 |
-| `profile_opening.py` | `luck_from_attributes`, `profile_default_world`, `profile_opening`, `profile_concept` | 开场叙事模板；`game_name == "2917"` 触发 SPECIAL_START（隐藏彩蛋） |
+| `profile_opening.py` | `luck_from_attributes`, `profile_default_world`, `profile_opening`, `profile_concept` | 开场编年史模板；按角色名、天赋、灵根、家世、难度和六维属性生成本地开局 |
 | `world_generator.py` | `build_world_prompt`, `build_world_fallback`, `parse_world_response` | World Builder prompt + 本地兜底模板 |
 | `death_rewards.py` | `categorize_death`, `evaluate_achievements`, `compute_rewards`, `bonuses_to_legacy`, `apply_legacy_bonuses`, `build_run_summary` | 终局分类（飞升 > 因果反噬 > 事件 > 寿元 > 手动）+ 成就评估 + 奖励计算 + 跨局传承奖励 |
 | `model_result.py` | `ModelResultKind`, `classify_narrator_result`, `classify_world_builder_result`, `classify_judge_result`, `result_diagnostics` | 模型输出分类（OK / REQUEST_FAILED / INCOMPLETE_OUTPUT / JUDGE_FAILED / LOCAL_FALLBACK）；用于遥测与 UI 兜底判定 |
@@ -76,7 +76,7 @@
 
 | 文件 | 关键对象 | 职责 |
 | --- | --- | --- |
-| `realm.py` | `RealmConfig` dataclass + `RealmSystem` | 9 境界配置（每境界 stages / XP / 悟性 / 寿元 / 突破率 / 破境材料）；`can_attempt_breakthrough()` / `calculate_breakthrough_rate()` / `attempt_breakthrough()` / `try_advance_stage()`；飞升命中时设 `finale=True + game_over=True` |
+| `realm.py` | `RealmConfig` dataclass + `RealmSystem` | 9 境界配置（每境界 stages / 寿元 / 突破率 / 破境材料）；`can_attempt_breakthrough()` / `calculate_breakthrough_rate()` / `attempt_breakthrough()` / `try_advance_stage()`；飞升命中时设 `finale=True + game_over=True` |
 | `constants.py` | 见下表 | 所有静态常量 |
 
 `constants.py` 中关键常量：
@@ -85,7 +85,7 @@
 - **9 境界**：`练气 → 筑基 → 金丹 → 元婴 → 化神 → 合体 → 大乘 → 渡劫 → 飞升`
 - **6 稀有度**：白 / 绿 / 蓝 / 紫 / 橙 / 红；权重 90 / 60 / 30 / 14 / 5 / 1
 - **天赋** 5 种 + **灵根** 8 种 + **家世** 5 种 + **难度** 3 档
-- **隐藏彩蛋**：`SPECIAL_START_CODE = "2917"` → `SPECIAL_START_NAME = "阿清"` + 全属性 99 + 金币 9999
+- **开局内容**：由 catalog（天赋 / 灵根 / 家世 / 难度）与六维属性共同决定；不再保留游戏名称或隐藏开局码。
 
 ## 5. 前端模块清单（`web/frontend-react/src/`）
 
@@ -198,11 +198,10 @@ JSONB 列：`attribute_mods` / `tags` / `initial_resources` / `initial_risks` / 
 ```text
 CharacterCreatePage
   → GET /api/catalog/{talents|spirit_roots|family_backgrounds|difficulties}
-  → 用户填表 / 随机 → POST /api/sessions/{id}/start {game_name, char_name, ...}
+  → 用户填表 / 随机 → POST /api/sessions/{id}/start {char_name, talent, spirit_root, family_background, difficulty, attributes, ...}
   → WebGameService.start_session()
      ① 账号：consume legacy_bonuses（如有）
      ② engine.start_from_profile(profile)
-        ├─ SPECIAL_START 检测（game_name == "2917"）
         ├─ GameSession.reset() + 写入 character/world
         ├─ profile_default_world() 生成默认场景
         ├─ profile_opening() 生成开场叙事
@@ -226,7 +225,7 @@ GamePage 点击 A/B/C/D
      ⑤ turn_rules.settle_turn(choice_text, session)
         ├─ classify_choice：A/B/C/D 映射稳妥/机遇/风险/气运
         ├─ 按境界抽 elapsed_years（× 风险系数 × 难度系数）
-        ├─ 按类别抽属性增量 + 经验增量
+        ├─ 按类别抽属性增量
         └─ 寿元扣减；≤0 且非飞升 → meta.game_over=True
      ⑥ Narrator Agent：turn_summary 注入 prompt → LLM → narrative + state_delta + choices
      ⑦ Judge Agent：审核 state_delta → approved/corrected_delta
@@ -285,7 +284,7 @@ Narrator / Judge LLMError
 - **Web 前端只通过 API 调用游戏逻辑** — 不得直接修改 `GameSession`
 - **`GameEngine` 是唯一游戏逻辑入口** — 所有状态变更必须经过 `apply_delta()`
 - **API key 不进入前端包、日志、文档或 Git** — 仅进入后端进程环境变量与 DB 脱敏摘要
-- **不在 UI 明示隐藏触发规则或隐藏模式名称** — SPECIAL_START 等彩蛋不写进弹窗文案
+- **不在 UI 明示隐藏触发规则或内部模式名称** — 只展示玩家可理解的 A/B/C/D 选择和当前局面
 - **访客 cookie（HttpOnly）是访客局唯一操作凭证** — 配合 `guest_token` 在后端校验
 - **APP_ENV=production 下拒绝 `AGENS_PG_AUTO_DDL=1`** — 生产 schema 由 Alembic 拥有
 - **9 境界顺序固定**：练气 → 筑基 → 金丹 → 元婴 → 化神 → 合体 → 大乘 → 渡劫 → 飞升，不回退、不恢复已删除项

@@ -218,16 +218,13 @@ class GameModeCharacter:
     realm_stage: int
     age: int
     lifespan: int
+    remaining_lifespan: int
     spirit_root: str
     spirit_root_grade: str
     talent: str
     family_background: str
     difficulty: str
     attributes: dict  # physique, soul, luck, comprehension, willpower, root_bone
-    experience: int
-    experience_to_next: int
-    reputation: int
-    gold: int
     techniques: list
     inventory: list
     status_effects: list

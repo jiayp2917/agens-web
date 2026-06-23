@@ -33,9 +33,6 @@ def _world_builder_result() -> dict:
                     "physique": 50,
                     "soul": 50,
                 },
-                "experience": 0,
-                "experience_to_next": 100,
-                "gold": 10,
                 "techniques": [{"name": "基础吐纳术", "level": 1, "type": "内功"}],
                 "inventory": [{"name": "粗布道袍", "quantity": 1, "type": "防具"}],
                 "status_effects": [],
@@ -62,7 +59,7 @@ def _narrator_result(text: str = "你拜见执事，听完入门规矩后气息�
     return {
         "narrative": text,
         "state_delta": {
-            "character": {"experience": "+10"},
+            "character": {"attributes": {"willpower": 1}},
             "world": {"current_scene": "山门执事堂"},
         },
         "choices": ["继续请教", "前往住处", "查看木牌"],
@@ -112,7 +109,6 @@ def test_web_api_minimum_game_flow(tmp_path: Path, monkeypatch) -> None:
         started = client.post(
             f"/api/sessions/{session_id}/start",
             json={
-                "game_name": "青玄",
                 "char_name": "许满",
                 "talent": "剑心微明",
                 "spirit_root": "火灵根",
@@ -140,8 +136,10 @@ def test_web_api_minimum_game_flow(tmp_path: Path, monkeypatch) -> None:
             json={"choice_index": 0},
         ).json()
         assert chosen["turn_count"] == 1
-        # Rule engine produces experience in range 5-15 for choice A (稳妥)
-        assert 5 <= chosen["character"]["experience"] <= 50
+        assert "experience" not in chosen["character"]
+        assert "insight" not in chosen["character"]
+        assert "gold" not in chosen["character"]
+        assert chosen["character"]["age"] > started["character"]["age"]
         assert chosen["choices"] == ["继续请教", "前往住处", "查看木牌", "【气运】随缘而行，听天命、赌因果"]
 
         acted = client.post(

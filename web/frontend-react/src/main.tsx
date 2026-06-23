@@ -17,7 +17,15 @@ import { AuthPage } from "./pages/AuthPage";
 import { CharacterCreatePage } from "./pages/CharacterCreatePage";
 import { GamePage } from "./pages/GamePage";
 import { EndingPage } from "./pages/EndingPage";
+import { assetUrl } from "./lib/assets";
 import "./styles.css";
+
+const assetVars = {
+  "--paper-texture": `url("${assetUrl("assets/paper_texture.png")}")`,
+  "--ink-gate": `url("${assetUrl("assets/ink_mountain_gate.png")}")`,
+  "--game-bg": `url("${assetUrl("assets/game_desktop_bg.png")}")`,
+  "--ascension-bg": `url("${assetUrl("assets/ascension_gate.png")}")`,
+} as React.CSSProperties;
 
 function App() {
   const [user, setUser] = useState<User | null>(null);
@@ -101,7 +109,7 @@ function App() {
   };
 
   return (
-    <main className="app">
+    <main className="app" style={assetVars}>
       <header className="topbar">
         <a className="brand" href="https://www.jiayp2917.xyz/" target="_blank" rel="noreferrer">
           jiayp

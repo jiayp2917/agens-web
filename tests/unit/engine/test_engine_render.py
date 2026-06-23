@@ -36,8 +36,7 @@ class TestFormatStatusCard:
         s = GameSession(
             char_name="许满", realm="金丹", realm_stage=5,
             spirit_root="火木双灵根", spirit_root_grade="天",
-            experience=450, experience_to_next=500,
-            gold=99, lifespan=200,
+            lifespan=200, age=42,
             location="青云山内门", region="东荒",
         )
         text = format_status_card(s)
@@ -45,10 +44,12 @@ class TestFormatStatusCard:
         assert "金丹" in text
         assert "火木双灵根" in text
         assert "青云山内门" in text
-        assert "99" in text  # gold
+        assert "158/200" in text
         # Game-mode v5: no HP/MP rows in the status card.
         assert "HP" not in text
         assert "MP" not in text
+        assert "经验" not in text
+        assert "灵石" not in text
 
     def test_empty_name(self) -> None:
         s = GameSession()
@@ -76,12 +77,12 @@ class TestFormatInventory:
     def test_with_items(self) -> None:
         s = GameSession()
         s.inventory = [
-            {"name": "灵石", "quantity": 5, "type": "材料"},
+            {"name": "筑基药引", "quantity": 1, "type": "材料"},
             {"name": "粗布道袍", "quantity": 1, "type": "防具"},
         ]
         text = format_inventory(s)
-        assert "灵石" in text
-        assert "x5" in text
+        assert "筑基药引" in text
+        assert "x1" in text
         assert "粗布道袍" in text
 
 

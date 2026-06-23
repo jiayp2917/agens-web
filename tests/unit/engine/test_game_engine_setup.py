@@ -21,7 +21,6 @@ def _canned_world_builder() -> dict[str, Any]:
             "character": {
                 "name": "许满", "realm": "练气", "realm_stage": 1,
                 "spirit_root": "火木双灵根", "spirit_root_grade": "地",
-                "experience": 0, "experience_to_next": 100, "gold": 10,
                 "breakthrough_flags": [],
                 "techniques": [{"name": "基础吐纳术", "level": 1, "type": "内功"}],
                 "inventory": [{"name": "粗布道袍", "quantity": 1, "type": "防具"}],
@@ -45,7 +44,7 @@ def _canned_world_builder() -> dict[str, Any]:
 def _canned_narrator() -> dict[str, Any]:
     return {
         "narrative": "你静坐吐纳，灵气缓缓涌入。",
-        "state_delta": {"character": {"experience": "+15"}},
+        "state_delta": {"character": {"attributes": {"willpower": 1}}},
         "choices": [],
         "output_path": "", "audit_path": "", "finished_at": "", "llm_error": "",
     }
@@ -130,7 +129,7 @@ class TestGameEngineNewGame:
             if agent_name == "narrator":
                 return {
                     "narrative": "风声一滞。",
-                    "state_delta": {"character": {"experience": "+5"}},
+                    "state_delta": {"character": {"attributes": {"willpower": 1}}},
                     "choices": [],
                     "llm_error": "timeout",
                 }
@@ -153,7 +152,7 @@ class TestGameEngineNewGame:
             if agent_name == "narrator":
                 return {
                     "narrative": "你听见钟声。",
-                    "state_delta": {"character": {"experience": "+5"}},
+                    "state_delta": {"character": {"attributes": {"willpower": 1}}},
                     "choices": [],
                     "llm_error": "",
                 }

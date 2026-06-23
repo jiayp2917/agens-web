@@ -295,7 +295,7 @@ async def _repair_incomplete_output(
         "2. <state_update>...</state_update>，JSON 对象；没有状态变化时用 {\"character\": {}, \"world\": {}, \"meta\": {}}。\n"
         "3. <choices>...</choices>，JSON 字符串数组，必须恰好 3 条，分别作为 A/B/C 行动选项。\n\n"
         "一致性硬规则：\n"
-        "- 如果原叙事已经写明玩家实际获得物品、灵石或奖励，必须在 character.inventory_add 或 character.gold 中补齐最小状态变化。\n"
+        "- 如果原叙事已经写明玩家实际获得物品或奖励，必须在 character.inventory_add 中补齐最小状态变化。\n"
         "- 如果原叙事已经写明玩家实际习得功法、法术、心法或剑诀，必须在 character.techniques_add 中补齐。\n"
         "- 如果原叙事已经写明玩家实际发现新地点、抵达新区域或开启新地图，必须在 world.discovered_add、world.location 或 world.current_scene 中补齐。\n"
         "- 如果原叙事已经写明玩家实际接取、领取或登记任务，必须在 world.active_quests_add 中补齐。\n"
