@@ -94,7 +94,7 @@
 - 早期把所有会话都绑到登录态，导致“新游戏”被认证流程阻塞。
 - 早期保留 `local` 用户思路，不适合公网，因为匿名访问会产生持久化公共数据。
 - 原型图和素材没有进入实现，只停留在计划和输出目录，造成实际 UI 与设计目标脱节。
-- React 单文件仍然偏大，继续迭代时维护成本会上升。
+- React 主入口已经拆分，后续维护压力主要集中在 `SettingsSaveDialog.tsx`、`CharacterCreatePage.tsx` 和全局 `styles.css`。
 - PostgreSQL 仍缺少真实空库迁移、导入、备份恢复和部署连通性验证，不能把“设计完成”当成“上线完成”。
 - 早期把 SQLite 本地测试通过等同于数据库路线完成，遗漏了 PostgreSQL/Alembic 生产 schema 覆盖问题。
 - 读档、设置、教程等按钮曾经存在“入口可见但行为不完整”的情况，后续 UI 新入口必须同步补交互和测试。
@@ -117,4 +117,4 @@
 - 任何新增首页按钮、弹窗入口或游戏操作，都必须同时补前端契约测试或浏览器验收记录。
 - 任何数据库字段、索引或表结构变化，都必须先进 Alembic migration，再考虑 SQLite 测试兼容。
 - 任何模型、数据库、Session、Cookie、邀请码相关配置，都只能写占位值或环境变量名，不写真实值。
-- React 继续迭代前，应先拆分 `web/frontend-react/src/main.tsx`，至少拆出认证、首页、角色创建、游戏页、设置/存档弹窗、BGM 和终局页。
+- React 继续迭代时，应继续拆分重组件和样式：优先收束 `SettingsSaveDialog.tsx`、`CharacterCreatePage.tsx` 与 `styles.css`，根组件 `main.tsx` 保持只做应用状态编排。

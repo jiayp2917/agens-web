@@ -4,8 +4,8 @@
 
 ## 关键文件
 
-- `game_schema.py` — Typed 数据模型（`Character` / `World` / `Meta` 三块）。
-- `reducers.py` — LangGraph `Annotated` reducer：`last_wins` / `apply_combat_delta` / `Append` / `ReplaceList`。
+- `game_schema.py` - Typed 数据模型（`Character` / `World` / `Meta` 三块）。
+- `reducers.py` - LangGraph `Annotated` reducer：`last_wins` / `Append` / `ReplaceList`。
 
 ## 与 session 的区别
 
@@ -16,15 +16,14 @@
 ## 主要 API
 
 | 名称 | 签名 | 说明 |
-|------|------|------|
+| --- | --- | --- |
 | `last_wins(existing, new)` | `(list, list) -> list` | 列表 reducer：新列表完全替换旧列表，空列表视为"无更新" |
-| `apply_combat_delta(existing, new)` | `(dict \| None, dict) -> dict` | 战斗状态 reducer：`_reset=True` 清空，否则新 dict 替换旧 dict |
 | `Append` / `ReplaceList` | `Annotated` 别名 | 给 LangGraph state 字段打标记，决定 reducer 选择 |
 
 ## 测试位置
 
-- `tests/unit/state/test_state_reducers.py` — 合并后的 reducer 测试（`last_wins` + `apply_combat_delta`）
-- `tests/unit/state/test_game_schema.py` — 数据模型测试
+- `tests/unit/state/test_state_reducers.py` - reducer 测试（`last_wins`）。
+- `tests/unit/state/test_game_schema.py` - 数据模型测试。
 
 ## 注意事项
 

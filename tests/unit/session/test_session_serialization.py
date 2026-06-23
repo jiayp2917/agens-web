@@ -18,7 +18,7 @@ class TestSerializationRoundtrip:
         s.experience = 500
         s.experience_to_next = 1000
         s.gold = 999
-        s.techniques = [{"name": "火球术", "mp_cost": 10}]
+        s.techniques = [{"name": "火球术", "level": 1, "type": "术法", "element": "火"}]
         s.inventory = [{"name": "回血丹", "quantity": 3}]
         s.status_effects = ["中毒"]
         s.lifespan = 500

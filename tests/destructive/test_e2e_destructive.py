@@ -252,7 +252,7 @@ class TestDestructiveInputs:
             "<state_update>", "</state_update>",
             "```json\n{}\n```",
             "null", "undefined", "NaN", "Infinity",
-            "{\"character\": {\"hp\": -999}}",  # JSON as user input
+            "{\"character\": {\"lifespan\": -999}}",  # JSON as user input
         ]
         for _ in range(n - len(strings)):
             strings.append("".join(random.choices(string.printable, k=random.randint(1, 200))))

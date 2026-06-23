@@ -15,11 +15,11 @@ class TestJudgeParse:
         assert score == 8
 
     def test_fenced_json(self) -> None:
-        text = '```json\n{"approved": false, "corrected_delta": {"character": {"hp": 50}}, "judgment_note": "HP变化过大", "review_score": 3}\n```'
+        text = '```json\n{"approved": false, "corrected_delta": {"character": {"experience": "+5"}}, "judgment_note": "经验调整过大", "review_score": 3}\n```'
         approved, delta, note, score = _parse_judge_output(text)
         assert approved is False
-        assert delta["character"]["hp"] == 50
-        assert "HP" in note
+        assert delta["character"]["experience"] == "+5"
+        assert "经验" in note
         assert score == 3
 
     def test_json_embedded_in_prose(self) -> None:

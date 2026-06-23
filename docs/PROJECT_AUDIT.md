@@ -87,7 +87,7 @@ Browser UI
 | P2 | 访客局只在单进程内存中，容器重启、多 worker 或多副本会丢失。 | Alpha 阶段明确提示；正式多人部署前引入共享会话存储或只允许账号局跨进程恢复。 |
 | P2 | 匿名访客仍可能消耗模型额度。 | 增加访客日限额、IP/设备限额、模型预算保护和边缘层限流。 |
 | P3 | 测试目录需继续从旧产品分类迁移到 Web 分类。 | 保留核心测试，新增 API 和浏览器测试，删除旧 UI 契约测试。 |
-| P2 | React 主入口仍偏重，后续 UI 迭代容易互相影响。 | P2 已拆分认证、首页、角色创建、游戏页、设置/存档弹窗、BGM 和终局页组件；下一步按需继续抽 lib/ 与 hooks/。 |
+| P2 | React 局部组件仍偏重，后续 UI 迭代容易互相影响。 | P2 已拆分认证、首页、角色创建、游戏页、设置/存档弹窗、模型设置面板、存档槽列表、BGM 和终局页组件；下一步按需继续抽 `CharacterCreatePage` 与 `styles.css`。 |
 
 ## 验证入口
 
@@ -102,7 +102,7 @@ Browser UI
 - 当前生产入口使用 `web/frontend-react/dist`；旧 `web/frontend` 已删除，React public assets 位于 `web/frontend-react/public/assets`。
 - PostgreSQL 生产 schema 必须由 Alembic 创建。`database_postgres.py` 的 `AGENS_PG_AUTO_DDL` 只允许作为显式兼容开关，不作为生产默认路径。
 - Alembic 初始和桥接迁移覆盖运行时会访问的 catalog、死亡奖励和 v5 回合表：`catalog_*`、`run_achievements`、`account_rewards`、`legacy_bonuses`、`game_runs`、`game_turns`、`player_progress`。
-- React 主入口 P2 已拆分：认证、首页、角色创建、游戏页、设置存档弹窗、BGM 和终局页各自独立组件，归口 `pages/` 与 `components/`。
+- React 主入口 P2 已拆分：认证、首页、角色创建、游戏页、设置存档弹窗、模型设置面板、存档槽列表、BGM 和终局页各自独立组件，归口 `pages/` 与 `components/`。
 - 文档分层以 `docs/INDEX.md` 为准：`RUNTIME_FLOW.md` 描述当前运行流程，`GAME_MODE_SPEC.md` 描述游戏模式 v5 规格和实现状态。
 - Alpha 复盘和成功/失败经验以 `docs/ALPHA_REVIEW_AND_LESSONS.md` 为准。后续上线报告必须区分本地测试、PostgreSQL smoke、Docker Compose、反代和公网验证。
 

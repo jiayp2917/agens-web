@@ -110,7 +110,7 @@
 | `GamePage.tsx` | 游戏主界面；左侧 260px 状态栏 + 6 工具标签；右侧叙事区 + 4 选项 | `POST /api/sessions/{id}/choice`（用户点击）；由 `App.runTurn()` 中转 |
 | `EndingPage.tsx` | 飞升 / 本局结束页 + `death_summary` 侧栏（成就 / 奖励 / 最近 6 条叙事） | `GET /api/sessions/{id}/death_summary` |
 
-### 5.3 5 个组件（`components/`）
+### 5.3 7 个组件（`components/`）
 
 | 组件 | Props / 行为 |
 | --- | --- |
@@ -118,7 +118,9 @@
 | `TutorialDialog.tsx` | `{ onClose }`；A/B/C/D 弹窗说明 |
 | `BgmToggle.tsx` | 无 props；右上角扬声器；`<audio src="/assets/audio/bgm.flac" loop preload="none" />`；音量 0.42 |
 | `FallbackBanner.tsx` | `{ session, busy, runTurn }`；模型失败时顶部条幅 + "继续本局 / 结束本局" |
-| `SettingsSaveDialog.tsx` | `{ mode, session, user, onClose, setSession, setView, onAuth }`；存档 / 设置双 tab 弹窗；存档 tab 固定渲染 `slot_1..slot_5`；设置 tab 仅管理员可见模型配置 |
+| `SettingsSaveDialog.tsx` | `{ mode, session, user, onClose, setSession, setView, onAuth }`；存档 / 设置双 tab 弹窗；负责 tab、数据刷新和消息展示 |
+| `ModelSettingsPanel.tsx` | `{ user, settings, setSettings, setMessage, onAuth }`；管理员模型配置表单 + 非管理员/访客提示 |
+| `SaveSlotsPanel.tsx` | `{ user, saves, onSave, onLoad, onAuth }`；固定渲染 `slot_1..slot_5`，登录用户读写云存档，访客显示不可云存档提示 |
 
 ### 5.4 资源（`public/assets/`）
 

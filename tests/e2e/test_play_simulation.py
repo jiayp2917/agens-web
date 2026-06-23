@@ -67,9 +67,6 @@ class EventRecorder:
     def on_stream_chunk(self, text: str) -> None:
         self._record("stream_chunk", text)
 
-    def on_combat_update(self, combat_state: dict | None) -> None:
-        self._record("combat_update", combat_state)
-
     def on_finale(self, message: str) -> None:
         self._record("finale", message)
 
@@ -119,7 +116,7 @@ def _world_builder_result(concept: str = "云天") -> dict[str, Any]:
                 "experience": 0,
                 "experience_to_next": 100,
                 "gold": 10,
-                "techniques": [{"name": "基础吐纳术", "level": 1, "type": "内功", "mp_cost": 5}],
+                "techniques": [{"name": "基础吐纳术", "level": 1, "type": "内功", "element": "土"}],
                 "inventory": [{"name": "粗布道袍", "quantity": 1, "type": "防具", "rarity": "凡品"}],
                 "status_effects": [],
                 "lifespan": 100,

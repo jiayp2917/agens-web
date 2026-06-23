@@ -31,7 +31,13 @@ def test_static_runtime_uses_react_dist_only() -> None:
 
 
 def test_react_frontend_wires_save_load_and_settings() -> None:
-    source = _read("components/SettingsSaveDialog.tsx", "lib/catalog.ts", "lib/util.ts")
+    source = _read(
+        "components/SettingsSaveDialog.tsx",
+        "components/ModelSettingsPanel.tsx",
+        "components/SaveSlotsPanel.tsx",
+        "lib/catalog.ts",
+        "lib/util.ts",
+    )
     client = (SRC / "api" / "client.ts").read_text(encoding="utf-8")
 
     assert "/api/saves" in source
@@ -193,6 +199,7 @@ def test_frontend_filters_model_stream_fragments_and_exposes_provider_presets() 
         "lib/util.ts",
         "lib/catalog.ts",
         "components/SettingsSaveDialog.tsx",
+        "components/ModelSettingsPanel.tsx",
     )
 
     assert "visibleEventTypes" in source
