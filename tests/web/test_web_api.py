@@ -452,6 +452,71 @@ def test_body_size_limit_rejects_actual_large_body(tmp_path: Path, monkeypatch) 
     assert response.status_code == 413
 
 
+@pytest.mark.anyio("asyncio")
+async def test_body_size_limit_rejects_chunked_body_without_content_length() -> None:
+    from web.backend.security import BodySizeLimitMiddleware
+
+    async def inner_app(_scope, _receive, send):
+        await send({"type": "http.response.start", "status": 204, "headers": []})
+        await send({"type": "http.response.body", "body": b""})
+
+    middleware = BodySizeLimitMiddleware(inner_app, max_bytes=8)
+    scope = {"type": "http", "headers": []}
+    messages = iter(
+        [
+            {"type": "http.request", "body": b"12345", "more_body": True},
+            {"type": "http.request", "body": b"6789", "more_body": False},
+        ]
+    )
+    sent: list[dict[str, Any]] = []
+
+    async def receive():
+        return next(messages)
+
+    async def send(message):
+        sent.append(message)
+
+    await middleware(scope, receive, send)
+
+    assert sent[0]["type"] == "http.response.start"
+    assert sent[0]["status"] == 413
+
+
+@pytest.mark.anyio("asyncio")
+async def test_body_size_limit_replays_allowed_chunked_body() -> None:
+    from web.backend.security import BodySizeLimitMiddleware
+
+    seen_body = b""
+
+    async def inner_app(_scope, receive, send):
+        nonlocal seen_body
+        message = await receive()
+        seen_body = message["body"]
+        await send({"type": "http.response.start", "status": 204, "headers": []})
+        await send({"type": "http.response.body", "body": b""})
+
+    middleware = BodySizeLimitMiddleware(inner_app, max_bytes=16)
+    scope = {"type": "http", "headers": []}
+    messages = iter(
+        [
+            {"type": "http.request", "body": b"12345", "more_body": True},
+            {"type": "http.request", "body": b"678", "more_body": False},
+        ]
+    )
+    sent: list[dict[str, Any]] = []
+
+    async def receive():
+        return next(messages)
+
+    async def send(message):
+        sent.append(message)
+
+    await middleware(scope, receive, send)
+
+    assert seen_body == b"12345678"
+    assert sent[0]["status"] == 204
+
+
 def test_admin_invite_create_validates_schema(tmp_path: Path, monkeypatch) -> None:
     monkeypatch.setenv("SESSION_COOKIE_SECURE", "0")
     app = create_app(tmp_path / "agens_web.sqlite3")

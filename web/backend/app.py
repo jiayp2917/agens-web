@@ -130,6 +130,16 @@ def allowed_hosts_from_env() -> list[str]:
     return sorted(hosts)
 
 
+def service_http_error(exc: Exception) -> HTTPException:
+    if isinstance(exc, KeyError):
+        return HTTPException(status_code=404, detail=str(exc))
+    if isinstance(exc, PermissionError):
+        return HTTPException(status_code=403, detail=str(exc))
+    if isinstance(exc, ValueError):
+        return HTTPException(status_code=400, detail=str(exc))
+    raise exc
+
+
 def create_app(db_path: Path | None = None) -> FastAPI:
     validate_runtime_config()
     service = WebGameService(create_database(db_path))
@@ -360,10 +370,8 @@ def create_app(db_path: Path | None = None) -> FastAPI:
     ) -> dict[str, Any]:
         try:
             return service.get_session(session_id, user_id=session_owner_id(session_id, request, user))
-        except KeyError as exc:
-            raise HTTPException(status_code=404, detail=str(exc)) from exc
-        except PermissionError as exc:
-            raise HTTPException(status_code=403, detail=str(exc)) from exc
+        except (KeyError, PermissionError, ValueError) as exc:
+            raise service_http_error(exc) from exc
 
     @app.post("/api/sessions/{session_id}/start")
     def start_session(
@@ -382,10 +390,8 @@ def create_app(db_path: Path | None = None) -> FastAPI:
                 payload.model_dump(),
                 user_id=owner_id,
             )
-        except KeyError as exc:
-            raise HTTPException(status_code=404, detail=str(exc)) from exc
-        except PermissionError as exc:
-            raise HTTPException(status_code=403, detail=str(exc)) from exc
+        except (KeyError, PermissionError, ValueError) as exc:
+            raise service_http_error(exc) from exc
 
     @app.post("/api/sessions/{session_id}/choice")
     def choose(
@@ -404,12 +410,8 @@ def create_app(db_path: Path | None = None) -> FastAPI:
                 payload.model_dump(),
                 user_id=owner_id,
             )
-        except KeyError as exc:
-            raise HTTPException(status_code=404, detail=str(exc)) from exc
-        except ValueError as exc:
-            raise HTTPException(status_code=400, detail=str(exc)) from exc
-        except PermissionError as exc:
-            raise HTTPException(status_code=403, detail=str(exc)) from exc
+        except (KeyError, PermissionError, ValueError) as exc:
+            raise service_http_error(exc) from exc
 
     @app.post("/api/sessions/{session_id}/action")
     def act(
@@ -428,10 +430,8 @@ def create_app(db_path: Path | None = None) -> FastAPI:
                 payload.action,
                 user_id=owner_id,
             )
-        except KeyError as exc:
-            raise HTTPException(status_code=404, detail=str(exc)) from exc
-        except PermissionError as exc:
-            raise HTTPException(status_code=403, detail=str(exc)) from exc
+        except (KeyError, PermissionError, ValueError) as exc:
+            raise service_http_error(exc) from exc
 
     @app.post("/api/sessions/{session_id}/save")
     def save(
@@ -441,10 +441,8 @@ def create_app(db_path: Path | None = None) -> FastAPI:
     ) -> dict[str, Any]:
         try:
             return service.save(session_id, payload.name, user_id=user["id"])
-        except KeyError as exc:
-            raise HTTPException(status_code=404, detail=str(exc)) from exc
-        except PermissionError as exc:
-            raise HTTPException(status_code=403, detail=str(exc)) from exc
+        except (KeyError, PermissionError, ValueError) as exc:
+            raise service_http_error(exc) from exc
 
     @app.post("/api/sessions/{session_id}/load")
     def load(
@@ -454,10 +452,8 @@ def create_app(db_path: Path | None = None) -> FastAPI:
     ) -> dict[str, Any]:
         try:
             return service.load(session_id, payload.name, user_id=user["id"])
-        except KeyError as exc:
-            raise HTTPException(status_code=404, detail=str(exc)) from exc
-        except PermissionError as exc:
-            raise HTTPException(status_code=403, detail=str(exc)) from exc
+        except (KeyError, PermissionError, ValueError) as exc:
+            raise service_http_error(exc) from exc
 
     @app.post("/api/sessions/{session_id}/end")
     def end_session(
@@ -472,10 +468,8 @@ def create_app(db_path: Path | None = None) -> FastAPI:
                 payload.reason,
                 user_id=session_owner_id(session_id, request, user),
             )
-        except KeyError as exc:
-            raise HTTPException(status_code=404, detail=str(exc)) from exc
-        except PermissionError as exc:
-            raise HTTPException(status_code=403, detail=str(exc)) from exc
+        except (KeyError, PermissionError, ValueError) as exc:
+            raise service_http_error(exc) from exc
 
     @app.get("/api/saves")
     def saves(user: dict[str, Any] = Depends(current_user)) -> list[dict[str, Any]]:
@@ -492,10 +486,8 @@ def create_app(db_path: Path | None = None) -> FastAPI:
                 session_id,
                 user_id=session_owner_id(session_id, request, user),
             )
-        except KeyError as exc:
-            raise HTTPException(status_code=404, detail=str(exc)) from exc
-        except PermissionError as exc:
-            raise HTTPException(status_code=403, detail=str(exc)) from exc
+        except (KeyError, PermissionError, ValueError) as exc:
+            raise service_http_error(exc) from exc
 
     @app.get("/api/users/me/legacy_bonuses")
     def legacy_bonuses(user: dict[str, Any] = Depends(current_user)) -> list[dict[str, Any]]:

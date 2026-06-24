@@ -30,7 +30,6 @@ from .action_delta_policy import (
     validate_narrative_delta_consistency,
 )
 from .choices import (
-    CHOICE_FALLBACK_NOTICE,
     complete_choices,
     fallback_choices,
     normalize_choices,
@@ -46,6 +45,12 @@ from .model_result import (
     classify_narrator_result,
     classify_world_builder_result,
     result_diagnostics,
+)
+from .model_fallback_policy import (
+    MODEL_FAILURE_CONTINUE,
+    MODEL_FAILURE_END,
+    MODEL_FAILURE_PROMPT,
+    ModelFallbackPolicy,
 )
 from .profile_opening import (
     luck_from_attributes,
@@ -71,9 +76,6 @@ log = logging.getLogger(__name__)
 # Type aliases for callbacks.
 Callback = Callable[..., None]
 
-MODEL_FAILURE_PROMPT = "天道紊乱，是否以因果残影继续推演？"
-MODEL_FAILURE_CONTINUE = "fallback"
-MODEL_FAILURE_END = "end"
 START_MODEL_WORLD_ENV = "AGENS_START_MODEL_WORLD"
 START_MODEL_OPENING_ENV = "AGENS_START_MODEL_OPENING"
 
@@ -118,6 +120,10 @@ class GameEngine:
         self.on_stream_chunk: Callback | None = None
         self.on_finale: Callback | None = None
         self.on_model_failure_choice: Callable[[str, str], str] | None = None
+        self._fallback_policy = ModelFallbackPolicy(
+            lambda: self.on_model_failure_choice,
+            _safe_log_reason,
+        )
 
     # ─── Helper to emit callbacks safely ───────────────────────────────
 
@@ -185,10 +191,7 @@ class GameEngine:
 
     def _fallback_notice_for(self, reason: str = "") -> str:
         """Return a player-visible fallback message without exposing secrets."""
-        reason = (reason or "").strip()
-        if "不完整" in reason or "未返回" in reason or "格式" in reason:
-            return reason
-        return CHOICE_FALLBACK_NOTICE
+        return self._fallback_policy.notice_for(reason)
 
     def _log_model_result(
         self,
@@ -216,16 +219,7 @@ class GameEngine:
 
     def _confirm_local_fallback(self, source: str, reason: str = "") -> bool:
         """Ask the UI whether model failure should continue with local fallback."""
-        callback = self.on_model_failure_choice
-        if callback is None:
-            return True
-        try:
-            decision = callback(source, reason or "模型输出不可用。")
-        except Exception:
-            log.exception("model failure choice callback failed")
-            return True
-        log.info("model failure decision: source=%s decision=%s reason=%s", source, decision, _safe_log_reason(reason))
-        return decision != MODEL_FAILURE_END
+        return self._fallback_policy.should_continue(source, reason)
 
     def _end_model_failure_run(self, reason: str) -> None:
         """End the current run after the user declines local model fallback."""
@@ -481,7 +475,7 @@ class GameEngine:
         if not os.environ.get("AGNES_API_KEY"):
             reason = "AGNES_API_KEY 未设置。"
             if self._confirm_local_fallback("profile_opening_missing_key", reason):
-                self._emit("on_info", CHOICE_FALLBACK_NOTICE)
+                self._emit("on_info", self._fallback_notice_for(reason))
                 return self._enter_local_story(reason, emit_narrative=False)
             self._end_model_failure_run(reason)
             return "", []
@@ -496,7 +490,7 @@ class GameEngine:
             log.exception("profile opening world_builder error")
             reason = "开场推演失败（详见日志）。"
             if self._confirm_local_fallback("profile_opening_exception", reason):
-                self._emit("on_info", CHOICE_FALLBACK_NOTICE)
+                self._emit("on_info", self._fallback_notice_for(reason))
                 return self._enter_local_story(reason, emit_narrative=False)
             else:
                 self._end_model_failure_run(reason)
@@ -514,7 +508,7 @@ class GameEngine:
             log.warning("profile opening world_builder failed: %s", result["llm_error"])
             reason = world_status.reason.replace("世界生成失败", "开场推演失败", 1)
             if self._confirm_local_fallback("profile_opening_error", reason):
-                self._emit("on_info", CHOICE_FALLBACK_NOTICE)
+                self._emit("on_info", self._fallback_notice_for(reason))
                 return self._enter_local_story(reason, emit_narrative=False)
             else:
                 self._end_model_failure_run(reason)
@@ -524,7 +518,7 @@ class GameEngine:
         if world_status.kind == ModelResultKind.INCOMPLETE_OUTPUT or not isinstance(generated, dict):
             reason = world_status.reason or "开场推演数据不可用。"
             if self._confirm_local_fallback("profile_opening_empty", reason):
-                self._emit("on_info", CHOICE_FALLBACK_NOTICE)
+                self._emit("on_info", self._fallback_notice_for(reason))
                 return self._enter_local_story(reason, emit_narrative=False)
             else:
                 self._end_model_failure_run(reason)

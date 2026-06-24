@@ -1,0 +1,132 @@
+﻿.modal-scrim {
+  position: fixed;
+  inset: 0;
+  z-index: 60;
+  display: grid;
+  place-items: center;
+  padding: 22px;
+  background: rgba(24, 22, 18, 0.46);
+}
+
+.settings-dialog {
+  width: min(780px, 100%);
+  max-height: min(820px, 92dvh);
+  display: grid;
+  gap: 14px;
+  padding: 22px;
+  overflow: auto;
+}
+
+.compact-dialog {
+  width: min(540px, 100%);
+}
+
+.settings-dialog header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.settings-dialog h2,
+.settings-dialog p {
+  margin: 0;
+}
+
+.dialog-tabs,
+.preset-grid {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.dialog-tabs .active-tab,
+.preset-grid .selected-tool {
+  border-color: var(--jade);
+  color: var(--jade-strong);
+  background: rgba(79, 118, 104, 0.1);
+}
+
+.settings-grid,
+.protected-settings,
+.guest-save-state,
+.settings-form,
+.save-list {
+  display: grid;
+  gap: 14px;
+}
+
+.protected-settings {
+  grid-template-columns: auto minmax(0, 1fr);
+  align-items: start;
+}
+
+.guest-save-state {
+  color: var(--ink-soft);
+}
+
+.settings-form label {
+  display: grid;
+  gap: 6px;
+}
+
+.field-help {
+  color: var(--ink-soft);
+  line-height: 1.65;
+}
+
+.save-row {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 12px;
+  padding: 12px;
+  border: 1px solid rgba(185, 162, 125, 0.4);
+  border-radius: var(--radius-sm);
+  background: rgba(255, 250, 240, 0.58);
+}
+
+.save-row strong,
+.save-row small {
+  display: block;
+}
+
+.save-row small {
+  color: var(--ink-soft);
+  overflow-wrap: anywhere;
+}
+
+.save-row-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  justify-content: end;
+}
+
+.save-row-actions button {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.dialog-message {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  margin: 0;
+  color: var(--jade-strong);
+}
+
+.toast {
+  position: fixed;
+  top: calc(var(--topbar-height) + 8px);
+  left: 50%;
+  z-index: 80;
+  width: min(560px, calc(100vw - 32px));
+  transform: translateX(-50%);
+  padding: 12px 16px;
+  border: 1px solid rgba(168, 69, 53, 0.38);
+  border-radius: var(--radius-sm);
+  background: rgba(255, 250, 240, 0.94);
+  box-shadow: var(--shadow-panel);
+}

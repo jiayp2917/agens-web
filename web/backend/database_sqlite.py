@@ -2,13 +2,23 @@
 
 from __future__ import annotations
 
-import json
 import sqlite3
 import uuid
 from pathlib import Path
 from typing import Any
 
-from .database_common import default_db_path, dump_json, load_json, now_ts, row_with_json, safe_name
+from .database_common import (
+    CATALOG_JSON_FIELDS,
+    CATALOG_TABLES,
+    decode_json_fields,
+    default_db_path,
+    dump_json,
+    encode_json_fields,
+    now_ts,
+    row_with_json,
+    safe_name,
+    save_summary,
+)
 
 
 class SQLiteWebDatabase:
@@ -422,22 +432,7 @@ class SQLiteWebDatabase:
             rows = conn.execute(
                 "SELECT * FROM saves WHERE user_id = ? ORDER BY updated_at DESC", (user_id,)
             ).fetchall()
-        result = []
-        for row in rows:
-            item = row_with_json(row)
-            snapshot = item.get("snapshot", {})
-            char = snapshot.get("character", {}) if isinstance(snapshot, dict) else {}
-            result.append(
-                {
-                    "id": item["id"],
-                    "name": item["name"],
-                    "char_name": char.get("name", "?"),
-                    "realm": char.get("realm", "?"),
-                    "turn_count": snapshot.get("turn_count", 0) if isinstance(snapshot, dict) else 0,
-                    "updated_at": item["updated_at"],
-                }
-            )
-        return result
+        return [save_summary(row) for row in rows]
 
     def load_save(self, user_id: str, name: str) -> dict[str, Any] | None:
         slot_name = safe_name(name or "slot_1")
@@ -782,46 +777,19 @@ class SQLiteWebDatabase:
 
     # ── Catalog read/write ──────────────────────────────────────────────────
 
-    _CATALOG_TABLES = [
-        "catalog_talents",
-        "catalog_family_backgrounds",
-        "catalog_spirit_roots",
-        "catalog_difficulties",
-        "catalog_story_seeds",
-    ]
+    _CATALOG_TABLES = CATALOG_TABLES
 
     def list_catalog(self, table: str) -> list[dict[str, Any]]:
         if table not in self._CATALOG_TABLES:
             raise ValueError(f"Unknown catalog table: {table}")
         with self.connect() as conn:
             rows = conn.execute(f"SELECT * FROM {table} ORDER BY created_at").fetchall()
-        json_fields = {
-            "attribute_mods", "tags", "initial_resources", "initial_risks",
-            "story_tags", "event_tags",
-        }
-        result = []
-        for row in rows:
-            item = dict(row)
-            for field in json_fields:
-                if field in item and isinstance(item[field], str):
-                    try:
-                        item[field] = load_json(item[field])
-                    except (json.JSONDecodeError, TypeError):
-                        pass
-            result.append(item)
-        return result
+        return [decode_json_fields(row) for row in rows]
 
     def insert_catalog(self, table: str, row: dict[str, Any]) -> dict[str, Any]:
         if table not in self._CATALOG_TABLES:
             raise ValueError(f"Unknown catalog table: {table}")
-        json_fields = {
-            "attribute_mods", "tags", "initial_resources", "initial_risks",
-            "story_tags", "event_tags",
-        }
-        data = dict(row)
-        for field in json_fields:
-            if field in data and not isinstance(data[field], str):
-                data[field] = dump_json(data[field])
+        data = encode_json_fields(row)
         with self.connect() as conn:
             conn.execute(
                 f"INSERT OR IGNORE INTO {table} ({', '.join(data.keys())}) "
@@ -844,10 +812,6 @@ class SQLiteWebDatabase:
             ("catalog_difficulties", SEED_DIFFICULTIES),
             ("catalog_story_seeds", SEED_STORY_SEEDS),
         ]
-        json_fields = {
-            "attribute_mods", "tags", "initial_resources", "initial_risks",
-            "story_tags", "event_tags",
-        }
         for table, rows in seeds:
             existing = conn.execute(f"SELECT 1 FROM {table} LIMIT 1").fetchone()
             if existing:
@@ -855,10 +819,7 @@ class SQLiteWebDatabase:
             for row in rows:
                 row_with_ts = dict(row)
                 row_with_ts.setdefault("created_at", now)
-                # Serialize JSON fields to strings for SQLite
-                for field in json_fields:
-                    if field in row_with_ts and not isinstance(row_with_ts[field], str):
-                        row_with_ts[field] = dump_json(row_with_ts[field])
+                row_with_ts = encode_json_fields(row_with_ts, CATALOG_JSON_FIELDS)
                 conn.execute(
                     f"INSERT OR IGNORE INTO {table} ({', '.join(row_with_ts.keys())}) "
                     f"VALUES ({', '.join('?' for _ in row_with_ts)})",

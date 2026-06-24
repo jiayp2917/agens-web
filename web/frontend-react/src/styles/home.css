@@ -1,0 +1,151 @@
+﻿.home {
+  height: 100dvh;
+  min-height: 720px;
+  display: grid;
+  place-items: center;
+  padding: calc(var(--topbar-height) + 4px) clamp(18px, 4vw, 64px) 18px;
+  overflow: hidden;
+  background:
+    linear-gradient(90deg, rgba(245, 239, 226, 0.94) 0%, rgba(245, 239, 226, 0.72) 44%, rgba(245, 239, 226, 0.34) 100%),
+    var(--ink-gate) center bottom / cover no-repeat;
+}
+
+.home-shell {
+  width: min(1120px, 100%);
+  min-height: 0;
+  display: grid;
+  place-items: center;
+  position: relative;
+}
+
+.home-brandline {
+  display: none;
+}
+
+.hero {
+  width: min(520px, 100%);
+  display: grid;
+  justify-items: center;
+  gap: 12px;
+  text-align: center;
+  transform: translateY(-0.5vh);
+}
+
+.hero h1 {
+  margin: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 10px;
+  white-space: nowrap;
+  font-size: clamp(50px, 4.7vw, 78px);
+  font-weight: 800;
+  line-height: 1.08;
+}
+
+.hero-rule {
+  width: min(360px, 78vw);
+  height: 4px;
+  border-top: 1px solid rgba(32, 27, 21, 0.24);
+  position: relative;
+}
+
+.hero-rule::after {
+  content: none;
+}
+
+.home-actions {
+  width: min(420px, 100%);
+  display: grid;
+  gap: 10px;
+}
+
+.home-actions button {
+  min-height: 60px;
+  position: relative;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 8px 20px 8px 12px;
+  font-size: 28px;
+  font-weight: 600;
+  background:
+    linear-gradient(180deg, rgba(255, 250, 240, 0.9), rgba(247, 240, 225, 0.88)),
+    var(--paper-texture) center / 360px auto repeat;
+  box-shadow: var(--shadow-panel);
+}
+
+.home-actions button svg {
+  position: absolute;
+  left: 20px;
+  width: 32px;
+  height: 32px;
+  padding: 7px;
+  border: 1px solid rgba(80, 94, 82, 0.34);
+  border-radius: 50%;
+}
+
+.home-actions .home-action-main {
+  border-color: var(--jade);
+  background:
+    linear-gradient(180deg, rgba(77, 115, 100, 0.96), rgba(49, 92, 81, 0.98)),
+    var(--paper-texture) center / 360px auto repeat;
+  color: #fffaf0;
+}
+
+.community-card {
+  width: min(420px, 100%);
+  display: grid;
+  grid-template-columns: 42px minmax(0, 1fr) 98px 28px;
+  align-items: center;
+  gap: 12px;
+  margin-top: 2px;
+  padding-top: 10px;
+  border-top: 1px solid rgba(32, 27, 21, 0.2);
+}
+
+.qq-icon {
+  width: 38px;
+  height: 38px;
+  display: inline-grid;
+  place-items: center;
+  border-radius: 50%;
+  background: var(--ink);
+  color: #fffaf0;
+  font-size: 18px;
+  font-weight: 700;
+}
+
+.community-card strong,
+.community-card span {
+  display: block;
+}
+
+.community-card strong {
+  color: var(--cinnabar);
+  font-size: 28px;
+  line-height: 1.1;
+}
+
+.community-card span {
+  color: var(--ink-soft);
+  font-size: 14px;
+  margin-top: 6px;
+}
+
+.community-card img {
+  width: 94px;
+  height: 94px;
+  object-fit: cover;
+  border: 1px solid var(--line);
+  background: #fff;
+}
+
+.community-card small {
+  writing-mode: vertical-rl;
+  justify-self: center;
+  padding: 6px 4px;
+  border-radius: 4px;
+  background: var(--jade);
+  color: #fffaf0;
+}

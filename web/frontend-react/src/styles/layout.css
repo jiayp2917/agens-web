@@ -1,0 +1,241 @@
+﻿:root {
+  color-scheme: light;
+  --paper: #f4ecdc;
+  --paper-soft: rgba(255, 250, 240, 0.9);
+  --paper-solid: #fffaf0;
+  --paper-deep: #eadfc8;
+  --ink: #201b15;
+  --ink-soft: #5f5548;
+  --line: #d7c6a7;
+  --line-strong: #b9a27d;
+  --jade: #4f7668;
+  --jade-strong: #315c51;
+  --cinnabar: #a84535;
+  --cinnabar-soft: #c85c4c;
+  --gold: #b8893b;
+  --danger: #a63b31;
+  --shadow-soft: 0 14px 34px rgba(72, 58, 36, 0.14);
+  --shadow-panel: 0 8px 22px rgba(72, 58, 36, 0.12);
+  --radius: 8px;
+  --radius-sm: 4px;
+  --topbar-height: 72px;
+  font-family: "Noto Serif SC", "Songti SC", "STSong", "Microsoft YaHei", serif;
+}
+
+* {
+  box-sizing: border-box;
+}
+
+html,
+body,
+#root {
+  min-width: 320px;
+  min-height: 100%;
+  overflow-x: hidden;
+}
+
+body {
+  margin: 0;
+  color: var(--ink);
+  background:
+    linear-gradient(180deg, rgba(244, 236, 220, 0.9), rgba(244, 236, 220, 0.98)),
+    var(--paper-texture) center / 720px auto repeat,
+    var(--paper);
+}
+
+button,
+input,
+select {
+  min-height: 44px;
+  font: inherit;
+}
+
+button {
+  border: 1px solid var(--line);
+  border-radius: var(--radius-sm);
+  background: rgba(255, 250, 240, 0.82);
+  color: var(--ink);
+  cursor: pointer;
+  padding: 10px 16px;
+  transition: background 160ms ease, border-color 160ms ease, color 160ms ease, transform 160ms ease, opacity 160ms ease;
+}
+
+button:hover {
+  border-color: var(--jade);
+}
+
+button:active {
+  transform: translateY(1px);
+}
+
+button:disabled {
+  cursor: not-allowed;
+  opacity: 0.48;
+}
+
+input,
+select {
+  width: 100%;
+  border: 1px solid var(--line);
+  border-radius: var(--radius-sm);
+  background: rgba(255, 250, 240, 0.76);
+  color: var(--ink);
+  padding: 10px 12px;
+}
+
+input:focus-visible,
+select:focus-visible,
+button:focus-visible {
+  outline: 2px solid rgba(168, 69, 53, 0.42);
+  outline-offset: 2px;
+}
+
+.app {
+  min-height: 100dvh;
+  position: relative;
+}
+
+.topbar {
+  position: fixed;
+  top: 0;
+  left: 0;
+  right: 0;
+  z-index: 30;
+  min-height: var(--topbar-height);
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+  padding: 16px clamp(20px, 3vw, 56px);
+  pointer-events: none;
+}
+
+.topbar > * {
+  pointer-events: auto;
+}
+
+.app:not(.view-home):not(.view-auth) > .topbar {
+  justify-content: flex-end;
+}
+
+.app:not(.view-home):not(.view-auth) > .topbar .brand,
+.app:not(.view-home):not(.view-auth) > .topbar .user-chip,
+.app:not(.view-home):not(.view-auth) > .topbar .topbar-actions > .plain-btn,
+.app:not(.view-home):not(.view-auth) > .topbar .topbar-actions > button[aria-label="退出登录"] {
+  display: none;
+}
+
+.brand {
+  color: var(--ink);
+  font-size: clamp(30px, 3.2vw, 48px);
+  font-weight: 600;
+  line-height: 1;
+  text-decoration: none;
+}
+
+.brand::after {
+  content: "";
+  display: block;
+  width: 72px;
+  height: 8px;
+  margin-top: 7px;
+  background: linear-gradient(90deg, rgba(32, 27, 21, 0.4), transparent 72%);
+  border-top: 1px solid rgba(32, 27, 21, 0.24);
+}
+
+.topbar-actions,
+.user-chip,
+.inline-actions,
+.summary-actions {
+  display: inline-flex;
+  align-items: center;
+  gap: 10px;
+  min-width: 0;
+}
+
+.user-chip {
+  max-width: min(38vw, 260px);
+  color: var(--ink-soft);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.icon-btn {
+  width: 52px;
+  height: 52px;
+  padding: 0;
+  display: inline-grid;
+  place-items: center;
+  border-radius: 50%;
+  background: rgba(255, 250, 240, 0.72);
+  box-shadow: 0 4px 12px rgba(72, 58, 36, 0.08);
+}
+
+.bgm-btn {
+  position: relative;
+}
+
+.bgm-btn::after {
+  content: "";
+  position: absolute;
+  top: 2px;
+  right: 2px;
+  width: 9px;
+  height: 9px;
+  border-radius: 50%;
+  background: var(--cinnabar);
+  opacity: 0.9;
+}
+
+.bgm-btn.is-on {
+  border-color: var(--jade);
+  color: var(--jade-strong);
+}
+
+.plain-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  background: rgba(255, 250, 240, 0.42);
+}
+
+.primary-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 10px;
+  border-color: #7b8f78;
+  background:
+    linear-gradient(180deg, rgba(91, 126, 111, 0.94), rgba(62, 99, 86, 0.98)),
+    var(--paper-texture) center / 420px auto repeat;
+  color: #fffaf0;
+  box-shadow: 0 8px 18px rgba(49, 92, 81, 0.22);
+}
+
+.primary-btn:hover {
+  background:
+    linear-gradient(180deg, rgba(68, 111, 94, 0.96), rgba(43, 82, 71, 0.98)),
+    var(--paper-texture) center / 420px auto repeat;
+}
+
+.eyebrow {
+  margin: 0;
+  color: var(--cinnabar);
+  font-size: 13px;
+  font-weight: 700;
+}
+
+.seal {
+  display: inline-grid;
+  place-items: center;
+  width: 28px;
+  height: 28px;
+  margin-left: 10px;
+  border-radius: 5px;
+  background: var(--cinnabar);
+  color: #fffaf0;
+  font-size: 14px;
+  font-weight: 700;
+}

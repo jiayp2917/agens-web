@@ -1,0 +1,55 @@
+﻿.auth-screen,
+.character-page,
+.ending-page {
+  min-height: 100dvh;
+  padding: calc(var(--topbar-height) + 18px) clamp(18px, 4vw, 64px) 26px;
+  background:
+    linear-gradient(180deg, rgba(245, 239, 226, 0.74), rgba(245, 239, 226, 0.94)),
+    var(--ink-gate) center bottom / cover no-repeat;
+}
+
+.auth-screen {
+  display: grid;
+  place-items: center;
+}
+
+.auth-panel,
+.ending-card,
+.ending-recap,
+.creation-panel,
+.status-panel,
+.story-panel,
+.settings-dialog {
+  border: 1px solid rgba(185, 162, 125, 0.72);
+  border-radius: var(--radius);
+  background:
+    linear-gradient(180deg, rgba(255, 250, 240, 0.88), rgba(250, 243, 228, 0.84)),
+    var(--paper-texture) center / 620px auto repeat;
+  box-shadow: var(--shadow-soft);
+}
+
+.auth-panel {
+  width: min(440px, 100%);
+  display: grid;
+  gap: 14px;
+  padding: 24px;
+}
+
+.auth-panel h2,
+.ending-card h2,
+.creation-panel h2,
+.chronicle-heading h2 {
+  margin: 0;
+  font-size: clamp(28px, 3vw, 38px);
+  line-height: 1.1;
+}
+
+.auth-note {
+  margin: 0;
+  color: var(--ink-soft);
+  line-height: 1.7;
+}
+
+.back-home {
+  justify-self: start;
+}

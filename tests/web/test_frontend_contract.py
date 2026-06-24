@@ -18,6 +18,13 @@ def _read(*relatives: str) -> str:
     return "\n".join(p.read_text(encoding="utf-8") for p in paths)
 
 
+def _read_css() -> str:
+    style_entry = (SRC / "styles.css").read_text(encoding="utf-8")
+    style_dir = SRC / "styles"
+    split_styles = "\n".join(p.read_text(encoding="utf-8") for p in sorted(style_dir.glob("*.css")))
+    return style_entry + "\n" + split_styles
+
+
 def test_legacy_frontend_directory_is_retired() -> None:
     assert not (ROOT / "web" / "frontend").exists()
 
@@ -100,8 +107,16 @@ def test_react_public_assets_are_present() -> None:
 
 
 def test_react_character_creation_uses_catalogs_and_game_mode() -> None:
-    source = _read("pages/CharacterCreatePage.tsx", "lib/catalog.ts", "lib/util.ts")
-    css = (SRC / "styles.css").read_text(encoding="utf-8")
+    source = _read(
+        "pages/CharacterCreatePage.tsx",
+        "hooks/useCatalogs.ts",
+        "hooks/useCharacterFormReducer.ts",
+        "components/CatalogGroup.tsx",
+        "components/AttributeAllocator.tsx",
+        "lib/catalog.ts",
+        "lib/util.ts",
+    )
+    css = _read_css()
 
     for path in (
         "/api/catalog/talents",
@@ -149,7 +164,7 @@ def test_react_game_page_has_escape_route_and_stable_meters() -> None:
         "components/ChoiceButton.tsx",
         "lib/catalog.ts",
     )
-    css = (SRC / "styles.css").read_text(encoding="utf-8")
+    css = _read_css()
 
     assert "onHome={returnHome}" in source
     assert "返回首页" in source
@@ -240,7 +255,7 @@ def test_frontend_filters_model_stream_fragments_and_exposes_provider_presets() 
 
 def test_frontend_homepage_shows_qq_group() -> None:
     source = _read("pages/HomePage.tsx")
-    css = (SRC / "styles.css").read_text(encoding="utf-8")
+    css = _read_css()
 
     assert "QQ群：985776771" in source
     assert 'assetUrl("assets/qq_group.png")' in source

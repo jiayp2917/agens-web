@@ -9,7 +9,16 @@ from typing import Any
 from sqlalchemy import create_engine, text
 from sqlalchemy.engine import Engine
 
-from .database_common import dump_json, load_json, now_ts, safe_name
+from .database_common import (
+    CATALOG_TABLES,
+    decode_json_fields,
+    dump_json,
+    encode_json_fields,
+    now_ts,
+    row_with_json,
+    safe_name,
+    save_summary,
+)
 from .catalog_seed import seed_catalogs
 
 
@@ -469,12 +478,7 @@ class PostgresWebDatabase:
     def load_session(self, session_id: str) -> dict[str, Any] | None:
         with self.engine.begin() as conn:
             row = conn.execute(text("SELECT * FROM sessions WHERE id = :id"), {"id": session_id}).mappings().first()
-        if row is None:
-            return None
-        data = dict(row)
-        data["snapshot"] = load_json(data.pop("snapshot"))
-        data["events"] = load_json(data.pop("events"))
-        return data
+        return row_with_json(row) if row else None
 
     def save_game_slot(
         self,
@@ -523,22 +527,7 @@ class PostgresWebDatabase:
                 text("SELECT * FROM saves WHERE user_id = :user_id ORDER BY updated_at DESC"),
                 {"user_id": user_id},
             ).mappings().all()
-        result = []
-        for row in rows:
-            item = dict(row)
-            snapshot = load_json(item.get("snapshot")) or {}
-            char = snapshot.get("character", {}) if isinstance(snapshot, dict) else {}
-            result.append(
-                {
-                    "id": item["id"],
-                    "name": item["name"],
-                    "char_name": char.get("name", "?"),
-                    "realm": char.get("realm", "?"),
-                    "turn_count": snapshot.get("turn_count", 0) if isinstance(snapshot, dict) else 0,
-                    "updated_at": item["updated_at"],
-                }
-            )
-        return result
+        return [save_summary(row) for row in rows]
 
     def load_save(self, user_id: str, name: str) -> dict[str, Any] | None:
         slot_name = safe_name(name or "slot_1")
@@ -547,12 +536,7 @@ class PostgresWebDatabase:
                 text("SELECT * FROM saves WHERE user_id = :user_id AND name = :name"),
                 {"user_id": user_id, "name": slot_name},
             ).mappings().first()
-        if row is None:
-            return None
-        data = dict(row)
-        data["snapshot"] = load_json(data.pop("snapshot"))
-        data["events"] = load_json(data.pop("events"))
-        return data
+        return row_with_json(row) if row else None
 
     def save_model_config(self, config: dict[str, Any]) -> dict[str, Any]:
         now = now_ts()
@@ -883,7 +867,6 @@ class PostgresWebDatabase:
                          calendar_summary: str, narrative: str, event_kind: str,
                          end_reason: str | None = None) -> str:
         """Append one settled turn to the game_turns log (spec §8.3)."""
-        import json as _json
         turn_id = str(uuid.uuid4())
         with self.engine.begin() as conn:
             conn.execute(
@@ -906,9 +889,9 @@ class PostgresWebDatabase:
                     "start_age": start_age, "elapsed_years": elapsed_years,
                     "end_age": end_age, "lifespan": lifespan,
                     "remaining_lifespan": remaining_lifespan,
-                    "choice_taken": choice_taken, "choices": _json.dumps(choices),
-                    "state_delta": _json.dumps(state_delta),
-                    "state_after": _json.dumps(state_after),
+                    "choice_taken": choice_taken, "choices": dump_json(choices),
+                    "state_delta": dump_json(state_delta),
+                    "state_after": dump_json(state_after),
                     "calendar_summary": calendar_summary, "narrative": narrative,
                     "event_kind": event_kind, "end_reason": end_reason,
                 },
@@ -933,13 +916,7 @@ class PostgresWebDatabase:
 
     # ── Catalog read/write ──────────────────────────────────────────────────
 
-    _CATALOG_TABLES = [
-        "catalog_talents",
-        "catalog_family_backgrounds",
-        "catalog_spirit_roots",
-        "catalog_difficulties",
-        "catalog_story_seeds",
-    ]
+    _CATALOG_TABLES = CATALOG_TABLES
 
     def list_catalog(self, table: str) -> list[dict[str, Any]]:
         if table not in self._CATALOG_TABLES:
@@ -948,26 +925,13 @@ class PostgresWebDatabase:
             rows = conn.execute(
                 text(f"SELECT * FROM {table} ORDER BY created_at")
             ).mappings().all()
-        result = []
-        for row in rows:
-            item = dict(row)
-            for field in ("attribute_mods", "tags", "initial_resources",
-                          "initial_risks", "story_tags", "event_tags",
-                          "snapshot", "events"):
-                if field in item:
-                    item[field] = load_json(item[field])
-            result.append(item)
-        return result
+        return [decode_json_fields(row) for row in rows]
 
     def insert_catalog(self, table: str, row: dict[str, Any]) -> dict[str, Any]:
         if table not in self._CATALOG_TABLES:
             raise ValueError(f"Unknown catalog table: {table}")
-        data = dict(row)
+        data = encode_json_fields(row)
         data.setdefault("created_at", now_ts())
-        for field in ("attribute_mods", "tags", "initial_resources",
-                      "initial_risks", "story_tags", "event_tags"):
-            if field in data and not isinstance(data[field], str):
-                data[field] = dump_json(data[field])
         cols = ", ".join(data.keys())
         placeholders = ", ".join(f":{k}" for k in data.keys())
         with self.engine.begin() as conn:
@@ -997,12 +961,8 @@ class PostgresWebDatabase:
                 if existing:
                     continue
                 for row in rows:
-                    data = dict(row)
+                    data = encode_json_fields(row)
                     data.setdefault("created_at", now_ts())
-                    for field in ("attribute_mods", "tags", "initial_resources",
-                                  "initial_risks", "story_tags", "event_tags"):
-                        if field in data and not isinstance(data[field], str):
-                            data[field] = dump_json(data[field])
                     cols = ", ".join(data.keys())
                     placeholders = ", ".join(f":{k}" for k in data.keys())
                     conn.execute(

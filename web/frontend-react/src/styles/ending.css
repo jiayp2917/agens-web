@@ -1,0 +1,24 @@
+﻿.ending-page {
+  display: grid;
+  grid-template-columns: minmax(280px, 420px) minmax(0, 1fr);
+  align-items: start;
+  gap: 16px;
+}
+
+.ending-card,
+.ending-recap {
+  display: grid;
+  gap: 14px;
+  padding: 24px;
+}
+
+.ending-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+}
+
+.ending-recap article {
+  padding: 10px 0;
+  border-bottom: 1px solid rgba(185, 162, 125, 0.34);
+}
