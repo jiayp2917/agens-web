@@ -310,14 +310,13 @@ class WebGameService:
     ) -> dict[str, Any]:
         runner = self._runner(session_id, user_id=user_id)
         action = self._choice_text(runner, payload)
-        before = _turn_start_snapshot(runner.engine.game_session)
-        runner.engine.handle_action(action)
-        self._record_settled_turn(runner, before, action)
-        self._persist(runner)
-        return runner.response()
+        return self._advance_turn(runner, action)
 
     def act(self, session_id: str, action: str, user_id: str | None = None) -> dict[str, Any]:
         runner = self._runner(session_id, user_id=user_id)
+        return self._advance_turn(runner, action)
+
+    def _advance_turn(self, runner: WebRunner, action: str) -> dict[str, Any]:
         before = _turn_start_snapshot(runner.engine.game_session)
         runner.engine.handle_action(action)
         self._record_settled_turn(runner, before, action)

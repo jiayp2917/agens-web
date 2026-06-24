@@ -143,8 +143,8 @@ def test_web_api_minimum_game_flow(tmp_path: Path, monkeypatch) -> None:
         assert chosen["choices"] == ["继续请教", "前往住处", "查看木牌", "【气运】随缘而行，听天命、赌因果"]
 
         acted = client.post(
-            f"/api/sessions/{session_id}/choice",
-            json={"choice_index": 3},
+            f"/api/sessions/{session_id}/action",
+            json={"action": "继续请教"},
         ).json()
         assert acted["turn_count"] == 2
         assert acted["panels"]["status"]

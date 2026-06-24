@@ -21,6 +21,7 @@
 - 第一批最低风险复杂度收敛已完成：`web/backend/app.py` 将 session 类 endpoint 重复的 `KeyError` / `PermissionError` / `ValueError` 转 HTTP 异常样板收束到 `service_call()`，保持原 404 / 403 / 400 行为不变。
 - 第二批最低风险复杂度收敛已完成：`web/backend/database_common.py` 承接 catalog seed 来源、catalog row JSON 准备和 player progress 摘要，`database_sqlite.py` / `database_postgres.py` 复用同一 helper，暂不改 schema、Alembic 历史或运行时后端选择。
 - 第三批最低风险复杂度收敛已完成：`web/frontend-react/src/lib/chronicle.ts` 承接编年史正文清理、年龄/年份推导和当前纪年读取，`GamePage.tsx` 只保留渲染与交互编排。
+- 第四批最低风险复杂度收敛已完成：`WebGameService.choose()` 与 `WebGameService.act()` 共用 `_advance_turn()`，把 engine action、settled-turn 落账、session persist 和 response shaping 收束到同一路径；最小 Web API 流程同时覆盖 `/choice` 与 `/action`。
 - Chrome 真实浏览器 smoke 发现并修复了本地兜底场景的编年史纪年停滞：模型网络失败后点击“继续本局”，回合 1 现在显示 `玄元历 2 年 · 回合 1`，最新卡片也显示 `玄元历 2 年`。
 - Chrome 移动 smoke 发现并修复了随机角色属性显示/语义不一致：随机属性可能高于手动上限 80，现已由 disabled range 改为只读 meter，`aria-valuenow` 与可见数值一致。
 
@@ -31,6 +32,7 @@
 - `.\.venv\Scripts\python.exe -m pytest -q`：`425 passed, 1 skipped`。
 - `cd D:\chat\agens-web\web\frontend-react; npm run build`：通过；`tests\web\test_frontend_contract.py` 单文件为 `16 passed`。
 - `.\.venv\Scripts\python.exe -m pytest -q tests\web\test_frontend_contract.py tests\web\test_web_api.py::test_session_routes_map_service_errors`：`24 passed`。
+- `.\.venv\Scripts\python.exe -m pytest -q tests\web\test_web_api.py::test_web_api_minimum_game_flow tests\web\test_web_api.py::test_session_routes_map_service_errors`：`9 passed`，覆盖 `/choice` 与 `/action` 共用回合推进路径。
 - `curl.exe -i --max-time 10 https://game.jiayp2917.xyz/api/health`：HTTP 200，`{"status":"ok"}`。
 - `curl.exe -i --max-time 10 https://game.jiayp2917.xyz/api/catalog/talents`：HTTP 200，公网可读 10 条 talent seed。
 - Chrome DevTools MCP：桌面 1280x900 与移动 375x812 均可完成访客新游戏、角色创建、进入游戏、模型失败兜底、继续本局；修复后移动截图保存在 `D:\2917\agens-web-mobile-smoke-after-fix.png`。
@@ -43,7 +45,7 @@
 
 - 服务器只读验证已确认公网 health / catalog 和 `agens-web` 容器 healthy；但生产库仍停在 Alembic `20260621_0002`，`game_runs` / `game_turns` / `player_progress` 三张 v5 表缺失。下一次生产验收前必须按部署流程交付新包并执行迁移。
 - 375px、桌面和 2560x1440 视口的本地浏览器链路已验证；桌面本地账号注册/登录/存读档已验证；成功 live model 回合已在本地验证。生产 v5 迁移、生产账号链路和生产真实回合仍需继续验收。
-- 当前工作区仍有 UI/年份修复相关未提交改动；合入前需要二次确认是否一并提交。
+- 本地已完成并提交 UI/年份、账号、2K 和 live model smoke 记录；当前未完成项集中在生产 v5 迁移/部署验收、生产账号链路和生产 live model/account smoke。
 
 ## 目标架构
 
