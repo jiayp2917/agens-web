@@ -46,6 +46,9 @@ evidence.
   - 375px mobile guest start
   - fallback continuation
   - latest chronicle card at `玄元历 2 年` after turn 1
+  - local live-model turn with temporary SQLite: choice returns HTTP 200,
+    `fallback_prompt.active=false`, and the UI refreshes narrative plus A/B/C/D
+    choices
 - Package manifest or archive hash is recorded before upload.
 - Server-side app backup path is recorded before replacement.
 - PostgreSQL backup or restore point is recorded before Alembic migration.
