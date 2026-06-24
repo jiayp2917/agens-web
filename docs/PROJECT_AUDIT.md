@@ -40,12 +40,18 @@
 - Chrome DevTools MCP：桌面本地账号流通过，使用临时 SQLite 和本地一次性邀请码完成注册/登录、账号新局、保存 `slot_1`、读取 `slot_1`，`/api/saves` 返回 `slot_1` / `存档测试` / `turn_count=0`。
 - Chrome DevTools MCP：2560x1440 emulation 通过首页、角色创建和初始游戏页布局检查，无横向溢出；角色创建三栏、开始按钮、游戏状态栏、故事面板和 A/B/C/D 均在视口内。截图证据：`D:\2917\agens-web-2k-game-smoke.png`。
 - Chrome DevTools MCP：本地 live model smoke 通过，使用临时 SQLite 与仅检查“环境变量是否存在”的方式启动本地服务；访客开局后点击 A，`/api/sessions/{id}/choice` 返回 HTTP 200，`fallback_prompt.active=false`，页面推进到回合 1 并刷新叙事与 A/B/C/D 选项。
+- P0 生产 v5 本地交付包已准备：`D:\chat\outputs\packages\agens-web\agens-web-11ae5e9-20260624-173644.zip`，commit `11ae5e9699277ce08b42a9331932354895922149`，SHA256 `526b8b6cbbc1abd60b1a03b1d73369778abf8c723d439579526532d9744017ad`；manifest 见 `D:\chat\outputs\packages\agens-web\agens-web-11ae5e9-20260624-173644.manifest.md`。包由 `git archive HEAD` 生成，未包含 `.env`、`production.env`、依赖目录、缓存或本地前端 `dist`。
 
 未完成确认：
 
-- 服务器只读验证已确认公网 health / catalog 和 `agens-web` 容器 healthy；但生产库仍停在 Alembic `20260621_0002`，`game_runs` / `game_turns` / `player_progress` 三张 v5 表缺失。下一次生产验收前必须按部署流程交付新包并执行迁移。
-- 375px、桌面和 2560x1440 视口的本地浏览器链路已验证；桌面本地账号注册/登录/存读档已验证；成功 live model 回合已在本地验证。生产 v5 迁移、生产账号链路和生产真实回合仍需继续验收。
-- 本地已完成并提交 UI/年份、账号、2K 和 live model smoke 记录；当前未完成项集中在生产 v5 迁移/部署验收、生产账号链路和生产 live model/account smoke。
+- 服务器线程 `019ee2ee-823e-7441-bdaa-881782da7949` 已完成部署前只读预检：包 hash 可见且匹配，公网 health/catalog、内部 origin health、容器健康、staging/backup 路径候选均确认；未执行备份、部署、迁移、重启、删除、sudo 或 secrets 读取。该结果只说明“可以进入待批准部署窗口”，不代表生产通过。
+- 用户批准后的 2026-06-24 P0 生产 v5 部署批次未通过：包上传与服务器 SHA256 校验通过，PostgreSQL 备份 `/srv/jiayp/backups/postgres/postgres-20260624-180554.sql.gz` 和 app 备份 `/srv/jiayp/backups/agens-web/agens-web-app-20260624-180650.tar.gz` 均已生成并通过可读性检查；`/srv/jiayp/apps/agens-web` 已替换为新包源码，旧目录保留在 `/srv/jiayp/apps/agens-web.pre-v5-20260624-180650`。随后 Docker build 在 `pip install -r requirements.txt` 阶段因无法解析 `langchain-core>=0.3.0` 停止；未执行 Alembic、未重启容器、未回滚。失败后只读确认旧运行容器仍 healthy，公网 health/catalog 正常，生产 Alembic 仍为 `20260621_0002`。
+- 停止点只读诊断显示：当前源码仍包含 `langchain-core>=0.3.0`，Docker runtime 为 `python:3.12-slim`，临时 `python:3.12-slim` 容器可以看到 `langchain-core` 且包含 `0.3.0` 到 `1.4.8`；因此更可能是构建当时的 pip 索引/网络临时异常，而不是依赖约束或 Python 3.12 本身错误。
+- build-only 重试已通过 host-network fallback，生成镜像 `sha256:f2d2b86e3de0c9aff5131ed238c84eb435cb0d31983e5e4629b8b75add4d6c15`；随后的生产迁移/重启批次已将 Alembic 升级到 `20260622_0004` 并确认 `game_runs` / `game_turns` / `player_progress` 存在，但新容器因 `deploy/docker-entrypoint.sh` 在镜像内为 CRLF 行尾导致 `env: 'sh\r': No such file or directory`，进入 `Restarting (127)`，公网 health 一度为 HTTP 502。
+- 已批准的 entrypoint CRLF hotfix 已通过：服务器仅替换 `.gitattributes`、`Dockerfile`、`deploy/docker-entrypoint.sh`，窄备份在 `/srv/jiayp/backups/agens-web/entrypoint-crlf-hotfix-20260624-185815/`；新镜像 `sha256:445367f496bf3b1acb8b091442f775b9c74240251cc19efdfab2d45562dbc791` 运行 healthy，origin/public health HTTP 200，public catalog talents 10 条，Alembic `20260622_0004` 与三张 v5 表仍存在，日志敏感标记扫描为 0，访客开局和一回合均 HTTP 200。
+- 本地已针对该启动失败做源头硬化：`.gitattributes` 强制 shell 脚本和 Dockerfile 为 LF，Dockerfile 复制 entrypoint 后执行 `sed -i 's/\r$//'`，防止后续构建再次带入 CRLF。
+- 375px、桌面和 2560x1440 视口的本地浏览器链路已验证；桌面本地账号注册/登录/存读档已验证；成功 live model 回合已在本地验证。生产账号链路仍未验收，因为没有安全非 secret 测试账号路径；生产 live model 成功也未验收，因为访客 smoke 返回 `fallback_prompt_active=true`，只能证明 fallback 游玩链路恢复。
+- 本地已完成并提交 UI/年份、账号、2K 和 live model smoke 记录；当前未完成项集中在生产账号链路、生产 live model 成功验收、公开 Alpha 观察、回滚演练和后续复杂度治理。
 
 ## 目标架构
 
@@ -121,7 +127,7 @@ Browser UI
 | P2 | Web 多用户会引入会话隔离和密钥安全问题。 | API 层统一鉴权、限流、脱敏日志和 per-user session 存储。 |
 | P2 | FastAPI 路由仍集中在单文件内，但重复 service 异常映射已完成第一步收束。 | 下一步如继续拆路由，应先保持 `service_call()` / 鉴权依赖语义不变，再拆 `auth_router`、`catalog_router`、`session_router`、`settings_router`。 |
 | P2 | SQLite / PostgreSQL 双轨仍有 DDL、SQL 方言和事务边界重复；catalog row / progress summary 已先收束为共享 helper。 | 继续用小批次抽公共 row shaping、save summary、run-turn 读取 helper；暂不引入新 ORM 抽象，也不改已部署 Alembic revision。 |
-| P0 | 服务器生产库仍停在 Alembic `20260621_0002`，缺少 `game_runs`、`game_turns`、`player_progress`，与当前 v5 代码/本地测试不一致。 | 下一次生产动作必须先打包当前代码、备份、执行 Alembic 迁移到 head，再只读确认 revision 和三张表存在；未完成前不要把公网 v5 表能力视为已验收。 |
+| P0 | 生产 v5 服务已恢复：Alembic `20260622_0004`、三张 v5 表存在、容器 healthy、origin/public health 200、catalog 10 条、访客开局和一回合 200。但生产账号流未验收，production live model 未验收（访客 smoke 为 fallback）。 | 用安全非 secret 测试账号补验注册/登录/存读档；在不输出 secrets 的前提下补验 production live model，fallback 不能算成功。继续公开 Alpha 日志脱敏、限流、Cookie/Origin 和备份观察。 |
 | P2 | PostgreSQL 设计和 Alembic 迁移已经补齐 Alpha 必需表，但生产仍需索引评审、备份恢复和回滚演练。 | 设置 `TEST_DATABASE_URL` 跑空库迁移和账号游玩链路；生产运行时 `APP_ENV=production` 自动拒绝 `AGENS_PG_AUTO_DDL=1`；安排维护窗口做回滚演练。 |
 | P2 | 访客局只在单进程内存中，容器重启、多 worker 或多副本会丢失。 | Alpha 阶段明确提示；正式多人部署前引入共享会话存储或只允许账号局跨进程恢复。 |
 | P2 | 匿名访客仍可能消耗模型额度。 | 增加访客日限额、IP/设备限额、模型预算保护和边缘层限流。 |
@@ -199,3 +205,17 @@ Browser UI
 - 改动：`tests/web/test_web_api.py` 新增 `test_session_routes_map_service_errors`，覆盖 session/death_summary 路由中 `KeyError -> 404`、`PermissionError -> 403`、`ValueError -> 400`。
 - 验证：`pytest -q tests\web\test_web_api.py::test_session_routes_map_service_errors` 为 `8 passed`；合并前端契约测试后 `24 passed`。
 - 剩余风险：这覆盖 route 层异常映射，不代表所有服务内部错误分支都有业务级断言。
+
+## 2026-06-24 本地复杂度治理 (P1)
+
+- 边界：只在本仓库内做复杂度收束和文档一致性维护，不重启服务、不做服务器/SSH/Cloudflare/Caddy/Tunnel/DNS/firewall/生产数据库/生产账号/生产 live model 验证，也不做浏览器/Chrome/Playwright 验证。
+- 改动：
+  - `GameEngine._run_breakthrough_narrator()` 收束 `attempt_breakthrough()` 中 `run_turn_sync` 调用 + try/except 分支，异常 fallback 使用 `source="breakthrough_narrator_exception"`。外部行为和回调 payload 不变；`if result.get("llm_error")` 与 `source="breakthrough_narrator_error"` fallback **仍在 `attempt_breakthrough()` 内联**，是下一批 P1 候选。
+  - `WebGameService._require_non_guest_runner(action=...)` 收束 `save`/`load` 重复的 `is_guest_user_id → PermissionError("访客…")` 守卫；其余 6 处 runner 解析保持 `self._runner(session_id, user_id=user_id)` 直接调用。中间版的 `_with_runner()` 薄别名因为没有额外语义，在同一批次中移除。
+  - `web/backend/database_common.encode_game_turn_json()` 收束 `database_sqlite.record_game_turn` 与 `database_postgres.record_game_turn` 中 `choices` / `state_delta` / `state_after` 的 JSON 编码；SQL、schema、Alembic revision 均未变更。
+  - `CharacterCreatePage.tsx` 折叠三处 `<CatalogGroup>` 块为 `fateGroups` 数据驱动循环；`character-create.css` 合并重复的 `.character-page` 规则。
+- 同步清理：
+  - 删除 `web/backend/database_common.GAME_TURN_JSON_FIELDS` 常量（仓库内无任何调用点，属于治理批次新增后遗留的未使用常量）。
+- 验证：`compileall -q src tests web scripts migrations` 通过；`pytest -q tests\web` 为 `49 passed, 1 skipped`；`pytest -q` 为 `425 passed, 1 skipped`；`pytest -q tests/unit/engine/...` + `tests/unit/game/test_database_common.py` 为 `56 passed`；`npm.cmd run build` 通过（1602 modules / 24.34 kB CSS / 190.37 kB JS）。
+- 显式声明：本批次**不**代表生产账号流或 production live model 已验收；P0 生产动作仍由 `docs/PRODUCTION_V5_MIGRATION_CHECKLIST.md` 与 `docs/NEXT_GOVERNANCE_BACKLOG.md` P0 段记录，需要服务器线程处理。
+- 剩余风险：上一轮基线中 production account flow 与 production live model 仍未验收；`GameEngine.handle_action` / `new_game` / `_generate_profile_opening` 的模型失败分支 + `attempt_breakthrough` 的 `llm_error` 分支仍是下一批 P1 候选；React 样式文件拆分仍为 P2。

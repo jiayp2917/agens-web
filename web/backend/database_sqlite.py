@@ -13,6 +13,7 @@ from .database_common import (
     decode_json_fields,
     default_db_path,
     dump_json,
+    encode_game_turn_json,
     now_ts,
     player_progress_summary,
     prepare_catalog_row,
@@ -706,8 +707,10 @@ class SQLiteWebDatabase:
                     (id, user_id, session_id, char_name, realm, death_cause, ascended, turn_count, finished_at)
                 VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
                 """,
-                (run_id, user_id, session_id, char_name, realm, death_cause,
-                 1 if ascended else 0, turn_count, now),
+                (
+                    run_id, user_id, session_id, char_name, realm, death_cause,
+                    1 if ascended else 0, turn_count, now,
+                ),
             )
             # Upsert progress counters.
             row = conn.execute(
@@ -745,6 +748,9 @@ class SQLiteWebDatabase:
         """Append one settled turn to the game_turns log (spec §8.3)."""
         now = now_ts()
         turn_id = str(uuid.uuid4())
+        choices_json, delta_json, after_json = encode_game_turn_json(
+            choices, state_delta, state_after,
+        )
         with self.connect() as conn:
             conn.execute(
                 """
@@ -756,9 +762,8 @@ class SQLiteWebDatabase:
                 VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                 """,
                 (turn_id, run_id, turn_no, start_age, elapsed_years, end_age, lifespan,
-                 remaining_lifespan, choice_taken, dump_json(choices), dump_json(state_delta),
-                 dump_json(state_after), calendar_summary, narrative, event_kind,
-                 end_reason, now),
+                 remaining_lifespan, choice_taken, choices_json, delta_json, after_json,
+                 calendar_summary, narrative, event_kind, end_reason, now),
             )
         return turn_id
 

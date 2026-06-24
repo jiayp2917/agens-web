@@ -141,6 +141,24 @@ def safe_name(name: str) -> str:
     return cleaned or "slot_1"
 
 
+def encode_game_turn_json(
+    choices: list,
+    state_delta: dict,
+    state_after: dict,
+) -> tuple[str, str, str]:
+    """Return (choices, state_delta, state_after) as compact JSON strings.
+
+    SQLite stores these in `_json`-suffixed TEXT columns; Postgres casts them
+    to JSONB. Either way the value is the same encoded string, so this helper
+    keeps the two write paths in sync.
+    """
+    return (
+        dump_json(choices),
+        dump_json(state_delta),
+        dump_json(state_after),
+    )
+
+
 def public_user(user: dict[str, Any]) -> dict[str, Any]:
     return {
         "id": user["id"],

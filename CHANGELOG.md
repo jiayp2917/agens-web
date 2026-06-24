@@ -9,6 +9,7 @@
 - Frontend contract checks for the image-based QQ icon, the fate summary-card structure, and chronicle year-prefix cleanup.
 - Project-status notes in `docs/PROJECT_AUDIT.md`, `docs/UI_REFACTOR_PLAN.md`, and `docs/INDEX.md` for the current UI batch, validation results, and browser-validation boundary.
 - `docs/NEXT_GOVERNANCE_BACKLOG.md` as the active backlog separating production-approved work, local complexity reduction, cleanup, and validation rules.
+- Production v5 local package manifest for commit `11ae5e9699277ce08b42a9331932354895922149`, archive `D:\chat\outputs\packages\agens-web\agens-web-11ae5e9-20260624-173644.zip`, and SHA256 `526b8b6cbbc1abd60b1a03b1d73369778abf8c723d439579526532d9744017ad`.
 
 ### Changed
 
@@ -24,12 +25,31 @@
 - `WebGameService.choose()` and `WebGameService.act()` now share the same private turn-advance helper, keeping turn execution, settled-turn persistence, session persistence, and response shaping in one path.
 - Alpha review and game-mode spec now align the production gate with Alembic head `20260622_0004` and the completed local Chrome/account/live-model validation coverage.
 - `docs/INDEX.md` now routes structure cleanup and technical-debt work through the active governance backlog before deeper audit docs.
+- Docker image hardening now strips CRLF from the copied `agens-web` entrypoint, and `.gitattributes` forces shell scripts and the Dockerfile to LF line endings.
+- `GameEngine.attempt_breakthrough()` now delegates the breakthrough-narrator
+  invocation to `_run_breakthrough_narrator()`. That helper only owns the raw
+  exception branch (try/except + `_set_choices` fallback with
+  `source="breakthrough_narrator_exception"`); the post-call `llm_error` branch
+  with `source="breakthrough_narrator_error"` is still inlined in
+  `attempt_breakthrough()`.
+- `WebGameService` keeps `_require_non_guest_runner(action=...)`, which
+  consolidates the `is_guest_user_id → PermissionError("访客…")` guard used by
+  `save` and `load`. The intermediate `_with_runner()` alias was reverted in
+  the same pass because it had no extra semantics over `_runner()`.
+- `web/backend/database_common.py` adds `encode_game_turn_json()` to keep the
+  `choices` / `state_delta` / `state_after` JSON encoding in lockstep between
+  the SQLite and PostgreSQL `record_game_turn` writers; SQL, schema and
+  column names are unchanged.
+- `CharacterCreatePage` collapses the three repeated `<CatalogGroup>` blocks
+  into a small `fateGroups` data-driven loop. `character-create.css` merges
+  the duplicate `.character-page` rule.
 
 ### Verification
 
 - `python -m compileall -q src tests web scripts migrations` clean.
 - `pytest -q tests\web` -> 49 passed, 1 skipped (`TEST_DATABASE_URL` not configured).
 - `pytest -q` -> 425 passed, 1 skipped.
+- `pytest -q tests/unit/engine/test_game_engine_turn.py tests/unit/engine/test_game_engine_setup.py tests/unit/engine/test_game_engine_state.py tests/unit/game/test_database_common.py` -> 56 passed.
 - `npm run build` passed; frontend contract test `tests\web\test_frontend_contract.py` passed 16 tests.
 - `pytest -q tests\web\test_web_api.py::test_web_api_minimum_game_flow tests\web\test_web_api.py::test_session_routes_map_service_errors` -> 9 passed; the minimum flow now covers both `/choice` and `/action` turn persistence.
 - Documentation consistency check: `rg` now routes production acceptance to Alembic head `20260622_0004`, while local Chrome/account/live-model coverage is separated from still-open production account/model smoke.
@@ -39,6 +59,90 @@
 - Chrome 2560x1440 emulation smoke passed for home, character creation, and initial game view. No horizontal overflow was detected; the creation panels, start button, game grid, status rail, story panel, and A/B/C/D buttons stayed within the viewport.
 - Chrome local live-model smoke passed with a temporary SQLite database and non-secret environment-presence check only: guest start plus choice A returned `/api/sessions/{id}/choice` HTTP 200, `fallback_prompt.active=false`, turn count 1, refreshed narrative, and refreshed A/B/C/D choices.
 - Server read-only validation confirmed public health/catalog and container health, but production Alembic is still `20260621_0002` and v5 tables `game_runs`, `game_turns`, `player_progress` are missing.
+- Production package content check found no `.env`, `production.env`, `node_modules/`, `.venv/`, cache directories, or local frontend `dist` in the archive; the package was created from tracked `HEAD` files with `git archive`.
+- Server deployment preflight thread `019ee2ee-823e-7441-bdaa-881782da7949` confirmed package hash visibility, public health/catalog, internal origin health, healthy `agens-web` container, and staging/backup path candidates; it did not deploy, back up, migrate, restart, or read/print secrets.
+- Approved production v5 deployment attempt stopped before Alembic/restart: server package upload and SHA256 verification passed, PostgreSQL backup `/srv/jiayp/backups/postgres/postgres-20260624-180554.sql.gz` and app backup `/srv/jiayp/backups/agens-web/agens-web-app-20260624-180650.tar.gz` were created, `/srv/jiayp/apps/agens-web` was replaced, then Docker build failed resolving `langchain-core>=0.3.0`. Existing running container stayed healthy, public health/catalog stayed OK, and production Alembic remained `20260621_0002`.
+- Read-only server diagnosis found `requirements.txt` still contains `langchain-core>=0.3.0`, Docker runtime is `python:3.12-slim`, and a temporary `python:3.12-slim` container can see `langchain-core` versions including `0.3.0`; the build stop is most likely a transient or build-context-specific pip index/network issue.
+- Prepared the build-only retry prompt `D:\chat\outputs\packages\agens-web\agens-web-11ae5e9-20260624-173644.server-build-only-prompt.md`, scoped to image build only and explicitly excluding Alembic, restart/recreate, rollback, and public exposure changes until separate approval.
+- Build-only retry passed using host-network fallback and produced image `sha256:f2d2b86e3de0c9aff5131ed238c84eb435cb0d31983e5e4629b8b75add4d6c15`; no Alembic, restart/recreate, rollback, or public exposure change was performed in that retry.
+- Approved migration/restart batch upgraded production Alembic to `20260622_0004` and confirmed `game_runs`, `game_turns`, and `player_progress`, then stopped after the recreated `agens-web` container failed with exit 127 due CRLF in the image entrypoint (`env: 'sh\r': No such file or directory`). Public health was HTTP 502 at that stop point; the later approved entrypoint hotfix restored service.
+- Prepared the entrypoint CRLF hotfix prompt `D:\chat\outputs\packages\agens-web\agens-web-11ae5e9-20260624-173644.entrypoint-crlf-hotfix-prompt.md`, scoped to LF normalization, build-only, only `agens-web` recreation, and post-deploy verification.
+- Prepared entrypoint CRLF hotfix package `D:\chat\outputs\packages\agens-web\agens-web-entrypoint-crlf-hotfix-20260624-185815.zip` with SHA256 `261ecef7fbeac0928b076802e4cd458607c651ae15153f9ea700a01afd8ce1f4`; contents are limited to `.gitattributes`, `Dockerfile`, and `deploy/docker-entrypoint.sh`, and the packaged entrypoint is LF-only.
+- Server read-only hotfix preflight confirmed production is still in the same failed state: container `Restarting (127)`, public health HTTP 502, origin connect failed, Alembic `20260622_0004`, v5 tables present, deployed entrypoint `crlf_count=10`, deployed Dockerfile hardening missing, backups present, and the prepared hotfix package visible with matching SHA256.
+- Approved entrypoint CRLF hotfix passed: server changed only `.gitattributes`, `Dockerfile`, and `deploy/docker-entrypoint.sh`, backed those files up at `/srv/jiayp/backups/agens-web/entrypoint-crlf-hotfix-20260624-185815/`, built image `sha256:445367f496bf3b1acb8b091442f775b9c74240251cc19efdfab2d45562dbc791`, recreated only `agens-web`, and restored healthy origin/public health.
+- Production smoke after the hotfix confirmed Alembic `20260622_0004`, `game_runs` / `game_turns` / `player_progress`, public catalog talents count 10, log sensitive-marker count 0, guest start HTTP 200, and guest one-turn HTTP 200 with four options.
+- Production v5 is only partially accepted: account registration/login/save/load still needs a safe non-secret test account path, and live-model success was not accepted because the production guest smoke returned `fallback_prompt_active=true`.
+
+## 2026-06-24 Local complexity governance (P1)
+
+- This sub-section records a local-only governance pass. It does **not**
+  accept any production action; production acceptance still requires the
+  Codex / server thread batch described in
+  `docs/PRODUCTION_V5_MIGRATION_CHECKLIST.md`.
+
+### Added
+
+- `GameEngine._run_breakthrough_narrator()` private helper that owns the
+  breakthrough-narrator `run_turn_sync` call and its raw exception fallback
+  (`source="breakthrough_narrator_exception"` + `_set_choices`). The post-call
+  `llm_error` branch (`source="breakthrough_narrator_error"`) is still inlined
+  inside `attempt_breakthrough()` and is the next P1 candidate.
+- `WebGameService._require_non_guest_runner(action=...)` private helper that
+  consolidates the `is_guest_user_id → PermissionError("访客…")` guard used
+  by `save` and `load`. The original `_with_runner()` thin alias was removed
+  in the same pass because it added no semantics over `_runner()`.
+- `web/backend/database_common.encode_game_turn_json()` central helper used
+  by both `database_sqlite.record_game_turn()` and
+  `database_postgres.record_game_turn()` for the
+  `choices` / `state_delta` / `state_after` JSON encoding step.
+
+### Changed
+
+- `GameEngine.attempt_breakthrough()` now invokes
+  `_run_breakthrough_narrator()` instead of inlining the
+  `run_turn_sync` + try/except branch. The `_set_choices` fallback emitted
+  from that helper still uses `source="breakthrough_narrator_exception"`.
+  The follow-up `if result.get("llm_error")` check, the
+  `突破叙事失败: <error>` payload and the `source="breakthrough_narrator_error"`
+  fallback remain inline inside `attempt_breakthrough()`.
+- `WebGameService.save()` and `WebGameService.load()` now resolve runners
+  through `_require_non_guest_runner(action=...)`, which centralises the
+  `is_guest_user_id → PermissionError("访客…")` raise. The other call sites
+  (`get_session`, `start_session`, `choose`, `act`, `end_session`,
+  `death_summary`) keep the direct `self._runner(session_id, user_id=user_id)`
+  call they used before; the interim `_with_runner()` alias was removed in
+  the same pass because it had no extra logic.
+- `database_sqlite.record_game_turn()` and
+  `database_postgres.record_game_turn()` now call
+  `encode_game_turn_json()` so the JSON encoding lives in one helper.
+- `web/frontend-react/src/pages/CharacterCreatePage.tsx` declares a
+  `fateGroups` config array and renders the three `<CatalogGroup>` items
+  via a `.map()`; the per-group `selectedName` / `onSelect` / open-state
+  wiring is unchanged.
+- `web/frontend-react/src/styles/character-create.css` merges the duplicate
+  `.character-page` rule into a single block (no visual change).
+
+### Verification
+
+- `python -m compileall -q src tests web scripts migrations` clean.
+- `pytest -q tests\web` -> 49 passed, 1 skipped (`TEST_DATABASE_URL` not configured).
+- `pytest -q` -> 425 passed, 1 skipped.
+- `pytest -q tests/unit/engine/test_game_engine_turn.py tests/unit/engine/test_game_engine_setup.py tests/unit/engine/test_game_engine_state.py tests/unit/game/test_database_common.py` -> 56 passed.
+- `cd web\frontend-react; npm.cmd run build` -> 1602 modules, 24.34 kB CSS, 190.37 kB JS.
+- No server, deploy, SSH, production account, production live model, or
+  browser/Playwright validation was performed in this pass.
+
+### Known deferred items (still on the backlog)
+
+- Production account flow verification on a safe non-secret test account.
+- Production live-model success verification (the production guest smoke
+  still returned `fallback_prompt_active=true`).
+- Further `GameEngine` decomposition beyond the breakthrough-narrator
+  slice; the next candidates are the `narrator_exception` / `narrator_error`
+  paths in `handle_action` and the `world_builder` paths in
+  `new_game` / `_generate_profile_opening`.
+- React style file split is still a P2 candidate; the current pass only
+  collapsed the duplicate `.character-page` rule.
 
 ## 2026-06-23
 

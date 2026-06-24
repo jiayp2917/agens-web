@@ -851,6 +851,30 @@ class GameEngine:
         )
         return any(kw in compact for kw in keywords)
 
+    def _run_breakthrough_narrator(self, action_text: str) -> dict[str, Any] | None:
+        """Invoke the narrator for a breakthrough attempt.
+
+        Returns the narrator result dict on success, or None after the engine
+        has already emitted a model-failure fallback (set_choices / error).
+        """
+        try:
+            return run_turn_sync(
+                "narrator", action_text, self.game_session,
+                stream_callback=self._stream_callback if self.on_stream_chunk else None,
+            )
+        except Exception:
+            log.exception("breakthrough narrator error")
+            reason = "突破叙事失败"
+            self._emit("on_error", reason)
+            self._set_choices(
+                None,
+                source="breakthrough_narrator_exception",
+                fallback_notice=True,
+                require_choice=True,
+                reason=reason,
+            )
+            return None
+
     def _resolve_choice_input(self, text: str) -> str | None:
         """Map A/B/C/D or 1/2/3/4 input to the current model choice.
 
@@ -913,22 +937,8 @@ class GameEngine:
 
         # Use narrator to describe the breakthrough process.
         action_text = f"尝试从{self.game_session.realm}突破到更高境界"
-        try:
-            result = run_turn_sync(
-                "narrator", action_text, self.game_session,
-                stream_callback=self._stream_callback if self.on_stream_chunk else None,
-            )
-        except Exception:
-            log.exception("breakthrough narrator error")
-            reason = "突破叙事失败"
-            self._emit("on_error", reason)
-            self._set_choices(
-                None,
-                source="breakthrough_narrator_exception",
-                fallback_notice=True,
-                require_choice=True,
-                reason=reason,
-            )
+        result = self._run_breakthrough_narrator(action_text)
+        if result is None:
             return
 
         if result.get("llm_error"):

@@ -14,6 +14,7 @@ from .database_common import (
     catalog_seed_sources,
     decode_json_fields,
     dump_json,
+    encode_game_turn_json,
     now_ts,
     player_progress_summary,
     prepare_catalog_row,
@@ -870,6 +871,9 @@ class PostgresWebDatabase:
                          end_reason: str | None = None) -> str:
         """Append one settled turn to the game_turns log (spec §8.3)."""
         turn_id = str(uuid.uuid4())
+        choices_json, delta_json, after_json = encode_game_turn_json(
+            choices, state_delta, state_after,
+        )
         with self.engine.begin() as conn:
             conn.execute(
                 text(
@@ -891,9 +895,8 @@ class PostgresWebDatabase:
                     "start_age": start_age, "elapsed_years": elapsed_years,
                     "end_age": end_age, "lifespan": lifespan,
                     "remaining_lifespan": remaining_lifespan,
-                    "choice_taken": choice_taken, "choices": dump_json(choices),
-                    "state_delta": dump_json(state_delta),
-                    "state_after": dump_json(state_after),
+                    "choice_taken": choice_taken, "choices": choices_json,
+                    "state_delta": delta_json, "state_after": after_json,
                     "calendar_summary": calendar_summary, "narrative": narrative,
                     "event_kind": event_kind, "end_reason": end_reason,
                 },

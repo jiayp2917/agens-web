@@ -326,9 +326,7 @@ class WebGameService:
     def save(
         self, session_id: str, save_name: str = "slot_1", user_id: str | None = None
     ) -> dict[str, Any]:
-        runner = self._runner(session_id, user_id=user_id)
-        if is_guest_user_id(runner.user_id):
-            raise PermissionError("访客游玩不提供云端存档，请先注册或登录。")
+        runner = self._require_non_guest_runner(session_id, user_id, action="存档")
         save = self.db.save_game_slot(
             runner.user_id,
             save_name,
@@ -342,9 +340,7 @@ class WebGameService:
     def load(
         self, session_id: str, save_name: str = "slot_1", user_id: str | None = None
     ) -> dict[str, Any]:
-        runner = self._runner(session_id, user_id=user_id)
-        if is_guest_user_id(runner.user_id):
-            raise PermissionError("访客游玩不提供云端读档，请先注册或登录。")
+        runner = self._require_non_guest_runner(session_id, user_id, action="读档")
         saved = self.db.load_save(runner.user_id, save_name)
         if saved is None:
             raise KeyError(f"存档不存在: {save_name}")
@@ -488,6 +484,19 @@ class WebGameService:
             }
         )
         return self.model_settings()
+
+    def _require_non_guest_runner(
+        self,
+        session_id: str,
+        user_id: str | None,
+        *,
+        action: str,
+    ) -> WebRunner:
+        """Resolve a runner and reject guest callers for the given action."""
+        runner = self._runner(session_id, user_id=user_id)
+        if is_guest_user_id(runner.user_id):
+            raise PermissionError(f"访客游玩不提供云端{action}，请先注册或登录。")
+        return runner
 
     def _runner(self, session_id: str, user_id: str | None = None) -> WebRunner:
         if session_id in self.runners:

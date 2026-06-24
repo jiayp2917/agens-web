@@ -47,6 +47,37 @@ export function CharacterCreatePage({
   } = useCharacterFormReducer(catalogs);
   const { choiceMode, talent, spiritRoot, familyBackground, difficulty, attrValues } = state;
 
+  const fateGroups = [
+    {
+      key: "talent" as const,
+      title: "天赋",
+      description: "影响修行节奏、突破叙事与关键事件。",
+      manual: manualTalents,
+      random: randomTalents,
+      selectedName: talent,
+      onSelect: setTalent,
+      icon: <Sparkles size={18} />,
+    },
+    {
+      key: "root" as const,
+      title: "灵根",
+      description: "影响境界突破、机缘类型与修炼取向。",
+      manual: manualRoots,
+      random: randomRoots,
+      selectedName: spiritRoot,
+      onSelect: setSpiritRoot,
+    },
+    {
+      key: "family" as const,
+      title: "家世",
+      description: "决定出生叙事、初始关系与外界牵连。",
+      manual: manualFamilies,
+      random: randomFamilies,
+      selectedName: familyBackground,
+      onSelect: setFamilyBackground,
+    },
+  ];
+
   const submit = async (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault();
     const form = new FormData(event.currentTarget);
@@ -100,37 +131,20 @@ export function CharacterCreatePage({
           <header>
             <h2>命数<span className="seal">命</span></h2>
           </header>
-          <CatalogGroup
-            title="天赋"
-            description="影响修行节奏、突破叙事与关键事件。"
-            items={choiceMode === "manual" ? manualTalents : randomTalents}
-            selectedName={talent}
-            onSelect={setTalent}
-            disabled={choiceMode === "random"}
-            icon={<Sparkles size={18} />}
-            open={openFateGroup === "talent"}
-            onToggle={() => setOpenFateGroup("talent")}
-          />
-          <CatalogGroup
-            title="灵根"
-            description="影响境界突破、机缘类型与修炼取向。"
-            items={choiceMode === "manual" ? manualRoots : randomRoots}
-            selectedName={spiritRoot}
-            onSelect={setSpiritRoot}
-            disabled={choiceMode === "random"}
-            open={openFateGroup === "root"}
-            onToggle={() => setOpenFateGroup("root")}
-          />
-          <CatalogGroup
-            title="家世"
-            description="决定出生叙事、初始关系与外界牵连。"
-            items={choiceMode === "manual" ? manualFamilies : randomFamilies}
-            selectedName={familyBackground}
-            onSelect={setFamilyBackground}
-            disabled={choiceMode === "random"}
-            open={openFateGroup === "family"}
-            onToggle={() => setOpenFateGroup("family")}
-          />
+          {fateGroups.map((group) => (
+            <CatalogGroup
+              key={group.key}
+              title={group.title}
+              description={group.description}
+              items={choiceMode === "manual" ? group.manual : group.random}
+              selectedName={group.selectedName}
+              onSelect={group.onSelect}
+              disabled={choiceMode === "random"}
+              icon={group.icon}
+              open={openFateGroup === group.key}
+              onToggle={() => setOpenFateGroup(group.key)}
+            />
+          ))}
           <p className="unlock-note">当前：{colorLabel(selectedTalent || { name: talent })} · {colorLabel(selectedRoot || { name: spiritRoot })} · {colorLabel(selectedFamily || { name: familyBackground })}</p>
         </section>
 
