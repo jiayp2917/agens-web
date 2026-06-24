@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import os
 import uuid
+from collections.abc import Callable
 from pathlib import Path
 from typing import Any
 from urllib.parse import urlparse
@@ -168,6 +169,12 @@ def create_app(db_path: Path | None = None) -> FastAPI:
             limit=limit,
             window_seconds=window_seconds,
         )
+
+    def service_call(operation: Callable[[], Any]) -> Any:
+        try:
+            return operation()
+        except (KeyError, PermissionError, ValueError) as exc:
+            raise service_http_error(exc) from exc
 
     def current_user(request: Request) -> dict[str, Any]:
         token = request.cookies.get(SESSION_COOKIE_NAME, "")
@@ -368,10 +375,9 @@ def create_app(db_path: Path | None = None) -> FastAPI:
         request: Request,
         user: dict[str, Any] | None = Depends(optional_user),
     ) -> dict[str, Any]:
-        try:
-            return service.get_session(session_id, user_id=session_owner_id(session_id, request, user))
-        except (KeyError, PermissionError, ValueError) as exc:
-            raise service_http_error(exc) from exc
+        return service_call(
+            lambda: service.get_session(session_id, user_id=session_owner_id(session_id, request, user))
+        )
 
     @app.post("/api/sessions/{session_id}/start")
     def start_session(
@@ -384,14 +390,13 @@ def create_app(db_path: Path | None = None) -> FastAPI:
         owner_id = session_owner_id(session_id, request, user)
         if owner_id is None:
             rate_limit(request, "guest_turn", limit=10, window_seconds=60)
-        try:
-            return service.start_session(
+        return service_call(
+            lambda: service.start_session(
                 session_id,
                 payload.model_dump(),
                 user_id=owner_id,
             )
-        except (KeyError, PermissionError, ValueError) as exc:
-            raise service_http_error(exc) from exc
+        )
 
     @app.post("/api/sessions/{session_id}/choice")
     def choose(
@@ -404,14 +409,13 @@ def create_app(db_path: Path | None = None) -> FastAPI:
         owner_id = session_owner_id(session_id, request, user)
         if owner_id is None:
             rate_limit(request, "guest_turn", limit=10, window_seconds=60)
-        try:
-            return service.choose(
+        return service_call(
+            lambda: service.choose(
                 session_id,
                 payload.model_dump(),
                 user_id=owner_id,
             )
-        except (KeyError, PermissionError, ValueError) as exc:
-            raise service_http_error(exc) from exc
+        )
 
     @app.post("/api/sessions/{session_id}/action")
     def act(
@@ -424,14 +428,13 @@ def create_app(db_path: Path | None = None) -> FastAPI:
         owner_id = session_owner_id(session_id, request, user)
         if owner_id is None:
             rate_limit(request, "guest_turn", limit=10, window_seconds=60)
-        try:
-            return service.act(
+        return service_call(
+            lambda: service.act(
                 session_id,
                 payload.action,
                 user_id=owner_id,
             )
-        except (KeyError, PermissionError, ValueError) as exc:
-            raise service_http_error(exc) from exc
+        )
 
     @app.post("/api/sessions/{session_id}/save")
     def save(
@@ -439,10 +442,7 @@ def create_app(db_path: Path | None = None) -> FastAPI:
         payload: SaveRequest,
         user: dict[str, Any] = Depends(current_user),
     ) -> dict[str, Any]:
-        try:
-            return service.save(session_id, payload.name, user_id=user["id"])
-        except (KeyError, PermissionError, ValueError) as exc:
-            raise service_http_error(exc) from exc
+        return service_call(lambda: service.save(session_id, payload.name, user_id=user["id"]))
 
     @app.post("/api/sessions/{session_id}/load")
     def load(
@@ -450,10 +450,7 @@ def create_app(db_path: Path | None = None) -> FastAPI:
         payload: SaveRequest,
         user: dict[str, Any] = Depends(current_user),
     ) -> dict[str, Any]:
-        try:
-            return service.load(session_id, payload.name, user_id=user["id"])
-        except (KeyError, PermissionError, ValueError) as exc:
-            raise service_http_error(exc) from exc
+        return service_call(lambda: service.load(session_id, payload.name, user_id=user["id"]))
 
     @app.post("/api/sessions/{session_id}/end")
     def end_session(
@@ -462,14 +459,13 @@ def create_app(db_path: Path | None = None) -> FastAPI:
         request: Request,
         user: dict[str, Any] | None = Depends(optional_user),
     ) -> dict[str, Any]:
-        try:
-            return service.end_session(
+        return service_call(
+            lambda: service.end_session(
                 session_id,
                 payload.reason,
                 user_id=session_owner_id(session_id, request, user),
             )
-        except (KeyError, PermissionError, ValueError) as exc:
-            raise service_http_error(exc) from exc
+        )
 
     @app.get("/api/saves")
     def saves(user: dict[str, Any] = Depends(current_user)) -> list[dict[str, Any]]:
@@ -481,13 +477,12 @@ def create_app(db_path: Path | None = None) -> FastAPI:
         request: Request,
         user: dict[str, Any] | None = Depends(optional_user),
     ) -> dict[str, Any]:
-        try:
-            return service.death_summary(
+        return service_call(
+            lambda: service.death_summary(
                 session_id,
                 user_id=session_owner_id(session_id, request, user),
             )
-        except (KeyError, PermissionError, ValueError) as exc:
-            raise service_http_error(exc) from exc
+        )
 
     @app.get("/api/users/me/legacy_bonuses")
     def legacy_bonuses(user: dict[str, Any] = Depends(current_user)) -> list[dict[str, Any]]:

@@ -18,6 +18,7 @@
 - 编年史年份显示已收束为“界面标题为权威”：后端事件记录补充当前年龄，前端清理叙事正文开头的 `玄历/玄元历...年` 前缀，避免标题与正文纪年冲突；Narrator 提示词同步要求正文不要自带年份前缀。
 - 当前浏览器自动验收应使用 Chrome DevTools MCP 或外部 Chrome；Codex 内置浏览器在本机仍存在 WebView2/GPU/虚拟显示驱动相关闪退风险，不作为可靠验收工具。
 - 本地未跟踪 `output/playwright/` 属于浏览器/截图运行产物，不是产品源码；提交前应单独决定删除或加入忽略规则。
+- 第一批最低风险复杂度收敛已完成：`web/backend/app.py` 将 session 类 endpoint 重复的 `KeyError` / `PermissionError` / `ValueError` 转 HTTP 异常样板收束到 `service_call()`，保持原 404 / 403 / 400 行为不变。
 
 最近一次本地验证结果：
 
@@ -104,6 +105,7 @@ Browser UI
 | P1 | 模型返回文本但缺少结构化选项时，容易进入兜底或阻断流程。 | 保持格式修复重试，并在 API 响应中区分请求失败、输出不完整、审核失败和本地兜底。 |
 | P2 | 本地故事兜底只达到最小可玩。 | 改成数据文件化故事节点，逐步扩展多套故事。 |
 | P2 | Web 多用户会引入会话隔离和密钥安全问题。 | API 层统一鉴权、限流、脱敏日志和 per-user session 存储。 |
+| P2 | FastAPI 路由仍集中在单文件内，但重复 service 异常映射已完成第一步收束。 | 下一步如继续拆路由，应先保持 `service_call()` / 鉴权依赖语义不变，再拆 `auth_router`、`catalog_router`、`session_router`、`settings_router`。 |
 | P2 | PostgreSQL 设计和 Alembic 迁移已经补齐 Alpha 必需表，但仍需确认服务器生产库已升级到 `20260622_0004_ddl_disallow_production` 及之后，并继续做索引评审、备份恢复和回滚演练。 | 设置 `TEST_DATABASE_URL` 跑空库迁移和账号游玩链路；服务器确认 `game_runs`、`game_turns`、`player_progress` 存在；生产运行时 `APP_ENV=production` 自动拒绝 `AGENS_PG_AUTO_DDL=1`。 |
 | P2 | 访客局只在单进程内存中，容器重启、多 worker 或多副本会丢失。 | Alpha 阶段明确提示；正式多人部署前引入共享会话存储或只允许账号局跨进程恢复。 |
 | P2 | 匿名访客仍可能消耗模型额度。 | 增加访客日限额、IP/设备限额、模型预算保护和边缘层限流。 |
@@ -150,3 +152,11 @@ Browser UI
 - 角色创建页“命数”折叠采用方案 A：摘要卡显示标题、说明、当前选择、颜色点和箭头；一次只展开一个分组，默认展开天赋；展开列表内部滚动，避免撑高整页。
 - 编年史年份冲突修复：后端事件增加当前年龄；前端按事件年龄或回合推导卡片年份，并清理正文开头纪年；当前规则是“开局为玄元历 1 年，第一回合后最新记录为玄元历 2 年”。
 - 自动浏览器验收工具边界更新：优先使用 Chrome DevTools MCP；Codex 内置浏览器仍记录为本机环境问题，不再作为验收阻断。
+
+## 2026-06-24 安全小重构 handoff
+
+- 边界：只处理 FastAPI route 层重复异常映射，不拆 router、不改 API schema、不改数据库或玩法。
+- 改动：`web/backend/app.py` 新增局部 `service_call()`，替换 session/start/choice/action/save/load/end/death_summary 中重复的 `try/except (KeyError, PermissionError, ValueError)`。
+- 行为：仍保持 `KeyError -> 404`、`PermissionError -> 403`、`ValueError -> 400`，其他异常继续走既有安全 500 响应。
+- 验证：`compileall -q src tests web scripts migrations` 通过；`pytest -q tests\web` 为 `41 passed, 1 skipped`；`pytest -q` 为 `414 passed, 1 skipped`。跳过项仍是未配置 `TEST_DATABASE_URL` 的 PostgreSQL smoke。
+- 下一批低风险候选：优先抽 `database_sqlite.py` / `database_postgres.py` 的共享 row/JSON/save/run-turn helper；暂不直接替换 ORM 或改 Alembic 历史。

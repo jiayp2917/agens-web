@@ -106,6 +106,26 @@
 - Web 后端日志只允许记录 provider、model、base_url、是否有 key、耗时和错误类型等脱敏信息。
 - 不回退其他产品线的任何内容。
 
+## Governance Constraints
+
+Before adding new logic, check whether existing framework, language, or project-local features can solve the problem with less code.
+
+Known recurring risks:
+- Architecture complexity: avoid growing large files, multi-responsibility classes, and after-the-fact abstractions. Prefer one small boundary per change.
+- Documentation drift: keep current facts, historical notes, future plans, and TODOs separated. Do not mix outdated plans with verified runtime facts.
+- AI over-implementation: do not add another layer of custom logic before asking whether old logic can be deleted, simplified, or replaced by existing framework/library features.
+
+Default priority:
+1. Reduce code complexity.
+2. Keep public/runtime behavior stable.
+3. Clean directories only with inventory, backup, and quarantine.
+4. Add features only after boundaries are clear.
+
+For deeper guidance, read:
+- `D:\chat\ai-governance\reviews\MAINTENANCE_STRATEGY.md`
+- `D:\chat\ai-governance\reviews\CODE_QUALITY_REVIEW_GUIDE.md`
+- `D:\chat\ai-governance\prompts\CODEX_WORKFLOWS.md`
+
 ## 常用命令
 
 ```powershell

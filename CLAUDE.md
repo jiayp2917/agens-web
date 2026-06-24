@@ -104,3 +104,9 @@
 - 不在 UI 明示隐藏触发规则或隐藏模式名称。
 - 不恢复已删除境界。
 - 不回退用户已有工作区改动。
+
+## Governance Constraints
+
+Follow `AGENTS.md` Governance Constraints before refactor, feature, cleanup, deployment, or documentation work.
+
+Do not add custom layers before checking whether existing FastAPI, SQLAlchemy/Alembic, React, Python, or project-local helpers can solve the problem with less code. Keep current facts, historical notes, future plans, and TODOs separated.
