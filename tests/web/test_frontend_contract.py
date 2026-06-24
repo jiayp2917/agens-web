@@ -84,7 +84,8 @@ def test_react_homepage_buttons_have_handlers() -> None:
     assert "BgmToggle" in source
     assert 'assetUrl("assets/audio/bgm.flac")' in source
     assert "agens web" not in source.lower()
-    assert '<span className="qq-icon" aria-hidden="true">仙</span>' in source
+    assert 'assetUrl("assets/xian-game-icon-256.png")' in source
+    assert '<span className="qq-icon" aria-hidden="true">仙</span>' not in source
     # v5 cleanup: homepage must not carry the WEB· eyebrow or the four-button description paragraph.
     assert "WEB · 文字修仙模拟器" not in source
     assert "从山门晨雾开始。A 稳妥、B 机遇、C 风险、D 气运，四选一推进修行岁月" not in source
@@ -102,6 +103,7 @@ def test_react_public_assets_are_present() -> None:
         "ascension_gate.png",
         "qq_group.png",
         "audio/bgm.flac",
+        "xian-game-icon-256.png",
     ):
         assert (assets / relative).is_file(), relative
 
@@ -134,7 +136,15 @@ def test_react_character_creation_uses_catalogs_and_game_mode() -> None:
     assert "手选最高：紫" in source
     assert "进入中..." in source
     assert "当前难度：{difficulty}" in source
-    assert 'details className="catalog-group"' in source
+    assert 'className={`catalog-group ${open ? "is-open" : ""}`}' in source
+    assert 'aria-expanded={open}' in source
+    assert "summary-copy" in source
+    assert "selected-pill" in source
+    assert "catalog-chevron" in source
+    assert "影响修行节奏、突破叙事与关键事件。" in source
+    assert "影响境界突破、机缘类型与修炼取向。" in source
+    assert "决定出生叙事、初始关系与外界牵连。" in source
+    assert "openFateGroup" in source
     assert "catalog-list" in source
     assert "selection-check" in source
     assert "choice_card_mountain.png" not in css
@@ -173,6 +183,8 @@ def test_react_game_page_has_escape_route_and_stable_meters() -> None:
     assert "realmLifespanCap" in source
     assert "value={remainingLifespan}" in source
     assert "ChronicleItem" in source
+    assert "cleanChronicleText" in source
+    assert "玄历" in source
     assert "ChoiceButton" in source
     assert "cleanChoiceText" in source
     assert "往事时间轴" in source

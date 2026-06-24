@@ -26,6 +26,11 @@ const recordTurn = (event: Record<string, unknown>) => {
   return Number.isFinite(number) && number >= 0 ? number : -1;
 };
 
+const cleanChronicleText = (text: string) =>
+  text
+    .replace(/(^|\n)\s*(?:玄元历|玄历|玄历元年)\s*[元一二三四五六七八九十百千万\d]*\s*年?[，,、：:\s]*/gu, "$1")
+    .trim();
+
 export function GamePage({
   session,
   busy,
@@ -63,7 +68,9 @@ export function GamePage({
   const cleanChoiceText = (choice: string) => String(choice || "").replace(/^【(?:稳妥|机遇|风险|气运)】\s*/, "").trim();
   const chronicleRecords = useMemo<ChronicleRecord[]>(() => {
     const visibleEvents = events.slice(-8);
-    const baseAge = Math.max(1, age - Math.max(visibleEvents.length - 1, 0));
+    const firstKnownStartAge = events.find((event) => recordAge(event) > 0 && recordTurn(event) <= 0);
+    const chronicleStartAge = firstKnownStartAge ? recordAge(firstKnownStartAge) : 0;
+    const baseAge = Math.max(1, age - Math.max(currentTurn, visibleEvents.length - 1, 0));
     if (!events.length) {
       return [{
         key: "empty",
@@ -74,17 +81,19 @@ export function GamePage({
       }];
     }
     const ages = visibleEvents.map((event, index) => recordAge(event) || Math.max(1, baseAge + index));
-    const firstChronicleAge = ages[0] || age;
     return visibleEvents.map((event, index, list) => {
-      const text = eventText(event);
+      const text = cleanChronicleText(eventText(event));
       const eventAge = ages[index] || Math.max(1, baseAge + index);
       const eventYear = recordYear(event);
       const eventTurn = recordTurn(event);
       const inferredTurn = Math.max(0, currentTurn - (list.length - 1 - index));
-      const fallbackYear = Math.max(1, eventAge - firstChronicleAge + 1);
+      const ageYear = chronicleStartAge > 0 && eventAge >= chronicleStartAge
+        ? eventAge - chronicleStartAge + 1
+        : 0;
+      const displayYear = ageYear || eventYear || (eventTurn >= 0 ? eventTurn + 1 : inferredTurn + 1);
       return {
         key: `${index}-${text.slice(0, 12)}`,
-        year: `玄元历 ${eventYear || (eventTurn >= 0 ? eventTurn + 1 : Math.max(inferredTurn + 1, fallbackYear))} 年`,
+        year: `玄元历 ${displayYear} 年`,
         age: `${eventAge}岁`,
         text,
         latest: index === list.length - 1,

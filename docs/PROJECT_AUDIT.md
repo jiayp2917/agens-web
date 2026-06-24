@@ -11,6 +11,27 @@
 - 模型失败、无 key、无有效选项时，用户可选择本地故事兜底继续或结束本局。
 - 境界顺序固定为：练气、筑基、金丹、元婴、化神、合体、大乘、渡劫、飞升。
 
+## 2026-06-24 当前状态
+
+- 本地 React 主入口仍是唯一产品入口；旧 `web/frontend` 不再存在。
+- UI 重构已进入截图验收后的细修阶段：首页 QQ 群左侧标识已改为独立图片资产 `web/frontend-react/public/assets/xian-game-icon-256.png`；角色创建页“命数”区已选择并落地 `docs/ui-prototypes/fate-collapse-prototype.html` 的方案 A 摘要式折叠卡。
+- 编年史年份显示已收束为“界面标题为权威”：后端事件记录补充当前年龄，前端清理叙事正文开头的 `玄历/玄元历...年` 前缀，避免标题与正文纪年冲突；Narrator 提示词同步要求正文不要自带年份前缀。
+- 当前浏览器自动验收应使用 Chrome DevTools MCP 或外部 Chrome；Codex 内置浏览器在本机仍存在 WebView2/GPU/虚拟显示驱动相关闪退风险，不作为可靠验收工具。
+- 本地未跟踪 `output/playwright/` 属于浏览器/截图运行产物，不是产品源码；提交前应单独决定删除或加入忽略规则。
+
+最近一次本地验证结果：
+
+- `.\.venv\Scripts\python.exe -m compileall -q src tests web scripts migrations`：通过。
+- `.\.venv\Scripts\python.exe -m pytest -q tests\web`：`41 passed, 1 skipped`，跳过项仍是未配置 `TEST_DATABASE_URL` 的 PostgreSQL smoke。
+- `.\.venv\Scripts\python.exe -m pytest -q`：`414 passed, 1 skipped`。
+- `cd D:\chat\agens-web\web\frontend-react; npm run build`：通过。
+
+未完成确认：
+
+- PostgreSQL 生产库仍需由服务器线程确认 Alembic head、`game_runs` / `game_turns` / `player_progress` 表存在性、备份恢复和回滚演练。
+- 375px、1080p、2K 的完整真实浏览器游玩链路仍需继续验收，尤其是角色创建折叠区、编年史年份、模型失败兜底和账号存读档。
+- 当前工作区仍有 UI/年份修复相关未提交改动；合入前需要二次确认是否一并提交。
+
 ## 目标架构
 
 | 层级 | 边界 | 主要目录 |
@@ -122,3 +143,10 @@ Browser UI
 - 终局摘要：`凡人长寿` 成就从“寿元上限 >= 80”改为“实际年龄 >= 80”；注册用户 `/death_summary` 优先基于当前 session 重算摘要，旧数据库成就只作为兜底，避免 16 岁角色显示“撑过八十载”。
 - 只读复盘线程 `019ee96e-5685-7223-8796-55c1c7b52205` 结论：P0/P1 仍是 UI 批次验收、生产 Alembic/PG smoke、真实浏览器/公网游玩链路；冗余清理优先缓存、构建产物、历史归档；技术债集中在 React 大样式文件、后端服务边界、SQLite/PostgreSQL 双轨和源码字符串测试假绿。
 - 背景素材暂未替换；新首页/角色页背景提示词已补入 `docs/UI_REFACTOR_PLAN.md`。
+
+## 2026-06-24 UI 批次收尾
+
+- 首页 QQ 群左侧标识从文字“仙”升级为独立图片资产，来源为用户提供的 `xian-game-icon-256.png`，放入 React public assets 后通过统一 `assetUrl()` 引用。
+- 角色创建页“命数”折叠采用方案 A：摘要卡显示标题、说明、当前选择、颜色点和箭头；一次只展开一个分组，默认展开天赋；展开列表内部滚动，避免撑高整页。
+- 编年史年份冲突修复：后端事件增加当前年龄；前端按事件年龄或回合推导卡片年份，并清理正文开头纪年；当前规则是“开局为玄元历 1 年，第一回合后最新记录为玄元历 2 年”。
+- 自动浏览器验收工具边界更新：优先使用 Chrome DevTools MCP；Codex 内置浏览器仍记录为本机环境问题，不再作为验收阻断。

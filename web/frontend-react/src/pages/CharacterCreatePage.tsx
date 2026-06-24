@@ -1,4 +1,4 @@
-import { FormEvent } from "react";
+import { FormEvent, useState } from "react";
 import { CheckCircle2, ChevronRight, Dice5, Home, Sparkles } from "lucide-react";
 import type { Session } from "../lib/api";
 import {
@@ -22,6 +22,7 @@ export function CharacterCreatePage({
   onBack: () => void;
 }) {
   const catalogs = useCatalogs();
+  const [openFateGroup, setOpenFateGroup] = useState<"talent" | "root" | "family">("talent");
   const {
     state,
     manualTalents,
@@ -99,9 +100,37 @@ export function CharacterCreatePage({
           <header>
             <h2>命数<span className="seal">命</span></h2>
           </header>
-          <CatalogGroup title="天赋" items={choiceMode === "manual" ? manualTalents : randomTalents} selectedName={talent} onSelect={setTalent} disabled={choiceMode === "random"} icon={<Sparkles size={18} />} />
-          <CatalogGroup title="灵根" items={choiceMode === "manual" ? manualRoots : randomRoots} selectedName={spiritRoot} onSelect={setSpiritRoot} disabled={choiceMode === "random"} />
-          <CatalogGroup title="家世" items={choiceMode === "manual" ? manualFamilies : randomFamilies} selectedName={familyBackground} onSelect={setFamilyBackground} disabled={choiceMode === "random"} />
+          <CatalogGroup
+            title="天赋"
+            description="影响修行节奏、突破叙事与关键事件。"
+            items={choiceMode === "manual" ? manualTalents : randomTalents}
+            selectedName={talent}
+            onSelect={setTalent}
+            disabled={choiceMode === "random"}
+            icon={<Sparkles size={18} />}
+            open={openFateGroup === "talent"}
+            onToggle={() => setOpenFateGroup("talent")}
+          />
+          <CatalogGroup
+            title="灵根"
+            description="影响境界突破、机缘类型与修炼取向。"
+            items={choiceMode === "manual" ? manualRoots : randomRoots}
+            selectedName={spiritRoot}
+            onSelect={setSpiritRoot}
+            disabled={choiceMode === "random"}
+            open={openFateGroup === "root"}
+            onToggle={() => setOpenFateGroup("root")}
+          />
+          <CatalogGroup
+            title="家世"
+            description="决定出生叙事、初始关系与外界牵连。"
+            items={choiceMode === "manual" ? manualFamilies : randomFamilies}
+            selectedName={familyBackground}
+            onSelect={setFamilyBackground}
+            disabled={choiceMode === "random"}
+            open={openFateGroup === "family"}
+            onToggle={() => setOpenFateGroup("family")}
+          />
           <p className="unlock-note">当前：{colorLabel(selectedTalent || { name: talent })} · {colorLabel(selectedRoot || { name: spiritRoot })} · {colorLabel(selectedFamily || { name: familyBackground })}</p>
         </section>
 

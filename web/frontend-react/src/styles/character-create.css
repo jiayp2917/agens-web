@@ -141,61 +141,111 @@
 }
 
 .fate-panel {
-  grid-template-rows: auto repeat(3, minmax(0, 1fr)) auto;
+  grid-template-rows: auto repeat(3, auto) auto;
 }
 
 .catalog-group {
   min-height: 0;
+  border: 1px solid rgba(185, 162, 125, 0.56);
+  border-radius: var(--radius-sm);
+  background: rgba(255, 250, 240, 0.64);
   display: grid;
-  grid-template-rows: auto minmax(0, 1fr);
-  gap: 6px;
+  grid-template-rows: auto;
+  overflow: hidden;
 }
 
-.catalog-group summary {
-  display: flex;
+.catalog-summary {
+  min-height: 64px;
+  width: 100%;
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(140px, auto) 30px;
   align-items: center;
-  justify-content: space-between;
-  gap: 8px;
-  list-style: none;
+  gap: 12px;
+  padding: 10px 12px;
   cursor: pointer;
+  border: 0;
+  border-radius: 0;
+  text-align: left;
+  background: transparent;
+}
+
+.summary-copy {
+  min-width: 0;
+  display: grid;
+  gap: 4px;
+}
+
+.summary-copy strong {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
   font-size: 18px;
+}
+
+.summary-copy small {
+  color: var(--ink-soft);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.selected-pill {
+  min-width: 0;
+  max-width: 190px;
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  justify-self: end;
+  padding: 6px 10px;
+  border: 1px solid rgba(185, 162, 125, 0.5);
+  border-radius: 999px;
+  background: rgba(79, 118, 104, 0.08);
+}
+
+.selected-pill span {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.selected-pill em {
+  font-style: normal;
   font-weight: 700;
 }
 
-.catalog-group summary::-webkit-details-marker {
-  display: none;
-}
-
-.catalog-group summary::after {
-  content: "收";
+.catalog-chevron {
+  width: 28px;
+  height: 28px;
+  display: inline-grid;
+  place-items: center;
+  justify-self: end;
+  border: 1px solid rgba(185, 162, 125, 0.58);
+  border-radius: 50%;
   color: var(--ink-soft);
-  font-size: 13px;
-  font-weight: 400;
+  transition: color 160ms ease, transform 160ms ease;
 }
 
-.catalog-group:not([open]) summary::after {
-  content: "展";
-}
-
-.catalog-group summary span {
-  display: flex;
-  align-items: center;
-  gap: 8px;
+.catalog-group.is-open .catalog-chevron {
+  color: var(--cinnabar);
+  transform: rotate(180deg);
 }
 
 .catalog-list {
-  min-height: 0;
+  max-height: 214px;
   display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
   align-content: start;
-  gap: 7px;
+  gap: 8px;
   overflow: auto;
-  padding-right: 3px;
+  padding: 0 12px 12px;
 }
 
 .catalog-row {
   grid-template-columns: 20px auto minmax(0, 1fr) auto;
-  min-height: 40px;
-  padding: 6px 10px;
+  min-height: 54px;
+  padding: 8px 10px;
+  border-radius: var(--radius-sm);
 }
 
 .selection-check {

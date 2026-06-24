@@ -124,6 +124,8 @@ class WebRunner:
 
     def record(self, event_type: str, **payload: Any) -> None:
         payload = _sanitize_event_payload(event_type, payload)
+        session = self.engine.game_session
+        payload.setdefault("age", int(session.age or 0))
         self.events.append({"type": event_type, "at": time.time(), **payload})
         self.events = self.events[-120:]
 

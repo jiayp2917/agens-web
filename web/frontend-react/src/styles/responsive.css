@@ -69,7 +69,7 @@
     font-size: 22px;
   }
 
-  .community-card img {
+  .community-card img:not(.qq-icon) {
     width: 82px;
     height: 82px;
   }
@@ -86,6 +86,19 @@
 
   .creation-panel {
     padding: 16px;
+  }
+
+  .catalog-summary {
+    grid-template-columns: minmax(0, 1fr) minmax(112px, auto) 30px;
+  }
+
+  .selected-pill {
+    max-width: 150px;
+  }
+
+  .catalog-list {
+    grid-template-columns: 1fr;
+    max-height: 280px;
   }
 
   .attr-grid label {
@@ -336,7 +349,7 @@
     font-size: clamp(42px, 5vw, 66px);
   }
 
-  .community-card img {
+  .community-card img:not(.qq-icon) {
     width: 76px;
     height: 76px;
   }

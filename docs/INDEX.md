@@ -30,6 +30,7 @@
 | Alpha 复盘 / 成功失败经验 | `docs/ALPHA_REVIEW_AND_LESSONS.md`、`CHANGELOG.md` |
 | 游戏模式 v5 设计 | `docs/GAME_MODE_SPEC.md` |
 | UI 重构 / 原型落地 | `docs/UI_REFACTOR_PLAN.md`、`docs/ui-prototypes/`、`web/frontend-react/src/pages/`、`web/frontend-react/src/styles.css` |
+| UI 当前细修状态 / 截图验收 | `docs/PROJECT_AUDIT.md` 的 2026-06-24 状态、`docs/UI_REFACTOR_PLAN.md` 的落地状态 |
 | 模块地图 / 接手项目 | `docs/ARCHITECTURE.md`、`docs/PROJECT_AUDIT.md`、`web/backend/app.py` |
 | 新玩家教程 / 用户支持 | `docs/USER_TUTORIAL.md`、`web/frontend-react/src/components/TutorialDialog.tsx` |
 | 历史待办核对 | `docs/archive/2026-06-20-claude-followups.md`、`docs/ALPHA_REVIEW_AND_LESSONS.md` |
@@ -40,3 +41,4 @@
 - 当前主线是游戏模式；引导模式、小说模式不是当前开放运行逻辑。
 - PostgreSQL 生产 schema 以 Alembic 为准；SQLite 仍作为本地测试默认后端。
 - API key、数据库密码、Session Secret、邀请码真实值不得写入仓库、前端包、文档或日志。
+- 当前本机浏览器自动验收优先使用 Chrome DevTools MCP；Codex 内置浏览器存在环境闪退风险，不作为可靠验收入口。

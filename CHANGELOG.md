@@ -1,5 +1,28 @@
 # Changelog
 
+## 2026-06-24
+
+### Added
+
+- Homepage QQ card now uses the user-provided `xian-game-icon-256.png` asset under `web/frontend-react/public/assets`.
+- `WebRunner.record()` includes the current character age in readable events so the chronicle timeline can infer display years from gameplay state.
+- Frontend contract checks for the image-based QQ icon, the fate summary-card structure, and chronicle year-prefix cleanup.
+- Project-status notes in `docs/PROJECT_AUDIT.md`, `docs/UI_REFACTOR_PLAN.md`, and `docs/INDEX.md` for the current UI batch, validation results, and browser-validation boundary.
+
+### Changed
+
+- Character creation fate groups use the approved plan A summary-card collapse design: selected item pill, color dot, chevron, one open group at a time, and internally scrolling option lists.
+- Game chronicle rendering treats the card title year as authoritative and strips leading `玄历/玄元历...年` prefixes from narrative text.
+- Narrator prompt now tells the model not to start each event body with a chronicle year prefix.
+- Browser validation guidance now prefers Chrome DevTools MCP or external Chrome because the Codex in-app browser is unstable on this machine.
+
+### Verification
+
+- `python -m compileall -q src tests web scripts migrations` clean.
+- `pytest -q tests\web` -> 41 passed, 1 skipped (`TEST_DATABASE_URL` not configured).
+- `pytest -q` -> 414 passed, 1 skipped.
+- `npm run build` passed.
+
 ## 2026-06-23
 
 ### Added

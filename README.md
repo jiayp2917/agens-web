@@ -6,6 +6,13 @@ Web-only 文字修仙模拟器。当前 `master` 是浏览器版本主线。
 
 复用 `src/agens_novel/` 核心游戏逻辑，提供 FastAPI 后端、React/Vite 浏览器 UI、SQLite 本地后端、PostgreSQL 生产后端、邀请码账号存档和脱敏模型配置管理。
 
+## 当前状态
+
+- 2026-06-24 状态：本地 React + SQLite 主链路可运行，当前处于 UI 批次验收和生产 PostgreSQL 复核阶段。
+- 已落地：编年史 UI、角色创建命数方案 A 折叠卡、首页 QQ 图标资产、A/B/C/D 固定语义、寿元剩余值显示、编年史年份权威化。
+- 待确认：PostgreSQL 生产库迁移 head 和 v5 表存在性、375px/1080p/2K 真实浏览器完整点击验收、服务器部署包复核。
+- 本机自动浏览器验收优先使用 Chrome DevTools MCP 或外部 Chrome；Codex 内置浏览器存在环境闪退风险。
+
 ## 当前玩法
 
 1. 当前主入口是游戏模式 v5 Alpha。
