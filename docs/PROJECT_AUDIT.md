@@ -35,11 +35,12 @@
 - `curl.exe -i --max-time 10 https://game.jiayp2917.xyz/api/catalog/talents`：HTTP 200，公网可读 10 条 talent seed。
 - Chrome DevTools MCP：桌面 1280x900 与移动 375x812 均可完成访客新游戏、角色创建、进入游戏、模型失败兜底、继续本局；修复后移动截图保存在 `D:\2917\agens-web-mobile-smoke-after-fix.png`。
 - Chrome DevTools MCP：375x812 随机角色属性复核通过，六项属性均为只读 meter，`aria-valuenow` 与可见输出一致。
+- Chrome DevTools MCP：桌面本地账号流通过，使用临时 SQLite 和本地一次性邀请码完成注册/登录、账号新局、保存 `slot_1`、读取 `slot_1`，`/api/saves` 返回 `slot_1` / `存档测试` / `turn_count=0`。
 
 未完成确认：
 
 - 服务器只读验证已确认公网 health / catalog 和 `agens-web` 容器 healthy；但生产库仍停在 Alembic `20260621_0002`，`game_runs` / `game_turns` / `player_progress` 三张 v5 表缺失。下一次生产验收前必须按部署流程交付新包并执行迁移。
-- 375px 与桌面真实浏览器访客兜底链路已验证；2K 高度、账号注册/登录/存读档、成功 live model 回合仍需继续验收。
+- 375px 与桌面真实浏览器访客兜底链路已验证；桌面本地账号注册/登录/存读档已验证；2K 高度、成功 live model 回合、生产账号链路仍需继续验收。
 - 当前工作区仍有 UI/年份修复相关未提交改动；合入前需要二次确认是否一并提交。
 
 ## 目标架构
