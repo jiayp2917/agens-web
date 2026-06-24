@@ -491,6 +491,7 @@ class TestGameEngineHandleAction:
     def test_action_delta_filters_identity_and_reset_scene(self, monkeypatch) -> None:
         monkeypatch.setenv("AGNES_API_KEY", "sk-test-1234567890")
         engine = GameEngine()
+        monkeypatch.setattr(engine.realm_system, "try_advance_stage", lambda session: None)
 
         with _patch_turn_runner():
             engine.new_game("许满")

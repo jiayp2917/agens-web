@@ -10,6 +10,22 @@ import { ChronicleItem, type ChronicleRecord } from "../components/ChronicleItem
 import { LifespanBar } from "../components/LifespanBar";
 import { RarityDot } from "../components/RarityDot";
 
+const positiveNumber = (value: unknown) => {
+  const number = Number(value);
+  return Number.isFinite(number) && number > 0 ? number : 0;
+};
+
+const recordAge = (event: Record<string, unknown>) =>
+  positiveNumber(event.age ?? event.end_age ?? event.age_after);
+
+const recordYear = (event: Record<string, unknown>) =>
+  positiveNumber(event.year ?? event.calendar_year);
+
+const recordTurn = (event: Record<string, unknown>) => {
+  const number = Number(event.turn);
+  return Number.isFinite(number) && number >= 0 ? number : -1;
+};
+
 export function GamePage({
   session,
   busy,
@@ -39,35 +55,44 @@ export function GamePage({
     ),
   );
   const events = useMemo(() => session.events.filter(isReadableEvent), [session.events]);
-  const chronicleYear = Number(world.day_count || 1);
+  const explicitChronicleYear = positiveNumber(world.calendar_year ?? world.year ?? world.day_count) || 1;
   const age = Number(character.age) || 16;
+  const currentTurn = Math.max(0, Number(session.turn_count) || 0);
   const realm = `${character.realm || "练气"}${character.realm_stage || 1}层`;
   const luck = character.attributes?.luck ?? character.luck ?? "平稳";
   const cleanChoiceText = (choice: string) => String(choice || "").replace(/^【(?:稳妥|机遇|风险|气运)】\s*/, "").trim();
   const chronicleRecords = useMemo<ChronicleRecord[]>(() => {
-    const baseAge = Math.max(1, age - Math.max(events.length - 1, 0));
+    const visibleEvents = events.slice(-8);
+    const baseAge = Math.max(1, age - Math.max(visibleEvents.length - 1, 0));
     if (!events.length) {
       return [{
         key: "empty",
-        year: `玄元历 ${chronicleYear} 年`,
+        year: `玄元历 ${explicitChronicleYear} 年`,
         age: `${age}岁`,
         text: "叙事将在这里展开。",
         latest: true,
       }];
     }
-    return events.slice(-8).map((event, index, list) => {
+    const ages = visibleEvents.map((event, index) => recordAge(event) || Math.max(1, baseAge + index));
+    const firstChronicleAge = ages[0] || age;
+    return visibleEvents.map((event, index, list) => {
       const text = eventText(event);
-      const eventYear = Number(event.year || event.calendar_year || 0);
-      const eventAge = Number(event.age || event.end_age || event.age_after || 0);
+      const eventAge = ages[index] || Math.max(1, baseAge + index);
+      const eventYear = recordYear(event);
+      const eventTurn = recordTurn(event);
+      const inferredTurn = Math.max(0, currentTurn - (list.length - 1 - index));
+      const fallbackYear = Math.max(1, eventAge - firstChronicleAge + 1);
       return {
         key: `${index}-${text.slice(0, 12)}`,
-        year: eventYear ? `玄元历 ${eventYear} 年` : `玄元历 ${Math.max(1, chronicleYear - (list.length - 1 - index))} 年`,
-        age: `${eventAge || Math.max(1, baseAge + index)}岁`,
+        year: `玄元历 ${eventYear || (eventTurn >= 0 ? eventTurn + 1 : Math.max(inferredTurn + 1, fallbackYear))} 年`,
+        age: `${eventAge}岁`,
         text,
         latest: index === list.length - 1,
       };
     });
-  }, [age, chronicleYear, events]);
+  }, [age, currentTurn, explicitChronicleYear, events]);
+  const latestRecord = chronicleRecords[chronicleRecords.length - 1];
+  const currentChronicleYear = Number(latestRecord?.year.match(/\d+/)?.[0] || explicitChronicleYear);
 
   return (
     <section className="game-page">
@@ -131,7 +156,7 @@ export function GamePage({
               <p className="eyebrow">编年史</p>
               <h2>往事时间轴</h2>
             </div>
-            <span>玄元历 {chronicleYear} 年 · 回合 {session.turn_count}</span>
+            <span>玄元历 {currentChronicleYear} 年 · 回合 {session.turn_count}</span>
           </header>
           <div className="story-log chronicle-log" aria-live="polite">
             {chronicleRecords.map((record) => <ChronicleItem key={record.key} record={record} />)}

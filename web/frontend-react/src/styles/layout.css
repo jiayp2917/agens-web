@@ -176,18 +176,6 @@ button:focus-visible {
   position: relative;
 }
 
-.bgm-btn::after {
-  content: "";
-  position: absolute;
-  top: 2px;
-  right: 2px;
-  width: 9px;
-  height: 9px;
-  border-radius: 50%;
-  background: var(--cinnabar);
-  opacity: 0.9;
-}
-
 .bgm-btn.is-on {
   border-color: var(--jade);
   color: var(--jade-strong);

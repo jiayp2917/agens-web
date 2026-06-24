@@ -1,0 +1,430 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>命数选择展开收缩原型</title>
+  <style>
+    :root {
+      --paper: #f4ecdc;
+      --paper-solid: #fffaf0;
+      --ink: #201b15;
+      --ink-soft: #655a4b;
+      --line: #d7c6a7;
+      --line-strong: #b9a27d;
+      --jade: #4f7668;
+      --jade-strong: #315c51;
+      --cinnabar: #a84535;
+      --gold: #b8893b;
+      --shadow: 0 18px 48px rgba(72, 58, 36, 0.15);
+      font-family: "Noto Serif SC", "Songti SC", "Microsoft YaHei", serif;
+    }
+
+    * {
+      box-sizing: border-box;
+    }
+
+    body {
+      margin: 0;
+      min-height: 100vh;
+      color: var(--ink);
+      background:
+        radial-gradient(circle at 8% 16%, rgba(79, 118, 104, 0.17), transparent 30%),
+        linear-gradient(180deg, rgba(244, 236, 220, 0.9), rgba(232, 221, 201, 0.96));
+    }
+
+    main {
+      width: min(1360px, calc(100% - 40px));
+      margin: 0 auto;
+      padding: 32px 0 46px;
+    }
+
+    header {
+      display: flex;
+      align-items: end;
+      justify-content: space-between;
+      gap: 24px;
+      margin-bottom: 18px;
+    }
+
+    h1,
+    h2,
+    h3,
+    p {
+      margin: 0;
+    }
+
+    h1 {
+      font-size: clamp(34px, 4vw, 58px);
+      line-height: 1.05;
+    }
+
+    .note {
+      color: var(--ink-soft);
+      line-height: 1.6;
+    }
+
+    .prototype-grid {
+      display: grid;
+      grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+      gap: 22px;
+      align-items: start;
+    }
+
+    .board {
+      min-width: 0;
+      border: 1px solid rgba(185, 162, 125, 0.62);
+      border-radius: 8px;
+      background: rgba(255, 250, 240, 0.88);
+      box-shadow: var(--shadow);
+      overflow: hidden;
+    }
+
+    .board-title {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 16px;
+      padding: 18px 20px;
+      border-bottom: 1px solid rgba(185, 162, 125, 0.45);
+      background: rgba(238, 226, 203, 0.54);
+    }
+
+    .board-title h2 {
+      font-size: 24px;
+    }
+
+    .board-title span {
+      color: var(--cinnabar);
+      font-size: 13px;
+      font-weight: 700;
+    }
+
+    .fate-stack {
+      display: grid;
+      gap: 10px;
+      padding: 16px;
+    }
+
+    details.fate-section {
+      border: 1px solid rgba(185, 162, 125, 0.56);
+      border-radius: 6px;
+      background: rgba(255, 250, 240, 0.7);
+      overflow: hidden;
+    }
+
+    .fate-section summary {
+      min-height: 64px;
+      display: grid;
+      grid-template-columns: minmax(0, 1fr) auto auto;
+      align-items: center;
+      gap: 14px;
+      padding: 10px 14px;
+      cursor: pointer;
+      list-style: none;
+    }
+
+    .fate-section summary::-webkit-details-marker {
+      display: none;
+    }
+
+    .summary-copy {
+      min-width: 0;
+      display: grid;
+      gap: 4px;
+    }
+
+    .summary-copy strong {
+      font-size: 18px;
+    }
+
+    .summary-copy small {
+      color: var(--ink-soft);
+      overflow: hidden;
+      text-overflow: ellipsis;
+      white-space: nowrap;
+    }
+
+    .selected-pill {
+      display: inline-flex;
+      align-items: center;
+      gap: 7px;
+      min-width: 0;
+      max-width: 180px;
+      padding: 6px 10px;
+      border: 1px solid rgba(185, 162, 125, 0.5);
+      border-radius: 999px;
+      color: var(--jade-strong);
+      background: rgba(79, 118, 104, 0.08);
+      overflow: hidden;
+      text-overflow: ellipsis;
+      white-space: nowrap;
+    }
+
+    .chevron {
+      width: 28px;
+      height: 28px;
+      display: inline-grid;
+      place-items: center;
+      border: 1px solid rgba(185, 162, 125, 0.58);
+      border-radius: 50%;
+      color: var(--ink-soft);
+    }
+
+    details[open] .chevron {
+      color: var(--cinnabar);
+      transform: rotate(180deg);
+    }
+
+    .option-grid {
+      display: grid;
+      grid-template-columns: repeat(2, minmax(0, 1fr));
+      gap: 8px;
+      max-height: 214px;
+      overflow: auto;
+      padding: 0 14px 14px;
+    }
+
+    .option-card {
+      min-width: 0;
+      min-height: 54px;
+      display: grid;
+      grid-template-columns: auto minmax(0, 1fr) auto;
+      align-items: center;
+      gap: 9px;
+      padding: 8px 10px;
+      border: 1px solid rgba(185, 162, 125, 0.48);
+      border-radius: 5px;
+      background: rgba(255, 250, 240, 0.72);
+    }
+
+    .option-card.is-selected {
+      border-color: var(--gold);
+      background: rgba(255, 245, 224, 0.92);
+    }
+
+    .option-card strong {
+      overflow: hidden;
+      text-overflow: ellipsis;
+      white-space: nowrap;
+    }
+
+    .color-dot {
+      width: 12px;
+      height: 12px;
+      border-radius: 50%;
+      border: 1px solid rgba(32, 27, 21, 0.2);
+      background: #f7f2e9;
+    }
+
+    .dot-green { background: #5a9667; }
+    .dot-blue { background: #5f9bbb; }
+    .dot-purple { background: #7d72ba; }
+    .dot-orange { background: #d89b43; }
+
+    .color-word {
+      color: var(--ink-soft);
+      font-size: 13px;
+      font-weight: 700;
+    }
+
+    .tab-shell {
+      display: grid;
+      grid-template-rows: auto minmax(0, 1fr);
+      min-height: 548px;
+      padding: 16px;
+    }
+
+    .segmented {
+      display: grid;
+      grid-template-columns: repeat(3, 1fr);
+      gap: 8px;
+      margin-bottom: 12px;
+      padding: 4px;
+      border: 1px solid rgba(185, 162, 125, 0.5);
+      border-radius: 999px;
+      background: rgba(238, 226, 203, 0.58);
+    }
+
+    .segmented button {
+      min-height: 42px;
+      border: 0;
+      border-radius: 999px;
+      background: transparent;
+      color: var(--ink-soft);
+      font: inherit;
+      font-weight: 700;
+      cursor: pointer;
+    }
+
+    .segmented button.active {
+      color: var(--paper-solid);
+      background: var(--jade);
+    }
+
+    .selection-summary {
+      display: grid;
+      grid-template-columns: repeat(3, minmax(0, 1fr));
+      gap: 8px;
+      margin-bottom: 12px;
+    }
+
+    .summary-box {
+      min-width: 0;
+      display: grid;
+      gap: 3px;
+      padding: 10px;
+      border: 1px solid rgba(185, 162, 125, 0.45);
+      border-radius: 6px;
+      background: rgba(255, 250, 240, 0.62);
+    }
+
+    .summary-box small {
+      color: var(--ink-soft);
+    }
+
+    .summary-box strong {
+      overflow: hidden;
+      text-overflow: ellipsis;
+      white-space: nowrap;
+    }
+
+    .long-list {
+      display: grid;
+      align-content: start;
+      gap: 8px;
+      max-height: 346px;
+      overflow: auto;
+      padding-right: 4px;
+    }
+
+    .long-list .option-card {
+      grid-template-columns: auto minmax(0, 1fr) auto;
+    }
+
+    @media (max-width: 920px) {
+      main {
+        width: min(100% - 24px, 720px);
+        padding-top: 20px;
+      }
+
+      header,
+      .prototype-grid {
+        grid-template-columns: 1fr;
+      }
+
+      .prototype-grid,
+      header {
+        display: grid;
+      }
+
+      .option-grid,
+      .selection-summary {
+        grid-template-columns: 1fr;
+      }
+
+      .selected-pill {
+        max-width: 140px;
+      }
+    }
+  </style>
+</head>
+<body>
+  <main>
+    <header>
+      <div>
+        <p class="note">角色创建 · 命数选择区原型</p>
+        <h1>展开/收缩交互重设计</h1>
+      </div>
+      <p class="note">目标：收起时仍能看见已选项；展开时只滚动列表本身，不撑高整页。</p>
+    </header>
+
+    <section class="prototype-grid">
+      <article class="board">
+        <div class="board-title">
+          <h2>方案 A：摘要式折叠卡</h2>
+          <span>推荐</span>
+        </div>
+        <div class="fate-stack">
+          <details class="fate-section" open>
+            <summary>
+              <span class="summary-copy">
+                <strong>天赋</strong>
+                <small>影响前期修行、悟性事件和突破叙事</small>
+              </span>
+              <span class="selected-pill"><span class="color-dot dot-blue"></span>剑心微明 · 蓝</span>
+              <span class="chevron">⌄</span>
+            </summary>
+            <div class="option-grid">
+              <div class="option-card"><span class="color-dot"></span><strong>平平无奇</strong><span class="color-word">白</span></div>
+              <div class="option-card"><span class="color-dot dot-green"></span><strong>草木亲和</strong><span class="color-word">绿</span></div>
+              <div class="option-card is-selected"><span class="color-dot dot-blue"></span><strong>剑心微明</strong><span class="color-word">蓝</span></div>
+              <div class="option-card"><span class="color-dot dot-purple"></span><strong>惊雷骨</strong><span class="color-word">紫</span></div>
+            </div>
+          </details>
+
+          <details class="fate-section">
+            <summary>
+              <span class="summary-copy">
+                <strong>灵根</strong>
+                <small>影响境界突破、修炼速度和机缘类型</small>
+              </span>
+              <span class="selected-pill"><span class="color-dot dot-green"></span>木灵根 · 绿</span>
+              <span class="chevron">⌄</span>
+            </summary>
+            <div class="option-grid">
+              <div class="option-card"><span class="color-dot"></span><strong>金灵根</strong><span class="color-word">白</span></div>
+              <div class="option-card is-selected"><span class="color-dot dot-green"></span><strong>木灵根</strong><span class="color-word">绿</span></div>
+              <div class="option-card"><span class="color-dot dot-blue"></span><strong>水灵根</strong><span class="color-word">蓝</span></div>
+              <div class="option-card"><span class="color-dot dot-purple"></span><strong>火灵根</strong><span class="color-word">紫</span></div>
+            </div>
+          </details>
+
+          <details class="fate-section">
+            <summary>
+              <span class="summary-copy">
+                <strong>家世</strong>
+                <small>决定出生叙事、初始资源和外界关系</small>
+              </span>
+              <span class="selected-pill"><span class="color-dot"></span>农家 · 白</span>
+              <span class="chevron">⌄</span>
+            </summary>
+            <div class="option-grid">
+              <div class="option-card is-selected"><span class="color-dot"></span><strong>农家</strong><span class="color-word">白</span></div>
+              <div class="option-card"><span class="color-dot dot-green"></span><strong>寒门</strong><span class="color-word">绿</span></div>
+              <div class="option-card"><span class="color-dot dot-blue"></span><strong>小族</strong><span class="color-word">蓝</span></div>
+              <div class="option-card"><span class="color-dot dot-purple"></span><strong>宗门旁支</strong><span class="color-word">紫</span></div>
+            </div>
+          </details>
+        </div>
+      </article>
+
+      <article class="board">
+        <div class="board-title">
+          <h2>方案 B：标签切换列表</h2>
+          <span>更紧凑</span>
+        </div>
+        <div class="tab-shell">
+          <nav class="segmented" aria-label="命数分类">
+            <button class="active">天赋</button>
+            <button>灵根</button>
+            <button>家世</button>
+          </nav>
+          <div class="selection-summary">
+            <span class="summary-box"><small>天赋</small><strong>剑心微明 · 蓝</strong></span>
+            <span class="summary-box"><small>灵根</small><strong>木灵根 · 绿</strong></span>
+            <span class="summary-box"><small>家世</small><strong>农家 · 白</strong></span>
+          </div>
+          <section class="long-list">
+            <div class="option-card"><span class="color-dot"></span><strong>平平无奇</strong><span class="color-word">白</span></div>
+            <div class="option-card"><span class="color-dot dot-green"></span><strong>草木亲和</strong><span class="color-word">绿</span></div>
+            <div class="option-card is-selected"><span class="color-dot dot-blue"></span><strong>剑心微明</strong><span class="color-word">蓝</span></div>
+            <div class="option-card"><span class="color-dot dot-purple"></span><strong>惊雷骨</strong><span class="color-word">紫</span></div>
+            <div class="option-card"><span class="color-dot dot-orange"></span><strong>天命道胎</strong><span class="color-word">橙</span></div>
+          </section>
+        </div>
+      </article>
+    </section>
+  </main>
+</body>
+</html>
