@@ -23,7 +23,9 @@ import "./styles.css";
 const assetVars = {
   "--paper-texture": `url("${assetUrl("assets/paper_texture.png")}")`,
   "--ink-gate": `url("${assetUrl("assets/ink_mountain_gate.png")}")`,
-  "--game-bg": `url("${assetUrl("assets/game_desktop_bg.png")}")`,
+  "--home-bg": `url("${assetUrl("assets/bg_home_xianxia.png")}")`,
+  "--character-bg": `url("${assetUrl("assets/bg_character_create.png")}")`,
+  "--game-bg": `url("${assetUrl("assets/bg_chronicle_game.png")}")`,
   "--ascension-bg": `url("${assetUrl("assets/ascension_gate.png")}")`,
 } as React.CSSProperties;
 

@@ -4,6 +4,12 @@
   overflow: hidden;
 }
 
+.character-page {
+  background:
+    linear-gradient(180deg, rgba(245, 239, 226, 0.68), rgba(245, 239, 226, 0.9)),
+    var(--character-bg) center center / cover no-repeat;
+}
+
 .creation-layout {
   width: min(1780px, 100%);
   max-height: calc(100dvh - var(--topbar-height) - 44px);
