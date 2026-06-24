@@ -1,10 +1,4 @@
-export type ChronicleRecord = {
-  key: string;
-  year: string;
-  age: string;
-  text: string;
-  latest?: boolean;
-};
+import type { ChronicleRecord } from "../lib/chronicle";
 
 export function ChronicleItem({ record }: { record: ChronicleRecord }) {
   return (

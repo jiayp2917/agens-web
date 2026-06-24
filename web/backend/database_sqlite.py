@@ -8,13 +8,14 @@ from pathlib import Path
 from typing import Any
 
 from .database_common import (
-    CATALOG_JSON_FIELDS,
     CATALOG_TABLES,
+    catalog_seed_sources,
     decode_json_fields,
     default_db_path,
     dump_json,
-    encode_json_fields,
     now_ts,
+    player_progress_summary,
+    prepare_catalog_row,
     row_with_json,
     safe_name,
     save_summary,
@@ -768,12 +769,7 @@ class SQLiteWebDatabase:
                 "SELECT runs_completed, ascension_count FROM player_progress WHERE user_id = ?",
                 (user_id,),
             ).fetchone()
-        if row is None:
-            return {"runs_completed": 0, "ascension_count": 0}
-        return {
-            "runs_completed": int(row["runs_completed"]),
-            "ascension_count": int(row["ascension_count"]),
-        }
+        return player_progress_summary(row)
 
     # ── Catalog read/write ──────────────────────────────────────────────────
 
@@ -789,7 +785,7 @@ class SQLiteWebDatabase:
     def insert_catalog(self, table: str, row: dict[str, Any]) -> dict[str, Any]:
         if table not in self._CATALOG_TABLES:
             raise ValueError(f"Unknown catalog table: {table}")
-        data = encode_json_fields(row)
+        data = prepare_catalog_row(row)
         with self.connect() as conn:
             conn.execute(
                 f"INSERT OR IGNORE INTO {table} ({', '.join(data.keys())}) "
@@ -801,25 +797,13 @@ class SQLiteWebDatabase:
     def _seed_catalogs_if_empty(self, conn: sqlite3.Connection) -> None:
         """Seed catalog tables from seed data when they're empty.
         Called during initialize() — runs inside the existing transaction."""
-        from .catalog_seed import SEED_TALENTS, SEED_FAMILY_BACKGROUNDS, SEED_SPIRIT_ROOTS
-        from .catalog_seed import SEED_DIFFICULTIES, SEED_STORY_SEEDS
-
         now = now_ts()
-        seeds = [
-            ("catalog_talents", SEED_TALENTS),
-            ("catalog_family_backgrounds", SEED_FAMILY_BACKGROUNDS),
-            ("catalog_spirit_roots", SEED_SPIRIT_ROOTS),
-            ("catalog_difficulties", SEED_DIFFICULTIES),
-            ("catalog_story_seeds", SEED_STORY_SEEDS),
-        ]
-        for table, rows in seeds:
+        for table, rows in catalog_seed_sources():
             existing = conn.execute(f"SELECT 1 FROM {table} LIMIT 1").fetchone()
             if existing:
                 continue
             for row in rows:
-                row_with_ts = dict(row)
-                row_with_ts.setdefault("created_at", now)
-                row_with_ts = encode_json_fields(row_with_ts, CATALOG_JSON_FIELDS)
+                row_with_ts = prepare_catalog_row(row, created_at=now)
                 conn.execute(
                     f"INSERT OR IGNORE INTO {table} ({', '.join(row_with_ts.keys())}) "
                     f"VALUES ({', '.join('?' for _ in row_with_ts)})",

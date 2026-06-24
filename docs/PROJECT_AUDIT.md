@@ -19,18 +19,27 @@
 - 当前浏览器自动验收应使用 Chrome DevTools MCP 或外部 Chrome；Codex 内置浏览器在本机仍存在 WebView2/GPU/虚拟显示驱动相关闪退风险，不作为可靠验收工具。
 - 本地未跟踪 `output/playwright/` 属于浏览器/截图运行产物，不是产品源码；提交前应单独决定删除或加入忽略规则。
 - 第一批最低风险复杂度收敛已完成：`web/backend/app.py` 将 session 类 endpoint 重复的 `KeyError` / `PermissionError` / `ValueError` 转 HTTP 异常样板收束到 `service_call()`，保持原 404 / 403 / 400 行为不变。
+- 第二批最低风险复杂度收敛已完成：`web/backend/database_common.py` 承接 catalog seed 来源、catalog row JSON 准备和 player progress 摘要，`database_sqlite.py` / `database_postgres.py` 复用同一 helper，暂不改 schema、Alembic 历史或运行时后端选择。
+- 第三批最低风险复杂度收敛已完成：`web/frontend-react/src/lib/chronicle.ts` 承接编年史正文清理、年龄/年份推导和当前纪年读取，`GamePage.tsx` 只保留渲染与交互编排。
+- Chrome 真实浏览器 smoke 发现并修复了本地兜底场景的编年史纪年停滞：模型网络失败后点击“继续本局”，回合 1 现在显示 `玄元历 2 年 · 回合 1`，最新卡片也显示 `玄元历 2 年`。
+- Chrome 移动 smoke 发现并修复了随机角色属性显示/语义不一致：随机属性可能高于手动上限 80，现已由 disabled range 改为只读 meter，`aria-valuenow` 与可见数值一致。
 
 最近一次本地验证结果：
 
 - `.\.venv\Scripts\python.exe -m compileall -q src tests web scripts migrations`：通过。
-- `.\.venv\Scripts\python.exe -m pytest -q tests\web`：`41 passed, 1 skipped`，跳过项仍是未配置 `TEST_DATABASE_URL` 的 PostgreSQL smoke。
-- `.\.venv\Scripts\python.exe -m pytest -q`：`414 passed, 1 skipped`。
-- `cd D:\chat\agens-web\web\frontend-react; npm run build`：通过。
+- `.\.venv\Scripts\python.exe -m pytest -q tests\web`：`49 passed, 1 skipped`，跳过项仍是未配置 `TEST_DATABASE_URL` 的 PostgreSQL smoke。
+- `.\.venv\Scripts\python.exe -m pytest -q`：`425 passed, 1 skipped`。
+- `cd D:\chat\agens-web\web\frontend-react; npm run build`：通过；`tests\web\test_frontend_contract.py` 单文件为 `16 passed`。
+- `.\.venv\Scripts\python.exe -m pytest -q tests\web\test_frontend_contract.py tests\web\test_web_api.py::test_session_routes_map_service_errors`：`24 passed`。
+- `curl.exe -i --max-time 10 https://game.jiayp2917.xyz/api/health`：HTTP 200，`{"status":"ok"}`。
+- `curl.exe -i --max-time 10 https://game.jiayp2917.xyz/api/catalog/talents`：HTTP 200，公网可读 10 条 talent seed。
+- Chrome DevTools MCP：桌面 1280x900 与移动 375x812 均可完成访客新游戏、角色创建、进入游戏、模型失败兜底、继续本局；修复后移动截图保存在 `D:\2917\agens-web-mobile-smoke-after-fix.png`。
+- Chrome DevTools MCP：375x812 随机角色属性复核通过，六项属性均为只读 meter，`aria-valuenow` 与可见输出一致。
 
 未完成确认：
 
-- PostgreSQL 生产库仍需由服务器线程确认 Alembic head、`game_runs` / `game_turns` / `player_progress` 表存在性、备份恢复和回滚演练。
-- 375px、1080p、2K 的完整真实浏览器游玩链路仍需继续验收，尤其是角色创建折叠区、编年史年份、模型失败兜底和账号存读档。
+- 服务器只读验证已确认公网 health / catalog 和 `agens-web` 容器 healthy；但生产库仍停在 Alembic `20260621_0002`，`game_runs` / `game_turns` / `player_progress` 三张 v5 表缺失。下一次生产验收前必须按部署流程交付新包并执行迁移。
+- 375px 与桌面真实浏览器访客兜底链路已验证；2K 高度、账号注册/登录/存读档、成功 live model 回合仍需继续验收。
 - 当前工作区仍有 UI/年份修复相关未提交改动；合入前需要二次确认是否一并提交。
 
 ## 目标架构
@@ -106,11 +115,13 @@ Browser UI
 | P2 | 本地故事兜底只达到最小可玩。 | 改成数据文件化故事节点，逐步扩展多套故事。 |
 | P2 | Web 多用户会引入会话隔离和密钥安全问题。 | API 层统一鉴权、限流、脱敏日志和 per-user session 存储。 |
 | P2 | FastAPI 路由仍集中在单文件内，但重复 service 异常映射已完成第一步收束。 | 下一步如继续拆路由，应先保持 `service_call()` / 鉴权依赖语义不变，再拆 `auth_router`、`catalog_router`、`session_router`、`settings_router`。 |
-| P2 | PostgreSQL 设计和 Alembic 迁移已经补齐 Alpha 必需表，但仍需确认服务器生产库已升级到 `20260622_0004_ddl_disallow_production` 及之后，并继续做索引评审、备份恢复和回滚演练。 | 设置 `TEST_DATABASE_URL` 跑空库迁移和账号游玩链路；服务器确认 `game_runs`、`game_turns`、`player_progress` 存在；生产运行时 `APP_ENV=production` 自动拒绝 `AGENS_PG_AUTO_DDL=1`。 |
+| P2 | SQLite / PostgreSQL 双轨仍有 DDL、SQL 方言和事务边界重复；catalog row / progress summary 已先收束为共享 helper。 | 继续用小批次抽公共 row shaping、save summary、run-turn 读取 helper；暂不引入新 ORM 抽象，也不改已部署 Alembic revision。 |
+| P0 | 服务器生产库仍停在 Alembic `20260621_0002`，缺少 `game_runs`、`game_turns`、`player_progress`，与当前 v5 代码/本地测试不一致。 | 下一次生产动作必须先打包当前代码、备份、执行 Alembic 迁移到 head，再只读确认 revision 和三张表存在；未完成前不要把公网 v5 表能力视为已验收。 |
+| P2 | PostgreSQL 设计和 Alembic 迁移已经补齐 Alpha 必需表，但生产仍需索引评审、备份恢复和回滚演练。 | 设置 `TEST_DATABASE_URL` 跑空库迁移和账号游玩链路；生产运行时 `APP_ENV=production` 自动拒绝 `AGENS_PG_AUTO_DDL=1`；安排维护窗口做回滚演练。 |
 | P2 | 访客局只在单进程内存中，容器重启、多 worker 或多副本会丢失。 | Alpha 阶段明确提示；正式多人部署前引入共享会话存储或只允许账号局跨进程恢复。 |
 | P2 | 匿名访客仍可能消耗模型额度。 | 增加访客日限额、IP/设备限额、模型预算保护和边缘层限流。 |
 | P3 | 测试目录需继续从旧产品分类迁移到 Web 分类。 | 保留核心测试，新增 API 和浏览器测试，删除旧 UI 契约测试。 |
-| P2 | React 局部组件仍偏重，后续 UI 迭代容易互相影响。 | P2 已拆分认证、首页、角色创建、游戏页、设置/存档弹窗、模型设置面板、存档槽列表、BGM 和终局页组件；下一步按需继续抽 `CharacterCreatePage` 与 `styles.css`。 |
+| P2 | React 局部组件仍偏重，后续 UI 迭代容易互相影响；`GamePage` 编年史计算已先抽到 `lib/chronicle.ts`。 | P2 已拆分认证、首页、角色创建、游戏页、设置/存档弹窗、模型设置面板、存档槽列表、BGM 和终局页组件；下一步按需继续抽 `CharacterCreatePage` 与 `styles.css`。 |
 
 ## 验证入口
 
@@ -160,3 +171,26 @@ Browser UI
 - 行为：仍保持 `KeyError -> 404`、`PermissionError -> 403`、`ValueError -> 400`，其他异常继续走既有安全 500 响应。
 - 验证：`compileall -q src tests web scripts migrations` 通过；`pytest -q tests\web` 为 `41 passed, 1 skipped`；`pytest -q` 为 `414 passed, 1 skipped`。跳过项仍是未配置 `TEST_DATABASE_URL` 的 PostgreSQL smoke。
 - 下一批低风险候选：优先抽 `database_sqlite.py` / `database_postgres.py` 的共享 row/JSON/save/run-turn helper；暂不直接替换 ORM 或改 Alembic 历史。
+
+## 2026-06-24 数据层共享 helper handoff
+
+- 边界：只降低 SQLite / PostgreSQL 双轨的重复 row shaping，不改表结构、不改迁移、不改 `DATABASE_BACKEND` 选择、不读取生产配置。
+- 改动：`web/backend/database_common.py` 新增 `catalog_seed_sources()`、`prepare_catalog_row()`、`player_progress_summary()`；`database_sqlite.py` 和 `database_postgres.py` 复用这些 helper 处理 catalog seed、catalog insert 和玩家进度摘要。
+- 行为：catalog JSON 字段编码、PostgreSQL `created_at` 默认、SQLite seed 时间戳和缺省 player progress 响应保持原语义。
+- 验证：`pytest -q tests\unit\game\test_database_common.py tests\unit\game\test_game_turns_storage.py` 为 `12 passed`；`compileall -q src tests web scripts migrations` 通过；`pytest -q tests\web` 为 `41 passed, 1 skipped`；`pytest -q` 为 `417 passed, 1 skipped`；`npm run build` 通过。
+- 剩余风险：`TEST_DATABASE_URL` 未配置导致 PostgreSQL smoke 仍跳过；生产 Alembic/table 状态需以服务器只读验证线程为准；下一批复杂度治理优先抽 `GamePage` 编年史纯函数或补充 route exception mapping 测试。
+
+## 2026-06-24 前端编年史 helper handoff
+
+- 边界：只抽离 `GamePage` 内的编年史纯计算，不改 DOM 结构、不改 CSS、不改 API 请求和玩法状态。
+- 改动：新增 `web/frontend-react/src/lib/chronicle.ts`，集中 `cleanChronicleText()`、`buildChronicleRecords()`、`getCurrentChronicleYear()`；`ChronicleItem` 从该模块引用 `ChronicleRecord` 类型；`GamePage` 调用 helper 后继续渲染同一时间线。
+- 行为：保留最近 8 条可读事件、正文纪年前缀清理、按事件年份 / 回合 / 推导回合 / 年龄候选取最大正数生成 `玄元历 N 年`、空事件兜底文案和最新标记。
+- 验证：`npm run build` 通过；`pytest -q tests\web\test_frontend_contract.py` 为 `16 passed`；Chrome smoke 覆盖桌面与 375px 移动访客兜底流程。
+- 剩余风险：真实浏览器 smoke 已覆盖访客流和兜底流，但注册账号存读档、2K 高度截图、长期模型可用链路仍需单独验收。
+
+## 2026-06-24 route service-error mapping handoff
+
+- 边界：只补测试，不改路由实现和 API schema。
+- 改动：`tests/web/test_web_api.py` 新增 `test_session_routes_map_service_errors`，覆盖 session/death_summary 路由中 `KeyError -> 404`、`PermissionError -> 403`、`ValueError -> 400`。
+- 验证：`pytest -q tests\web\test_web_api.py::test_session_routes_map_service_errors` 为 `8 passed`；合并前端契约测试后 `24 passed`。
+- 剩余风险：这覆盖 route 层异常映射，不代表所有服务内部错误分支都有业务级断言。

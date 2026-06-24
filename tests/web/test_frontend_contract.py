@@ -147,6 +147,10 @@ def test_react_character_creation_uses_catalogs_and_game_mode() -> None:
     assert "openFateGroup" in source
     assert "catalog-list" in source
     assert "selection-check" in source
+    assert 'className="attr-meter"' in source
+    assert 'role="meter"' in source
+    assert "aria-valuenow={value}" in source
+    assert "Math.min(manualAttributeMax, values[key])" not in source
     assert "choice_card_mountain.png" not in css
     assert "game_name" not in source
     assert "游戏名称" not in source
@@ -172,6 +176,7 @@ def test_react_game_page_has_escape_route_and_stable_meters() -> None:
         "components/LifespanBar.tsx",
         "components/ChronicleItem.tsx",
         "components/ChoiceButton.tsx",
+        "lib/chronicle.ts",
         "lib/catalog.ts",
     )
     css = _read_css()
@@ -183,7 +188,10 @@ def test_react_game_page_has_escape_route_and_stable_meters() -> None:
     assert "realmLifespanCap" in source
     assert "value={remainingLifespan}" in source
     assert "ChronicleItem" in source
+    assert "buildChronicleRecords" in source
+    assert "getCurrentChronicleYear" in source
     assert "cleanChronicleText" in source
+    assert "Math.max(...yearCandidates)" in source
     assert "玄历" in source
     assert "ChoiceButton" in source
     assert "cleanChoiceText" in source

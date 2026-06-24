@@ -365,6 +365,51 @@ def test_user_cannot_access_another_users_session(tmp_path: Path, monkeypatch) -
         assert client_b.post(path, json=payload).status_code == 403
 
 
+@pytest.mark.parametrize(
+    ("method_name", "request_method", "path_suffix", "payload", "exc", "status_code"),
+    [
+        ("get_session", "get", "", None, KeyError("missing session"), 404),
+        ("start_session", "post", "/start", {"char_name": "许满"}, ValueError("bad start"), 400),
+        ("choose", "post", "/choice", {"choice_index": 0}, ValueError("bad choice"), 400),
+        ("act", "post", "/action", {"action": "查看"}, ValueError("bad action"), 400),
+        ("save", "post", "/save", {"name": "slot_1"}, PermissionError("not owner"), 403),
+        ("load", "post", "/load", {"name": "slot_1"}, PermissionError("not owner"), 403),
+        ("end_session", "post", "/end", {"reason": "结束"}, PermissionError("not owner"), 403),
+        ("death_summary", "get", "/death_summary", None, KeyError("missing summary"), 404),
+    ],
+)
+def test_session_routes_map_service_errors(
+    tmp_path: Path,
+    monkeypatch,
+    method_name: str,
+    request_method: str,
+    path_suffix: str,
+    payload: dict[str, object] | None,
+    exc: Exception,
+    status_code: int,
+) -> None:
+    monkeypatch.setenv("SESSION_COOKIE_SECURE", "0")
+    app = create_app(tmp_path / "agens_web.sqlite3")
+    client = TestClient(app)
+    app.state.service.db.create_user("player", "hash")
+    token = __import__("web.backend.auth", fromlist=["create_session_token"]).create_session_token(
+        app.state.service.db.get_user_by_username("player")["id"]
+    )
+    client.cookies.set("agens_session", token)
+    session_id = "session-for-error-mapping"
+
+    def fail(*_args, **_kwargs):
+        raise exc
+
+    monkeypatch.setattr(app.state.service, method_name, fail)
+    request = getattr(client, request_method)
+    response = request(f"/api/sessions/{session_id}{path_suffix}", json=payload) if payload is not None else request(
+        f"/api/sessions/{session_id}{path_suffix}"
+    )
+
+    assert response.status_code == status_code
+
+
 def test_production_rejects_default_session_secret(tmp_path: Path, monkeypatch) -> None:
     monkeypatch.setenv("DATABASE_BACKEND", "postgresql")
     monkeypatch.setenv("DATABASE_URL", "postgresql+psycopg://agens_user:test@postgres:5432/agens_web")

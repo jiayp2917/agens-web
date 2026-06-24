@@ -28,6 +28,24 @@ CATALOG_JSON_FIELDS = (
 )
 
 
+def catalog_seed_sources() -> tuple[tuple[str, list[dict[str, Any]]], ...]:
+    from .catalog_seed import (
+        SEED_DIFFICULTIES,
+        SEED_FAMILY_BACKGROUNDS,
+        SEED_SPIRIT_ROOTS,
+        SEED_STORY_SEEDS,
+        SEED_TALENTS,
+    )
+
+    return (
+        ("catalog_talents", SEED_TALENTS),
+        ("catalog_family_backgrounds", SEED_FAMILY_BACKGROUNDS),
+        ("catalog_spirit_roots", SEED_SPIRIT_ROOTS),
+        ("catalog_difficulties", SEED_DIFFICULTIES),
+        ("catalog_story_seeds", SEED_STORY_SEEDS),
+    )
+
+
 def default_db_path() -> Path:
     configured = os.environ.get("AGENS_WEB_DB")
     if configured:
@@ -57,6 +75,18 @@ def encode_json_fields(row: dict[str, Any], fields: tuple[str, ...] = CATALOG_JS
         if field in data and not isinstance(data[field], str):
             data[field] = dump_json(data[field])
     return data
+
+
+def prepare_catalog_row(
+    row: dict[str, Any],
+    *,
+    created_at: float | None = None,
+    fields: tuple[str, ...] = CATALOG_JSON_FIELDS,
+) -> dict[str, Any]:
+    data = dict(row)
+    if created_at is not None:
+        data.setdefault("created_at", created_at)
+    return encode_json_fields(data, fields)
 
 
 def decode_json_fields(row: Any, fields: tuple[str, ...] = CATALOG_JSON_FIELDS) -> dict[str, Any]:
@@ -94,6 +124,15 @@ def save_summary(row: Any) -> dict[str, Any]:
         "realm": char.get("realm", "?"),
         "turn_count": snapshot.get("turn_count", 0) if isinstance(snapshot, dict) else 0,
         "updated_at": item["updated_at"],
+    }
+
+
+def player_progress_summary(row: Any | None) -> dict[str, int]:
+    if row is None:
+        return {"runs_completed": 0, "ascension_count": 0}
+    return {
+        "runs_completed": int(row["runs_completed"]),
+        "ascension_count": int(row["ascension_count"]),
     }
 
 

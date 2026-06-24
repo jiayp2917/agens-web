@@ -13,6 +13,7 @@
 - `docs/UI_REFACTOR_PLAN.md`：已审核通过的编年史 UI 原型图、页面拆分、组件样式和重构验收标准。
 - `docs/USER_TUTORIAL.md`：面向玩家的完整中文入门教程，从访客/账号选择到飞升/死亡全流程。
 - `docs/ALPHA_REVIEW_AND_LESSONS.md`：Alpha 问题确认、已修内容、成功/失败经验、剩余风险和后续执行规则。
+- `docs/PRODUCTION_V5_MIGRATION_CHECKLIST.md`：生产 v5 表缺失后的部署、备份、迁移和只读验收门槛。
 - `README.md`：最短启动说明和项目入口。
 - `CHANGELOG.md`：按日期记录已落地变更。
 
@@ -26,6 +27,7 @@
 | --- | --- |
 | 当前运行链路 / 游玩流程 | `docs/RUNTIME_FLOW.md`、`web/backend/app.py` |
 | 公网部署 / 密钥 / 安全 | `docs/security.md`、`deploy/production.env.example`、`deploy/docker-compose.yml` |
+| 生产 v5 迁移 / 缺表修复 | `docs/PRODUCTION_V5_MIGRATION_CHECKLIST.md`、`docs/PROJECT_AUDIT.md` |
 | 结构清理 / 技术债 | `docs/PROJECT_AUDIT.md`、`docs/INDEX.md` |
 | Alpha 复盘 / 成功失败经验 | `docs/ALPHA_REVIEW_AND_LESSONS.md`、`CHANGELOG.md` |
 | 游戏模式 v5 设计 | `docs/GAME_MODE_SPEC.md` |

@@ -2,34 +2,14 @@ import { useMemo, useState } from "react";
 import { Home, Save, Settings } from "lucide-react";
 import type { DialogMode, Session } from "../lib/api";
 import { choiceSemantics, realmLifespanCap } from "../lib/catalog";
-import { eventText, isReadableEvent, toPositiveNumber } from "../lib/util";
+import { buildChronicleRecords, getCurrentChronicleYear } from "../lib/chronicle";
+import { isReadableEvent, toPositiveNumber } from "../lib/util";
 import { FallbackBanner } from "../components/FallbackBanner";
 import { CharacterAvatar } from "../components/CharacterAvatar";
 import { ChoiceButton } from "../components/ChoiceButton";
-import { ChronicleItem, type ChronicleRecord } from "../components/ChronicleItem";
+import { ChronicleItem } from "../components/ChronicleItem";
 import { LifespanBar } from "../components/LifespanBar";
 import { RarityDot } from "../components/RarityDot";
-
-const positiveNumber = (value: unknown) => {
-  const number = Number(value);
-  return Number.isFinite(number) && number > 0 ? number : 0;
-};
-
-const recordAge = (event: Record<string, unknown>) =>
-  positiveNumber(event.age ?? event.end_age ?? event.age_after);
-
-const recordYear = (event: Record<string, unknown>) =>
-  positiveNumber(event.year ?? event.calendar_year);
-
-const recordTurn = (event: Record<string, unknown>) => {
-  const number = Number(event.turn);
-  return Number.isFinite(number) && number >= 0 ? number : -1;
-};
-
-const cleanChronicleText = (text: string) =>
-  text
-    .replace(/(^|\n)\s*(?:玄元历|玄历|玄历元年)\s*[元一二三四五六七八九十百千万\d]*\s*年?[，,、：:\s]*/gu, "$1")
-    .trim();
 
 export function GamePage({
   session,
@@ -60,48 +40,19 @@ export function GamePage({
     ),
   );
   const events = useMemo(() => session.events.filter(isReadableEvent), [session.events]);
-  const explicitChronicleYear = positiveNumber(world.calendar_year ?? world.year ?? world.day_count) || 1;
+  const explicitChronicleYear = toPositiveNumber(world.calendar_year ?? world.year ?? world.day_count, 0) || 1;
   const age = Number(character.age) || 16;
   const currentTurn = Math.max(0, Number(session.turn_count) || 0);
   const realm = `${character.realm || "练气"}${character.realm_stage || 1}层`;
   const luck = character.attributes?.luck ?? character.luck ?? "平稳";
   const cleanChoiceText = (choice: string) => String(choice || "").replace(/^【(?:稳妥|机遇|风险|气运)】\s*/, "").trim();
-  const chronicleRecords = useMemo<ChronicleRecord[]>(() => {
-    const visibleEvents = events.slice(-8);
-    const firstKnownStartAge = events.find((event) => recordAge(event) > 0 && recordTurn(event) <= 0);
-    const chronicleStartAge = firstKnownStartAge ? recordAge(firstKnownStartAge) : 0;
-    const baseAge = Math.max(1, age - Math.max(currentTurn, visibleEvents.length - 1, 0));
-    if (!events.length) {
-      return [{
-        key: "empty",
-        year: `玄元历 ${explicitChronicleYear} 年`,
-        age: `${age}岁`,
-        text: "叙事将在这里展开。",
-        latest: true,
-      }];
-    }
-    const ages = visibleEvents.map((event, index) => recordAge(event) || Math.max(1, baseAge + index));
-    return visibleEvents.map((event, index, list) => {
-      const text = cleanChronicleText(eventText(event));
-      const eventAge = ages[index] || Math.max(1, baseAge + index);
-      const eventYear = recordYear(event);
-      const eventTurn = recordTurn(event);
-      const inferredTurn = Math.max(0, currentTurn - (list.length - 1 - index));
-      const ageYear = chronicleStartAge > 0 && eventAge >= chronicleStartAge
-        ? eventAge - chronicleStartAge + 1
-        : 0;
-      const displayYear = ageYear || eventYear || (eventTurn >= 0 ? eventTurn + 1 : inferredTurn + 1);
-      return {
-        key: `${index}-${text.slice(0, 12)}`,
-        year: `玄元历 ${displayYear} 年`,
-        age: `${eventAge}岁`,
-        text,
-        latest: index === list.length - 1,
-      };
-    });
-  }, [age, currentTurn, explicitChronicleYear, events]);
-  const latestRecord = chronicleRecords[chronicleRecords.length - 1];
-  const currentChronicleYear = Number(latestRecord?.year.match(/\d+/)?.[0] || explicitChronicleYear);
+  const chronicleRecords = useMemo(() => buildChronicleRecords({
+    events,
+    age,
+    currentTurn,
+    explicitChronicleYear,
+  }), [age, currentTurn, explicitChronicleYear, events]);
+  const currentChronicleYear = getCurrentChronicleYear(chronicleRecords, explicitChronicleYear);
 
   return (
     <section className="game-page">

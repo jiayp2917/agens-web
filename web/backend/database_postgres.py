@@ -11,10 +11,12 @@ from sqlalchemy.engine import Engine
 
 from .database_common import (
     CATALOG_TABLES,
+    catalog_seed_sources,
     decode_json_fields,
     dump_json,
-    encode_json_fields,
     now_ts,
+    player_progress_summary,
+    prepare_catalog_row,
     row_with_json,
     safe_name,
     save_summary,
@@ -907,12 +909,7 @@ class PostgresWebDatabase:
                 ),
                 {"u": user_id},
             ).mappings().first()
-        if row is None:
-            return {"runs_completed": 0, "ascension_count": 0}
-        return {
-            "runs_completed": int(row["runs_completed"]),
-            "ascension_count": int(row["ascension_count"]),
-        }
+        return player_progress_summary(row)
 
     # ── Catalog read/write ──────────────────────────────────────────────────
 
@@ -930,8 +927,7 @@ class PostgresWebDatabase:
     def insert_catalog(self, table: str, row: dict[str, Any]) -> dict[str, Any]:
         if table not in self._CATALOG_TABLES:
             raise ValueError(f"Unknown catalog table: {table}")
-        data = encode_json_fields(row)
-        data.setdefault("created_at", now_ts())
+        data = prepare_catalog_row(row, created_at=now_ts())
         cols = ", ".join(data.keys())
         placeholders = ", ".join(f":{k}" for k in data.keys())
         with self.engine.begin() as conn:
@@ -943,17 +939,7 @@ class PostgresWebDatabase:
 
     def _seed_catalogs_if_empty(self) -> None:
         """Seed catalog tables from seed data when they're empty."""
-        from .catalog_seed import SEED_TALENTS, SEED_FAMILY_BACKGROUNDS, SEED_SPIRIT_ROOTS
-        from .catalog_seed import SEED_DIFFICULTIES, SEED_STORY_SEEDS
-
-        seeds = [
-            ("catalog_talents", SEED_TALENTS),
-            ("catalog_family_backgrounds", SEED_FAMILY_BACKGROUNDS),
-            ("catalog_spirit_roots", SEED_SPIRIT_ROOTS),
-            ("catalog_difficulties", SEED_DIFFICULTIES),
-            ("catalog_story_seeds", SEED_STORY_SEEDS),
-        ]
-        for table, rows in seeds:
+        for table, rows in catalog_seed_sources():
             with self.engine.begin() as conn:
                 existing = conn.execute(
                     text(f"SELECT 1 FROM {table} LIMIT 1")
@@ -961,8 +947,7 @@ class PostgresWebDatabase:
                 if existing:
                     continue
                 for row in rows:
-                    data = encode_json_fields(row)
-                    data.setdefault("created_at", now_ts())
+                    data = prepare_catalog_row(row, created_at=now_ts())
                     cols = ", ".join(data.keys())
                     placeholders = ", ".join(f":{k}" for k in data.keys())
                     conn.execute(
