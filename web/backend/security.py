@@ -112,7 +112,7 @@ def _allowed_origins(request: Request) -> set[str]:
     }
     if configured:
         return configured
-    if _is_production_mode():
+    if is_production_mode():
         host = request.headers.get("host", "").strip()
         if host:
             scheme = request.headers.get("x-forwarded-proto", request.url.scheme).split(",", 1)[0]
@@ -120,7 +120,7 @@ def _allowed_origins(request: Request) -> set[str]:
     return set()
 
 
-def _is_production_mode() -> bool:
+def is_production_mode() -> bool:
     backend = os.environ.get("DATABASE_BACKEND", "sqlite").strip().lower()
     env = os.environ.get("AGENS_ENV", "").strip().lower()
     return env in ("prod", "production") or backend in ("postgres", "postgresql", "pg")

@@ -30,8 +30,9 @@ from .auth import (
 )
 from .database import create_database
 from .database_common import public_user
-from .security import BodySizeLimitMiddleware, RateLimiter, client_key, enforce_same_origin
+from .security import BodySizeLimitMiddleware, RateLimiter, client_key, enforce_same_origin, is_production_mode
 from .service import GUEST_USER_PREFIX, WebGameService, is_guest_user_id
+from agens_novel.logging_setup import setup_logging
 from .catalog_seed import catalog_as_json
 
 FRONTEND_REACT_DIST = Path(__file__).resolve().parents[1] / "frontend-react" / "dist"
@@ -95,11 +96,6 @@ class InviteCreateRequest(BaseModel):
     max_uses: int = Field(default=1, ge=1, le=100)
 
 
-def is_production_mode() -> bool:
-    backend = os.environ.get("DATABASE_BACKEND", "sqlite").strip().lower()
-    env = os.environ.get("AGENS_ENV", "").strip().lower()
-    return env in ("prod", "production") or backend in ("postgres", "postgresql", "pg")
-
 
 def validate_runtime_config() -> None:
     if not is_production_mode():
@@ -142,6 +138,7 @@ def service_http_error(exc: Exception) -> HTTPException:
 
 
 def create_app(db_path: Path | None = None) -> FastAPI:
+    setup_logging()
     validate_runtime_config()
     service = WebGameService(create_database(db_path))
     production = is_production_mode()
@@ -513,4 +510,10 @@ def create_app(db_path: Path | None = None) -> FastAPI:
     return app
 
 
-app = create_app()
+def __getattr__(name: str):
+    # uvicorn entrypoint (``web.backend.app:app``), constructed on first access so
+    # that importing this module (e.g. ``from web.backend.app import create_app``
+    # in tests) does not require DATABASE_URL or open a database connection.
+    if name == "app":
+        return create_app()
+    raise AttributeError(f"module {__name__!r} has no attribute {name!r}")

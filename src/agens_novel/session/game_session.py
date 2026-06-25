@@ -484,12 +484,8 @@ class GameSession:
 
 
 def _dedupe_strings(values: list[Any]) -> list[str]:
-    """Return unique non-empty strings while preserving order."""
-    out: list[str] = []
-    for value in values:
-        if not isinstance(value, str):
-            continue
-        text = value.strip()
-        if text and text not in out:
-            out.append(text)
+    """Return unique non-empty strings while preserving order (delegates to shared impl)."""
+    from ..engine.choices import dedupe_strings
+
+    return dedupe_strings(values)
     return out

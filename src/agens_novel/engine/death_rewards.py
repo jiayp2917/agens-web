@@ -302,15 +302,6 @@ def apply_legacy_bonuses(
     return out
 
 
-def consume_legacy_bonus(bonus: dict[str, Any]) -> bool:
-    """Decrement a legacy bonus's runs_remaining. Returns True if still active."""
-    remaining = int(bonus.get("runs_remaining", 1) or 1)
-    if remaining <= 1:
-        return False
-    bonus["runs_remaining"] = remaining - 1
-    return True
-
-
 # ── Run summary ─────────────────────────────────────────────────────────────
 
 def build_run_summary(

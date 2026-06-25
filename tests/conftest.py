@@ -19,6 +19,30 @@ from unittest.mock import AsyncMock, patch
 import pytest
 
 
+@pytest.fixture(scope="session")
+def _pg_test_url() -> str | None:
+    """Shared PostgreSQL test DB URL (TEST_DATABASE_URL), or None if unset.
+
+    Creates the schema + seeds catalogs once when a URL is configured. Does NOT
+    skip here — callers skip at function scope so cross-module skip propagation
+    stays reliable (session-scoped pytest.skip() is unreliable across modules).
+    """
+    url = os.environ.get("TEST_DATABASE_URL")
+    if not url:
+        return None
+    from web.backend.database_postgres import PostgresWebDatabase
+
+    # initialize() runs CREATE TABLE IF NOT EXISTS + seed_catalogs. AUTO_DDL on a
+    # non-production connection is the only path that creates tables.
+    os.environ["AGENS_PG_AUTO_DDL"] = "1"
+    try:
+        db = PostgresWebDatabase(url)
+    finally:
+        os.environ.pop("AGENS_PG_AUTO_DDL", None)
+    db.engine.dispose()
+    return url
+
+
 @pytest.fixture
 def temp_project_root(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> Iterator[Path]:
     """Isolate runtime/ under tmp_path while keeping the real project root for config."""

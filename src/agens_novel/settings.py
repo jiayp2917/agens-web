@@ -5,59 +5,36 @@ The API key is loaded from the AGNES_API_KEY env var and masked on repr.
 Never log the Settings object directly — call ``settings.public_summary()``
 instead.
 
-No external dependencies; safe to use from the web backend and tests.
+Uses pydantic-settings for env-var loading.
 """
 
 from __future__ import annotations
 
-import os
 from typing import Any
 
+from pydantic_settings import BaseSettings
 
-def _mask(value: str | None) -> str:
-    """Mask a secret value for safe display. Returns '<unset>' if value is empty."""
-    if not value:
-        return "<unset>"
-    if len(value) <= 8:
-        return "***"
-    return f"{value[:3]}***{value[-4:]}"
+from agens_novel.utils.secrets import mask as _mask
 
 
-class Settings:
+class Settings(BaseSettings):
     """Env-driven settings. Loaded from AGNES_* env vars, masked on repr.
 
-    Accepts ``**overrides`` so callers can inject values programmatically
+    Accepts keyword overrides so callers can inject values programmatically
     (e.g. ``Settings(api_key="sk-...")``).
     """
 
-    def __init__(self, **overrides: Any) -> None:
-        self.api_key: str = overrides.get(
-            "api_key", os.environ.get("AGNES_API_KEY", ""),
-        )
-        self.base_url: str = overrides.get(
-            "base_url", os.environ.get("AGNES_BASE_URL", "https://apihub.agnes-ai.com/v1"),
-        )
-        self.model: str = overrides.get(
-            "model", os.environ.get("AGNES_MODEL", "agnes-2.0-flash"),
-        )
-        self.temperature: float = float(overrides.get(
-            "temperature", os.environ.get("AGNES_TEMPERATURE", "0.7"),
-        ))
-        self.max_tokens: int = int(overrides.get(
-            "max_tokens", os.environ.get("AGNES_MAX_TOKENS", "4096"),
-        ))
-        self.request_timeout_seconds: float = float(overrides.get(
-            "request_timeout_seconds", os.environ.get("AGNES_REQUEST_TIMEOUT_SECONDS", "60.0"),
-        ))
-        self.max_retries: int = int(overrides.get(
-            "max_retries", os.environ.get("AGNES_MAX_RETRIES", "3"),
-        ))
-        self.retry_initial_backoff_seconds: float = float(overrides.get(
-            "retry_initial_backoff_seconds", os.environ.get("AGNES_RETRY_INITIAL_BACKOFF_SECONDS", "1.0"),
-        ))
-        self.retry_max_backoff_seconds: float = float(overrides.get(
-            "retry_max_backoff_seconds", os.environ.get("AGNES_RETRY_MAX_BACKOFF_SECONDS", "8.0"),
-        ))
+    model_config = {"env_prefix": "AGNES_"}
+
+    api_key: str = ""
+    base_url: str = "https://apihub.agnes-ai.com/v1"
+    model: str = "agnes-2.0-flash"
+    temperature: float = 0.7
+    max_tokens: int = 4096
+    request_timeout_seconds: float = 60.0
+    max_retries: int = 3
+    retry_initial_backoff_seconds: float = 1.0
+    retry_max_backoff_seconds: float = 8.0
 
     def __repr__(self) -> str:
         """Mask api_key in repr to prevent accidental leak in tracebacks."""

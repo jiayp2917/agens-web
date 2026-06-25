@@ -3,12 +3,8 @@
 from __future__ import annotations
 
 import json
-import os
 import time
-from pathlib import Path
 from typing import Any
-
-from agens_novel import paths
 
 CATALOG_TABLES = (
     "catalog_talents",
@@ -44,13 +40,6 @@ def catalog_seed_sources() -> tuple[tuple[str, list[dict[str, Any]]], ...]:
         ("catalog_difficulties", SEED_DIFFICULTIES),
         ("catalog_story_seeds", SEED_STORY_SEEDS),
     )
-
-
-def default_db_path() -> Path:
-    configured = os.environ.get("AGENS_WEB_DB")
-    if configured:
-        return Path(configured)
-    return paths.RUNTIME_DIR / "web" / "agens_web.sqlite3"
 
 
 def now_ts() -> float:
@@ -148,9 +137,7 @@ def encode_game_turn_json(
 ) -> tuple[str, str, str]:
     """Return (choices, state_delta, state_after) as compact JSON strings.
 
-    SQLite stores these in `_json`-suffixed TEXT columns; Postgres casts them
-    to JSONB. Either way the value is the same encoded string, so this helper
-    keeps the two write paths in sync.
+    Postgres casts these to JSONB; the encoded string is the canonical form.
     """
     return (
         dump_json(choices),

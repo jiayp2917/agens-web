@@ -111,7 +111,3 @@ def public_auth_response(user: dict[str, Any]) -> dict[str, Any]:
 def _sign(payload: str, secret: str | None = None) -> str:
     session_secret = secret or os.environ.get("SESSION_SECRET") or DEV_SESSION_SECRET
     return hmac.new(session_secret.encode("utf-8"), payload.encode("utf-8"), hashlib.sha256).hexdigest()
-
-
-def generate_invite_code() -> str:
-    return secrets.token_urlsafe(24)

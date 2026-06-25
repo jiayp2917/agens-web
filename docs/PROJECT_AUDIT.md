@@ -2,6 +2,8 @@
 
 本文是 Web-only 项目的结构边界、瘦身清单和技术债队列。本目录只做浏览器版本。
 
+> **2026-06-25 更新**：已执行审计计划（`zesty-popping-graham.md`）的**方案 C**——删除 `database_sqlite.py`，数据库统一为 PostgreSQL。P0 安全修复、P1 死代码清理、P2 PG-only 合并、P3 部分去重均已完成，详见 `CHANGELOG.md`（2026-06-25）。下文双轨分析与「建议方案 A」为历史记录，方案 C 为实际落地结果。
+
 ## 当前边界
 
 - 产品入口是浏览器 Web UI + FastAPI 后端。

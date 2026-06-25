@@ -83,7 +83,7 @@
 
 - **Backend**：FastAPI，包装 `GameEngine`，提供会话、开局、回合、存读档、设置和模型调用接口。
 - **Frontend**：浏览器 Web UI，首期可用 React/Vite 或等价轻量前端。
-- **Database**：SQLite 起步，后续可替换 PostgreSQL；保存用户、会话、存档、chat_history 和模型配置摘要。
+- **Database**：PostgreSQL（本地与生产统一）；保存用户、会话、存档、chat_history 和模型配置摘要。
 - **LLM**：继续使用 OpenAI 兼容调用，密钥只在后端读取、保存或脱敏展示，禁止进入前端代码和日志。
 - **Tests**：后端 API 测试、核心引擎测试、浏览器端到端测试。
 

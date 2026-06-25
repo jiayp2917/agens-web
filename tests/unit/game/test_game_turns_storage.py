@@ -1,7 +1,9 @@
-﻿"""Game-mode v5 Layer 8: game_runs / game_turns storage + rarity unlock gates.
+"""Game-mode v5 Layer 8: game_runs / game_turns storage + rarity unlock gates.
 
 Spec §8.3 (game_turns JSONB table) and §11 (rarity unlock gates driven by
 runs_completed / ascension_count).
+
+Migrated to PostgreSQL (Option C consolidation); the SQLite backend is gone.
 """
 
 from __future__ import annotations
@@ -10,6 +12,7 @@ import sys
 from pathlib import Path
 
 import pytest
+from sqlalchemy import create_engine, text
 
 # Ensure src/ is importable when running from the repo root.
 _REPO_ROOT = Path(__file__).resolve().parents[3]
@@ -54,48 +57,58 @@ class TestRarityUnlockGates:
 
 
 @pytest.fixture()
-def sqlite_db(tmp_path, monkeypatch):
-    """A fresh SQLiteWebDatabase on a temp path."""
-    from web.backend.database_sqlite import SQLiteWebDatabase
+def pg_db(_pg_test_url, monkeypatch):
+    """A fresh PostgresWebDatabase against the shared, truncated test DB."""
+    if _pg_test_url is None:
+        pytest.skip("TEST_DATABASE_URL not configured")
+    from web.backend.database_postgres import PostgresWebDatabase
 
-    db_path = tmp_path / "test_game_turns.db"
-    return SQLiteWebDatabase(path=db_path)
+    url = _pg_test_url
+    engine = create_engine(url)
+    try:
+        with engine.begin() as conn:
+            conn.execute(text("TRUNCATE TABLE game_runs, game_turns, player_progress, users RESTART IDENTITY CASCADE"))
+    finally:
+        engine.dispose()
+    monkeypatch.setenv("DATABASE_URL", url)
+    return PostgresWebDatabase(url)
 
 
 class TestGameRunAndTurnStorage:
     """Spec §8.3: game_runs + game_turns + player_progress tables."""
 
-    def test_record_run_increments_progress(self, sqlite_db) -> None:
-        user = sqlite_db.upsert_user("tester")
+    def test_record_run_increments_progress(self, pg_db) -> None:
+        user = pg_db.upsert_user("tester")
         uid = user["id"]
 
         # First run, no ascension.
-        run1 = sqlite_db.record_game_run(uid, char_name="甲", realm="练气",
-                                         death_cause="寿元耗尽", ascended=False,
-                                         turn_count=12)
+        run1 = pg_db.record_game_run(uid, char_name="甲", realm="练气",
+                                     death_cause="寿元耗尽", ascended=False,
+                                     turn_count=12)
         assert run1
-        progress = sqlite_db.get_player_progress(uid)
+        progress = pg_db.get_player_progress(uid)
         assert progress == {"runs_completed": 1, "ascension_count": 0}
 
         # Second run, ascension.
-        sqlite_db.record_game_run(uid, char_name="乙", realm="飞升",
-                                  death_cause="飞升成仙", ascended=True,
-                                  turn_count=50)
-        progress = sqlite_db.get_player_progress(uid)
+        pg_db.record_game_run(uid, char_name="乙", realm="飞升",
+                              death_cause="飞升成仙", ascended=True,
+                              turn_count=50)
+        progress = pg_db.get_player_progress(uid)
         assert progress == {"runs_completed": 2, "ascension_count": 1}
 
-    def test_new_player_progress_is_zero(self, sqlite_db) -> None:
-        user = sqlite_db.upsert_user("newbie")
-        assert sqlite_db.get_player_progress(user["id"]) == {
-            "runs_completed": 0, "ascension_count": 0,
+    def test_new_player_progress_is_zero(self, pg_db) -> None:
+        user = pg_db.upsert_user("newbie")
+        assert pg_db.get_player_progress(user["id"]) == {
+            "runs_completed": 0,
+            "ascension_count": 0,
         }
 
-    def test_record_turn_logs_settled_turn(self, sqlite_db) -> None:
-        user = sqlite_db.upsert_user("logger")
+    def test_record_turn_logs_settled_turn(self, pg_db) -> None:
+        user = pg_db.upsert_user("logger")
         uid = user["id"]
-        run_id = sqlite_db.record_game_run(uid, char_name="丙", realm="筑基")
+        run_id = pg_db.record_game_run(uid, char_name="丙", realm="筑基")
 
-        turn_id = sqlite_db.record_game_turn(
+        turn_id = pg_db.record_game_turn(
             run_id, turn_no=1,
             start_age=18, elapsed_years=3, end_age=21,
             lifespan=120, remaining_lifespan=99,
@@ -108,24 +121,28 @@ class TestGameRunAndTurnStorage:
             event_kind="cultivation",
         )
         assert turn_id
-        # The turn is retrievable and round-trips JSON.
-        with sqlite_db.connect() as conn:
+        # The turn is retrievable and round-trips JSONB.
+        with pg_db.engine.connect() as conn:
             row = conn.execute(
-                "SELECT turn_no, end_age, choice_taken, choices_json, event_kind "
-                "FROM game_turns WHERE run_id = ?",
-                (run_id,),
+                text(
+                    "SELECT turn_no, end_age, choice_taken, choices, event_kind "
+                    "FROM game_turns WHERE run_id = :rid"
+                ),
+                {"rid": run_id},
             ).fetchone()
-        assert row["turn_no"] == 1
-        assert row["end_age"] == 21
-        assert row["choice_taken"] == "A 稳妥：闭关吐纳"
-        assert row["event_kind"] == "cultivation"
-        assert "闭关吐纳" in row["choices_json"]
+        mapping = row._mapping
+        assert mapping["turn_no"] == 1
+        assert mapping["end_age"] == 21
+        assert mapping["choice_taken"] == "A 稳妥：闭关吐纳"
+        assert mapping["event_kind"] == "cultivation"
+        # JSONB comes back as a parsed list.
+        assert any("闭关吐纳" in str(c) for c in mapping["choices"])
 
-    def test_turn_no_unique_per_run(self, sqlite_db) -> None:
-        user = sqlite_db.upsert_user("dup")
+    def test_turn_no_unique_per_run(self, pg_db) -> None:
+        user = pg_db.upsert_user("dup")
         uid = user["id"]
-        run_id = sqlite_db.record_game_run(uid, char_name="丁", realm="金丹")
-        sqlite_db.record_game_turn(
+        run_id = pg_db.record_game_run(uid, char_name="丁", realm="金丹")
+        pg_db.record_game_turn(
             run_id, turn_no=1, start_age=20, elapsed_years=1, end_age=21,
             lifespan=200, remaining_lifespan=179, choice_taken=None,
             choices=[], state_delta={}, state_after={}, calendar_summary="",
@@ -133,7 +150,7 @@ class TestGameRunAndTurnStorage:
         )
         # Duplicate turn_no for the same run should be rejected by the UNIQUE constraint.
         with pytest.raises(Exception):
-            sqlite_db.record_game_turn(
+            pg_db.record_game_turn(
                 run_id, turn_no=1, start_age=21, elapsed_years=1, end_age=22,
                 lifespan=200, remaining_lifespan=178, choice_taken=None,
                 choices=[], state_delta={}, state_after={}, calendar_summary="",

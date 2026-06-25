@@ -1,18 +1,14 @@
-"""Database factory and shared protocol for the web adapter."""
+"""Database factory and shared protocol for the web adapter (PostgreSQL only).
+
+Option C consolidation: the SQLite backend was removed. Dev, test, and
+production all use PostgreSQL via DATABASE_URL.
+"""
 
 from __future__ import annotations
 
 import os
 from pathlib import Path
 from typing import Any, Protocol
-
-from .database_common import default_db_path
-from .database_sqlite import SQLiteWebDatabase
-
-
-# Backwards-compatible name for existing tests/imports. The factory below is
-# the production entrypoint; direct construction remains SQLite-local.
-WebDatabase = SQLiteWebDatabase
 
 
 class WebDatabaseProtocol(Protocol):
@@ -154,11 +150,16 @@ class WebDatabaseProtocol(Protocol):
 
 
 def create_database(db_path: Path | None = None):
-    backend = os.environ.get("DATABASE_BACKEND", "sqlite").strip().lower()
-    if backend in ("", "sqlite", "sqlite3"):
-        return SQLiteWebDatabase(db_path)
-    if backend in ("postgres", "postgresql", "pg"):
-        from .database_postgres import PostgresWebDatabase
+    """Create the PostgreSQL web database.
 
-        return PostgresWebDatabase(os.environ.get("DATABASE_URL"))
-    raise RuntimeError(f"Unsupported DATABASE_BACKEND: {backend}")
+    ``db_path`` is accepted for backward compatibility with ``create_app()``
+    callers but ignored — the connection always comes from ``DATABASE_URL``.
+    """
+    from .database_postgres import PostgresWebDatabase
+
+    url = os.environ.get("DATABASE_URL")
+    if not url:
+        raise RuntimeError(
+            "DATABASE_URL is required (PostgreSQL-only since the Option C consolidation)."
+        )
+    return PostgresWebDatabase(url)

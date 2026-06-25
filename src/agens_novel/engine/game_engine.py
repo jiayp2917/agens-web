@@ -123,9 +123,6 @@ class GameEngine:
         if cb is not None:
             cb(*args)
 
-    def _has_api_key(self) -> bool:
-        """Let agent nodes report missing API keys as normal LLM failures."""
-        return True
 
     # ─── Stream callback wrapper ──────────────────────────────────────
 
@@ -258,9 +255,6 @@ class GameEngine:
 
         Supports streaming via ``on_stream_chunk``.
         """
-        if not self._has_api_key():
-            self._emit("on_error", "AGNES_API_KEY 未设置。请先配置 API Key。")
-            return
 
         if not self.game_session.game_started:
             self._emit("on_info", "尚未开始游戏。请返回主页选择新游戏。")
@@ -285,10 +279,6 @@ class GameEngine:
             return
 
         self._turn_flow.handle_action(text)
-
-    def _handle_local_story_action(self, text: str) -> None:
-        """Process one turn in the local preset story fallback."""
-        self._turn_flow.handle_local_story_action(text)
 
     def _attempt_local_story_breakthrough(self) -> None:
         """Use the existing realm rules for a local-story breakthrough."""
@@ -643,21 +633,6 @@ def _merge_rule_delta(
         merged["meta"] = merged_meta
 
     return merged
-
-
-def _parse_delta_int(value: Any) -> int:
-    """Parse an int from a delta value like '+10', '10', or 10."""
-    if isinstance(value, bool):
-        return 0
-    if isinstance(value, int):
-        return value
-    if isinstance(value, str):
-        stripped = value.lstrip("+")
-        try:
-            return int(stripped)
-        except (ValueError, TypeError):
-            return 0
-    return 0
 
 
 _luck_from_attributes = luck_from_attributes

@@ -438,8 +438,7 @@ def test_production_requires_allowed_origins(tmp_path: Path, monkeypatch) -> Non
 
 def test_production_hides_openapi_and_rejects_untrusted_host(tmp_path: Path, monkeypatch) -> None:
     monkeypatch.setenv("AGENS_ENV", "production")
-    monkeypatch.setenv("DATABASE_BACKEND", "sqlite")
-    monkeypatch.setenv("DATABASE_URL", "postgresql+psycopg://agens_user:test@postgres:5432/agens_web")
+    monkeypatch.setenv("DATABASE_URL", os.environ["TEST_DATABASE_URL"])
     monkeypatch.setenv("INVITE_ADMIN_CODE", "admin-invite-123")
     monkeypatch.setenv("SESSION_SECRET", "not-the-dev-secret")
     monkeypatch.setenv("AGENS_ALLOWED_ORIGINS", "https://game.example.test")

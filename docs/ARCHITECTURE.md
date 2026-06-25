@@ -26,14 +26,13 @@
 | --- | --- | --- |
 | `app.py` | `create_app()`, `is_production_mode()`, `validate_runtime_config()` | FastAPI 工厂、Pydantic 请求模型、27 个路由注册、`TrustedHostMiddleware` + `BodySizeLimitMiddleware` + 同源校验、`RateLimiter`、生产 fail-fast（缺 `SESSION_SECRET` / `DATABASE_URL` / `INVITE_ADMIN_CODE` / `AGENS_ALLOWED_ORIGINS` 时拒启动） |
 | `service.py` | `WebRunner`, `WebGameService`, `build_death_summary()` | `WebRunner` 包装 `GameEngine` 并把引擎回调捕获为事件；`WebGameService` 是服务编排入口（创建 / 启动 / 选择 / 行动 / 存读档 / 终局）；`build_death_summary` 汇总终局成就与奖励 |
-| `database.py` | `WebDatabaseProtocol`, `create_database()`, `WebDatabase` 别名 | `Protocol` 定义所有公开方法签名；工厂按 `DATABASE_BACKEND` env 选 SQLite/Postgres；`WebDatabase = SQLiteWebDatabase` 保留向后兼容别名 |
-| `database_sqlite.py` | `SQLiteWebDatabase` | stdlib `sqlite3` 实现；启动 `initialize()` 自动建表 + 种子 catalog；JSON 列通过 `load_json` / `dump_json` 编解码 |
-| `database_postgres.py` | `PostgresWebDatabase` | SQLAlchemy Core + `JSONB`；`__init__` 时按 `APP_ENV` 决定是否允许 `AGENS_PG_AUTO_DDL=1`（生产 fail-closed） |
+| `database.py` | `WebDatabaseProtocol`, `create_database()` | `Protocol` 定义所有公开方法签名；工厂始终返回 PostgreSQL 后端（Option C：SQLite 后端已移除），连接来自 `DATABASE_URL` |
+| `database_postgres.py` | `PostgresWebDatabase` | SQLAlchemy Core + `JSONB`；`__init__` 时按 `APP_ENV` 决定是否允许 `AGENS_PG_AUTO_DDL=1`（生产 fail-closed）；`initialize()` 建 `CREATE TABLE IF NOT EXISTS` + 种子 catalog |
 | `auth.py` | `create_session_token`, `parse_session_token`, `create_guest_token`, `cookie_kwargs` | HMAC-SHA256 签名会话 token；`agens_session` / `agens_guest` 两个 HttpOnly Cookie；`GUEST_USER_PREFIX = "guest-"` |
 | `security.py` | `hash_password`, `verify_password`, `enforce_same_origin` | 密码哈希（bcrypt 系）、CSRF、同源校验（`Origin` / `Referer`） |
 | `database_common.py` | `load_json`, `dump_json`, `now_ts` | JSON 列编解码 + 时间戳 |
 | `catalog_seed.py` | `SEED_TALENTS`, `SEED_FAMILY_BACKGROUNDS`, `SEED_SPIRIT_ROOTS`, `SEED_DIFFICULTIES`, `SEED_STORY_SEEDS` | 首次启动种子常量 |
-| `__main__.py` | `app = create_app()` | `python -m web.backend` / `uvicorn web.backend.app:app` 入口 |
+| `__main__.py` | `app`（经模块 `__getattr__` 惰性构造） | `python -m web.backend` / `uvicorn web.backend.app:app` 入口；首次访问 `app` 时才 `create_app()`，import 时不打开 DB 连接 |
 
 ## 4. 游戏核心模块清单（`src/agens_novel/`）
 

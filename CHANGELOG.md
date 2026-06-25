@@ -1,5 +1,30 @@
 # Changelog
 
+## 2026-06-25
+
+### Changed — 代码审计执行（方案 C：数据库统一 PostgreSQL）
+
+执行审计计划 `zesty-popping-graham.md` 的 P0/P1/P2/P3：
+
+- **P0 安全/稳定**：`web/backend/app.py` 在 `create_app()` 调用 `setup_logging()` 安装 `SecretRedactor`，防止 API key 从 web 日志泄露；删除 `GameEngine._has_api_key`（恒为 True 的不可达守卫）及其调用点；`WebGameService` 新增 `_prune_idle_runners(ttl=1800)`，按空闲超时淘汰 `runners` 字典，修复内存泄漏。
+- **P1 减重**：`Settings` 改用 `pydantic-settings.BaseSettings`（`env_prefix="AGNES_"`）；删除死代码 `config/default.yaml`；合并 `dedupe_strings`、`_is_production_mode`→`is_production_mode`，删除未用的 `_parse_delta_int`。`logging_setup.py` 因 P0 被激活，保留。
+- **P2 架构（方案 C）**：删除 `web/backend/database_sqlite.py`，`create_database()` 工厂恒返回 `PostgresWebDatabase` 并要求 `DATABASE_URL`；`web/backend/app.py` 改用模块 `__getattr__` 惰性构造 `app`，import 不再连库；删除 Flow 死代码 `_handle_local_story_action`、`auth.generate_invite_code`、`death_rewards.consume_legacy_bonus`（单数版）。净减约 900 行。
+- **P2 测试迁移**：`tests/unit/game/test_game_turns_storage.py` 重写到 PostgreSQL；新增 `tests/web/conftest.py` 提供函数级 TRUNCATE 隔离夹具；未设置 `TEST_DATABASE_URL` 时 DB 往返测试自动跳过。
+- **P3**：`Settings._mask` 复用 `agens_novel.utils.secrets.mask`（去重）。
+
+### Changed — 部署/配置同步 PG-only
+
+- `Dockerfile` 移除已失效的 `AGENS_WEB_DB=...sqlite3` 环境变量（工厂仅读 `DATABASE_URL`）。
+- `deploy/docker-entrypoint.sh` 不再按 `DATABASE_BACKEND` 门控，`alembic upgrade head` 无条件执行（PostgreSQL 为唯一后端）。
+- `.env.example` 移除 `AGENS_WEB_DB` 注释，`DATABASE_URL` 成为唯一数据库配置。
+- `README.md`、`AGENTS.md`、`docs/ARCHITECTURE.md`、`docs/PROJECT_AUDIT.md` 架构描述同步为 PostgreSQL-only。
+
+### Notes — 故意未改（待用户确认）
+
+- `web/backend/security.py` 的 `is_production_mode()` 仍读 `DATABASE_BACKEND`（默认 `sqlite`）作为生产态信号之一。方案 C 后该变量不再用于选择后端，仅作生产态提示；改变其语义属安全行为变更，未在本批处理。
+- `WebGameService` 与 `WebRunner` 未合并：审计「前者几乎全委托后者」的前提不成立（`WebRunner` 自带引擎回调、死亡奖励落库、响应序列化等大量逻辑），合并会产生 God Class。
+- `llm/client.py` 的 `mask_key` 未与 `utils.secrets.mask` 统一（两者掩码长度策略不同）。
+
 ## 2026-06-24
 
 ### Added

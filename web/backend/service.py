@@ -31,7 +31,8 @@ from agens_novel.game.constants import (
 from agens_novel.session.game_session import GameSession
 from agens_novel.settings import Settings
 
-from .database import SQLiteWebDatabase, WebDatabaseProtocol
+from .database import WebDatabaseProtocol
+from .database_postgres import PostgresWebDatabase
 
 PUBLIC_MODEL_FALLBACK_TEXT = "模型暂不可用，当前以本地故事继续。"
 _MODEL_FAILURE_PREFIXES = (
@@ -251,8 +252,17 @@ class WebGameService:
     """Application service for users, sessions, saves, and settings."""
 
     def __init__(self, db: WebDatabaseProtocol | None = None) -> None:
-        self.db = db or SQLiteWebDatabase()
+        self.db = db or PostgresWebDatabase()
         self.runners: dict[str, WebRunner] = {}
+        self._runner_touches: dict[str, float] = {}
+
+    def _prune_idle_runners(self, *, ttl: float = 1800) -> None:
+        now = time.time()
+        stale = [sid for sid, ts in list(self._runner_touches.items()) if now - ts > ttl]
+        for sid in stale:
+            self.runners.pop(sid, None)
+        for sid in stale:
+            self._runner_touches.pop(sid, None)
 
     def login(self, username: str = "local") -> dict[str, Any]:
         return self.db.upsert_user(username)
@@ -499,12 +509,14 @@ class WebGameService:
         return runner
 
     def _runner(self, session_id: str, user_id: str | None = None) -> WebRunner:
+        self._prune_idle_runners()
         if session_id in self.runners:
             runner = self.runners[session_id]
             if user_id and runner.user_id != user_id:
                 raise PermissionError("无权访问该会话。")
             if not user_id and not is_guest_user_id(runner.user_id):
                 raise PermissionError("请先登录。")
+            self._runner_touches[session_id] = time.time()
             return runner
         if not user_id:
             raise KeyError(f"会话不存在: {session_id}")
@@ -521,6 +533,7 @@ class WebGameService:
             db=self.db,
         )
         self.runners[session_id] = runner
+        self._runner_touches[session_id] = time.time()
         return runner
 
     def _persist(self, runner: WebRunner, title: str | None = None) -> None:
