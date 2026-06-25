@@ -1,0 +1,343 @@
+"""GameEngine start-flow orchestration and helpers."""
+
+from __future__ import annotations
+
+import logging
+import os
+from typing import Any
+
+from ..game.constants import (
+    DEFAULT_ATTRIBUTES,
+    DIFFICULTY_OPTIONS,
+    FAMILY_BACKGROUNDS,
+    SPIRIT_ROOTS,
+    TALENT_OPTIONS,
+)
+from ..session.game_session import GameSession
+from .choices import complete_choices, fallback_choices
+from .model_result import ModelResultKind, classify_world_builder_result
+from .profile_opening import profile_concept, profile_default_world, profile_opening
+from .render import format_status_bar
+from .world_generator import (
+    build_world_fallback,
+    build_world_prompt,
+    parse_world_response,
+)
+
+log = logging.getLogger(__name__)
+
+START_MODEL_WORLD_ENV = "AGENS_START_MODEL_WORLD"
+START_MODEL_OPENING_ENV = "AGENS_START_MODEL_OPENING"
+
+
+class StartFlow:
+    """Owns model and local-template start paths for ``GameEngine``."""
+
+    def __init__(self, engine: Any) -> None:
+        self.engine = engine
+
+    def new_game(self, concept: str) -> None:
+        """Create a new character via the World Builder agent."""
+        engine = self.engine
+        session = engine.game_session
+        concept = concept.strip()
+        if not concept:
+            engine._emit("on_info", "已取消。")
+            return
+
+        session.reset()
+        engine._emit("on_loading", "天道初开，世界生成中...")
+
+        try:
+            result = engine._run_agent(
+                "world_builder",
+                concept,
+                session,
+                generation_type="new_game",
+            )
+        except Exception:
+            log.exception("world_builder error")
+            reason = "世界生成失败（详见日志）"
+            engine._emit("on_error", reason)
+            if engine._confirm_local_fallback("world_builder_exception", reason):
+                engine._set_choices(None, source="world_builder_exception", fallback_notice=True)
+            else:
+                engine._end_model_failure_run(reason)
+            return
+
+        if result.get("llm_error"):
+            reason = f"世界生成失败: {result['llm_error']}"
+            engine._log_model_result(
+                agent="world_builder",
+                source="new_game_error",
+                status=ModelResultKind.REQUEST_FAILED,
+                reason=reason,
+                result=result,
+            )
+            engine._emit("on_error", reason)
+            if engine._confirm_local_fallback("world_builder_error", reason):
+                engine._set_choices(None, source="world_builder_error", fallback_notice=True)
+            else:
+                engine._end_model_failure_run(reason)
+            return
+
+        generated = result.get("generated_data", {})
+        world_status = classify_world_builder_result(result)
+        engine._log_model_result(
+            agent="world_builder",
+            source="new_game",
+            status=world_status.kind,
+            reason=world_status.reason,
+            result=result,
+        )
+        if not generated:
+            engine._emit("on_info", "世界数据为空，请重试。")
+            return
+
+        apply_world_builder_generated_session(session, generated)
+
+        opening = generated.get("opening_narrative", result.get("opening_narrative", ""))
+        if not opening:
+            desc = result.get("world_description", "")
+            opening = desc or "世界已生成。"
+
+        if engine._set_choices(
+            generated.get("choices"),
+            source="world_builder",
+            fallback_notice=True,
+            require_choice=True,
+            reason="世界生成未返回可用选项。",
+        ) is False and session.game_over:
+            return
+        self._emit_opening(opening)
+
+    def start_from_profile(self, profile: dict[str, Any]) -> None:
+        """Create a deterministic game from the character form."""
+        engine = self.engine
+        apply_profile_session(engine.game_session, profile)
+
+        engine._emit("on_loading", "开局生成中...")
+        world_profile = self.generate_world_profile(profile)
+        apply_profile_world_profile(engine.game_session, world_profile)
+
+        profile_choices = complete_choices(profile.get("choices"), engine.game_session)
+        engine._emit("on_loading", "准备开局中...")
+        generated_opening, generated_choices = self.generate_profile_opening(profile)
+        if engine.game_session.game_over:
+            return
+        opening = str(
+            profile.get("opening_narrative")
+            or generated_opening
+            or profile_opening(engine.game_session)
+        )
+        if engine._set_choices(
+            profile_choices or generated_choices,
+            source="profile_opening",
+            fallback_notice=True,
+            require_choice=True,
+            reason="开场推演未返回可用选项。",
+        ) is False and engine.game_session.game_over:
+            return
+        self._emit_opening(opening)
+
+    def generate_world_profile(self, profile: dict[str, Any]) -> dict[str, Any]:
+        """Generate a structured world profile for the character session."""
+        engine = self.engine
+        fallback = build_world_fallback(profile)
+
+        if os.environ.get(START_MODEL_WORLD_ENV) != "1":
+            return fallback
+
+        if not os.environ.get("AGNES_API_KEY"):
+            engine._emit("on_info", "未检测到 API Key，使用本地模板生成世界观。")
+            return fallback
+
+        prompt = build_world_prompt(profile)
+        try:
+            result = engine._run_agent(
+                "world_builder",
+                prompt,
+                engine.game_session,
+                generation_type="world_profile",
+            )
+        except Exception:
+            log.exception("world profile generation failed, using fallback")
+            return fallback
+
+        parsed = parse_world_response(result)
+        if not parsed or not parsed.get("world_name"):
+            return fallback
+
+        merged = dict(fallback)
+        merged.update({k: v for k, v in parsed.items() if v})
+        return merged
+
+    def generate_profile_opening(self, profile: dict[str, Any]) -> tuple[str, list[str]]:
+        """Ask World Builder for the first scene after form creation."""
+        engine = self.engine
+        if os.environ.get(START_MODEL_OPENING_ENV) != "1":
+            return "", fallback_choices(engine.game_session)
+
+        if not os.environ.get("AGNES_API_KEY"):
+            reason = "AGNES_API_KEY 未设置。"
+            if engine._confirm_local_fallback("profile_opening_missing_key", reason):
+                engine._emit("on_info", engine._fallback_notice_for(reason))
+                return engine._enter_local_story(reason, emit_narrative=False)
+            engine._end_model_failure_run(reason)
+            return "", []
+
+        concept = profile_concept(profile)
+        try:
+            result = engine._run_agent(
+                "world_builder",
+                concept,
+                engine.game_session,
+                generation_type="new_game",
+            )
+        except Exception:
+            log.exception("profile opening world_builder error")
+            reason = "开场推演失败（详见日志）。"
+            if engine._confirm_local_fallback("profile_opening_exception", reason):
+                engine._emit("on_info", engine._fallback_notice_for(reason))
+                return engine._enter_local_story(reason, emit_narrative=False)
+            engine._end_model_failure_run(reason)
+            return "", []
+
+        world_status = classify_world_builder_result(result)
+        engine._log_model_result(
+            agent="world_builder",
+            source="profile_opening",
+            status=world_status.kind,
+            reason=world_status.reason,
+            result=result,
+        )
+        if world_status.kind == ModelResultKind.REQUEST_FAILED:
+            log.warning("profile opening world_builder failed: %s", result["llm_error"])
+            reason = world_status.reason.replace("世界生成失败", "开场推演失败", 1)
+            if engine._confirm_local_fallback("profile_opening_error", reason):
+                engine._emit("on_info", engine._fallback_notice_for(reason))
+                return engine._enter_local_story(reason, emit_narrative=False)
+            engine._end_model_failure_run(reason)
+            return "", []
+
+        generated = result.get("generated_data", {})
+        if world_status.kind == ModelResultKind.INCOMPLETE_OUTPUT or not isinstance(generated, dict):
+            reason = world_status.reason or "开场推演数据不可用。"
+            if engine._confirm_local_fallback("profile_opening_empty", reason):
+                engine._emit("on_info", engine._fallback_notice_for(reason))
+                return engine._enter_local_story(reason, emit_narrative=False)
+            engine._end_model_failure_run(reason)
+            return "", []
+
+        world = generated.get("world", {})
+        if isinstance(world, dict):
+            session = engine.game_session
+            session.current_scene = world.get("current_scene", session.current_scene)
+            session.location = world.get("location", session.location)
+            session.region = world.get("region", session.region)
+            session.npcs_present = world.get("npcs_present", session.npcs_present)
+            session.active_quests = world.get("active_quests", session.active_quests)
+            session.discovered_locations = world.get(
+                "discovered_locations",
+                session.discovered_locations,
+            )
+            session.lore_facts = world.get("lore_facts", session.lore_facts)
+            session.day_count = world.get("day_count", session.day_count)
+
+        opening = str(generated.get("opening_narrative") or result.get("opening_narrative") or "")
+        return opening, complete_choices(generated.get("choices"), engine.game_session)
+
+    def _emit_opening(self, opening: str) -> None:
+        engine = self.engine
+        engine._emit("on_narrative", opening, 0)
+        engine._emit("on_character_created", engine.game_session)
+        engine._emit("on_status_bar", format_status_bar(engine.game_session))
+        engine._record_opening_context(opening)
+        engine._auto_save()
+
+
+def apply_world_builder_generated_session(
+    session: GameSession,
+    generated: dict[str, Any],
+) -> None:
+    """Apply World Builder character/world output to the active session."""
+    char_data = generated.get("character", {})
+    if char_data:
+        session.char_name = char_data.get("name", "无名")
+        session.realm = char_data.get("realm", "练气")
+        session.realm_stage = char_data.get("realm_stage", 1)
+        session.spirit_root = char_data.get("spirit_root", "")
+        session.spirit_root_grade = char_data.get("spirit_root_grade", "")
+        session.age = char_data.get("age", session.age)
+        session.talent = char_data.get("talent", session.talent)
+        session.family_background = char_data.get("family_background", session.family_background)
+        session.difficulty = char_data.get("difficulty", session.difficulty)
+        attrs = char_data.get("attributes")
+        if isinstance(attrs, dict):
+            merged_attrs = dict(session.attributes)
+            for key, value in attrs.items():
+                if isinstance(key, str) and isinstance(value, int) and not isinstance(value, bool):
+                    merged_attrs[key] = max(0, min(100, value))
+            session.attributes = merged_attrs
+        session.techniques = char_data.get("techniques", [])
+        session.inventory = char_data.get("inventory", [])
+        session.status_effects = char_data.get("status_effects", [])
+        session.lifespan = char_data.get("lifespan", 100)
+        if "equipment_slots" in char_data:
+            session.equipment_slots = char_data["equipment_slots"]
+
+    world_data = generated.get("world", {})
+    if world_data:
+        session.current_scene = world_data.get("current_scene", "")
+        session.location = world_data.get("location", "")
+        session.region = world_data.get("region", "")
+        session.npcs_present = world_data.get("npcs_present", [])
+        session.active_quests = world_data.get("active_quests", [])
+        session.discovered_locations = world_data.get("discovered_locations", [])
+        session.lore_facts = world_data.get("lore_facts", [])
+        session.day_count = world_data.get("day_count", 1)
+
+    session.game_started = True
+    session.turn_count = 0
+
+
+def apply_profile_session(session: GameSession, profile: dict[str, Any]) -> None:
+    """Initialize a deterministic session from the character form profile."""
+    attrs = dict(DEFAULT_ATTRIBUTES)
+    incoming_attrs = profile.get("attributes", {})
+    if isinstance(incoming_attrs, dict):
+        for key, value in incoming_attrs.items():
+            if isinstance(key, str) and isinstance(value, int) and not isinstance(value, bool):
+                attrs[key] = max(0, min(100, value))
+
+    session.reset()
+    session.game_started = True
+    session.game_over = False
+    session.turn_count = 0
+    session.char_name = str(profile.get("char_name") or "无名")
+    session.realm = "练气"
+    session.realm_stage = 1
+    session.age = int(profile.get("age") or 16)
+    session.talent = str(profile.get("talent") or TALENT_OPTIONS[0])
+    session.spirit_root = str(profile.get("spirit_root") or SPIRIT_ROOTS[0]["name"])
+    session.spirit_root_grade = str(profile.get("spirit_root_grade") or "")
+    session.family_background = str(profile.get("family_background") or FAMILY_BACKGROUNDS[0])
+    session.difficulty = str(profile.get("difficulty") or DIFFICULTY_OPTIONS[1])
+    session.attributes = attrs
+    session.techniques = list(profile.get("techniques") or [{"name": "基础吐纳术", "level": 1, "type": "内功"}])
+    session.inventory = list(profile.get("inventory") or [{"name": "粗布道袍", "quantity": 1, "type": "防具"}])
+    default_scene, default_location, default_region, default_lore = profile_default_world(profile)
+    session.current_scene = str(profile.get("current_scene") or default_scene)
+    session.location = str(profile.get("location") or default_location)
+    session.region = str(profile.get("region") or default_region)
+    session.discovered_locations = [session.location]
+    session.lore_facts = [default_lore]
+
+
+def apply_profile_world_profile(session: GameSession, world_profile: dict[str, Any]) -> None:
+    """Attach generated world-profile fields to a profile-started session."""
+    session.world_profile = world_profile
+    if world_profile.get("world_name"):
+        session.region = world_profile["world_name"]
+    if world_profile.get("initial_situation"):
+        session.lore_facts.insert(0, world_profile["initial_situation"])

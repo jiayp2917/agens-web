@@ -15,13 +15,6 @@ import os
 from collections.abc import Callable
 from typing import Any
 
-from ..game.constants import (
-    DEFAULT_ATTRIBUTES,
-    DIFFICULTY_OPTIONS,
-    FAMILY_BACKGROUNDS,
-    SPIRIT_ROOTS,
-    TALENT_OPTIONS,
-)
 from ..game.realm import RealmSystem
 from ..session.game_session import GameSession
 from .action_delta_policy import (
@@ -34,16 +27,13 @@ from .choices import (
     fallback_choices,
     normalize_choices,
 )
+from .breakthrough_flow import BreakthroughFlow
 from .local_story import (
-    advance_local_story,
     current_local_story_choices,
     start_local_story,
 )
 from .model_result import (
     ModelResultKind,
-    classify_judge_result,
-    classify_narrator_result,
-    classify_world_builder_result,
     result_diagnostics,
 )
 from .model_fallback_policy import (
@@ -55,10 +45,13 @@ from .model_fallback_policy import (
 from .profile_opening import (
     luck_from_attributes,
     profile_concept,
-    profile_default_world,
     profile_opening,
 )
+from .start_flow import (
+    StartFlow,
+)
 from .turn_runner import run_turn_sync
+from .turn_flow import TurnFlow
 from .render import (
     format_equipment,
     format_inventory,
@@ -67,7 +60,6 @@ from .render import (
     format_quests,
     format_realm,
     format_skills,
-    format_status_bar,
     format_status_card,
 )
 
@@ -75,10 +67,6 @@ log = logging.getLogger(__name__)
 
 # Type aliases for callbacks.
 Callback = Callable[..., None]
-
-START_MODEL_WORLD_ENV = "AGENS_START_MODEL_WORLD"
-START_MODEL_OPENING_ENV = "AGENS_START_MODEL_OPENING"
-
 
 def _safe_log_reason(reason: str, limit: int = 220) -> str:
     """Trim and redact failure text before it reaches logcat."""
@@ -124,6 +112,9 @@ class GameEngine:
             lambda: self.on_model_failure_choice,
             _safe_log_reason,
         )
+        self._start_flow = StartFlow(self)
+        self._turn_flow = TurnFlow(self)
+        self._breakthrough_flow = BreakthroughFlow(self)
 
     # ─── Helper to emit callbacks safely ───────────────────────────────
 
@@ -141,6 +132,10 @@ class GameEngine:
     def _stream_callback(self, text: str) -> None:
         """Forward stream chunks to the UI layer."""
         self._emit("on_stream_chunk", text)
+
+    def _run_agent(self, agent_name: str, user_input: str, session: GameSession, **kwargs: Any) -> dict[str, Any]:
+        """Call the agent runner through the GameEngine module patch seam."""
+        return run_turn_sync(agent_name, user_input, session, **kwargs)
 
     def _set_choices(
         self,
@@ -233,122 +228,7 @@ class GameEngine:
 
     def new_game(self, concept: str) -> None:
         """Create a new character via the World Builder agent."""
-        concept = concept.strip()
-        if not concept:
-            self._emit("on_info", "已取消。")
-            return
-
-        # Reset session.
-        self.game_session.reset()
-
-        self._emit("on_loading", "天道初开，世界生成中...")
-
-        try:
-            result = run_turn_sync(
-                "world_builder", concept, self.game_session,
-                generation_type="new_game",
-            )
-        except Exception:
-            log.exception("world_builder error")
-            reason = "世界生成失败（详见日志）"
-            self._emit("on_error", reason)
-            if self._confirm_local_fallback("world_builder_exception", reason):
-                self._set_choices(None, source="world_builder_exception", fallback_notice=True)
-            else:
-                self._end_model_failure_run(reason)
-            return
-
-        if result.get("llm_error"):
-            reason = f"世界生成失败: {result['llm_error']}"
-            self._log_model_result(
-                agent="world_builder",
-                source="new_game_error",
-                status=ModelResultKind.REQUEST_FAILED,
-                reason=reason,
-                result=result,
-            )
-            self._emit("on_error", reason)
-            if self._confirm_local_fallback("world_builder_error", reason):
-                self._set_choices(None, source="world_builder_error", fallback_notice=True)
-            else:
-                self._end_model_failure_run(reason)
-            return
-
-        # Extract generated data.
-        generated = result.get("generated_data", {})
-        world_status = classify_world_builder_result(result)
-        self._log_model_result(
-            agent="world_builder",
-            source="new_game",
-            status=world_status.kind,
-            reason=world_status.reason,
-            result=result,
-        )
-        if not generated:
-            self._emit("on_info", "世界数据为空，请重试。")
-            return
-
-        # Apply character data.
-        char_data = generated.get("character", {})
-        if char_data:
-            self.game_session.char_name = char_data.get("name", "无名")
-            self.game_session.realm = char_data.get("realm", "练气")
-            self.game_session.realm_stage = char_data.get("realm_stage", 1)
-            self.game_session.spirit_root = char_data.get("spirit_root", "")
-            self.game_session.spirit_root_grade = char_data.get("spirit_root_grade", "")
-            self.game_session.age = char_data.get("age", self.game_session.age)
-            self.game_session.talent = char_data.get("talent", self.game_session.talent)
-            self.game_session.family_background = char_data.get("family_background", self.game_session.family_background)
-            self.game_session.difficulty = char_data.get("difficulty", self.game_session.difficulty)
-            attrs = char_data.get("attributes")
-            if isinstance(attrs, dict):
-                merged_attrs = dict(self.game_session.attributes)
-                for key, value in attrs.items():
-                    if isinstance(key, str) and isinstance(value, int) and not isinstance(value, bool):
-                        merged_attrs[key] = max(0, min(100, value))
-                self.game_session.attributes = merged_attrs
-            self.game_session.techniques = char_data.get("techniques", [])
-            self.game_session.inventory = char_data.get("inventory", [])
-            self.game_session.status_effects = char_data.get("status_effects", [])
-            self.game_session.lifespan = char_data.get("lifespan", 100)
-            # New fields.
-            if "equipment_slots" in char_data:
-                self.game_session.equipment_slots = char_data["equipment_slots"]
-
-        # Apply world data.
-        world_data = generated.get("world", {})
-        if world_data:
-            self.game_session.current_scene = world_data.get("current_scene", "")
-            self.game_session.location = world_data.get("location", "")
-            self.game_session.region = world_data.get("region", "")
-            self.game_session.npcs_present = world_data.get("npcs_present", [])
-            self.game_session.active_quests = world_data.get("active_quests", [])
-            self.game_session.discovered_locations = world_data.get("discovered_locations", [])
-            self.game_session.lore_facts = world_data.get("lore_facts", [])
-            self.game_session.day_count = world_data.get("day_count", 1)
-
-        self.game_session.game_started = True
-        self.game_session.turn_count = 0
-
-        # Display opening narrative.
-        opening = generated.get("opening_narrative", result.get("opening_narrative", ""))
-        if not opening:
-            desc = result.get("world_description", "")
-            opening = desc or "世界已生成。"
-
-        if self._set_choices(
-            generated.get("choices"),
-            source="world_builder",
-            fallback_notice=True,
-            require_choice=True,
-            reason="世界生成未返回可用选项。",
-        ) is False and self.game_session.game_over:
-            return
-        self._emit("on_narrative", opening, 0)
-        self._emit("on_character_created", self.game_session)
-        self._emit("on_status_bar", format_status_bar(self.game_session))
-        self._record_opening_context(opening)
-        self._auto_save()
+        self._start_flow.new_game(concept)
 
     def start_from_profile(self, profile: dict[str, Any]) -> None:
         """Create a deterministic game from the character form.
@@ -358,71 +238,7 @@ class GameEngine:
         the first screen is not blocked by model latency; model-generated
         world/opening can be opted into with runtime env switches.
         """
-        attrs = dict(DEFAULT_ATTRIBUTES)
-        incoming_attrs = profile.get("attributes", {})
-        if isinstance(incoming_attrs, dict):
-            for key, value in incoming_attrs.items():
-                if isinstance(key, str) and isinstance(value, int) and not isinstance(value, bool):
-                    attrs[key] = max(0, min(100, value))
-
-        self.game_session.reset()
-        self.game_session.game_started = True
-        self.game_session.game_over = False
-        self.game_session.turn_count = 0
-        self.game_session.char_name = str(profile.get("char_name") or "无名")
-        self.game_session.realm = "练气"
-        self.game_session.realm_stage = 1
-        self.game_session.age = int(profile.get("age") or 16)
-        self.game_session.talent = str(profile.get("talent") or TALENT_OPTIONS[0])
-        self.game_session.spirit_root = str(profile.get("spirit_root") or SPIRIT_ROOTS[0]["name"])
-        self.game_session.spirit_root_grade = str(profile.get("spirit_root_grade") or "")
-        self.game_session.family_background = str(profile.get("family_background") or FAMILY_BACKGROUNDS[0])
-        self.game_session.difficulty = str(profile.get("difficulty") or DIFFICULTY_OPTIONS[1])
-        self.game_session.attributes = attrs
-        self.game_session.techniques = list(profile.get("techniques") or [{"name": "基础吐纳术", "level": 1, "type": "内功"}])
-        self.game_session.inventory = list(profile.get("inventory") or [{"name": "粗布道袍", "quantity": 1, "type": "防具"}])
-        default_scene, default_location, default_region, default_lore = profile_default_world(profile)
-        self.game_session.current_scene = str(profile.get("current_scene") or default_scene)
-        self.game_session.location = str(profile.get("location") or default_location)
-        self.game_session.region = str(profile.get("region") or default_region)
-        self.game_session.discovered_locations = [self.game_session.location]
-        self.game_session.lore_facts = [default_lore]
-
-        # ── World profile generation (P2) ──
-        self._emit("on_loading", "开局生成中...")
-        world_profile = self._generate_world_profile(profile)
-        self.game_session.world_profile = world_profile
-        # Enrich world fields from the generated profile
-        if world_profile.get("world_name"):
-            self.game_session.region = world_profile["world_name"]
-        if world_profile.get("initial_situation"):
-            self.game_session.lore_facts.insert(0, world_profile["initial_situation"])
-
-        profile_choices = complete_choices(profile.get("choices"), self.game_session)
-        self._emit("on_loading", "准备开局中...")
-        generated_opening, generated_choices = self._generate_profile_opening(profile)
-        if self.game_session.game_over:
-            return
-        opening = str(
-            profile.get("opening_narrative")
-            or generated_opening
-            or profile_opening(
-                self.game_session,
-            )
-        )
-        if self._set_choices(
-            profile_choices or generated_choices,
-            source="profile_opening",
-            fallback_notice=True,
-            require_choice=True,
-            reason="开场推演未返回可用选项。",
-        ) is False and self.game_session.game_over:
-            return
-        self._emit("on_narrative", opening, 0)
-        self._emit("on_character_created", self.game_session)
-        self._emit("on_status_bar", format_status_bar(self.game_session))
-        self._record_opening_context(opening)
-        self._auto_save()
+        self._start_flow.start_from_profile(profile)
 
     def _generate_world_profile(self, profile: dict[str, Any]) -> dict[str, Any]:
         """Generate a structured world profile for the character session.
@@ -431,114 +247,11 @@ class GameEngine:
         a local template. The world profile is stored in the session and
         used to contextualize subsequent turns.
         """
-        from .world_generator import (
-            build_world_fallback,
-            build_world_prompt,
-            parse_world_response,
-        )
-
-        fallback = build_world_fallback(profile)
-
-        if os.environ.get(START_MODEL_WORLD_ENV) != "1":
-            return fallback
-
-        if not os.environ.get("AGNES_API_KEY"):
-            self._emit("on_info", "未检测到 API Key，使用本地模板生成世界观。")
-            return fallback
-
-        prompt = build_world_prompt(profile)
-        try:
-            result = run_turn_sync(
-                "world_builder",
-                prompt,
-                self.game_session,
-                generation_type="world_profile",
-            )
-        except Exception:
-            log.exception("world profile generation failed, using fallback")
-            return fallback
-
-        parsed = parse_world_response(result)
-        if not parsed or not parsed.get("world_name"):
-            return fallback
-
-        # Merge model result with fallback defaults for any missing keys
-        merged = dict(fallback)
-        merged.update({k: v for k, v in parsed.items() if v})
-        return merged
+        return self._start_flow.generate_world_profile(profile)
 
     def _generate_profile_opening(self, profile: dict[str, Any]) -> tuple[str, list[str]]:
         """Ask World Builder for the first scene after form creation."""
-        if os.environ.get(START_MODEL_OPENING_ENV) != "1":
-            return "", fallback_choices(self.game_session)
-
-        if not os.environ.get("AGNES_API_KEY"):
-            reason = "AGNES_API_KEY 未设置。"
-            if self._confirm_local_fallback("profile_opening_missing_key", reason):
-                self._emit("on_info", self._fallback_notice_for(reason))
-                return self._enter_local_story(reason, emit_narrative=False)
-            self._end_model_failure_run(reason)
-            return "", []
-
-        concept = profile_concept(profile)
-        try:
-            result = run_turn_sync(
-                "world_builder", concept, self.game_session,
-                generation_type="new_game",
-            )
-        except Exception:
-            log.exception("profile opening world_builder error")
-            reason = "开场推演失败（详见日志）。"
-            if self._confirm_local_fallback("profile_opening_exception", reason):
-                self._emit("on_info", self._fallback_notice_for(reason))
-                return self._enter_local_story(reason, emit_narrative=False)
-            else:
-                self._end_model_failure_run(reason)
-            return "", []
-
-        world_status = classify_world_builder_result(result)
-        self._log_model_result(
-            agent="world_builder",
-            source="profile_opening",
-            status=world_status.kind,
-            reason=world_status.reason,
-            result=result,
-        )
-        if world_status.kind == ModelResultKind.REQUEST_FAILED:
-            log.warning("profile opening world_builder failed: %s", result["llm_error"])
-            reason = world_status.reason.replace("世界生成失败", "开场推演失败", 1)
-            if self._confirm_local_fallback("profile_opening_error", reason):
-                self._emit("on_info", self._fallback_notice_for(reason))
-                return self._enter_local_story(reason, emit_narrative=False)
-            else:
-                self._end_model_failure_run(reason)
-            return "", []
-
-        generated = result.get("generated_data", {})
-        if world_status.kind == ModelResultKind.INCOMPLETE_OUTPUT or not isinstance(generated, dict):
-            reason = world_status.reason or "开场推演数据不可用。"
-            if self._confirm_local_fallback("profile_opening_empty", reason):
-                self._emit("on_info", self._fallback_notice_for(reason))
-                return self._enter_local_story(reason, emit_narrative=False)
-            else:
-                self._end_model_failure_run(reason)
-            return "", []
-
-        world = generated.get("world", {})
-        if isinstance(world, dict):
-            self.game_session.current_scene = world.get("current_scene", self.game_session.current_scene)
-            self.game_session.location = world.get("location", self.game_session.location)
-            self.game_session.region = world.get("region", self.game_session.region)
-            self.game_session.npcs_present = world.get("npcs_present", self.game_session.npcs_present)
-            self.game_session.active_quests = world.get("active_quests", self.game_session.active_quests)
-            self.game_session.discovered_locations = world.get(
-                "discovered_locations", self.game_session.discovered_locations,
-            )
-            self.game_session.lore_facts = world.get("lore_facts", self.game_session.lore_facts)
-            self.game_session.day_count = world.get("day_count", self.game_session.day_count)
-
-        opening = str(generated.get("opening_narrative") or result.get("opening_narrative") or "")
-        return opening, complete_choices(generated.get("choices"), self.game_session)
+        return self._start_flow.generate_profile_opening(profile)
 
     def handle_action(self, text: str) -> None:
         """Process a player action through Narrator + Judge.
@@ -562,7 +275,7 @@ class GameEngine:
             text = selected_choice
 
         if self.game_session.local_story_active:
-            self._handle_local_story_action(text)
+            self._turn_flow.handle_local_story_action(text)
             return
 
         # Route natural-language breakthrough intent before event resolution
@@ -571,252 +284,11 @@ class GameEngine:
             self.attempt_breakthrough()
             return
 
-        self.game_session.turn_count += 1
-
-        self._emit("on_loading", "天道运转中...")
-
-        # ── P3: Rule engine settlement ──
-        from .turn_rules import settle_turn
-
-        rule_delta = settle_turn(text, self.game_session)
-        turn_summary = (
-            rule_delta.get("meta", {}).get("turn_summary", "")
-            if isinstance(rule_delta.get("meta"), dict) else ""
-        )
-
-        # Step 1: Run narrator with stream callback.
-        # Include rule engine summary so the model writes narrative
-        # consistent with the authoritative numeric outcome.
-        narrator_input = text
-        if turn_summary:
-            narrator_input = f"{text}\n\n[本回合规则结算结果（以此为权威数值）：{turn_summary}]"
-
-        try:
-            narrator_result = run_turn_sync(
-                "narrator", narrator_input, self.game_session,
-                stream_callback=self._stream_callback if self.on_stream_chunk else None,
-                repair_incomplete_output=False,
-            )
-        except Exception:
-            log.exception("narrator error")
-            reason = "叙述失败（详见日志）"
-            self._emit("on_error", reason)
-            self._set_choices(
-                None,
-                source="narrator_exception",
-                fallback_notice=True,
-                require_choice=True,
-                reason=reason,
-            )
-            self.game_session.turn_count -= 1
-            return
-
-        narrator_status = classify_narrator_result(narrator_result)
-        self._log_model_result(
-            agent="narrator",
-            source="turn",
-            status=narrator_status.kind,
-            reason=narrator_status.reason,
-            result=narrator_result,
-        )
-        if narrator_status.kind == ModelResultKind.REQUEST_FAILED:
-            reason = narrator_status.reason
-            self._emit("on_error", reason)
-            self._set_choices(
-                None,
-                source="narrator_error",
-                fallback_notice=True,
-                require_choice=True,
-                reason=reason,
-            )
-            self.game_session.turn_count -= 1
-            return
-
-        narrative = narrator_result.get("narrative", "")
-        state_delta = narrator_result.get("state_delta", {})
-        if not isinstance(state_delta, dict):
-            state_delta = {}
-        choices = narrator_result.get("choices", [])
-        meta_delta = state_delta.get("meta") if isinstance(state_delta, dict) else {}
-        is_terminal_delta = isinstance(meta_delta, dict) and bool(
-            meta_delta.get("game_over") or meta_delta.get("finale")
-        )
-        if narrator_status.kind == ModelResultKind.INCOMPLETE_OUTPUT:
-            self._emit("on_info", narrator_status.reason)
-        if is_terminal_delta:
-            self.game_session.last_choices = []
-        else:
-            fallback_used = self._set_choices(
-                choices,
-                source="narrator",
-                fallback_notice=True,
-                require_choice=True,
-                reason=narrator_status.reason if narrator_status.kind == ModelResultKind.INCOMPLETE_OUTPUT else "叙事模型未返回可用选项。",
-                emit_local_story_narrative=True,
-            )
-            if fallback_used:
-                self._emit("on_status_bar", format_status_bar(self.game_session))
-                self._auto_save()
-                return
-            if self.game_session.game_over:
-                self.game_session.turn_count -= 1
-                return
-
-        # Step 2: Run judge only for high-risk or continuity-sensitive deltas.
-        if state_delta and self._should_run_judge(text, state_delta, rule_delta):
-            self._emit("on_loading", "天道审判中...")
-            try:
-                judge_result = run_turn_sync(
-                    "judge", text, self.game_session,
-                    narrative=narrative,
-                    state_delta=state_delta,
-                )
-            except Exception:
-                log.exception("judge error")
-                reason = "天道审判失败（详见日志）"
-                if not self._confirm_local_fallback("judge_exception", reason):
-                    self.game_session.turn_count -= 1
-                    self._end_model_failure_run(reason)
-                    return
-                # On judge error, default to NOT approving (safe default).
-                judge_result = {"approved": False, "corrected_delta": {}, "judgment_note": reason}
-
-            judge_status = classify_judge_result(judge_result)
-            self._log_model_result(
-                agent="judge",
-                source="turn",
-                status=judge_status.kind,
-                reason=judge_status.reason,
-                result=judge_result,
-            )
-            if judge_status.kind == ModelResultKind.JUDGE_FAILED:
-                reason = judge_status.reason
-                if not self._confirm_local_fallback("judge_error", reason):
-                    self.game_session.turn_count -= 1
-                    self._end_model_failure_run(reason)
-                    return
-                judge_result = {"approved": False, "corrected_delta": {}, "judgment_note": reason}
-
-            if judge_result.get("approved") is False:
-                corrected = judge_result.get("corrected_delta", {})
-                if corrected:
-                    state_delta = corrected
-                else:
-                    # Judge rejected and no corrected delta — discard model
-                    # state changes but keep the rule-engine settlement so
-                    # public Alpha gameplay does not stall on provider format
-                    # drift.
-                    note = judge_result.get("judgment_note", "")
-                    log.info("Judge rejected (no corrected delta): %s", note)
-                    self._emit("on_info", "本回合以基础规则结算，模型状态变更未采用。")
-                    narrative = ""
-                    state_delta = {"character": {}, "world": {}, "meta": {}}
-                note = judge_result.get("judgment_note", "")
-                if note:
-                    log.info("Judge corrected: %s", note)
-
-        consistent, consistency_reason = validate_narrative_delta_consistency(narrative, state_delta)
-        if not consistent:
-            log.info("Narrative/state mismatch rejected: %s", consistency_reason)
-            self._emit("on_info", consistency_reason)
-            self._emit("on_status_bar", format_status_bar(self.game_session))
-            self._auto_save()
-            return
-
-        state_delta = self._sanitize_action_delta(state_delta)
-
-        is_cultivation = self._is_pure_cultivation(text)
-        state_delta = self._apply_breakthrough_flag_rule(text, state_delta, is_cultivation)
-
-        char_delta = state_delta.get("character")
-        if isinstance(char_delta, dict) and "combat" in char_delta:
-            char_delta = dict(char_delta)
-            char_delta.pop("combat", None)
-            state_delta = {**state_delta, "character": char_delta}
-
-        # ── P3: Merge rule engine delta (authoritative numbers) ──
-        state_delta = _merge_rule_delta(state_delta, rule_delta)
-
-        # Step 3: Apply rule-engine delta.
-        self.game_session.apply_delta(state_delta)
-
-        # Step 3.5: Auto-advance small layers as event-style progression.
-        stage_delta = self.realm_system.try_advance_stage(self.game_session)
-        if stage_delta is not None:
-            self.game_session.apply_delta(stage_delta)
-            new_stage = stage_delta.get("meta", {}).get("new_stage", 0)
-            max_stage = stage_delta.get("meta", {}).get("max_stage", 0)
-            self._emit("on_info", f"修为精进！{self.game_session.realm}第{new_stage}层（{new_stage}/{max_stage}）")
-
-        # Step 5: Check game over.
-        if self._check_game_over():
-            return
-
-        # Step 6: Record turn.
-        self.game_session.turn_history.append({
-            "turn": self.game_session.turn_count,
-            "input": text,
-            "narrative": narrative,
-            "delta": state_delta,
-            "choices": self.game_session.last_choices,
-        })
-        self.game_session.chat_history.append({"role": "user", "content": text})
-        self.game_session.chat_history.append({"role": "assistant", "content": narrative})
-        if len(self.game_session.chat_history) > 20:
-            self.game_session.chat_history = self.game_session.chat_history[-20:]
-
-        # Step 7: Emit events.
-        if narrative:
-            self._emit("on_narrative", narrative, self.game_session.turn_count)
-
-        self._emit("on_status_bar", format_status_bar(self.game_session))
-
-        # Step 8: Auto-save.
-        self._auto_save()
-
-        # Final game over check after all updates.
-        if self.game_session.game_over:
-            self._emit("on_game_over", self.game_session.error or "游戏结束。")
+        self._turn_flow.handle_action(text)
 
     def _handle_local_story_action(self, text: str) -> None:
         """Process one turn in the local preset story fallback."""
-        self.game_session.turn_count += 1
-        result = advance_local_story(self.game_session, text)
-        self.game_session.last_choices = result.choices
-
-        if result.delta:
-            self.game_session.apply_delta(result.delta)
-            stage_delta = self.realm_system.try_advance_stage(self.game_session)
-            if stage_delta is not None:
-                self.game_session.apply_delta(stage_delta)
-                new_stage = stage_delta.get("meta", {}).get("new_stage", 0)
-                max_stage = stage_delta.get("meta", {}).get("max_stage", 0)
-                self._emit("on_info", f"修为精进！{self.game_session.realm}第{new_stage}层（{new_stage}/{max_stage}）")
-
-        if result.breakthrough:
-            self._attempt_local_story_breakthrough()
-
-        if not result.matched:
-            self._emit("on_info", result.narrative)
-        elif result.narrative:
-            self._emit("on_narrative", result.narrative, self.game_session.turn_count)
-
-        self.game_session.turn_history.append({
-            "turn": self.game_session.turn_count,
-            "input": text,
-            "narrative": result.narrative,
-            "delta": result.delta,
-            "choices": self.game_session.last_choices,
-            "local_story": {
-                "story_id": self.game_session.local_story_id,
-                "node_id": self.game_session.local_story_node_id,
-            },
-        })
-        self._emit("on_status_bar", format_status_bar(self.game_session))
-        self._auto_save()
-
-        if self._check_game_over():
-            return
+        self._turn_flow.handle_local_story_action(text)
 
     def _attempt_local_story_breakthrough(self) -> None:
         """Use the existing realm rules for a local-story breakthrough."""
@@ -850,30 +322,6 @@ class GameEngine:
             "准备突破",
         )
         return any(kw in compact for kw in keywords)
-
-    def _run_breakthrough_narrator(self, action_text: str) -> dict[str, Any] | None:
-        """Invoke the narrator for a breakthrough attempt.
-
-        Returns the narrator result dict on success, or None after the engine
-        has already emitted a model-failure fallback (set_choices / error).
-        """
-        try:
-            return run_turn_sync(
-                "narrator", action_text, self.game_session,
-                stream_callback=self._stream_callback if self.on_stream_chunk else None,
-            )
-        except Exception:
-            log.exception("breakthrough narrator error")
-            reason = "突破叙事失败"
-            self._emit("on_error", reason)
-            self._set_choices(
-                None,
-                source="breakthrough_narrator_exception",
-                fallback_notice=True,
-                require_choice=True,
-                reason=reason,
-            )
-            return None
 
     def _resolve_choice_input(self, text: str) -> str | None:
         """Map A/B/C/D or 1/2/3/4 input to the current model choice.
@@ -913,128 +361,33 @@ class GameEngine:
             session=self.game_session,
         )
 
+    def _advance_local_story(self, session: GameSession, text: str) -> Any:
+        """Advance local story through the GameEngine-owned import seam."""
+        from .local_story import advance_local_story
+
+        return advance_local_story(session, text)
+
+    def _validate_narrative_delta_consistency(
+        self,
+        narrative: str,
+        state_delta: dict[str, Any],
+    ) -> tuple[bool, str]:
+        """Validate narrator text against its structured delta."""
+        return validate_narrative_delta_consistency(narrative, state_delta)
+
+    def _merge_rule_delta(
+        self,
+        model_delta: dict[str, Any],
+        rule_delta: dict[str, Any],
+    ) -> dict[str, Any]:
+        """Merge model and rule deltas through the historical helper."""
+        return _merge_rule_delta(model_delta, rule_delta)
+
     # ─── Breakthrough ─────────────────────────────────────────────────
 
     def attempt_breakthrough(self) -> None:
         """Attempt a realm breakthrough."""
-        if not self.game_session.game_started:
-            self._emit("on_info", "尚未开始游戏。")
-            return
-
-        if self.game_session.game_over:
-            self._emit("on_info", "游戏已结束。")
-            return
-
-        can, reason = self.realm_system.can_attempt_breakthrough(self.game_session)
-        if not can:
-            self._emit("on_info", reason)
-            return
-
-        rate = self.realm_system.calculate_breakthrough_rate(self.game_session)
-        self._emit("on_info", f"突破概率: {rate:.0%}，开始突破...")
-
-        self._emit("on_loading", "突破中...")
-
-        # Use narrator to describe the breakthrough process.
-        action_text = f"尝试从{self.game_session.realm}突破到更高境界"
-        result = self._run_breakthrough_narrator(action_text)
-        if result is None:
-            return
-
-        if result.get("llm_error"):
-            reason = f"突破叙事失败: {result['llm_error']}"
-            self._emit("on_error", reason)
-            self._set_choices(
-                None,
-                source="breakthrough_narrator_error",
-                fallback_notice=True,
-                require_choice=True,
-                reason=reason,
-            )
-            return
-
-        narrative = result.get("narrative", "")
-        state_delta = result.get("state_delta", {})
-        if self._set_choices(
-            result.get("choices"),
-            source="breakthrough_narrator",
-            fallback_notice=True,
-            require_choice=True,
-            reason="突破叙事未返回可用选项。",
-        ) is False and self.game_session.game_over:
-            return
-
-        # Apply realm system breakthrough logic.
-        breakthrough_delta = self.realm_system.attempt_breakthrough(self.game_session)
-        bt_result = breakthrough_delta.get("meta", {}).get("breakthrough_result", "")
-
-        # Merge breakthrough delta into narrator delta.
-        if bt_result == "success":
-            # Override realm change from realm system (authoritative).
-            if "character" not in state_delta:
-                state_delta["character"] = {}
-            state_delta["character"].update(breakthrough_delta.get("character", {}))
-            state_delta.setdefault("meta", {}).update(breakthrough_delta.get("meta", {}))
-        elif bt_result == "failure":
-            if "character" not in state_delta:
-                state_delta["character"] = {}
-            state_delta["character"].update(breakthrough_delta.get("character", {}))
-            state_delta.setdefault("meta", {}).update(breakthrough_delta.get("meta", {}))
-
-        # Run judge on the combined delta.
-        if state_delta:
-            try:
-                judge_result = run_turn_sync(
-                    "judge", action_text, self.game_session,
-                    narrative=narrative,
-                    state_delta=state_delta,
-                )
-                if judge_result.get("llm_error"):
-                    reason = f"突破审判失败: {judge_result['llm_error']}"
-                    if not self._confirm_local_fallback("breakthrough_judge_error", reason):
-                        self._end_model_failure_run(reason)
-                        return
-                    judge_result = {"approved": False, "corrected_delta": {}}
-                if judge_result.get("approved") is False:
-                    corrected = judge_result.get("corrected_delta", {})
-                    if corrected:
-                        state_delta = corrected
-            except Exception:
-                log.exception("breakthrough judge error")
-                reason = "突破审判失败（详见日志）"
-                if not self._confirm_local_fallback("breakthrough_judge_exception", reason):
-                    self._end_model_failure_run(reason)
-                    return
-
-        self.game_session.apply_delta(state_delta)
-
-        # Detect ascension finale (飞升).
-        is_finale = self.game_session.finale
-
-        if bt_result == "success":
-            if is_finale:
-                # Epic ending narrative for ascension.
-                self._emit("on_narrative",
-                           narrative or "天地轰鸣，金光万丈！你超脱凡尘，飞升成仙！",
-                           self.game_session.turn_count)
-                self._emit("on_finale", "飞升成仙，超脱凡尘，修真之路圆满。")
-            else:
-                self._emit("on_narrative", narrative or "突破成功！天地灵气涌动，境界提升！", self.game_session.turn_count)
-                self._emit("on_info", format_realm(self.game_session))
-        elif bt_result == "failure":
-            self._emit("on_narrative", narrative or "突破失败...修为受损。", self.game_session.turn_count)
-            self._emit("on_info", "突破失败，受到反噬。")
-        else:
-            self._emit("on_narrative", narrative, self.game_session.turn_count)
-
-        self._emit("on_status_bar", format_status_bar(self.game_session))
-        self._auto_save()
-
-        if is_finale:
-            return
-
-        if self._check_game_over():
-            return
+        self._breakthrough_flow.attempt_breakthrough()
 
     # ─── Game over check ─────────────────────────────────────────────
 
