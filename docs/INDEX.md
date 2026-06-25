@@ -42,6 +42,6 @@
 
 - 生产入口使用 React/Vite build 产物；旧 `web/frontend` 已删除，资产迁入 `web/frontend-react/public/assets`。
 - 当前主线是游戏模式；引导模式、小说模式不是当前开放运行逻辑。
-- PostgreSQL 生产 schema 以 Alembic 为准；SQLite 仍作为本地测试默认后端。
+- PostgreSQL 生产 schema 以 Alembic 为准；本地与测试同样使用 PostgreSQL。
 - API key、数据库密码、Session Secret、邀请码真实值不得写入仓库、前端包、文档或日志。
 - 当前本机浏览器自动验收优先使用 Chrome DevTools MCP；Codex 内置浏览器存在环境闪退风险，不作为可靠验收入口。

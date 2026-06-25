@@ -26,7 +26,6 @@ const assetVars = {
   "--home-bg": `url("${assetUrl("assets/bg_home_xianxia.png")}")`,
   "--character-bg": `url("${assetUrl("assets/bg_character_create.png")}")`,
   "--game-bg": `url("${assetUrl("assets/bg_chronicle_game.png")}")`,
-  "--ascension-bg": `url("${assetUrl("assets/ascension_gate.png")}")`,
 } as React.CSSProperties;
 
 function App() {

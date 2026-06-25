@@ -12,9 +12,9 @@ from typing import Any, Protocol
 
 
 class WebDatabaseProtocol(Protocol):
-    """Surface every public method shared by SQLite and PostgreSQL backends.
+    """Surface every public method exposed by the PostgreSQL backend.
 
-    Both backends normalize JSON columns (``snapshot`` / ``events`` /
+    The backend normalizes JSON columns (``snapshot`` / ``events`` /
     ``attribute_mods`` / ``tags`` / ``initial_resources`` /
     ``initial_risks`` / ``story_tags`` / ``event_tags`` / ``choices`` /
     ``state_delta`` / ``state_after``) through ``database_common.load_json``

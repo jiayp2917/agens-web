@@ -411,7 +411,9 @@ def test_session_routes_map_service_errors(
 
 
 def test_production_rejects_default_session_secret(tmp_path: Path, monkeypatch) -> None:
-    monkeypatch.setenv("DATABASE_BACKEND", "postgresql")
+    # Production mode is driven by AGENS_ENV (not DATABASE_BACKEND) since the
+    # Option C consolidation made PostgreSQL the only backend.
+    monkeypatch.setenv("AGENS_ENV", "production")
     monkeypatch.setenv("DATABASE_URL", "postgresql+psycopg://agens_user:test@postgres:5432/agens_web")
     monkeypatch.setenv("INVITE_ADMIN_CODE", "admin-invite-123")
     monkeypatch.delenv("SESSION_SECRET", raising=False)

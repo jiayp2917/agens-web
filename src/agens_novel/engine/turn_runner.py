@@ -67,11 +67,11 @@ def run_turn_sync(
         user_input: The player's action text.
         session: Current GameSession.
         **kwargs: Extra state fields.  Supports:
-            stream_callback: Callable[[str], None] 鈥?per-chunk callback for
+            stream_callback: Callable[[str], None] — per-chunk callback for
                              streaming narrative (narrator only).
-            narrative: str 鈥?for judge agent.
-            state_delta: dict 鈥?for judge agent.
-            generation_type: str 鈥?for world_builder agent.
+            narrative: str — for judge agent.
+            state_delta: dict — for judge agent.
+            generation_type: str — for world_builder agent.
     """
     import os
 
@@ -102,7 +102,7 @@ def run_turn_sync(
     if agent_name == "world_builder":
         state["generation_type"] = kwargs.get("generation_type", "new_game")
 
-    # Stream callback for narrator 鈥?passed via closure, NOT in state dict.
+    # Stream callback for narrator — passed via closure, NOT in state dict.
     # Putting it in state causes msgpack serialization failure at checkpoint.
     state.update(kwargs)
     return _run_agent_graph(agent_name, state, stream_callback=stream_callback)

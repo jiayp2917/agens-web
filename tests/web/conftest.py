@@ -48,3 +48,16 @@ def _isolated_pg_db(_pg_test_url, monkeypatch: pytest.MonkeyPatch) -> Iterator[N
     finally:
         engine.dispose()
     yield
+
+
+def pytest_collection_modifyitems(config, items) -> None:
+    """Run all web tests on a single xdist worker.
+
+    Each web test TRUNCATEs the shared test DB for isolation
+    (``_isolated_pg_db``); concurrent TRUNCATEs across xdist workers deadlock
+    on PostgreSQL's AccessExclusiveLock. Grouping every web test into one
+    ``xdist_group`` serializes them on one worker while leaving non-web tests
+    free to parallelize.
+    """
+    for item in items:
+        item.add_marker(pytest.mark.xdist_group("web_db"))

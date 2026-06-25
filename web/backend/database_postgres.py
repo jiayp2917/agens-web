@@ -11,7 +11,6 @@ from sqlalchemy.engine import Engine
 
 from .database_common import (
     CATALOG_TABLES,
-    catalog_seed_sources,
     decode_json_fields,
     dump_json,
     encode_game_turn_json,
@@ -309,7 +308,11 @@ class PostgresWebDatabase:
                     """
                 )
             )
-            seed_catalogs(self)
+        # Seed AFTER the DDL transaction commits. seed_catalogs() opens its own
+        # connection via list_catalog(); running it inside the ``begin()`` block
+        # above would hit UndefinedTable on an empty DB (the new connection
+        # cannot see the uncommitted CREATE TABLE results).
+        seed_catalogs(self)
 
     def upsert_user(self, username: str) -> dict[str, Any]:
         username = (username or "local").strip() or "local"
@@ -939,21 +942,3 @@ class PostgresWebDatabase:
                 data,
             )
         return dict(row)
-
-    def _seed_catalogs_if_empty(self) -> None:
-        """Seed catalog tables from seed data when they're empty."""
-        for table, rows in catalog_seed_sources():
-            with self.engine.begin() as conn:
-                existing = conn.execute(
-                    text(f"SELECT 1 FROM {table} LIMIT 1")
-                ).first()
-                if existing:
-                    continue
-                for row in rows:
-                    data = prepare_catalog_row(row, created_at=now_ts())
-                    cols = ", ".join(data.keys())
-                    placeholders = ", ".join(f":{k}" for k in data.keys())
-                    conn.execute(
-                        text(f"INSERT INTO {table} ({cols}) VALUES ({placeholders}) ON CONFLICT DO NOTHING"),
-                        data,
-                    )

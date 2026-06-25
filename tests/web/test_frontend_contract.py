@@ -99,7 +99,6 @@ def test_react_public_assets_are_present() -> None:
     for relative in (
         "paper_texture.png",
         "ink_mountain_gate.png",
-        "game_desktop_bg.png",
         "ascension_gate.png",
         "qq_group.png",
         "audio/bgm.flac",

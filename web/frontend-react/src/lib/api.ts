@@ -26,6 +26,3 @@ export async function fetchDeathSummary(sessionId: string): Promise<DeathSummary
   }
 }
 
-export async function fetchCatalog(table: "talents" | "spirit_roots" | "family_backgrounds" | "difficulties" | "story_seeds" | "rarities"): Promise<any[]> {
-  return api<any[]>(`/api/catalog/${table}`);
-}

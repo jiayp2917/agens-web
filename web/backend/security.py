@@ -121,9 +121,12 @@ def _allowed_origins(request: Request) -> set[str]:
 
 
 def is_production_mode() -> bool:
-    backend = os.environ.get("DATABASE_BACKEND", "sqlite").strip().lower()
+    # After the Option C consolidation PostgreSQL is the only backend, so the
+    # ``DATABASE_BACKEND`` env var is no longer a production signal — it was
+    # always "postgresql" in every environment. Production is now indicated
+    # solely by ``AGENS_ENV`` (set to ``production`` in deploy/production.env).
     env = os.environ.get("AGENS_ENV", "").strip().lower()
-    return env in ("prod", "production") or backend in ("postgres", "postgresql", "pg")
+    return env in ("prod", "production")
 
 
 def _normalize_origin(value: str) -> str:

@@ -79,7 +79,7 @@
 - Web UI 只通过 `web/backend` API 调用游戏逻辑。
 - `GameEngine` 是唯一游戏逻辑入口。
 - `GameSession` 位于 `src/agens_novel/session/game_session.py`。
-- Web 会话和存档由 `web/backend/database.py` 写入 SQLite。
+- Web 会话和存档由 `web/backend/database.py` 写入 PostgreSQL。
 - Agent 调用器位于 `src/agens_novel/engine/turn_runner.py`。
 
 ## 入口说明

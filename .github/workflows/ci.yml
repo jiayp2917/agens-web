@@ -28,3 +28,58 @@ jobs:
       - name: Lint check
         run: ruff check src tests
         continue-on-error: true
+
+      - name: Set up Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+          cache: "npm"
+          cache-dependency-path: "web/frontend-react/package-lock.json"
+
+      - name: Build frontend
+        working-directory: web/frontend-react
+        run: |
+          npm ci
+          npm run build
+
+  # Web tests that need a real PostgreSQL. Runs on Linux because GitHub Actions
+  # service containers are not supported on windows-latest. The conftest
+  # _pg_test_url fixture creates the schema + seeds catalogs from
+  # TEST_DATABASE_URL; web tests are serialized via xdist_group.
+  web-db:
+    runs-on: ubuntu-latest
+
+    services:
+      postgres:
+        image: postgres:17
+        env:
+          POSTGRES_USER: agens
+          POSTGRES_DB: agens_web
+          POSTGRES_HOST_AUTH_METHOD: trust
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U agens -d agens_web"
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+
+    env:
+      TEST_DATABASE_URL: postgresql+psycopg://agens@localhost:5432/agens_web
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install -e ".[dev]"
+
+      - name: Run web DB tests
+        run: pytest tests/web -n0 -q

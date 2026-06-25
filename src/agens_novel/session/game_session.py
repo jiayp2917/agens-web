@@ -488,4 +488,3 @@ def _dedupe_strings(values: list[Any]) -> list[str]:
     from ..engine.choices import dedupe_strings
 
     return dedupe_strings(values)
-    return out

@@ -6,9 +6,10 @@ sect names, or storylines. Used to populate catalog tables on first run.
 
 from __future__ import annotations
 
-import json
 import uuid
 from typing import Any
+
+from .database_common import decode_json_fields
 
 # ── catalog_talents ──────────────────────────────────────────────────────────
 # rarity: 白 / 绿 / 蓝 / 紫 / 橙 / 红 (6-tier per GAME_MODE_SPEC §11)
@@ -480,19 +481,10 @@ def _seed_table(db: Any, table: str, rows: list[dict[str, Any]]) -> int:
 
 
 def catalog_as_json(row: dict[str, Any]) -> dict[str, Any]:
-    """Convert a catalog row to a JSON-safe dict, parsing JSON fields."""
-    result = dict(row)
-    for field in (
-        "attribute_mods",
-        "tags",
-        "initial_resources",
-        "initial_risks",
-        "story_tags",
-        "event_tags",
-    ):
-        if field in result and isinstance(result[field], str):
-            try:
-                result[field] = json.loads(result[field])
-            except (json.JSONDecodeError, TypeError):
-                pass
-    return result
+    """Convert a catalog row to a JSON-safe dict, parsing JSON fields.
+
+    Delegates to :func:`database_common.decode_json_fields`, which decodes the
+    same catalog JSON fields and is a no-op for values already parsed
+    (dict/list) — the common case for PostgreSQL JSONB columns.
+    """
+    return decode_json_fields(row)

@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import logging
 import os
 import uuid
 from collections.abc import Callable
@@ -34,6 +35,8 @@ from .security import BodySizeLimitMiddleware, RateLimiter, client_key, enforce_
 from .service import GUEST_USER_PREFIX, WebGameService, is_guest_user_id
 from agens_novel.logging_setup import setup_logging
 from .catalog_seed import catalog_as_json
+
+logger = logging.getLogger(__name__)
 
 FRONTEND_REACT_DIST = Path(__file__).resolve().parents[1] / "frontend-react" / "dist"
 SAFE_ERROR = "请求无法完成，请稍后再试。"
@@ -241,6 +244,7 @@ def create_app(db_path: Path | None = None) -> FastAPI:
 
     @app.exception_handler(Exception)
     async def unhandled_exception(_request: Request, _exc: Exception) -> JSONResponse:
+        logger.exception("Unhandled exception in request")
         return JSONResponse({"detail": SAFE_ERROR}, status_code=500)
 
     @app.get("/api/health")

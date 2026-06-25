@@ -65,10 +65,10 @@ export function EndingPage({ session, onHome, onRestart }: { session: Session; o
                 <h4>成就</h4>
                 <dl>
                   {summary.achievements.map((achievement) => (
-                    <span key={achievement.key || achievement.name}>
+                    <div key={achievement.key || achievement.name}>
                       <dt>{achievement.name}</dt>
                       <dd>{achievement.description}</dd>
-                    </span>
+                    </div>
                   ))}
                 </dl>
               </>
@@ -78,10 +78,10 @@ export function EndingPage({ session, onHome, onRestart }: { session: Session; o
                 <h4>奖励</h4>
                 <dl>
                   {summary.rewards.map((reward, idx) => (
-                    <span key={`${reward.type}-${idx}`}>
+                    <div key={`${reward.type}-${idx}`}>
                       <dt>{reward.label || reward.type}</dt>
                       <dd>{reward.value}</dd>
-                    </span>
+                    </div>
                   ))}
                 </dl>
               </>

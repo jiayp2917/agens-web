@@ -1,6 +1,9 @@
+import { useDialogA11y } from "../lib/useDialogA11y";
+
 export function TutorialDialog({ onClose }: { onClose: () => void }) {
+  const { scrimRef, onScrimClick } = useDialogA11y(onClose);
   return (
-    <div className="modal-scrim" role="dialog" aria-modal="true" aria-label="教程">
+    <div className="modal-scrim" ref={scrimRef} role="dialog" aria-modal="true" aria-label="教程" onClick={onScrimClick}>
       <div className="settings-dialog compact-dialog">
         <header>
           <h2>教程</h2>

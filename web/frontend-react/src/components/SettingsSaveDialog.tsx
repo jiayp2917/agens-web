@@ -12,6 +12,7 @@ import {
 } from "../lib/api";
 import { ModelSettingsPanel } from "./ModelSettingsPanel";
 import { SaveSlotsPanel } from "./SaveSlotsPanel";
+import { useDialogA11y } from "../lib/useDialogA11y";
 
 export function SettingsSaveDialog({
   mode,
@@ -78,8 +79,9 @@ export function SettingsSaveDialog({
     }
   };
 
+  const { scrimRef, onScrimClick } = useDialogA11y(onClose);
   return (
-    <div className="modal-scrim" role="dialog" aria-modal="true" aria-label="设置与存档">
+    <div className="modal-scrim" ref={scrimRef} role="dialog" aria-modal="true" aria-label="设置与存档" onClick={onScrimClick}>
       <div className="settings-dialog">
         <header>
           <h2>设置与存档</h2>

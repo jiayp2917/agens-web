@@ -15,7 +15,7 @@
 | Web 交互层 | `web/frontend-react/src/` | `main.tsx` | 浏览器展示、点击、设置、存读档入口；不直接改游戏状态 |
 | API 层 | `web/backend/` | `app.py` | FastAPI 路由、Cookie 鉴权、限流、同源校验、生产 fail-fast |
 | 游戏核心层 | `src/agens_novel/` | `engine/game_engine.py` | Agent 调用、规则结算、状态落账、境界、突破、死亡、飞升 |
-| 数据层 | `web/backend/database*.py` + `migrations/versions/` | `database.py` | SQLite / PostgreSQL 双后端；WebDatabaseProtocol 抽象；Alembic 拥有生产 schema |
+| 数据层 | `web/backend/database*.py` + `migrations/versions/` | `database.py` | PostgreSQL 单后端；WebDatabaseProtocol 抽象；Alembic 拥有生产 schema |
 | 配置 / 资源层 | `config/prompts/` + `web/frontend-react/public/assets/` | — | system prompt、图片、BGM |
 
 依赖方向：**Web 交互层 → API 层 → 游戏核心层 → 数据层**。反向不允许。
@@ -127,7 +127,6 @@
 | --- | --- |
 | `ink_mountain_gate.png` | 首页 / 登录页 / 角色页背景 |
 | `paper_texture.png` | body 背景（720px auto 重复） |
-| `game_desktop_bg.png` | 游戏页背景（fixed cover） |
 | `ascension_gate.png` | 终局页背景（与游戏页区分） |
 | `qq_group.png` | 首页玩家群二维码 |
 | `audio/bgm.flac` | 背景音乐 |
@@ -173,7 +172,7 @@ JSONB 列：`attribute_mods` / `tags` / `initial_resources` / `initial_risks` / 
 
 ### DDL 治理
 
-- **本地 / 测试**：SQLite + Postgres 默认 `AGENS_PG_AUTO_DDL=1` 时允许应用启动时建表
+- **本地 / 测试**：PostgreSQL 默认 `AGENS_PG_AUTO_DDL=1` 时允许应用启动时建表
 - **生产**：`APP_ENV=production` 下拒绝 `AGENS_PG_AUTO_DDL=1`（fail-closed `RuntimeError`）；schema 必须由 Alembic 迁移创建；catalog 与死亡奖励表也必须由迁移覆盖
 
 ## 7. 模块串联流程（端到端）

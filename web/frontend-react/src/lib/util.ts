@@ -4,10 +4,6 @@ export const randomBetween = (min: number, max: number) => Math.floor(Math.rando
 export const pickRandom = <T,>(items: T[]) => items[Math.floor(Math.random() * items.length)];
 export const isManualRarity = (item: CatalogItem) => !["紫", "橙", "红"].includes(String(item.rarity || item.grade || ""));
 export const uniqueByName = (items: CatalogItem[]) => Array.from(new Map(items.map((item) => [item.name, item])).values());
-export const itemLabel = (item: CatalogItem) => {
-  const mark = item.rarity || item.grade;
-  return mark ? `${item.name} · ${mark}` : item.name;
-};
 // Map any legacy/internal rarity or grade string into the 6-color palette.
 export const rarityToColor = (mark?: string) => {
   const m = String(mark || "");

@@ -42,11 +42,6 @@ from .model_fallback_policy import (
     MODEL_FAILURE_PROMPT,
     ModelFallbackPolicy,
 )
-from .profile_opening import (
-    luck_from_attributes,
-    profile_concept,
-    profile_opening,
-)
 from .start_flow import (
     StartFlow,
 )
@@ -634,7 +629,3 @@ def _merge_rule_delta(
 
     return merged
 
-
-_luck_from_attributes = luck_from_attributes
-_profile_opening = profile_opening
-_profile_concept = profile_concept
