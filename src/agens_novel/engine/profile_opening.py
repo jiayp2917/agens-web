@@ -4,22 +4,7 @@ from __future__ import annotations
 
 from typing import Any
 
-from ..game.constants import DEFAULT_ATTRIBUTES
 from ..session.game_session import GameSession
-
-
-def luck_from_attributes(attributes: dict[str, int]) -> str:
-    """Map numeric creation luck to a compact display label."""
-    value = attributes.get("luck", DEFAULT_ATTRIBUTES["luck"])
-    if value >= 90:
-        return "天眷"
-    if value >= 70:
-        return "中上"
-    if value >= 45:
-        return "平稳"
-    if value >= 25:
-        return "起伏"
-    return "低迷"
 
 
 def profile_default_world(profile: dict[str, Any]) -> tuple[str, str, str, str]:

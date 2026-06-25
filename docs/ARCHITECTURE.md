@@ -27,7 +27,7 @@
 | `app.py` | `create_app()`, `is_production_mode()`, `validate_runtime_config()` | FastAPI 工厂、Pydantic 请求模型、27 个路由注册、`TrustedHostMiddleware` + `BodySizeLimitMiddleware` + 同源校验、`RateLimiter`、生产 fail-fast（缺 `SESSION_SECRET` / `DATABASE_URL` / `INVITE_ADMIN_CODE` / `AGENS_ALLOWED_ORIGINS` 时拒启动） |
 | `service.py` | `WebRunner`, `WebGameService`, `build_death_summary()` | `WebRunner` 包装 `GameEngine` 并把引擎回调捕获为事件；`WebGameService` 是服务编排入口（创建 / 启动 / 选择 / 行动 / 存读档 / 终局）；`build_death_summary` 汇总终局成就与奖励 |
 | `database.py` | `WebDatabaseProtocol`, `create_database()` | `Protocol` 定义所有公开方法签名；工厂始终返回 PostgreSQL 后端（Option C：SQLite 后端已移除），连接来自 `DATABASE_URL` |
-| `database_postgres.py` | `PostgresWebDatabase` | SQLAlchemy Core + `JSONB`；`__init__` 时按 `APP_ENV` 决定是否允许 `AGENS_PG_AUTO_DDL=1`（生产 fail-closed）；`initialize()` 建 `CREATE TABLE IF NOT EXISTS` + 种子 catalog |
+| `database_postgres.py` | `PostgresWebDatabase` | SQLAlchemy Core + `JSONB`；`__init__` 时按 `AGENS_ENV` 决定是否允许 `AGENS_PG_AUTO_DDL=1`（生产 fail-closed）；`initialize()` 建 `CREATE TABLE IF NOT EXISTS` + 种子 catalog |
 | `auth.py` | `create_session_token`, `parse_session_token`, `create_guest_token`, `cookie_kwargs` | HMAC-SHA256 签名会话 token；`agens_session` / `agens_guest` 两个 HttpOnly Cookie；`GUEST_USER_PREFIX = "guest-"` |
 | `security.py` | `hash_password`, `verify_password`, `enforce_same_origin` | 密码哈希（bcrypt 系）、CSRF、同源校验（`Origin` / `Referer`） |
 | `database_common.py` | `load_json`, `dump_json`, `now_ts` | JSON 列编解码 + 时间戳 |
@@ -47,7 +47,7 @@
 | `choices.py` | `complete_choices()`, `fallback_choices()`, `normalize_choices()` | A/B/C/D 归一化；模型输出不足 4 个时用 `fallback_choices(session)` 按当前 `location` 兜底；D 固定为气运/天命路线 |
 | `render.py` | `format_status_bar`, `format_status_card`, `format_inventory`, `format_skills`, `format_map`, `format_quests`, `format_log`, `format_realm`, `format_equipment` | 状态 → 面板字符串；`GameEngine.get_*()` 把这些渲染结果填到 `session.panels` |
 | `local_story.py` | `start_local_story()`, `advance_local_story()`, `validate_local_story_graph()` | 模型不可用兜底；`misty_gate` 默认 6 节点图；测试用图完整性校验 |
-| `profile_opening.py` | `luck_from_attributes`, `profile_default_world`, `profile_opening`, `profile_concept` | 开场编年史模板；按角色名、天赋、灵根、家世、难度和六维属性生成本地开局 |
+| `profile_opening.py` | `profile_default_world`, `profile_opening`, `profile_concept` | 开场编年史模板；按角色名、天赋、灵根、家世、难度和六维属性生成本地开局 |
 | `world_generator.py` | `build_world_prompt`, `build_world_fallback`, `parse_world_response` | World Builder prompt + 本地兜底模板 |
 | `death_rewards.py` | `categorize_death`, `evaluate_achievements`, `compute_rewards`, `bonuses_to_legacy`, `apply_legacy_bonuses`, `build_run_summary` | 终局分类（飞升 > 因果反噬 > 事件 > 寿元 > 手动）+ 成就评估 + 奖励计算 + 跨局传承奖励 |
 | `model_result.py` | `ModelResultKind`, `classify_narrator_result`, `classify_world_builder_result`, `classify_judge_result`, `result_diagnostics` | 模型输出分类（OK / REQUEST_FAILED / INCOMPLETE_OUTPUT / JUDGE_FAILED / LOCAL_FALLBACK）；用于遥测与 UI 兜底判定 |
@@ -63,13 +63,11 @@
 | **World Builder** | `agents/world_builder/` | `temperature=0.6`, `max_tokens=4096` | 新游戏开局生成世界 + 角色；解析 `<world_data>` JSON 标签；`_normalize_choices` 上限 3 |
 | **Sequential 包装** | `agents/sequential.py` | — | `SequentialAgentGraph` 通用 4 节点编排；3 个 Agent 共享同一编排 |
 
-### 4.3 状态与会话（`session/` + `state/`）
+### 4.3 状态与会话（`session/`）
 
 | 文件 | 关键对象 | 职责 |
 | --- | --- | --- |
 | `session/game_session.py` | `GameSession` dataclass | 单局权威内存状态；含 `_LEGACY_CHARACTER_FIELDS` 防御（`__setattr__` 拦截 hp/mp 等历史字段）；`apply_delta(delta)` 是唯一允许的外部写入入口（数值上下限、字段白名单、`_add` 列表合并） |
-| `state/game_schema.py` | `Technique`, `InventoryItem`, `NpcInfo`, `QuestInfo`, `CharacterState`, `WorldState`, `GameState` (TypedDict) | LLM 侧契约；`GameState` 包含 meta（turn_count、game_started、game_over、game_over_reason）+ core（character、world）+ Agent I/O（user_input、messages、narrative、state_delta、choices、approved、corrected_delta）+ 元数据（usage、elapsed_ms、llm_error、finished_at） |
-| `state/reducers.py` | `last_wins`, `Append`, `ReplaceList` | LangGraph Annotated 合并器 |
 
 ### 4.4 游戏规则（`game/`）
 
@@ -173,7 +171,7 @@ JSONB 列：`attribute_mods` / `tags` / `initial_resources` / `initial_risks` / 
 ### DDL 治理
 
 - **本地 / 测试**：PostgreSQL 默认 `AGENS_PG_AUTO_DDL=1` 时允许应用启动时建表
-- **生产**：`APP_ENV=production` 下拒绝 `AGENS_PG_AUTO_DDL=1`（fail-closed `RuntimeError`）；schema 必须由 Alembic 迁移创建；catalog 与死亡奖励表也必须由迁移覆盖
+- **生产**：`AGENS_ENV=production` 下拒绝 `AGENS_PG_AUTO_DDL=1`（fail-closed `RuntimeError`）；schema 必须由 Alembic 迁移创建；catalog 与死亡奖励表也必须由迁移覆盖
 
 ## 7. 模块串联流程（端到端）
 
@@ -284,7 +282,7 @@ Narrator / Judge LLMError
 - **API key 不进入前端包、日志、文档或 Git** — 仅进入后端进程环境变量与 DB 脱敏摘要
 - **不在 UI 明示隐藏触发规则或内部模式名称** — 只展示玩家可理解的 A/B/C/D 选择和当前局面
 - **访客 cookie（HttpOnly）是访客局唯一操作凭证** — 配合 `guest_token` 在后端校验
-- **APP_ENV=production 下拒绝 `AGENS_PG_AUTO_DDL=1`** — 生产 schema 由 Alembic 拥有
+- **AGENS_ENV=production 下拒绝 `AGENS_PG_AUTO_DDL=1`** — 生产 schema 由 Alembic 拥有
 - **9 境界顺序固定**：练气 → 筑基 → 金丹 → 元婴 → 化神 → 合体 → 大乘 → 渡劫 → 飞升，不回退、不恢复已删除项
 - **生产模式隐藏 `/docs`、`/redoc`、`/openapi.json`**，启用 Host 白名单
 - **状态变更 API 需同源 / 允许来源校验**（`enforce_same_origin`）

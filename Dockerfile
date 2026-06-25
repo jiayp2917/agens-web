@@ -15,9 +15,6 @@ WORKDIR /app
 ENV PYTHONUNBUFFERED=1 \
     AGENS_NOVEL_ROOT=/app
 
-COPY requirements.txt ./
-RUN pip install --no-cache-dir -r requirements.txt
-
 COPY pyproject.toml README.md ./
 COPY alembic.ini ./alembic.ini
 COPY migrations ./migrations
@@ -29,7 +26,7 @@ COPY deploy/docker-entrypoint.sh /usr/local/bin/agens-web-entrypoint.sh
 
 RUN sed -i 's/\r$//' /usr/local/bin/agens-web-entrypoint.sh \
     && chmod +x /usr/local/bin/agens-web-entrypoint.sh \
-    && pip install --no-cache-dir --no-deps -e .
+    && pip install --no-cache-dir -e .
 
 EXPOSE 8000
 

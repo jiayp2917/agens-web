@@ -7,45 +7,10 @@ fallback keeps the game running.
 
 from __future__ import annotations
 
-import json
 import logging
 from typing import Any
 
-from ..game.constants import DEFAULT_ATTRIBUTES
-
 log = logging.getLogger(__name__)
-
-# ── Prompt template ─────────────────────────────────────────────────────────
-
-WORLD_BUILDER_SYSTEM = """你是一个修仙世界构建器。
-你的任务是根据角色信息生成一个完整的修仙世界观。
-
-你只能输出 JSON，不能输出聊天、解释或散文。
-JSON 必须严格符合以下结构：
-
-{
-  "world_name": "世界名称，2-8个字",
-  "regions": [
-    {"name": "地域名", "description": "1-2句描述该地域的特点"}
-  ],
-  "sects": [
-    {"name": "宗门/势力名", "alignment": "正道/魔道/中立", "description": "1-2句描述"}
-  ],
-  "cultivation_system": "修炼体系的1-2句描述",
-  "current_conflicts": ["当前修真界的矛盾1", "矛盾2"],
-  "initial_situation": "角色当前处境的一句话描述，50字以内",
-  "world_rules": {
-    "special_rule": "本局特殊规则的一句话描述，不暴露给前端"
-  }
-}
-
-约束：
-- 地域不超过4个，宗门/势力不超过4个，矛盾不超过3个。
-- 所有名称和描述必须是修仙题材的共性设定，不复制任何已知作品的具体门派名、人物名或剧情原文。
-- 修炼体系以常见修仙设定（练气/筑基/金丹/元婴/化神/合体/大乘/渡劫/飞升）为基础。
-- 如果输入信息不足以构造完整世界观，用通用修仙设定补充。
-- 用中文输出。"""
-
 
 def build_world_prompt(profile: dict[str, Any]) -> str:
     """Build a World Builder prompt from a character creation profile."""

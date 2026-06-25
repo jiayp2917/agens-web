@@ -1,6 +1,6 @@
 """document production DDL policy (no-op migration)
 
-P3 DDL demotion: ``APP_ENV=production`` disables ``PostgresWebDatabase.initialize()``.
+P3 DDL demotion: ``AGENS_ENV=production`` disables ``PostgresWebDatabase.initialize()``.
 The production schema is owned by alembic; auto-DDL at runtime would silently
 mutate it. This migration is a marker so operators have a named revision to
 point at when running ``alembic upgrade head`` in production.

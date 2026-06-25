@@ -130,7 +130,7 @@ Browser UI
 | P2 | FastAPI 路由仍集中在单文件内，但重复 service 异常映射已完成第一步收束。 | 下一步如继续拆路由，应先保持 `service_call()` / 鉴权依赖语义不变，再拆 `auth_router`、`catalog_router`、`session_router`、`settings_router`。 |
 | P2 | SQLite / PostgreSQL 双轨仍有 DDL、SQL 方言和事务边界重复；catalog row / progress summary 已先收束为共享 helper。 | 继续用小批次抽公共 row shaping、save summary、run-turn 读取 helper；暂不引入新 ORM 抽象，也不改已部署 Alembic revision。 |
 | P0 | 生产 v5 服务已恢复：Alembic `20260622_0004`、三张 v5 表存在、容器 healthy、origin/public health 200、catalog 10 条、访客开局和一回合 200。但生产账号流未验收，production live model 未验收（访客 smoke 为 fallback）。 | 用安全非 secret 测试账号补验注册/登录/存读档；在不输出 secrets 的前提下补验 production live model，fallback 不能算成功。继续公开 Alpha 日志脱敏、限流、Cookie/Origin 和备份观察。 |
-| P2 | PostgreSQL 设计和 Alembic 迁移已经补齐 Alpha 必需表，但生产仍需索引评审、备份恢复和回滚演练。 | 设置 `TEST_DATABASE_URL` 跑空库迁移和账号游玩链路；生产运行时 `APP_ENV=production` 自动拒绝 `AGENS_PG_AUTO_DDL=1`；安排维护窗口做回滚演练。 |
+| P2 | PostgreSQL 设计和 Alembic 迁移已经补齐 Alpha 必需表，但生产仍需索引评审、备份恢复和回滚演练。 | 设置 `TEST_DATABASE_URL` 跑空库迁移和账号游玩链路；生产运行时 `AGENS_ENV=production` 自动拒绝 `AGENS_PG_AUTO_DDL=1`；安排维护窗口做回滚演练。 |
 | P2 | 访客局只在单进程内存中，容器重启、多 worker 或多副本会丢失。 | Alpha 阶段明确提示；正式多人部署前引入共享会话存储或只允许账号局跨进程恢复。 |
 | P2 | 匿名访客仍可能消耗模型额度。 | 增加访客日限额、IP/设备限额、模型预算保护和边缘层限流。 |
 | P3 | 测试目录需继续从旧产品分类迁移到 Web 分类。 | 保留核心测试，新增 API 和浏览器测试，删除旧 UI 契约测试。 |

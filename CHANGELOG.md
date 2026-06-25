@@ -21,9 +21,24 @@
 
 ### Notes — 故意未改（待用户确认）
 
-- `web/backend/security.py` 的 `is_production_mode()` 仍读 `DATABASE_BACKEND`（默认 `sqlite`）作为生产态信号之一。方案 C 后该变量不再用于选择后端，仅作生产态提示；改变其语义属安全行为变更，未在本批处理。
+- `web/backend/security.py` 的 `is_production_mode()` 读 `AGENS_ENV`（不再读 `DATABASE_BACKEND`）。第二轮已把 `database_postgres.py` 的 DDL 守卫统一到同一变量，生产态信号单一化（见下文「代码审计第二轮」）。
 - `WebGameService` 与 `WebRunner` 未合并：审计「前者几乎全委托后者」的前提不成立（`WebRunner` 自带引擎回调、死亡奖励落库、响应序列化等大量逻辑），合并会产生 God Class。
 - `llm/client.py` 的 `mask_key` 未与 `utils.secrets.mask` 统一（两者掩码长度策略不同）。
+
+### Changed — 代码审计第二轮（死依赖 / 死代码 / AGENS_ENV 统一）
+
+- **安全修复 — 生产态变量统一**：`database_postgres.py` 的 DDL 守卫原读 `APP_ENV`，与 `security.is_production_mode()` 读取的 `AGENS_ENV` 不同步；`deploy/production.env.example` 仅设 `AGENS_ENV=production`，导致生产下 DDL 守卫被绕过。统一为 `AGENS_ENV`（同步迁移 docstring 与 `docs/ARCHITECTURE.md`、`docs/PROJECT_AUDIT.md`）。
+- **死依赖移除**：`langgraph`、`langchain-core`、`langchain-openai` 全库零 import（LLM 走原生 `httpx` + 自有 `Message` 类型），从 `pyproject.toml` 移除；`Dockerfile` 改为单一依赖源 `pip install -e .`，删除 `requirements.txt`（双源已导致 2026-06-24 部署失败）。
+- **死代码清理**：删除零调用函数 `luck_from_attributes`、`parse_delta_int`、`get_realm_year_range`、`checkpoint_path`、`render._bar`、DB 接口方法 `get_invite_code`；删除未用常量 `WORLD_BUILDER_SYSTEM`；删除 `world_generator` 未用 import（`DEFAULT_ATTRIBUTES`、`json`）。
+- **`state/` 包移除**：`state/reducers.py`（LangGraph `Annotated` reducer）与 `state/game_schema.py`（TypedDict）仅被自身测试引用、生产零引用、reducer 运行时不生效；连同 `tests/unit/state/` 一并删除。
+- **去重**：新增 `agents/common.py`（`load_agent_settings` + `normalize_choices`），消除 narrator/world_builder/judge 三处 `load_settings` 与 narrator/world_builder 两处 `_normalize_choices` 的逐行重复。
+- **死参数移除**：`create_app(db_path)` 与 `create_database(db_path)` 的 vestigial 参数（Option C 后被忽略）移除；`tests/web/test_web_api.py` 调用点同步，并迁移 2 个 SQLite 时代遗留的 DB 测试到 SQLAlchemy `text()`。
+
+### Notes — 故意未改（第二轮）
+
+- `llm/client.py` 仍为 async 接口包同步 `httpx`（原审计「不处理项」），未改；其自带 `_parse_sse_lines` 与 `sse.py` 的 `iter_sse_events` 各一套 SSE 解析，因涉及 client.py 暂未去重。
+- `death_rewards.py`（352 行，P4）保留：已接入 `service.py` 终局流程（`categorize_death`→`evaluate_achievements`→`compute_rewards`→`build_run_summary`），非死代码。
+- 代码与文档中 "LangGraph" 术语保留：描述 agent 节点 state 的 msgpack 序列化约束（`SequentialAgentGraph`），仅移除未用的 `langgraph` 包依赖与 `state/` reducer，不 purge 术语。
 
 ## 2026-06-24
 

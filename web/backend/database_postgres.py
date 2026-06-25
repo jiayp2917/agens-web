@@ -33,14 +33,19 @@ class PostgresWebDatabase:
             raise RuntimeError("DATABASE_URL is required when DATABASE_BACKEND=postgresql")
         self.engine: Engine = create_engine(self.database_url, pool_pre_ping=True, future=True)
         auto_ddl_requested = os.environ.get("AGENS_PG_AUTO_DDL", "").strip().lower() in ("1", "true", "yes")
-        app_env = os.environ.get("APP_ENV", "").strip().lower()
+        # Production is indicated by AGENS_ENV — the same variable
+        # security.is_production_mode() reads. This previously read APP_ENV,
+        # which silently desynced from the security checks when only AGENS_ENV
+        # was set (as deploy/production.env.example does), leaving the DDL guard
+        # bypassed in production. Keep both guards on one variable.
+        env = os.environ.get("AGENS_ENV", "").strip().lower()
         # P3 DDL demotion: production runtime must never auto-DDL. The schema is
         # owned by alembic (revision 20260622_0004_ddl_disallow_production and later).
         # Fail closed instead of silently mutating the production schema.
-        if app_env == "production":
+        if env == "production":
             if auto_ddl_requested:
                 raise RuntimeError(
-                    "AGENS_PG_AUTO_DDL=1 is not allowed when APP_ENV=production. "
+                    "AGENS_PG_AUTO_DDL=1 is not allowed when AGENS_ENV=production. "
                     "Run `alembic upgrade head` against the production database instead."
                 )
             seed_catalogs(self)
@@ -416,11 +421,6 @@ class PostgresWebDatabase:
                 invite,
             )
         return invite
-
-    def get_invite_code(self, code_hash: str) -> dict[str, Any] | None:
-        with self.engine.begin() as conn:
-            row = conn.execute(text("SELECT * FROM invite_codes WHERE code_hash = :code_hash"), {"code_hash": code_hash}).mappings().first()
-        return dict(row) if row else None
 
     def consume_invite_code(self, code_hash: str) -> dict[str, Any] | None:
         now = now_ts()

@@ -182,8 +182,3 @@ def settle_turn(
 def get_realm_lifespan(realm: str) -> int:
     """Return the base lifespan for a given realm."""
     return REALM_LIFESPANS.get(realm, 100)
-
-
-def get_realm_year_range(realm: str) -> tuple[int, int]:
-    """Return (min, max) years per turn for a given realm."""
-    return _REALM_YEAR_RANGES.get(realm, (1, 3))

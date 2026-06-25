@@ -7,7 +7,6 @@ production all use PostgreSQL via DATABASE_URL.
 from __future__ import annotations
 
 import os
-from pathlib import Path
 from typing import Any, Protocol
 
 
@@ -49,7 +48,6 @@ class WebDatabaseProtocol(Protocol):
         expires_at: float | None = None,
         created_by: str | None = None,
     ) -> dict[str, Any]: ...
-    def get_invite_code(self, code_hash: str) -> dict[str, Any] | None: ...
     def consume_invite_code(self, code_hash: str) -> dict[str, Any] | None: ...
 
     # ── sessions / saves ─────────────────────────────────────────────────
@@ -149,11 +147,10 @@ class WebDatabaseProtocol(Protocol):
     def insert_catalog(self, table: str, row: dict[str, Any]) -> dict[str, Any]: ...
 
 
-def create_database(db_path: Path | None = None):
+def create_database():
     """Create the PostgreSQL web database.
 
-    ``db_path`` is accepted for backward compatibility with ``create_app()``
-    callers but ignored — the connection always comes from ``DATABASE_URL``.
+    The connection always comes from ``DATABASE_URL``.
     """
     from .database_postgres import PostgresWebDatabase
 

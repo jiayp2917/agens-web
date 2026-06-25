@@ -84,20 +84,6 @@ _CLAIM_RULES: tuple[tuple[tuple[re.Pattern[str], ...], tuple[tuple[str, str], ..
 )
 
 
-def parse_delta_int(value: Any) -> int:
-    """Parse an integer or signed string delta value."""
-    if isinstance(value, bool):
-        return 0
-    if isinstance(value, int):
-        return value
-    if isinstance(value, str):
-        try:
-            return int(value)
-        except ValueError:
-            return 0
-    return 0
-
-
 def is_pure_cultivation(text: str) -> bool:
     """Return True if the typed action is pure meditation/cultivation."""
     compact = "".join(text.strip().lower().split())

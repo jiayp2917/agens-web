@@ -140,10 +140,10 @@ def service_http_error(exc: Exception) -> HTTPException:
     raise exc
 
 
-def create_app(db_path: Path | None = None) -> FastAPI:
+def create_app() -> FastAPI:
     setup_logging()
     validate_runtime_config()
-    service = WebGameService(create_database(db_path))
+    service = WebGameService(create_database())
     production = is_production_mode()
     app = FastAPI(
         title="agens-web",

@@ -13,15 +13,15 @@ from __future__ import annotations
 
 import json
 import logging
-import os
 import re
 from typing import Any
 
+from ... import paths
 from ...artifacts import store
 from ...llm.client import LLMError, call_llm
 from ...llm.types import Message
-from ... import paths
 from ...utils.timing import utcnow_iso
+from ..common import load_agent_settings
 
 log = logging.getLogger(__name__)
 
@@ -30,15 +30,7 @@ _MAX_CANDIDATE_LEN = 65536
 
 
 def load_settings(state: dict[str, Any]) -> dict[str, Any]:
-    base_url = os.environ.get("AGNES_BASE_URL", "https://apihub.agnes-ai.com/v1")
-    model = os.environ.get("AGNES_MODEL", "agnes-2.0-flash")
-    api_key = os.environ.get("AGNES_API_KEY", "")
-    run_id = store.new_run_id()
-    log.info("[judge.load_settings] run_id=%s model=%s", run_id, model)
-    return {
-        "model": model, "base_url": base_url, "api_key_set": bool(api_key),
-        "run_id": run_id, "started_at": utcnow_iso(),
-    }
+    return load_agent_settings(AGENT_NAME)
 
 
 def build_prompt(state: dict[str, Any]) -> dict[str, Any]:

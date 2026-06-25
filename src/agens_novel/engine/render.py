@@ -20,13 +20,6 @@ def _stage_suffix(stage: int) -> str:
     return f" {stage}层"
 
 
-def _bar(current: int, maximum: int, width: int = 10) -> str:
-    if maximum <= 0:
-        return "░" * width
-    filled = max(0, min(int(width * current / maximum), width))
-    return "█" * filled + "░" * (width - filled)
-
-
 def _spirit_root_str(session: GameSession) -> str:
     parts = []
     if session.spirit_root:

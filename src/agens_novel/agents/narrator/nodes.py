@@ -13,15 +13,15 @@ from __future__ import annotations
 
 import json
 import logging
-import os
 import re
 from typing import Any, Callable
 
+from ... import paths
 from ...artifacts import store
 from ...llm.client import LLMError, call_llm, call_llm_stream
 from ...llm.types import Message
-from ... import paths
 from ...utils.timing import utcnow_iso
+from ..common import load_agent_settings, normalize_choices
 
 log = logging.getLogger(__name__)
 
@@ -30,15 +30,7 @@ _MAX_HISTORY_TURNS = 20
 
 
 def load_settings(state: dict[str, Any]) -> dict[str, Any]:
-    base_url = os.environ.get("AGNES_BASE_URL", "https://apihub.agnes-ai.com/v1")
-    model = os.environ.get("AGNES_MODEL", "agnes-2.0-flash")
-    api_key = os.environ.get("AGNES_API_KEY", "")
-    run_id = store.new_run_id()
-    log.info("[narrator.load_settings] run_id=%s model=%s", run_id, model)
-    return {
-        "model": model, "base_url": base_url, "api_key_set": bool(api_key),
-        "run_id": run_id, "started_at": utcnow_iso(),
-    }
+    return load_agent_settings(AGENT_NAME)
 
 
 def build_prompt(state: dict[str, Any]) -> dict[str, Any]:
@@ -219,13 +211,13 @@ def _parse_narrator_output(text: str) -> tuple[str, dict, list[str]]:
             data = json.loads(raw_json)
             if isinstance(data, dict):
                 state_delta = data
-                choices = _normalize_choices(data.get("meta", {}).get("choices"))
+                choices = normalize_choices(data.get("meta", {}).get("choices"))
         except (json.JSONDecodeError, ValueError):
             log.warning("[narrator] state_update JSON parse failed: %s", raw_json[:200])
 
     choices_match = _CHOICES_RE.search(text)
     if choices_match:
-        choices = _normalize_choices(_parse_choices_payload(choices_match.group(1).strip())) or choices
+        choices = normalize_choices(_parse_choices_payload(choices_match.group(1).strip())) or choices
     if not choices:
         choices = _parse_inline_abc_choices(text)
 
@@ -253,27 +245,7 @@ def _parse_inline_abc_choices(text: str) -> list[str]:
             found.append(choice)
         if len(found) == 3:
             break
-    return _normalize_choices(found) if len(found) >= 3 else []
-
-
-def _normalize_choices(value: Any) -> list[str]:
-    choices: list[str] = []
-    if not isinstance(value, list):
-        return choices
-    for item in value:
-        if isinstance(item, str):
-            text = item
-        elif isinstance(item, dict):
-            raw = item.get("action") or item.get("text") or item.get("label")
-            text = str(raw) if raw is not None else ""
-        else:
-            text = ""
-        text = text.strip()
-        if text:
-            choices.append(text)
-        if len(choices) == 3:
-            break
-    return choices
+    return normalize_choices(found) if len(found) >= 3 else []
 
 
 async def _repair_incomplete_output(

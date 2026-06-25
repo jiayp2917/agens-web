@@ -60,12 +60,6 @@ def log_path(timestamp: str) -> Path:
     return LOG_DIR / f"run_{timestamp}.jsonl"
 
 
-def checkpoint_path(thread_id: str) -> Path:
-    """SQLite checkpoint DB path. A single DB is fine for v1."""
-    CHECKPOINT_DIR.mkdir(parents=True, exist_ok=True)
-    return CHECKPOINT_DIR / f"{thread_id}.sqlite"
-
-
 def save_path(name: str) -> Path:
     """Return the path for a game save file. Creates SAVE_DIR on demand."""
     SAVE_DIR.mkdir(parents=True, exist_ok=True)

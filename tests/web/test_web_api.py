@@ -7,6 +7,7 @@ from unittest.mock import patch
 
 import pytest
 from fastapi.testclient import TestClient
+from sqlalchemy import text
 
 from web.backend.app import create_app
 from web.backend.auth import hash_invite_code
@@ -96,7 +97,7 @@ def test_web_api_minimum_game_flow(tmp_path: Path, monkeypatch) -> None:
     monkeypatch.setenv("AGNES_API_KEY", "sk-test-web-api")
     monkeypatch.setenv("SESSION_COOKIE_SECURE", "0")
     monkeypatch.setenv("AGENS_WEB_DB", str(tmp_path / "agens_web.sqlite3"))
-    app = create_app(tmp_path / "agens_web.sqlite3")
+    app = create_app()
     client = TestClient(app)
 
     _create_invite(app)
@@ -149,11 +150,11 @@ def test_web_api_minimum_game_flow(tmp_path: Path, monkeypatch) -> None:
         assert acted["turn_count"] == 2
         assert acted["panels"]["status"]
 
-        with app.state.service.db.connect() as conn:
+        with app.state.service.db.engine.connect() as conn:
             turn_count = conn.execute(
-                "SELECT count(*) AS c FROM game_turns WHERE run_id = ?",
-                (session_id,),
-            ).fetchone()["c"]
+                text("SELECT count(*) FROM game_turns WHERE run_id = :run_id"),
+                {"run_id": session_id},
+            ).scalar()
         assert turn_count == 2
 
         ended = client.post(
@@ -176,7 +177,7 @@ def test_web_api_minimum_game_flow(tmp_path: Path, monkeypatch) -> None:
 def test_web_save_load_restores_snapshot_and_chat_history(tmp_path: Path, monkeypatch) -> None:
     monkeypatch.setenv("AGNES_API_KEY", "sk-test-web-api")
     monkeypatch.setenv("SESSION_COOKIE_SECURE", "0")
-    app = create_app(tmp_path / "agens_web.sqlite3")
+    app = create_app()
     client = TestClient(app)
     _create_invite(app)
     _register(client)
@@ -192,15 +193,30 @@ def test_web_save_load_restores_snapshot_and_chat_history(tmp_path: Path, monkey
         assert len(loaded["choices"]) == 4
         assert "气运" in loaded["choices"][-1]
 
-    db_text = (tmp_path / "agens_web.sqlite3").read_bytes()
-    assert b"sk-test-web-api" not in db_text
+    # Security: the raw API key must never be persisted. Under PostgreSQL there
+    # is no DB file to scan, so check the columns that could hold it.
+    with app.state.service.db.engine.connect() as conn:
+        rows = conn.execute(
+            text(
+                """
+                SELECT api_key_masked::text FROM model_config
+                UNION ALL SELECT snapshot::text FROM sessions
+                UNION ALL SELECT snapshot::text FROM saves
+                UNION ALL SELECT state_delta::text FROM game_turns
+                UNION ALL SELECT state_after::text FROM game_turns
+                UNION ALL SELECT narrative FROM game_turns
+                """
+            )
+        )
+        db_text = " ".join(row[0] for row in rows if row[0])
+    assert "sk-test-web-api" not in db_text
 
 
 def test_web_model_failure_exposes_fallback_and_can_end(tmp_path: Path, monkeypatch) -> None:
     monkeypatch.delenv("AGNES_API_KEY", raising=False)
     monkeypatch.setenv("AGENS_START_MODEL_OPENING", "1")
     monkeypatch.setenv("SESSION_COOKIE_SECURE", "0")
-    app = create_app(tmp_path / "agens_web.sqlite3")
+    app = create_app()
     client = TestClient(app)
     _create_invite(app)
     _register(client)
@@ -225,7 +241,7 @@ def test_web_model_failure_exposes_fallback_and_can_end(tmp_path: Path, monkeypa
 def test_model_settings_never_returns_raw_api_key(tmp_path: Path, monkeypatch) -> None:
     monkeypatch.setenv("SESSION_COOKIE_SECURE", "0")
     monkeypatch.setenv("INVITE_ADMIN_CODE", "admin-invite-123")
-    app = create_app(tmp_path / "agens_web.sqlite3")
+    app = create_app()
     client = TestClient(app)
     client.post(
         "/api/auth/register",
@@ -248,7 +264,7 @@ def test_model_settings_never_returns_raw_api_key(tmp_path: Path, monkeypatch) -
 
 def test_post_model_settings_rejects_oversized_field(tmp_path: Path) -> None:
     """F-002: 四个字段均有 max_length 约束。超长值必须返回 422。"""
-    app = create_app(tmp_path / "agens_web.sqlite3")
+    app = create_app()
     client = TestClient(app)
     app.state.service.db.create_user("admin", "hash", is_admin=True)
     token = __import__("web.backend.auth", fromlist=["create_session_token"]).create_session_token(
@@ -277,7 +293,7 @@ def test_post_model_settings_rejects_oversized_field(tmp_path: Path) -> None:
 
 def test_invite_register_and_auth_required(tmp_path: Path, monkeypatch) -> None:
     monkeypatch.setenv("SESSION_COOKIE_SECURE", "0")
-    app = create_app(tmp_path / "agens_web.sqlite3")
+    app = create_app()
     client = TestClient(app)
 
     guest = client.post("/api/sessions", json={})
@@ -302,7 +318,7 @@ def test_invite_register_and_auth_required(tmp_path: Path, monkeypatch) -> None:
 def test_guest_can_play_but_cannot_use_cloud_saves(tmp_path: Path, monkeypatch) -> None:
     monkeypatch.delenv("AGNES_API_KEY", raising=False)
     monkeypatch.setenv("SESSION_COOKIE_SECURE", "0")
-    app = create_app(tmp_path / "agens_web.sqlite3")
+    app = create_app()
     client = TestClient(app)
 
     created = client.post("/api/sessions", json={"title": "访客局"}).json()
@@ -332,14 +348,14 @@ def test_guest_can_play_but_cannot_use_cloud_saves(tmp_path: Path, monkeypatch) 
 
 
 def test_legacy_local_login_route_is_removed(tmp_path: Path) -> None:
-    app = create_app(tmp_path / "agens_web.sqlite3")
+    app = create_app()
     client = TestClient(app)
     assert client.post("/api/users/login", json={"username": "local"}).status_code == 404
 
 
 def test_user_cannot_access_another_users_session(tmp_path: Path, monkeypatch) -> None:
     monkeypatch.setenv("SESSION_COOKIE_SECURE", "0")
-    app = create_app(tmp_path / "agens_web.sqlite3")
+    app = create_app()
     client_a = TestClient(app)
     client_b = TestClient(app)
     app.state.service.db.create_invite_code(hash_invite_code("invite-a-123"), max_uses=1)
@@ -389,7 +405,7 @@ def test_session_routes_map_service_errors(
     status_code: int,
 ) -> None:
     monkeypatch.setenv("SESSION_COOKIE_SECURE", "0")
-    app = create_app(tmp_path / "agens_web.sqlite3")
+    app = create_app()
     client = TestClient(app)
     app.state.service.db.create_user("player", "hash")
     token = __import__("web.backend.auth", fromlist=["create_session_token"]).create_session_token(
@@ -419,11 +435,11 @@ def test_production_rejects_default_session_secret(tmp_path: Path, monkeypatch) 
     monkeypatch.delenv("SESSION_SECRET", raising=False)
 
     with pytest.raises(RuntimeError, match="SESSION_SECRET"):
-        create_app(tmp_path / "agens_web.sqlite3")
+        create_app()
 
     monkeypatch.setenv("SESSION_SECRET", "dev-session-secret-change-me")
     with pytest.raises(RuntimeError, match="SESSION_SECRET"):
-        create_app(tmp_path / "agens_web.sqlite3")
+        create_app()
 
 
 def test_production_requires_allowed_origins(tmp_path: Path, monkeypatch) -> None:
@@ -435,7 +451,7 @@ def test_production_requires_allowed_origins(tmp_path: Path, monkeypatch) -> Non
     monkeypatch.delenv("AGENS_ALLOWED_ORIGINS", raising=False)
 
     with pytest.raises(RuntimeError, match="AGENS_ALLOWED_ORIGINS"):
-        create_app(tmp_path / "agens_web.sqlite3")
+        create_app()
 
 
 def test_production_hides_openapi_and_rejects_untrusted_host(tmp_path: Path, monkeypatch) -> None:
@@ -445,7 +461,7 @@ def test_production_hides_openapi_and_rejects_untrusted_host(tmp_path: Path, mon
     monkeypatch.setenv("SESSION_SECRET", "not-the-dev-secret")
     monkeypatch.setenv("AGENS_ALLOWED_ORIGINS", "https://game.example.test")
     monkeypatch.setenv("SESSION_COOKIE_SECURE", "0")
-    app = create_app(tmp_path / "agens_web.sqlite3")
+    app = create_app()
 
     client = TestClient(app, base_url="https://game.example.test")
     assert client.get("/api/health").status_code == 200
@@ -460,7 +476,7 @@ def test_production_hides_openapi_and_rejects_untrusted_host(tmp_path: Path, mon
 def test_origin_mismatch_is_rejected_for_state_changes(tmp_path: Path, monkeypatch) -> None:
     monkeypatch.setenv("SESSION_COOKIE_SECURE", "0")
     monkeypatch.setenv("AGENS_ALLOWED_ORIGINS", "https://game.example.test")
-    app = create_app(tmp_path / "agens_web.sqlite3")
+    app = create_app()
     client = TestClient(app, base_url="https://game.example.test")
     _create_invite(app)
     client.post(
@@ -487,7 +503,7 @@ def test_origin_mismatch_is_rejected_for_state_changes(tmp_path: Path, monkeypat
 def test_body_size_limit_rejects_actual_large_body(tmp_path: Path, monkeypatch) -> None:
     monkeypatch.setenv("SESSION_COOKIE_SECURE", "0")
     monkeypatch.setenv("AGENS_MAX_REQUEST_BYTES", "128")
-    app = create_app(tmp_path / "agens_web.sqlite3")
+    app = create_app()
     client = TestClient(app)
 
     response = client.post(
@@ -565,7 +581,7 @@ async def test_body_size_limit_replays_allowed_chunked_body() -> None:
 
 def test_admin_invite_create_validates_schema(tmp_path: Path, monkeypatch) -> None:
     monkeypatch.setenv("SESSION_COOKIE_SECURE", "0")
-    app = create_app(tmp_path / "agens_web.sqlite3")
+    app = create_app()
     client = TestClient(app)
     app.state.service.db.create_user("admin", "hash", is_admin=True)
     token = __import__("web.backend.auth", fromlist=["create_session_token"]).create_session_token(
@@ -619,7 +635,7 @@ def test_alembic_game_mode_v5_bridge_covers_runtime_tables() -> None:
 
 def test_model_failure_events_are_public_safe(tmp_path: Path, monkeypatch) -> None:
     monkeypatch.setenv("SESSION_COOKIE_SECURE", "0")
-    app = create_app(tmp_path / "agens_web.sqlite3")
+    app = create_app()
     client = TestClient(app)
     _create_invite(app)
     _register(client)
@@ -641,7 +657,7 @@ def test_model_failure_events_are_public_safe(tmp_path: Path, monkeypatch) -> No
 def test_start_accepts_seeded_catalog_character_options(tmp_path: Path, monkeypatch) -> None:
     monkeypatch.setenv("AGNES_API_KEY", "sk-test-web-api")
     monkeypatch.setenv("SESSION_COOKIE_SECURE", "0")
-    app = create_app(tmp_path / "agens_web.sqlite3")
+    app = create_app()
     client = TestClient(app)
     _create_invite(app)
     _register(client)
@@ -745,7 +761,7 @@ def test_postgres_database_url_smoke(monkeypatch) -> None:
 def test_death_summary_persists_for_registered_user(tmp_path: Path, monkeypatch) -> None:
     monkeypatch.setenv("AGNES_API_KEY", "sk-test-web-api")
     monkeypatch.setenv("SESSION_COOKIE_SECURE", "0")
-    app = create_app(tmp_path / "agens_web.sqlite3")
+    app = create_app()
     client = TestClient(app)
     _create_invite(app)
     _register(client)
@@ -778,7 +794,7 @@ def test_death_summary_persists_for_registered_user(tmp_path: Path, monkeypatch)
 def test_legacy_bonuses_applied_on_next_character(tmp_path: Path, monkeypatch) -> None:
     monkeypatch.setenv("AGNES_API_KEY", "sk-test-web-api")
     monkeypatch.setenv("SESSION_COOKIE_SECURE", "0")
-    app = create_app(tmp_path / "agens_web.sqlite3")
+    app = create_app()
     client = TestClient(app)
     _create_invite(app)
     _register(client)
@@ -822,7 +838,7 @@ def test_legacy_bonuses_applied_on_next_character(tmp_path: Path, monkeypatch) -
 
 def test_legacy_bonuses_endpoint_returns_empty_for_guest(tmp_path: Path, monkeypatch) -> None:
     monkeypatch.setenv("SESSION_COOKIE_SECURE", "0")
-    app = create_app(tmp_path / "agens_web.sqlite3")
+    app = create_app()
     client = TestClient(app)
     # No login → 401 (endpoint requires auth).
     assert client.get("/api/users/me/legacy_bonuses").status_code == 401
@@ -831,7 +847,7 @@ def test_legacy_bonuses_endpoint_returns_empty_for_guest(tmp_path: Path, monkeyp
 def test_guest_death_summary_returns_in_memory(tmp_path: Path, monkeypatch) -> None:
     monkeypatch.setenv("AGNES_API_KEY", "sk-test-web-api")
     monkeypatch.setenv("SESSION_COOKIE_SECURE", "0")
-    app = create_app(tmp_path / "agens_web.sqlite3")
+    app = create_app()
     client = TestClient(app)
     session_id = client.post("/api/sessions", json={"title": "访客局"}).json()["session_id"]
 
