@@ -1,5 +1,21 @@
 # Changelog
 
+## 2026-06-26
+
+### Changed — 代码审计质量复核后清理（build + 文档）
+
+- **Dockerfile 层缓存**：`pip install -e .` 行加 BuildKit 缓存挂载 `--mount=type=cache,target=/root/.cache/pip` 并移除 `--no-cache-dir`，恢复增量构建依赖缓存（消除双依赖源后 `COPY src` 位于 install 之前，曾导致每次 src 变更重解析依赖）；补 `# syntax=docker/dockerfile:1` 显式启用 BuildKit 前端。
+- **文档同步**：`docs/ARCHITECTURE.md` §4.2 补 `agents/common.py` 共享 helper 行，并修正 World Builder 行残留的 `_normalize_choices`（第二轮已迁至 `common.normalize_choices`）。
+- **过时 SQLite / `DATABASE_BACKEND` 引用清理**（仅当前态文档，历史日志与 incident 记录不动）：
+  - `docs/PROJECT_AUDIT.md`：目标架构数据层、目标调用链改为 PostgreSQL 单后端；技术债「SQLite/PostgreSQL 双轨」标记为方案 C 已解决。
+  - `docs/RUNTIME_FLOW.md`：代码链路与生产数据库接入约束改为 PostgreSQL 单后端。
+  - `docs/security.md`：生产 env 移除已不被读取的 `DATABASE_BACKEND=postgresql`（`security.is_production_mode()` 与 `database.py` 均只认 `AGENS_ENV` / `DATABASE_URL`）。
+
+### Notes — 待跟进（超出本轮范围）
+
+- `deploy/production.env.example:3` 仍设 `DATABASE_BACKEND=postgresql`（vestigial，生产代码已不读取）；`tests/web/conftest.py` 与 `tests/web/test_web_api.py` 仍 `setenv("DATABASE_BACKEND", ...)`（含一处 `=sqlite`）。均无功能影响，留作后续清理。
+- `docs/GAME_MODE_SPEC.md:14` 状态表仍写「SQLite + PostgreSQL 双后端」、`docs/NEXT_GOVERNANCE_BACKLOG.md:154` 仍有「SQLite/PostgreSQL dual track」条目，属本轮未覆盖的当前态文档，待确认是否一并清理。
+
 ## 2026-06-25
 
 ### Changed — 代码审计执行（方案 C：数据库统一 PostgreSQL）

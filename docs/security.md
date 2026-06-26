@@ -15,7 +15,6 @@
 生产环境必须注入：
 
 ```env
-DATABASE_BACKEND=postgresql
 DATABASE_URL=postgresql+psycopg://agens_user:CHANGE_ME@postgres:5432/agens_web
 SESSION_SECRET=CHANGE_ME
 SESSION_COOKIE_SECURE=1

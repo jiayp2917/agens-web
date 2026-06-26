@@ -1,3 +1,4 @@
+# syntax=docker/dockerfile:1
 FROM node:24-alpine AS frontend
 
 WORKDIR /frontend
@@ -24,9 +25,10 @@ COPY web ./web
 COPY --from=frontend /frontend/dist ./web/frontend-react/dist
 COPY deploy/docker-entrypoint.sh /usr/local/bin/agens-web-entrypoint.sh
 
-RUN sed -i 's/\r$//' /usr/local/bin/agens-web-entrypoint.sh \
+RUN --mount=type=cache,target=/root/.cache/pip \
+    sed -i 's/\r$//' /usr/local/bin/agens-web-entrypoint.sh \
     && chmod +x /usr/local/bin/agens-web-entrypoint.sh \
-    && pip install --no-cache-dir -e .
+    && pip install -e .
 
 EXPOSE 8000
 

@@ -82,7 +82,7 @@ Browser UI
   -> GameEngine
   -> World Builder / Narrator / Judge
   -> GameSession.apply_delta()
-  -> SQLite or PostgreSQL snapshots / saves
+  -> PostgreSQL snapshots / saves
   -> Browser UI
 ```
 
@@ -93,7 +93,7 @@ Browser UI
 - API key 不进入前端包、日志、文档或 Git。
 - 外网首版为访客新局 + 邀请码注册存档，登录态使用 HttpOnly Cookie。
 - 访客局必须持有服务端下发的 HttpOnly 访客 Cookie 才能继续操作该局。
-- 生产数据库通过 `DATABASE_BACKEND=postgresql` 和 `DATABASE_URL=postgresql+psycopg://...` 接入。
+- 生产数据库通过 `DATABASE_URL=postgresql+psycopg://...` 接入（PostgreSQL 单后端；`DATABASE_BACKEND` 已不再是生产信号）。
 - 生产 PostgreSQL schema 由 Alembic 迁移创建，应用启动不隐式建表；catalog 和死亡奖励表也必须由迁移覆盖。
 - PostgreSQL 启动后可补充 catalog 种子数据，但不能依赖应用隐式建表。
 - 状态变更 API 需要同源/允许来源校验。
