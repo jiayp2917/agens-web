@@ -22,7 +22,7 @@ INVITE_ADMIN_CODE=CHANGE_ME
 AGENS_ALLOWED_ORIGINS=https://game.jiayp2917.xyz
 AGENS_ALLOWED_HOSTS=game.jiayp2917.xyz,agens-web,localhost,127.0.0.1
 TRUST_PROXY_HEADERS=0
-AGENS_API_KEY=CHANGE_ME
+AGNES_API_KEY=CHANGE_ME
 ```
 
 `deploy/production.env.example` 只能放占位值，不放真实密码或 key。

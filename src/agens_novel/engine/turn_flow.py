@@ -157,13 +157,17 @@ class TurnFlow:
         if turn_summary:
             narrator_input = f"{text}\n\n[本回合规则结算结果（以此为权威数值）：{turn_summary}]"
 
+        # The model chronically emits narrative without <state_update>/<choices>
+        # tags; without repair that forces a local-story fallback. The narrator's
+        # focused repair pass recovers the tags on a second call (repaired_output
+        # is recorded in diagnostics), turning fallback into genuine model success.
         try:
             return engine._run_agent(
                 "narrator",
                 narrator_input,
                 session,
                 stream_callback=engine._stream_callback if engine.on_stream_chunk else None,
-                repair_incomplete_output=False,
+                repair_incomplete_output=True,
             )
         except Exception:
             log.exception("narrator error")

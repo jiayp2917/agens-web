@@ -63,7 +63,7 @@ def test_start_from_profile_generates_opening_choices_from_model(tmp_path, monke
     from agens_novel import paths
     monkeypatch.setattr(paths, "SAVE_DIR", tmp_path)
     monkeypatch.setenv("AGENS_START_MODEL_OPENING", "1")
-    monkeypatch.setenv("AGENS_API_KEY", "sk-test-1234567890")
+    monkeypatch.setenv("AGNES_API_KEY", "sk-test-1234567890")
 
     engine = GameEngine()
 
@@ -88,7 +88,7 @@ def test_start_from_profile_model_failure_uses_tiandao_fallback(tmp_path, monkey
     from agens_novel import paths
     monkeypatch.setattr(paths, "SAVE_DIR", tmp_path)
     monkeypatch.setenv("AGENS_START_MODEL_OPENING", "1")
-    monkeypatch.setenv("AGENS_API_KEY", "sk-test-1234567890")
+    monkeypatch.setenv("AGNES_API_KEY", "sk-test-1234567890")
     engine = GameEngine()
     infos: list[str] = []
     engine.on_info = lambda msg: infos.append(msg)
@@ -108,7 +108,7 @@ def test_start_from_profile_model_failure_can_end_run(tmp_path, monkeypatch):
     from agens_novel import paths
     monkeypatch.setattr(paths, "SAVE_DIR", tmp_path)
     monkeypatch.setenv("AGENS_START_MODEL_OPENING", "1")
-    monkeypatch.setenv("AGENS_API_KEY", "sk-test-1234567890")
+    monkeypatch.setenv("AGNES_API_KEY", "sk-test-1234567890")
     engine = GameEngine()
     game_overs: list[str] = []
     engine.on_model_failure_choice = lambda source, reason: "end"
@@ -129,7 +129,7 @@ def test_start_from_profile_model_failure_enters_local_story_not_profile_choices
     from agens_novel import paths
     monkeypatch.setattr(paths, "SAVE_DIR", tmp_path)
     monkeypatch.setenv("AGENS_START_MODEL_OPENING", "1")
-    monkeypatch.setenv("AGENS_API_KEY", "sk-test-1234567890")
+    monkeypatch.setenv("AGNES_API_KEY", "sk-test-1234567890")
     engine = GameEngine()
     infos: list[str] = []
     engine.on_info = lambda msg: infos.append(msg)
@@ -154,7 +154,7 @@ def test_unknown_profile_seed_is_not_sent_to_world_builder_prompt(tmp_path, monk
     from agens_novel import paths
     monkeypatch.setattr(paths, "SAVE_DIR", tmp_path)
     monkeypatch.setenv("AGENS_START_MODEL_OPENING", "1")
-    monkeypatch.setenv("AGENS_API_KEY", "sk-test-1234567890")
+    monkeypatch.setenv("AGNES_API_KEY", "sk-test-1234567890")
     engine = GameEngine()
     seen_inputs: list[str] = []
 

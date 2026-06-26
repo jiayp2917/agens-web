@@ -96,6 +96,7 @@ class BreakthroughFlow:
                 action_text,
                 engine.game_session,
                 stream_callback=engine._stream_callback if engine.on_stream_chunk else None,
+                repair_incomplete_output=True,
             )
         except Exception:
             log.exception("breakthrough narrator error")
