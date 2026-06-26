@@ -6,18 +6,33 @@ validation as production acceptance.
 
 ## Current Evidence
 
-- Local code validation is green as of 2026-06-24:
+- Local code validation is green as of 2026-06-26:
   - `python -m compileall -q src tests web scripts migrations`
+  - `pytest -q tests\web` with local `TEST_DATABASE_URL` -> 50 passed
+  - `pytest -q tests\unit\engine\test_flow_failure_paths.py tests\unit\engine\test_game_engine_turn.py tests\unit\engine\test_game_engine_setup.py tests\unit\engine\test_game_engine_state.py` -> 56 passed
+  - `pytest -q tests\unit\game\test_database_common.py tests\unit\game\test_game_turns_storage.py tests\web\test_web_api.py::test_postgres_database_url_smoke` -> 13 passed
+  - `pytest -q` with local `TEST_DATABASE_URL` -> 415 passed
+  - `web\frontend-react npm.cmd run build` -> passed, 1603 modules,
+    24.34 kB CSS, 190.95 kB JS
+- Historical 2026-06-24 baseline before Option C:
   - `pytest -q tests\web` -> 49 passed, 1 skipped
   - `pytest -q` -> 425 passed, 1 skipped
   - `pytest -q tests/unit/engine/test_game_engine_turn.py tests/unit/engine/test_game_engine_setup.py tests/unit/engine/test_game_engine_state.py tests/unit/game/test_database_common.py` -> 56 passed
   - `web\frontend-react npm.cmd run build` (1602 modules / 24.34 kB CSS / 190.37 kB JS)
 - Local Chrome validation covers:
-  - desktop guest flow
-  - 375px mobile guest/fallback flow
-  - 2560x1440 layout smoke
-  - local account register/login/save/load
-  - local live-model turn
+  - desktop guest create/start/one-turn flow against local PostgreSQL
+  - local Chrome UI account flow against PostgreSQL: invite registration,
+    logged-in home state, account new game, save to `slot_1`, and load from
+    `slot_1` all passed; screenshot:
+    `D:\chat\agens-web\output\agens-web-local-pg-account-ui-20260626.png`
+  - 2560x1440 layout smoke with no horizontal overflow; screenshot:
+    `D:\chat\agens-web\output\agens-web-local-pg-2k-20260626.png`
+  - narrow-window smoke at the Chrome DevTools minimum effective width
+    (~500 px) with no horizontal overflow; screenshot:
+    `D:\chat\agens-web\output\agens-web-local-pg-mobile-500w-20260626.png`
+  - live-model guest turn returned HTTP 200, but it took about 63 seconds and
+    the narrator diagnostic reported incomplete structured narrative; treat this
+    as a gameplay-flow/performance risk, not as full model-quality acceptance
 
 ## 2026-06-24 P1 local complexity governance batch
 
@@ -106,6 +121,13 @@ validation as production acceptance.
     HTTP 200, public health HTTP 200, public catalog talents returns 10 rows,
     Alembic remains `20260622_0004`, v5 tables exist, log sensitive-marker scan
     count is 0, guest start and one guest turn returned HTTP 200
+  - server-thread P0 recheck after the server recovered confirmed homepage
+    root/www HTTP 200, game health HTTP 200, catalog 10 rows, container healthy,
+    origin health HTTP 200, Alembic `20260622_0004`, v5 tables present, and log
+    sensitive-marker scan count 0
+  - production guest live smoke is still not accepted: start returned HTTP 200
+    with `fallback_prompt.active=false`, but the one-turn request returned HTTP
+    200 with `fallback_prompt.active=true`
   - remaining acceptance gaps: production account flow was not tested because no
     safe non-secret test account path was available; production live-model
     success was not accepted because the guest smoke returned
@@ -152,6 +174,7 @@ These are safe local governance slices when production approval is deferred.
    - avoid changing API schema or persistence behavior
    - prefer private helpers before router/module splits
 3. PostgreSQL 数据层共享 helper 收敛（Option C 已删除 SQLite 双轨，仅保留 PostgreSQL 单后端）：
+   - 当前 `database_postgres.py` 的 test-only auto-DDL 已拆到 `database_postgres_schema.py`
    - 继续抽取 catalog row shaping / progress summary 等共享 helper（仅 `database_postgres.py`）
    - 不改表定义或已应用的 Alembic revision
 4. React maintenance:
@@ -165,7 +188,9 @@ These are safe local governance slices when production approval is deferred.
    after each governance slice.
 2. Treat `output/playwright/` and other local screenshots as generated
    artifacts unless explicitly promoted to evidence.
-3. Do not delete historical artifacts without inventory, backup, and
+3. Keep old SQLite references clearly marked as historical evidence; current
+   runtime/test facts are PostgreSQL-only.
+4. Do not delete historical artifacts without inventory, backup, and
    quarantine.
 
 ## Validation Rules

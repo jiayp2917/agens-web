@@ -24,10 +24,13 @@
 
 | 文件 | 关键类 / 函数 | 职责 |
 | --- | --- | --- |
-| `app.py` | `create_app()`, `is_production_mode()`, `validate_runtime_config()` | FastAPI 工厂、Pydantic 请求模型、27 个路由注册、`TrustedHostMiddleware` + `BodySizeLimitMiddleware` + 同源校验、`RateLimiter`、生产 fail-fast（缺 `SESSION_SECRET` / `DATABASE_URL` / `INVITE_ADMIN_CODE` / `AGENS_ALLOWED_ORIGINS` 时拒启动） |
-| `service.py` | `WebRunner`, `WebGameService`, `build_death_summary()` | `WebRunner` 包装 `GameEngine` 并把引擎回调捕获为事件；`WebGameService` 是服务编排入口（创建 / 启动 / 选择 / 行动 / 存读档 / 终局）；`build_death_summary` 汇总终局成就与奖励 |
+| `app.py` | `create_app()`, `is_production_mode()`, `validate_runtime_config()` | FastAPI 工厂、27 个路由注册、`TrustedHostMiddleware` + `BodySizeLimitMiddleware` + 同源校验、`RateLimiter`、生产 fail-fast（缺 `SESSION_SECRET` / `DATABASE_URL` / `INVITE_ADMIN_CODE` / `AGENS_ALLOWED_ORIGINS` 时拒启动） |
+| `app_models.py` | `RegisterRequest`, `LoginRequest`, `StartRequest`, `ChoiceRequest`, `ActionRequest`, `SaveRequest`, `ModelSettingsRequest`, `InviteCreateRequest` | FastAPI 请求体 Pydantic 模型；从路由文件拆出，避免 `app.py` 同时承担模型定义和路由编排 |
+| `service.py` | `WebRunner`, `WebGameService` | `WebRunner` 包装 `GameEngine` 并把引擎回调捕获为事件；`WebGameService` 是服务编排入口（创建 / 启动 / 选择 / 行动 / 存读档 / 终局） |
+| `service_summaries.py` | `build_death_summary()` | 汇总终局成就、奖励和死亡分类；从 `service.py` 拆出，降低服务编排文件职责 |
 | `database.py` | `WebDatabaseProtocol`, `create_database()` | `Protocol` 定义所有公开方法签名；工厂始终返回 PostgreSQL 后端（Option C：SQLite 后端已移除），连接来自 `DATABASE_URL` |
 | `database_postgres.py` | `PostgresWebDatabase` | SQLAlchemy Core + `JSONB`；`__init__` 时按 `AGENS_ENV` 决定是否允许 `AGENS_PG_AUTO_DDL=1`（生产 fail-closed）；`initialize()` 建 `CREATE TABLE IF NOT EXISTS` + 种子 catalog |
+| `database_postgres_schema.py` | `POSTGRES_SCHEMA_STATEMENTS` | test-only / local auto-DDL 语句列表；生产 schema 仍由 Alembic 拥有 |
 | `auth.py` | `create_session_token`, `parse_session_token`, `create_guest_token`, `cookie_kwargs` | HMAC-SHA256 签名会话 token；`agens_session` / `agens_guest` 两个 HttpOnly Cookie；`GUEST_USER_PREFIX = "guest-"` |
 | `security.py` | `hash_password`, `verify_password`, `enforce_same_origin` | 密码哈希（bcrypt 系）、CSRF、同源校验（`Origin` / `Referer`） |
 | `database_common.py` | `load_json`, `dump_json`, `now_ts` | JSON 列编解码 + 时间戳 |
@@ -293,6 +296,7 @@ Narrator / Judge LLMError
 ```powershell
 # 后端编译 + 全部测试
 .\.venv\Scripts\python.exe -m compileall -q src tests web
+$env:TEST_DATABASE_URL = "postgresql+psycopg://agens_test@127.0.0.1:55432/agens_web_test"
 .\.venv\Scripts\python.exe -m pytest -q
 
 # 仅 Web 测试

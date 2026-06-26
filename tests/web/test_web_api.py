@@ -7,10 +7,13 @@ from unittest.mock import patch
 
 import pytest
 from fastapi.testclient import TestClient
-from sqlalchemy import text
+from sqlalchemy import create_engine, text
 
 from web.backend.app import create_app
 from web.backend.auth import hash_invite_code
+
+
+pytestmark = pytest.mark.xdist_group("pg_test_db")
 
 
 def _world_builder_result() -> dict:
@@ -699,6 +702,14 @@ def test_postgres_database_url_smoke(monkeypatch) -> None:
     monkeypatch.setenv("INVITE_ADMIN_CODE", "pg-admin-invite-123")
     monkeypatch.setenv("SESSION_SECRET", "test-postgres-session-secret")
     monkeypatch.setenv("AGENS_ALLOWED_ORIGINS", "https://game.example.test")
+
+    engine = create_engine(os.environ["TEST_DATABASE_URL"], isolation_level="AUTOCOMMIT")
+    try:
+        with engine.connect() as conn:
+            conn.execute(text("DROP SCHEMA IF EXISTS public CASCADE"))
+            conn.execute(text("CREATE SCHEMA public"))
+    finally:
+        engine.dispose()
 
     alembic_cfg = Config(str(Path(__file__).resolve().parents[2] / "alembic.ini"))
     command.upgrade(alembic_cfg, "head")

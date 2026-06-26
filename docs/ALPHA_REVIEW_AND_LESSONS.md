@@ -6,7 +6,7 @@
 
 ## 当前结论
 
-- 2026-06-24 状态：React 主入口仍是唯一产品入口，当前处于 UI 批次验收与生产 PostgreSQL 复核阶段。
+- 2026-06-26 状态：React 主入口仍是唯一产品入口，本地验证口径已切换为 PostgreSQL-only；生产 schema 已升级到 Alembic `20260622_0004` 并恢复 health/catalog，但生产账号流和 production live model 成功仍未验收。
   - 首页 QQ 群左侧标识已替换为用户提供的图片资产；角色创建页“命数”区已采用方案 A 摘要式折叠卡。
   - 编年史年份显示已收束为界面标题权威，正文清理 `玄历/玄元历...年` 前缀，避免标题与正文冲突。
   - 本机 Codex 内置浏览器仍不可靠；后续截图/点击验收使用 Chrome DevTools MCP 或外部 Chrome。
@@ -14,9 +14,9 @@
   - React 主入口已切到游戏模式 v5，A/B/C/D 四按钮固定语义，D 为气运/天命路线，不再是自由输入。
   - 旧纯 HTML/CSS/JS 前端 `web/frontend` 已删除，图片和 BGM 资产迁入 `web/frontend-react/public/assets`。
   - 新增 Alembic `20260622_0003` 覆盖 `game_runs`、`game_turns`、`player_progress`，以及 `20260622_0004_ddl_disallow_production` 标记 PG 生产库 DDL 治理策略；服务层已写入回合日志和终局进度。
-- 本地 SQLite + React 主入口已经具备最小游玩闭环。
+- 历史状态：本地 SQLite + React 主入口曾在 2026-06-24 具备最小游玩闭环；2026-06-25 Option C 后当前数据库路线已切换为 PostgreSQL-only。
 - 访客可以直接新开一局并游玩，但不提供云端存档；邀请码账号可以保存和读档。
-- 项目还不能直接宣称“公网稳定可玩”，因为服务器生产库仍需从 `20260621_0002` 升级到 Alembic head `20260622_0004`，并完成公网部署包、生产账号链路和生产 live model/account smoke 验收。
+- 项目还不能直接宣称“公网稳定可玩”：生产 schema 与 health/catalog 已恢复，但生产账号注册/登录/存档/读档仍缺安全非 secret 测试账号路径，production live model 一回合 smoke 仍返回 fallback，不能算 live model 成功。
 
 ## 验证证据
 
@@ -24,7 +24,8 @@
 - 2026-06-22 本地复核：`.\.venv\Scripts\python.exe -m pytest -q tests\web`：`37 passed, 1 skipped`。
 - 2026-06-22 本地复核：`.\.venv\Scripts\python.exe -m pytest -q`：`548 passed, 1 skipped`。
 - `cd D:\chat\agens-web\web\frontend-react; npm run build`：通过。
-- 唯一跳过项：`TEST_DATABASE_URL` 未配置，PostgreSQL smoke 未跑。
+- 历史跳过项：当时 `TEST_DATABASE_URL` 未配置，PostgreSQL smoke 未跑。2026-06-26 已用安全本地 PostgreSQL 测试库补跑：`tests\web` 为 `50 passed`，全量 `pytest -q` 为 `415 passed`，前端 build 通过（1603 modules / 24.34 kB CSS / 190.95 kB JS）。
+- 2026-06-26 本地 Chrome against PostgreSQL：访客创建/开局/一回合、账号邀请码注册/登录/新局/存档/读档、2560x1440 与窄屏无横向溢出均通过；本地 live-model 回合 HTTP 200，但耗时约 63 秒且结构化叙事诊断不完整。
 - 本机未发现 `docker` 命令，Docker Compose 构建和容器启动未验证。
 
 ## 问题确认
@@ -35,7 +36,7 @@
    - 其他滥用：包括匿名用户消耗模型额度、多人共享同一局 ID、日志泄密、公开 OpenAPI 文档、资源文件流量消耗。访客局本轮改为内存态并绑定 HttpOnly 访客 cookie，降低了未登录持久化滥用。
 
 2. PostgreSQL 架构问题判断部分正确。
-   - 当前 PostgreSQL 路线已经有 `DATABASE_URL`、SQLAlchemy/Alembic 方向和生产 env 样例，但真正的生产库迁移、索引、备份、慢查询、连接池和 JSONB 查询策略尚未完成实测。
+   - 当前 PostgreSQL 路线已经有 `DATABASE_URL`、SQLAlchemy/Alembic、生产 env 样例和本地 PostgreSQL 测试库验证；生产 Alembic 已到 `20260622_0004`。索引评审、备份恢复演练、慢查询、连接池和 JSONB 查询策略仍需继续实测。
    - 当前最小表结构能支撑 Alpha，但不等于最终合理架构。后续应补 schema 评审、迁移演练和数据保留策略。
 
 3. UI 改造不完全判断正确。
@@ -99,8 +100,8 @@
 - 早期保留 `local` 用户思路，不适合公网，因为匿名访问会产生持久化公共数据。
 - 原型图和素材没有进入实现，只停留在计划和输出目录，造成实际 UI 与设计目标脱节。
 - React 主入口已经拆分，后续维护压力主要集中在 `SettingsSaveDialog.tsx`、`CharacterCreatePage.tsx` 和全局 `styles.css`。
-- PostgreSQL 仍缺少真实空库迁移、导入、备份恢复和部署连通性验证，不能把“设计完成”当成“上线完成”。
-- 早期把 SQLite 本地测试通过等同于数据库路线完成，遗漏了 PostgreSQL/Alembic 生产 schema 覆盖问题。
+- PostgreSQL 已补上本地空库/测试库验证与生产 Alembic head 验证，但仍缺少备份恢复演练、索引评审和生产账号链路验收；不能把“schema 到位”当成“上线完成”。
+- 早期把 SQLite 本地测试通过等同于数据库路线完成，遗漏了 PostgreSQL/Alembic 生产 schema 覆盖问题。当前维护口径必须以 PostgreSQL-only 和 Alembic 为准。
 - 读档、设置、教程等按钮曾经存在“入口可见但行为不完整”的情况，后续 UI 新入口必须同步补交互和测试。
 - 安全设计曾经分散在计划里，落地前缺少启动 fail-fast、Host、Origin、body limit 等可执行门槛。
 - 文档一度混合当前 Alpha 和未来游戏模式 v5，容易让后续智能体误把草案当实现。
@@ -110,7 +111,7 @@
 
 - 访客局只在单进程内存中，多 worker 或容器重启会丢失；Alpha 可接受，正式多人部署需要共享会话存储或明确提示。
 - 匿名玩家仍可能消耗模型额度；应在公网前增加访客回合限额、IP/设备限额和模型预算保护。
-- PostgreSQL schema 还需要确认服务器生产库已升级到 Alembic head `20260622_0004`，并继续评审索引、JSONB 字段边界、迁移回滚和备份恢复。
+- PostgreSQL schema 已由服务器线程确认到 Alembic head `20260622_0004`；后续继续评审索引、JSONB 字段边界、迁移回滚和备份恢复。
 - 安全头、Host 校验、OpenAPI 生产暴露、边缘 body limit、访问日志脱敏还需要在 Caddy/Cloudflare 配置中实测。
 - 当前 UI 是一轮修复，不是完整设计系统；后续应拆组件并用浏览器截图做 375/768/1440 验收。
 
@@ -119,6 +120,6 @@
 - 任何公网开放前，必须先跑通 PostgreSQL smoke，并确认空库 `alembic upgrade head` 后能注册、登录、开局、A/B/C/D、保存、读档、结束、写入 `game_turns` 和查询 catalog。
 - 任何部署报告必须区分本地测试、容器测试、反代测试和公网测试，不能用其中一个替代全部。
 - 任何新增首页按钮、弹窗入口或游戏操作，都必须同时补前端契约测试或浏览器验收记录。
-- 任何数据库字段、索引或表结构变化，都必须先进 Alembic migration，再考虑 SQLite 测试兼容。
+- 任何数据库字段、索引或表结构变化，都必须先进 Alembic migration，并使用 PostgreSQL 测试库验证；SQLite 已不再是当前兼容目标。
 - 任何模型、数据库、Session、Cookie、邀请码相关配置，都只能写占位值或环境变量名，不写真实值。
 - React 继续迭代时，应继续拆分重组件和样式：优先收束 `SettingsSaveDialog.tsx`、`CharacterCreatePage.tsx` 与 `styles.css`，根组件 `main.tsx` 保持只做应用状态编排。

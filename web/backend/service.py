@@ -13,10 +13,6 @@ from typing import Any
 from agens_novel.engine.death_rewards import (
     apply_legacy_bonuses,
     bonuses_to_legacy,
-    build_run_summary,
-    categorize_death,
-    compute_rewards,
-    evaluate_achievements,
 )
 from agens_novel.engine.game_engine import GameEngine, MODEL_FAILURE_CONTINUE
 from agens_novel.engine.render import format_status_bar
@@ -33,6 +29,7 @@ from agens_novel.settings import Settings
 
 from .database import WebDatabaseProtocol
 from .database_postgres import PostgresWebDatabase
+from .service_summaries import build_death_summary
 
 PUBLIC_MODEL_FALLBACK_TEXT = "模型暂不可用，当前以本地故事继续。"
 _MODEL_FAILURE_PREFIXES = (
@@ -707,19 +704,6 @@ def _random_attributes() -> dict[str, int]:
 import logging  # noqa: E402
 
 log = logging.getLogger(__name__)
-
-
-def build_death_summary(session: GameSession) -> dict[str, Any] | None:
-    """Evaluate achievements + rewards for a finished run.
-
-    Returns None when the session is not actually game-over (e.g. mid-run).
-    """
-    if not session.game_over:
-        return None
-    death_cause = categorize_death(session)
-    achievements = evaluate_achievements(session)
-    rewards = compute_rewards(achievements, session)
-    return build_run_summary(session, achievements, rewards, death_cause)
 
 
 def _turn_start_snapshot(session: GameSession) -> dict[str, Any]:

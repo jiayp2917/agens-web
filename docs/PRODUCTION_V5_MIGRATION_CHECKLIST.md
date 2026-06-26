@@ -50,17 +50,30 @@ has evidence. Current status is restored but still partially accepted.
   generated frontend build output policy.
 - Local validation is green:
   - `.\.venv\Scripts\python.exe -m compileall -q src tests web scripts migrations`
-  - `.\.venv\Scripts\python.exe -m pytest -q tests\web`
-  - `.\.venv\Scripts\python.exe -m pytest -q`
-  - `cd web\frontend-react; npm.cmd run build`
+  - `.\.venv\Scripts\python.exe -m pytest -q tests\web` with local
+    `TEST_DATABASE_URL`: `50 passed`
+  - `.\.venv\Scripts\python.exe -m pytest -q` with local
+    `TEST_DATABASE_URL`: `415 passed`
+  - `cd web\frontend-react; npm.cmd run build`: passed, 1603 modules,
+    24.34 kB CSS, 190.95 kB JS
 - Chrome smoke evidence exists for:
-  - desktop guest start
-  - 375px mobile guest start
-  - fallback continuation
-  - latest chronicle card at `玄元历 2 年` after turn 1
-  - local live-model turn with temporary SQLite: choice returns HTTP 200,
-    `fallback_prompt.active=false`, and the UI refreshes narrative plus A/B/C/D
-    choices
+  - historical 2026-06-24 desktop guest start, 375px mobile guest start,
+    fallback continuation, and latest chronicle card at `玄元历 2 年` after turn
+    1
+  - historical 2026-06-24 local live-model turn with temporary SQLite: choice
+    returned HTTP 200, `fallback_prompt.active=false`, and the UI refreshed
+    narrative plus A/B/C/D choices. This predates Option C and is historical
+    evidence only.
+- Current PostgreSQL local test evidence exists:
+  - `TEST_DATABASE_URL` against a safe local PostgreSQL test database
+  - `pytest -q tests\web`: `50 passed`
+  - `pytest -q tests\web\test_web_api.py::test_postgres_database_url_smoke`: passed
+  - Chrome against local PostgreSQL passed guest create/start/one-turn, account
+    invite registration/login/session/save/load/list-saves, 2560x1440
+    no-overflow smoke, and narrow-window no-overflow smoke
+  - local live-model guest turn returned HTTP 200 but took about 63 seconds and
+    had incomplete structured-narrative diagnostics; this is a P1
+    gameplay/performance risk, not full model-quality acceptance
 - Package manifest or archive hash is recorded before upload.
 - Server-side app backup path is recorded before replacement.
 - PostgreSQL backup or restore point is recorded before Alembic migration.

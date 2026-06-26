@@ -14,6 +14,8 @@ from pathlib import Path
 import pytest
 from sqlalchemy import create_engine, text
 
+pytestmark = pytest.mark.xdist_group("pg_test_db")
+
 # Ensure src/ is importable when running from the repo root.
 _REPO_ROOT = Path(__file__).resolve().parents[3]
 _SRC = _REPO_ROOT / "src"

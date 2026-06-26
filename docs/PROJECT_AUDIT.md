@@ -4,6 +4,8 @@
 
 > **2026-06-25 更新**：已执行审计计划（`zesty-popping-graham.md`）的**方案 C**——删除 `database_sqlite.py`，数据库统一为 PostgreSQL。P0 安全修复、P1 死代码清理、P2 PG-only 合并、P3 部分去重均已完成，详见 `CHANGELOG.md`（2026-06-25）。下文双轨分析与「建议方案 A」为历史记录，方案 C 为实际落地结果。
 
+> **2026-06-26 更新**：本地 Web/API 测试已接入安全本地 PostgreSQL 测试库，`TEST_DATABASE_URL=postgresql+psycopg://agens_test@127.0.0.1:55432/agens_web_test` 时 `tests\web` 真实执行并通过 `50 passed`，全量 `pytest -q` 为 `415 passed`。当前事实口径为 PostgreSQL-only；下方 2026-06-24 的 SQLite smoke 仅是历史证据，不代表当前运行方式。
+
 ## 当前边界
 
 - 产品入口是浏览器 Web UI + FastAPI 后端。
@@ -21,27 +23,32 @@
 - 当前浏览器自动验收应使用 Chrome DevTools MCP 或外部 Chrome；Codex 内置浏览器在本机仍存在 WebView2/GPU/虚拟显示驱动相关闪退风险，不作为可靠验收工具。
 - 本地未跟踪 `output/playwright/` 属于浏览器/截图运行产物，不是产品源码；提交前应单独决定删除或加入忽略规则。
 - 第一批最低风险复杂度收敛已完成：`web/backend/app.py` 将 session 类 endpoint 重复的 `KeyError` / `PermissionError` / `ValueError` 转 HTTP 异常样板收束到 `service_call()`，保持原 404 / 403 / 400 行为不变。
-- 第二批最低风险复杂度收敛已完成：`web/backend/database_common.py` 承接 catalog seed 来源、catalog row JSON 准备和 player progress 摘要，`database_sqlite.py` / `database_postgres.py` 复用同一 helper，暂不改 schema、Alembic 历史或运行时后端选择。
+- 第二批最低风险复杂度收敛已完成：`web/backend/database_common.py` 承接 catalog seed 来源、catalog row JSON 准备和 player progress 摘要。2026-06-25 Option C 后 `database_sqlite.py` 已删除，当前仅 `database_postgres.py` 继续复用这些 helper。
 - 第三批最低风险复杂度收敛已完成：`web/frontend-react/src/lib/chronicle.ts` 承接编年史正文清理、年龄/年份推导和当前纪年读取，`GamePage.tsx` 只保留渲染与交互编排。
 - 第四批最低风险复杂度收敛已完成：`WebGameService.choose()` 与 `WebGameService.act()` 共用 `_advance_turn()`，把 engine action、settled-turn 落账、session persist 和 response shaping 收束到同一路径；最小 Web API 流程同时覆盖 `/choice` 与 `/action`。
+- 2026-06-26 本地 P0/P1 收口：`web/backend/app.py` 的 Pydantic 请求模型拆到 `web/backend/app_models.py`；`web/backend/database_postgres.py` 的 test-only auto-DDL 语句拆到 `web/backend/database_postgres_schema.py`；`web/backend/service.py` 的死亡总结计算拆到 `web/backend/service_summaries.py`；新增 `tests/unit/engine/test_flow_failure_paths.py` 覆盖 StartFlow / TurnFlow / BreakthroughFlow 模型失败 stop path。
 - Chrome 真实浏览器 smoke 发现并修复了本地兜底场景的编年史纪年停滞：模型网络失败后点击“继续本局”，回合 1 现在显示 `玄元历 2 年 · 回合 1`，最新卡片也显示 `玄元历 2 年`。
 - Chrome 移动 smoke 发现并修复了随机角色属性显示/语义不一致：随机属性可能高于手动上限 80，现已由 disabled range 改为只读 meter，`aria-valuenow` 与可见数值一致。
 
 最近一次本地验证结果：
 
 - `.\.venv\Scripts\python.exe -m compileall -q src tests web scripts migrations`：通过。
-- `.\.venv\Scripts\python.exe -m pytest -q tests\web`：`49 passed, 1 skipped`，跳过项仍是未配置 `TEST_DATABASE_URL` 的 PostgreSQL smoke。
-- `.\.venv\Scripts\python.exe -m pytest -q`：`425 passed, 1 skipped`。
-- `cd D:\chat\agens-web\web\frontend-react; npm run build`：通过；`tests\web\test_frontend_contract.py` 单文件为 `16 passed`。
+- `.\.venv\Scripts\python.exe -m pytest -q tests\web`（设置本地 `TEST_DATABASE_URL`）：`50 passed`。
+- `.\.venv\Scripts\python.exe -m pytest -q tests\unit\engine\test_flow_failure_paths.py tests\unit\engine\test_game_engine_turn.py tests\unit\engine\test_game_engine_setup.py tests\unit\engine\test_game_engine_state.py`：`56 passed`。
+- `.\.venv\Scripts\python.exe -m pytest -q tests\unit\game\test_database_common.py tests\unit\game\test_game_turns_storage.py tests\web\test_web_api.py::test_postgres_database_url_smoke`：`13 passed`。
+- `.\.venv\Scripts\python.exe -m pytest -q`（设置本地 `TEST_DATABASE_URL`）：`415 passed`。
+- `cd D:\chat\agens-web\web\frontend-react; npm.cmd run build`：通过，1603 modules / 24.34 kB CSS / 190.95 kB JS。
 - `.\.venv\Scripts\python.exe -m pytest -q tests\web\test_frontend_contract.py tests\web\test_web_api.py::test_session_routes_map_service_errors`：`24 passed`。
 - `.\.venv\Scripts\python.exe -m pytest -q tests\web\test_web_api.py::test_web_api_minimum_game_flow tests\web\test_web_api.py::test_session_routes_map_service_errors`：`9 passed`，覆盖 `/choice` 与 `/action` 共用回合推进路径。
 - `curl.exe -i --max-time 10 https://game.jiayp2917.xyz/api/health`：HTTP 200，`{"status":"ok"}`。
 - `curl.exe -i --max-time 10 https://game.jiayp2917.xyz/api/catalog/talents`：HTTP 200，公网可读 10 条 talent seed。
 - Chrome DevTools MCP：桌面 1280x900 与移动 375x812 均可完成访客新游戏、角色创建、进入游戏、模型失败兜底、继续本局；修复后移动截图保存在 `D:\2917\agens-web-mobile-smoke-after-fix.png`。
 - Chrome DevTools MCP：375x812 随机角色属性复核通过，六项属性均为只读 meter，`aria-valuenow` 与可见输出一致。
-- Chrome DevTools MCP：桌面本地账号流通过，使用临时 SQLite 和本地一次性邀请码完成注册/登录、账号新局、保存 `slot_1`、读取 `slot_1`，`/api/saves` 返回 `slot_1` / `存档测试` / `turn_count=0`。
+- Chrome DevTools MCP（2026-06-24 历史证据）：桌面本地账号流当时使用临时 SQLite 和本地一次性邀请码完成注册/登录、账号新局、保存 `slot_1`、读取 `slot_1`，`/api/saves` 返回 `slot_1` / `存档测试` / `turn_count=0`。Option C 后的当前 PostgreSQL 复验见下方 2026-06-26 证据。
 - Chrome DevTools MCP：2560x1440 emulation 通过首页、角色创建和初始游戏页布局检查，无横向溢出；角色创建三栏、开始按钮、游戏状态栏、故事面板和 A/B/C/D 均在视口内。截图证据：`D:\2917\agens-web-2k-game-smoke.png`。
-- Chrome DevTools MCP：本地 live model smoke 通过，使用临时 SQLite 与仅检查“环境变量是否存在”的方式启动本地服务；访客开局后点击 A，`/api/sessions/{id}/choice` 返回 HTTP 200，`fallback_prompt.active=false`，页面推进到回合 1 并刷新叙事与 A/B/C/D 选项。
+- Chrome DevTools MCP（2026-06-24 历史证据）：本地 live model smoke 当时使用临时 SQLite 与仅检查“环境变量是否存在”的方式启动本地服务；访客开局后点击 A，`/api/sessions/{id}/choice` 返回 HTTP 200，`fallback_prompt.active=false`，页面推进到回合 1 并刷新叙事与 A/B/C/D 选项。Option C 后的当前 PostgreSQL live-model 复验见下方 2026-06-26 风险说明。
+- Chrome against local PostgreSQL（2026-06-26 当前证据）：访客创建/开局/一回合、账号邀请码注册/登录/账号新局/保存 `slot_1`/读取 `slot_1` 均通过；2560x1440 与窄屏约 500px 均无横向溢出。截图证据：`D:\chat\agens-web\output\agens-web-local-pg-account-ui-20260626.png`、`D:\chat\agens-web\output\agens-web-local-pg-2k-20260626.png`、`D:\chat\agens-web\output\agens-web-local-pg-mobile-500w-20260626.png`。
+- Local live-model（2026-06-26 当前证据）：访客一回合返回 HTTP 200，但耗时约 63 秒，且结构化叙事诊断不完整；这只能说明请求没有崩溃，不能作为模型质量和流畅游玩验收。
 - P0 生产 v5 本地交付包已准备：`D:\chat\outputs\packages\agens-web\agens-web-11ae5e9-20260624-173644.zip`，commit `11ae5e9699277ce08b42a9331932354895922149`，SHA256 `526b8b6cbbc1abd60b1a03b1d73369778abf8c723d439579526532d9744017ad`；manifest 见 `D:\chat\outputs\packages\agens-web\agens-web-11ae5e9-20260624-173644.manifest.md`。包由 `git archive HEAD` 生成，未包含 `.env`、`production.env`、依赖目录、缓存或本地前端 `dist`。
 
 未完成确认：
@@ -52,8 +59,8 @@
 - build-only 重试已通过 host-network fallback，生成镜像 `sha256:f2d2b86e3de0c9aff5131ed238c84eb435cb0d31983e5e4629b8b75add4d6c15`；随后的生产迁移/重启批次已将 Alembic 升级到 `20260622_0004` 并确认 `game_runs` / `game_turns` / `player_progress` 存在，但新容器因 `deploy/docker-entrypoint.sh` 在镜像内为 CRLF 行尾导致 `env: 'sh\r': No such file or directory`，进入 `Restarting (127)`，公网 health 一度为 HTTP 502。
 - 已批准的 entrypoint CRLF hotfix 已通过：服务器仅替换 `.gitattributes`、`Dockerfile`、`deploy/docker-entrypoint.sh`，窄备份在 `/srv/jiayp/backups/agens-web/entrypoint-crlf-hotfix-20260624-185815/`；新镜像 `sha256:445367f496bf3b1acb8b091442f775b9c74240251cc19efdfab2d45562dbc791` 运行 healthy，origin/public health HTTP 200，public catalog talents 10 条，Alembic `20260622_0004` 与三张 v5 表仍存在，日志敏感标记扫描为 0，访客开局和一回合均 HTTP 200。
 - 本地已针对该启动失败做源头硬化：`.gitattributes` 强制 shell 脚本和 Dockerfile 为 LF，Dockerfile 复制 entrypoint 后执行 `sed -i 's/\r$//'`，防止后续构建再次带入 CRLF。
-- 375px、桌面和 2560x1440 视口的本地浏览器链路已验证；桌面本地账号注册/登录/存读档已验证；成功 live model 回合已在本地验证。生产账号链路仍未验收，因为没有安全非 secret 测试账号路径；生产 live model 成功也未验收，因为访客 smoke 返回 `fallback_prompt_active=true`，只能证明 fallback 游玩链路恢复。
-- 本地已完成并提交 UI/年份、账号、2K 和 live model smoke 记录；当前未完成项集中在生产账号链路、生产 live model 成功验收、公开 Alpha 观察、回滚演练和后续复杂度治理。
+- 375px 历史链路、2026-06-26 PostgreSQL 本地账号链路、2K 和窄屏布局均已验证；本地 live-model 请求仍存在约 63 秒延迟和结构化输出不完整风险。生产账号链路仍未验收，因为没有安全非 secret 测试账号路径；生产 live model 成功也未验收，因为访客 smoke 返回 `fallback_prompt_active=true`，只能证明 fallback 游玩链路恢复。
+- 当前未完成项集中在生产账号链路、生产 live model 成功验收、公开 Alpha 观察、备份/恢复演练、PostgreSQL 测试库启动脚本固化、后续复杂度治理和模型质量/性能治理。
 
 ## 目标架构
 
@@ -133,6 +140,7 @@ Browser UI
 | P2 | PostgreSQL 设计和 Alembic 迁移已经补齐 Alpha 必需表，但生产仍需索引评审、备份恢复和回滚演练。 | 设置 `TEST_DATABASE_URL` 跑空库迁移和账号游玩链路；生产运行时 `AGENS_ENV=production` 自动拒绝 `AGENS_PG_AUTO_DDL=1`；安排维护窗口做回滚演练。 |
 | P2 | 访客局只在单进程内存中，容器重启、多 worker 或多副本会丢失。 | Alpha 阶段明确提示；正式多人部署前引入共享会话存储或只允许账号局跨进程恢复。 |
 | P2 | 匿名访客仍可能消耗模型额度。 | 增加访客日限额、IP/设备限额、模型预算保护和边缘层限流。 |
+| P2 | 本地 PostgreSQL 测试库需要明确启动/清理脚本，避免后续 agent 因缺少 `TEST_DATABASE_URL` 误判为跳过或假绿。 | 将当前 `.tmp` 独立 PG 测试库启动方式固化为脚本或文档；默认不写真实密码。 |
 | P3 | 测试目录需继续从旧产品分类迁移到 Web 分类。 | 保留核心测试，新增 API 和浏览器测试，删除旧 UI 契约测试。 |
 | P2 | React 局部组件仍偏重，后续 UI 迭代容易互相影响；`GamePage` 编年史计算已先抽到 `lib/chronicle.ts`。 | P2 已拆分认证、首页、角色创建、游戏页、设置/存档弹窗、模型设置面板、存档槽列表、BGM 和终局页组件；下一步按需继续抽 `CharacterCreatePage` 与 `styles.css`。 |
 
@@ -140,6 +148,7 @@ Browser UI
 
 ```powershell
 .\.venv\Scripts\python.exe -m compileall -q src tests web
+$env:TEST_DATABASE_URL = "postgresql+psycopg://agens_test@127.0.0.1:55432/agens_web_test"
 .\.venv\Scripts\python.exe -m pytest -q tests/web
 .\.venv\Scripts\python.exe -m pytest -q
 ```

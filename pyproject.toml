@@ -68,6 +68,8 @@ addopts = [
     "-p no:cacheprovider",
     "-n",
     "auto",
+    "--dist",
+    "loadgroup",
 ]
 filterwarnings = [
     "ignore::DeprecationWarning:jinja2.*",

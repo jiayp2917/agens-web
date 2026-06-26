@@ -8,10 +8,12 @@ Web-only 文字修仙模拟器。当前 `master` 是浏览器版本主线。
 
 ## 当前状态
 
+- 2026-06-26 状态：本地测试已改为 PostgreSQL-only 验证；`TEST_DATABASE_URL` 指向安全本地测试库时，`tests\web` 已从“全跳过/部分跳过”变为真实执行 `50 passed`，全量 `pytest -q` 为 `415 passed`。
+- 2026-06-26 本地 Chrome 验收已覆盖 PostgreSQL 下的访客开局/一回合、账号注册/登录/新局/存档/读档、2K 无横向溢出、窄屏无横向溢出；截图证据保存在 `output/`。本地 live-model 回合 HTTP 200，但耗时约 63 秒且结构化叙事诊断不完整，仍是 P1 风险。
 - 2026-06-25 状态：执行代码审计方案 C，数据库统一为 PostgreSQL（删除 SQLite 后端，净减约 900 行）；P0 安全修复、P1 死代码清理、P2 PG-only 合并、P3 部分去重已完成，详见 CHANGELOG。
-- 2026-06-24 状态：本地 React + SQLite 主链路可运行，当前处于 UI 批次验收和生产 PostgreSQL 复核阶段。
+- 2026-06-24 状态为历史记录：当时本地 React + SQLite 主链路可运行；该本地 SQLite 路径已被 2026-06-25 Option C 的 PostgreSQL-only 路径取代。
 - 已落地：编年史 UI、角色创建命数方案 A 折叠卡、首页 QQ 图标资产、A/B/C/D 固定语义、寿元剩余值显示、编年史年份权威化。
-- 待确认：PostgreSQL 生产库迁移 head 和 v5 表存在性、375px/1080p/2K 真实浏览器完整点击验收、服务器部署包复核。
+- 待确认：生产账号注册/登录/存档/读档、production live model 成功、公开 Alpha 日志/限流/Cookie/Origin 观察和备份恢复演练。
 - 本机自动浏览器验收优先使用 Chrome DevTools MCP 或外部 Chrome；Codex 内置浏览器存在环境闪退风险。
 
 ## 当前玩法
@@ -57,6 +59,8 @@ $env:AGNES_API_KEY  = "<your key>"
 ## 当前基线检查
 
 ```powershell
+# Requires a running safe local PostgreSQL test database.
+$env:TEST_DATABASE_URL = "postgresql+psycopg://agens_test@127.0.0.1:55432/agens_web_test"
 .\.venv\Scripts\python.exe -m compileall -q src tests web scripts migrations
 .\.venv\Scripts\python.exe -m pytest -q
 .\.venv\Scripts\python.exe -m pytest -q tests/web

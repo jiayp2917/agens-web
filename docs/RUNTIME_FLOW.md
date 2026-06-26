@@ -105,6 +105,7 @@ Browser UI
 
 ```powershell
 .\.venv\Scripts\python.exe -m compileall -q src tests web
+$env:TEST_DATABASE_URL = "postgresql+psycopg://agens_test@127.0.0.1:55432/agens_web_test"
 .\.venv\Scripts\python.exe -m pytest -q tests/web
 .\.venv\Scripts\python.exe -m pytest -q
 ```

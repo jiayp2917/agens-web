@@ -2,6 +2,48 @@
 
 ## 2026-06-26
 
+### Changed - PostgreSQL test gate, backend splits, and failure-path coverage
+
+- Configured the local governance validation path to use a safe PostgreSQL test
+  database through `TEST_DATABASE_URL` instead of accepting skipped web tests as
+  proof. `tests\web` now runs against PostgreSQL and passed as `50 passed`.
+- Added `--dist loadgroup` and `pytest.mark.xdist_group("pg_test_db")` to keep
+  PostgreSQL integration tests on one xdist worker while preserving parallelism
+  elsewhere.
+- Split FastAPI request models from `web/backend/app.py` into
+  `web/backend/app_models.py`.
+- Split the PostgreSQL test-only auto-DDL statement list from
+  `web/backend/database_postgres.py` into
+  `web/backend/database_postgres_schema.py`.
+- Split death-summary calculation from `web/backend/service.py` into
+  `web/backend/service_summaries.py`.
+- Added `tests/unit/engine/test_flow_failure_paths.py` for StartFlow,
+  TurnFlow, and BreakthroughFlow model-failure stop paths.
+- Cleaned current documentation wording so SQLite is treated as historical
+  evidence only; current runtime and test facts are PostgreSQL-only.
+- This batch does not accept production account flow or production live-model
+  success. Those remain server-thread P0 gates.
+
+### Verification - 2026-06-26 PostgreSQL governance batch
+
+- `python -m compileall -q src tests web scripts migrations` passed.
+- `pytest -q tests\web` with local `TEST_DATABASE_URL` passed:
+  `50 passed`.
+- `pytest -q tests\unit\engine\test_flow_failure_paths.py tests\unit\engine\test_game_engine_turn.py tests\unit\engine\test_game_engine_setup.py tests\unit\engine\test_game_engine_state.py`
+  passed: `56 passed`.
+- `pytest -q tests\unit\game\test_database_common.py tests\unit\game\test_game_turns_storage.py tests\web\test_web_api.py::test_postgres_database_url_smoke`
+  passed: `13 passed`.
+- Full `pytest -q` with local `TEST_DATABASE_URL` passed: `415 passed`.
+- `web\frontend-react npm.cmd run build` passed: 1603 modules, 24.34 kB
+  CSS, 190.95 kB JS.
+- `git diff --check` reported no whitespace errors; it only emitted the
+  repository's existing LF/CRLF working-copy warnings.
+- Chrome against local PostgreSQL passed guest create/start/one-turn, local
+  account register/auth/session/save/load/list-saves, and 2K/no-overflow smoke.
+  The local live-model guest turn returned HTTP 200 but took about 63 seconds
+  and produced an incomplete structured-narrative diagnostic, so model latency
+  and output quality remain gameplay-flow risks.
+
 ### Changed — P2 引擎包装内联 + runner 缓存泄漏修复 + .gitignore 加固
 
 - **GameEngine 无意义包装内联**：删除 5 个纯透传包装方法（`_is_pure_cultivation` / `_apply_breakthrough_flag_rule` / `_validate_narrative_delta_consistency` / `_merge_rule_delta` / `_advance_local_story`）与 no-op `_auto_save`（被 3 个 Flow 文件 6 处调用）；`TurnFlow` 改为直接 import `action_delta_policy` 底层函数。模块级 `_merge_rule_delta` 迁入 `action_delta_policy.py` 公开为 `merge_rule_delta`（与其余 3 个 delta helper 同处）。`test_is_pure_cultivation_detection` 同步改为直接测 `is_pure_cultivation`。净减 ~90 行，调用链少一层。
