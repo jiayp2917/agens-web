@@ -151,9 +151,9 @@ These are safe local governance slices when production approval is deferred.
    - continue reducing duplication inside `WebGameService`
    - avoid changing API schema or persistence behavior
    - prefer private helpers before router/module splits
-3. SQLite/PostgreSQL dual track:
-   - extract more shared row shaping or summary helpers
-   - do not change table definitions or applied Alembic revisions
+3. PostgreSQL 数据层共享 helper 收敛（Option C 已删除 SQLite 双轨，仅保留 PostgreSQL 单后端）：
+   - 继续抽取 catalog row shaping / progress summary 等共享 helper（仅 `database_postgres.py`）
+   - 不改表定义或已应用的 Alembic revision
 4. React maintenance:
    - continue splitting `CharacterCreatePage` and style files only around
      verified UI workflows

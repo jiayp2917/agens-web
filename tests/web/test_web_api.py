@@ -96,7 +96,6 @@ def _create_invite(app, invite: str = "invite-code-123") -> None:
 def test_web_api_minimum_game_flow(tmp_path: Path, monkeypatch) -> None:
     monkeypatch.setenv("AGNES_API_KEY", "sk-test-web-api")
     monkeypatch.setenv("SESSION_COOKIE_SECURE", "0")
-    monkeypatch.setenv("AGENS_WEB_DB", str(tmp_path / "agens_web.sqlite3"))
     app = create_app()
     client = TestClient(app)
 
@@ -444,7 +443,6 @@ def test_production_rejects_default_session_secret(tmp_path: Path, monkeypatch) 
 
 def test_production_requires_allowed_origins(tmp_path: Path, monkeypatch) -> None:
     monkeypatch.setenv("AGENS_ENV", "production")
-    monkeypatch.setenv("DATABASE_BACKEND", "sqlite")
     monkeypatch.setenv("DATABASE_URL", "postgresql+psycopg://agens_user:test@postgres:5432/agens_web")
     monkeypatch.setenv("INVITE_ADMIN_CODE", "admin-invite-123")
     monkeypatch.setenv("SESSION_SECRET", "not-the-dev-secret")
@@ -696,7 +694,6 @@ def test_postgres_database_url_smoke(monkeypatch) -> None:
     from alembic import command
     from alembic.config import Config
 
-    monkeypatch.setenv("DATABASE_BACKEND", "postgresql")
     monkeypatch.setenv("DATABASE_URL", os.environ["TEST_DATABASE_URL"])
     monkeypatch.setenv("SESSION_COOKIE_SECURE", "0")
     monkeypatch.setenv("INVITE_ADMIN_CODE", "pg-admin-invite-123")

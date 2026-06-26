@@ -39,7 +39,6 @@ def _isolated_pg_db(_pg_test_url, monkeypatch: pytest.MonkeyPatch) -> Iterator[N
     if url is None:
         pytest.skip("TEST_DATABASE_URL not configured")
     monkeypatch.setenv("DATABASE_URL", url)
-    monkeypatch.setenv("DATABASE_BACKEND", "postgresql")
     engine = create_engine(url)
     try:
         table_list = ", ".join(_TEST_TABLES)

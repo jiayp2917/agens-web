@@ -11,7 +11,7 @@
 > | §3 寿元寿命表 | 各境界寿元，UI 显示剩余寿元 | ✅ 已实现（`game/constants.py` REALM_CONFIGS、`render.format_status_bar`） |
 > | §4 六维属性 | 体魄/神魂/气运/悟性/心性/根骨，无 HP/MP | ✅ 已实现（`constants.DEFAULT_ATTRIBUTES`、`GameSession` 已移除 hp/mp/luck/combat 字段） |
 > | §4 战斗事件化 | 斗法/禁地/心魔/天劫以事件判定表达 | ✅ 已实现（`handle_combat_action` 为安全 no-op；`apply_delta` 丢弃结构化 combat delta） |
-> | §8.3 `game_turns` 表 | JSONB 回合日志 + `game_runs` + `player_progress` | ✅ 已接线（SQLite + PostgreSQL 双后端，Alembic `20260622_0003`，Web 回合/终局写入） |
+> | §8.3 `game_turns` 表 | JSONB 回合日志 + `game_runs` + `player_progress` | ✅ 已接线（PostgreSQL 单后端（Option C 已移除 SQLite），Alembic `20260622_0003`，Web 回合/终局写入） |
 > | §11 稀有度解锁门 | 白/绿/蓝/紫/橙/红 六档 + runs/ascension 门径 | ✅ 已接线（`constants.rarity_unlocked_for`、`/api/catalog/rarities`，终局写入 `player_progress`） |
 > | §11 死亡分类 | finale > karma > event > lifespan > player | ✅ 已实现（`death_rewards.categorize_death`） |
 > | 验证 | compileall + pytest + React build + 密钥审计 | ⏳ 以当前分支最新测试结果为准，不在文档中固化旧计数 |

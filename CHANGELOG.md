@@ -11,10 +11,17 @@
   - `docs/RUNTIME_FLOW.md`：代码链路与生产数据库接入约束改为 PostgreSQL 单后端。
   - `docs/security.md`：生产 env 移除已不被读取的 `DATABASE_BACKEND=postgresql`（`security.is_production_mode()` 与 `database.py` 均只认 `AGENS_ENV` / `DATABASE_URL`）。
 
-### Notes — 待跟进（超出本轮范围）
+### Changed — SQLite / `DATABASE_BACKEND` 残留彻底清理（全仓多智能体扫描后）
 
-- `deploy/production.env.example:3` 仍设 `DATABASE_BACKEND=postgresql`（vestigial，生产代码已不读取）；`tests/web/conftest.py` 与 `tests/web/test_web_api.py` 仍 `setenv("DATABASE_BACKEND", ...)`（含一处 `=sqlite`）。均无功能影响，留作后续清理。
-- `docs/GAME_MODE_SPEC.md:14` 状态表仍写「SQLite + PostgreSQL 双后端」、`docs/NEXT_GOVERNANCE_BACKLOG.md:154` 仍有「SQLite/PostgreSQL dual track」条目，属本轮未覆盖的当前态文档，待确认是否一并清理。
+接续上文「待跟进」项。全仓扫描 35 处 `sqlite`/`SQLite`/`database_sqlite`/`DATABASE_BACKEND` 引用，逐条分类（4 当前态过时 / 10 正确注释 / 17 历史记录 / 4 测试残留），仅清理当前态与测试残留，历史日志与 incident 记录全部保留：
+
+- `deploy/production.env.example`：移除已不被任何生产代码读取的 `DATABASE_BACKEND=postgresql`。
+- `web/backend/database_postgres.py:33`：`DATABASE_URL` 缺失的错误信息原写「when DATABASE_BACKEND=postgresql」（误导，该变量已不被读取），改为与 `database.py` 一致的「PostgreSQL-only since the Option C consolidation」。
+- `tests/web/test_web_api.py`：移除 3 处 vestigial `setenv`（`AGENS_WEB_DB=...sqlite3`、`DATABASE_BACKEND=sqlite`、`DATABASE_BACKEND=postgresql`）——生产代码均不读取，连接由 `DATABASE_URL` 驱动。
+- `tests/web/conftest.py`：移除 autouse 夹具中 vestigial 的 `setenv("DATABASE_BACKEND", "postgresql")`。
+- `docs/GAME_MODE_SPEC.md` 实现状态表、`docs/NEXT_GOVERNANCE_BACKLOG.md` P1 backlog：双轨表述改为 PostgreSQL 单后端。
+
+前一轮「待跟进」列出的项目现已全部完成；全仓再无当前态的 SQLite/`DATABASE_BACKEND` 残留（剩余命中均为历史日志、CHANGELOG 条目或正确解释现状的代码注释，按规则保留）。
 
 ## 2026-06-25
 
