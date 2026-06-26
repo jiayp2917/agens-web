@@ -17,11 +17,6 @@ from typing import Any
 
 from ..game.realm import RealmSystem
 from ..session.game_session import GameSession
-from .action_delta_policy import (
-    apply_breakthrough_flag_rule,
-    is_pure_cultivation,
-    validate_narrative_delta_consistency,
-)
 from .choices import (
     complete_choices,
     fallback_choices,
@@ -328,46 +323,6 @@ class GameEngine:
 
         return None
 
-    def _is_pure_cultivation(self, text: str) -> bool:
-        """Return True if the typed action is pure meditation/cultivation."""
-        return is_pure_cultivation(text)
-
-    def _apply_breakthrough_flag_rule(
-        self,
-        text: str,
-        delta: dict[str, Any],
-        is_cultivation: bool,
-    ) -> dict[str, Any]:
-        """Let meaningful deeds earn lightweight breakthrough preparation flags."""
-        return apply_breakthrough_flag_rule(
-            text,
-            delta,
-            is_cultivation=is_cultivation,
-            session=self.game_session,
-        )
-
-    def _advance_local_story(self, session: GameSession, text: str) -> Any:
-        """Advance local story through the GameEngine-owned import seam."""
-        from .local_story import advance_local_story
-
-        return advance_local_story(session, text)
-
-    def _validate_narrative_delta_consistency(
-        self,
-        narrative: str,
-        state_delta: dict[str, Any],
-    ) -> tuple[bool, str]:
-        """Validate narrator text against its structured delta."""
-        return validate_narrative_delta_consistency(narrative, state_delta)
-
-    def _merge_rule_delta(
-        self,
-        model_delta: dict[str, Any],
-        rule_delta: dict[str, Any],
-    ) -> dict[str, Any]:
-        """Merge model and rule deltas through the historical helper."""
-        return _merge_rule_delta(model_delta, rule_delta)
-
     # ─── Breakthrough ─────────────────────────────────────────────────
 
     def attempt_breakthrough(self) -> None:
@@ -461,10 +416,6 @@ class GameEngine:
         return format_equipment(self.game_session)
 
     # ─── Internal helpers ──────────────────────────────────────────────
-
-    def _auto_save(self) -> None:
-        """Web save/load is owned by ``web.backend.service``."""
-        return
 
     def _record_opening_context(self, opening: str) -> None:
         """Seed chat history so the first player action cannot look like a blank world."""
@@ -588,44 +539,4 @@ class GameEngine:
         lowered = value.lower()
         reset_markers = ("混沌", "虚空", "未开", "起源", "void", "chaos")
         return any(marker in lowered for marker in reset_markers)
-
-
-def _merge_rule_delta(
-    model_delta: dict[str, Any], rule_delta: dict[str, Any]
-) -> dict[str, Any]:
-    """Merge authoritative rule-engine delta on top of model-generated delta.
-
-    Rule engine owns: age, lifespan, game_over, game_over_reason, elapsed_years.
-    Model owns: narrative text, choices, world enrichments (lore, npcs, quests).
-    """
-    if not isinstance(model_delta, dict):
-        model_delta = {}
-    if not isinstance(rule_delta, dict):
-        return model_delta
-
-    merged = dict(model_delta)
-
-    # ── Character: rule engine authoritative for age, lifespan, and attributes.
-    rule_char = rule_delta.get("character", {})
-    if isinstance(rule_char, dict) and rule_char:
-        merged_char = dict(merged.get("character", {}))
-
-        for key in ("age", "lifespan"):
-            if key in rule_char:
-                merged_char[key] = rule_char[key]
-
-        if "attributes" in rule_char:
-            merged_char["attributes"] = rule_char["attributes"]
-        merged["character"] = merged_char
-
-    # ── Meta: rule engine authoritative for game-over and turn info ──
-    rule_meta = rule_delta.get("meta", {})
-    if isinstance(rule_meta, dict) and rule_meta:
-        merged_meta = dict(merged.get("meta", {}))
-        for key in ("game_over", "game_over_reason", "elapsed_years", "choice_category"):
-            if key in rule_meta:
-                merged_meta[key] = rule_meta[key]
-        merged["meta"] = merged_meta
-
-    return merged
 

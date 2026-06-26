@@ -7,6 +7,7 @@ from unittest.mock import patch
 
 import pytest
 
+from agens_novel.engine.action_delta_policy import is_pure_cultivation
 from agens_novel.engine.game_engine import GameEngine, fallback_choices
 from agens_novel.session.game_session import GameSession
 
@@ -710,18 +711,17 @@ class TestBreakthroughPreparationGate:
 
     def test_is_pure_cultivation_detection(self) -> None:
         """Meditation phrases are pure cultivation; other deeds are not."""
-        engine = GameEngine()
-        assert engine._is_pure_cultivation("闭关修炼") is True
-        assert engine._is_pure_cultivation("打坐修行") is True
-        assert engine._is_pure_cultivation("静坐吐纳") is True
-        assert engine._is_pure_cultivation("盘膝运功") is True
-        assert engine._is_pure_cultivation("吸纳天地灵气") is True
+        assert is_pure_cultivation("闭关修炼") is True
+        assert is_pure_cultivation("打坐修行") is True
+        assert is_pure_cultivation("静坐吐纳") is True
+        assert is_pure_cultivation("盘膝运功") is True
+        assert is_pure_cultivation("吸纳天地灵气") is True
         # Practising a martial art / exploring / contemplating are NOT pure.
-        assert engine._is_pure_cultivation("修炼剑法") is False
-        assert engine._is_pure_cultivation("外出历练") is False
-        assert engine._is_pure_cultivation("参悟功法") is False
-        assert engine._is_pure_cultivation("打坐参悟") is False
-        assert engine._is_pure_cultivation("") is False
+        assert is_pure_cultivation("修炼剑法") is False
+        assert is_pure_cultivation("外出历练") is False
+        assert is_pure_cultivation("参悟功法") is False
+        assert is_pure_cultivation("打坐参悟") is False
+        assert is_pure_cultivation("") is False
 
     def test_legacy_insight_delta_is_ignored(self, monkeypatch) -> None:
         """Legacy insight/experience deltas do not create removed fields."""

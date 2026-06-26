@@ -2,6 +2,12 @@
 
 ## 2026-06-26
 
+### Changed — P2 引擎包装内联 + runner 缓存泄漏修复 + .gitignore 加固
+
+- **GameEngine 无意义包装内联**：删除 5 个纯透传包装方法（`_is_pure_cultivation` / `_apply_breakthrough_flag_rule` / `_validate_narrative_delta_consistency` / `_merge_rule_delta` / `_advance_local_story`）与 no-op `_auto_save`（被 3 个 Flow 文件 6 处调用）；`TurnFlow` 改为直接 import `action_delta_policy` 底层函数。模块级 `_merge_rule_delta` 迁入 `action_delta_policy.py` 公开为 `merge_rule_delta`（与其余 3 个 delta helper 同处）。`test_is_pure_cultivation_detection` 同步改为直接测 `is_pure_cultivation`。净减 ~90 行，调用链少一层。
+- **runner 缓存泄漏修复（重新落地）**：`WebGameService.runners` 字典长期无界增长——`ff5eee0`（post-Option-C quality pass）曾删除 `75099e8` 引入的 `_prune_idle_runners` 及其调用点，泄漏随之回归（CHANGELOG 未同步）。本轮以 LRU cap（128）+ idle TTL（30 min）双维度淘汰重新实现：新增 `_register_runner` / `_prune_runners` / `_drop_runner`，统一 `create_session` / `load` / `_runner` 三处写入点并在缓存命中时刷新访问时间。注册用户 runner 落库可经 `_runner` 懒加载重建（近乎无损）；guest runner 不落库，被淘汰即该访客会话失效（接受的权衡）。
+- **`.gitignore` 加固**：新增 `.mcp.json` 规则（Claude Code 项目级 MCP 配置，按惯例保持本地未跟踪），`git status` 不再显示 `?? .mcp.json`。
+
 ### Changed — 代码审计质量复核后清理（build + 文档）
 
 - **Dockerfile 层缓存**：`pip install -e .` 行加 BuildKit 缓存挂载 `--mount=type=cache,target=/root/.cache/pip` 并移除 `--no-cache-dir`，恢复增量构建依赖缓存（消除双依赖源后 `COPY src` 位于 install 之前，曾导致每次 src 变更重解析依赖）；补 `# syntax=docker/dockerfile:1` 显式启用 BuildKit 前端。

@@ -254,6 +254,7 @@ class WebGameService:
     def __init__(self, db: WebDatabaseProtocol | None = None) -> None:
         self.db = db or PostgresWebDatabase()
         self.runners: dict[str, WebRunner] = {}
+        self._runner_last_used: dict[str, float] = {}
 
     def login(self, username: str = "local") -> dict[str, Any]:
         return self.db.upsert_user(username)
@@ -273,7 +274,7 @@ class WebGameService:
             guest_token=guest_token,
             db=self.db,
         )
-        self.runners[session_id] = runner
+        self._register_runner(session_id, runner)
         runner.record("info", text="新会话已创建。")
         self._persist(runner, title=title)
         return runner.response()
@@ -353,7 +354,7 @@ class WebGameService:
             db=self.db,
         )
         restored.record("info", text=f"已加载存档: {saved['name']}")
-        self.runners[session_id] = restored
+        self._register_runner(session_id, restored)
         self._persist(restored, title=restored.engine.game_session.char_name or saved["name"])
         return restored.response()
 
@@ -506,6 +507,7 @@ class WebGameService:
                 raise PermissionError("无权访问该会话。")
             if not user_id and not is_guest_user_id(runner.user_id):
                 raise PermissionError("请先登录。")
+            self._runner_last_used[session_id] = time.time()
             return runner
         if not user_id:
             raise KeyError(f"会话不存在: {session_id}")
@@ -521,8 +523,34 @@ class WebGameService:
             events=row.get("events", []),
             db=self.db,
         )
-        self.runners[session_id] = runner
+        self._register_runner(session_id, runner)
         return runner
+
+    def _register_runner(self, session_id: str, runner: WebRunner) -> None:
+        """Cache a runner and bound the in-memory cache (LRU + idle TTL).
+
+        Registered-user runners are rebuilt from the DB on next access, so
+        eviction is near-lossless. Guest runners are not persisted, so evicting
+        one ends that ephemeral session.
+        """
+        self.runners[session_id] = runner
+        self._runner_last_used[session_id] = time.time()
+        self._prune_runners()
+
+    def _prune_runners(self, max_runners: int = 128, idle_ttl: float = 1800) -> None:
+        now = time.time()
+        for sid, last_used in list(self._runner_last_used.items()):
+            if now - last_used > idle_ttl:
+                self._drop_runner(sid)
+        if len(self.runners) <= max_runners:
+            return
+        by_recency = sorted(self._runner_last_used, key=lambda sid: self._runner_last_used[sid])
+        for sid in by_recency[: len(self.runners) - max_runners]:
+            self._drop_runner(sid)
+
+    def _drop_runner(self, session_id: str) -> None:
+        self.runners.pop(session_id, None)
+        self._runner_last_used.pop(session_id, None)
 
     def _persist(self, runner: WebRunner, title: str | None = None) -> None:
         if is_guest_user_id(runner.user_id):

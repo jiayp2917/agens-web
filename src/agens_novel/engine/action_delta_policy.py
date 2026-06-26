@@ -150,6 +150,46 @@ def validate_narrative_delta_consistency(narrative: str, delta: dict[str, Any]) 
     return True, ""
 
 
+def merge_rule_delta(
+    model_delta: dict[str, Any], rule_delta: dict[str, Any]
+) -> dict[str, Any]:
+    """Merge authoritative rule-engine delta on top of model-generated delta.
+
+    Rule engine owns: age, lifespan, game_over, game_over_reason, elapsed_years.
+    Model owns: narrative text, choices, world enrichments (lore, npcs, quests).
+    """
+    if not isinstance(model_delta, dict):
+        model_delta = {}
+    if not isinstance(rule_delta, dict):
+        return model_delta
+
+    merged = dict(model_delta)
+
+    # ── Character: rule engine authoritative for age, lifespan, and attributes.
+    rule_char = rule_delta.get("character", {})
+    if isinstance(rule_char, dict) and rule_char:
+        merged_char = dict(merged.get("character", {}))
+
+        for key in ("age", "lifespan"):
+            if key in rule_char:
+                merged_char[key] = rule_char[key]
+
+        if "attributes" in rule_char:
+            merged_char["attributes"] = rule_char["attributes"]
+        merged["character"] = merged_char
+
+    # ── Meta: rule engine authoritative for game-over and turn info ──
+    rule_meta = rule_delta.get("meta", {})
+    if isinstance(rule_meta, dict) and rule_meta:
+        merged_meta = dict(merged.get("meta", {}))
+        for key in ("game_over", "game_over_reason", "elapsed_years", "choice_category"):
+            if key in rule_meta:
+                merged_meta[key] = rule_meta[key]
+        merged["meta"] = merged_meta
+
+    return merged
+
+
 def _has_path(delta: dict[str, Any], section: str, key: str) -> bool:
     part = delta.get(section)
     return isinstance(part, dict) and key in part

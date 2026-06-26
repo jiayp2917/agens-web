@@ -81,7 +81,6 @@ class BreakthroughFlow:
         self._emit_breakthrough_result(bt_result, narrative, is_finale)
 
         engine._emit("on_status_bar", format_status_bar(session))
-        engine._auto_save()
 
         if is_finale:
             return

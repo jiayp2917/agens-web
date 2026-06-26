@@ -5,6 +5,12 @@ from __future__ import annotations
 import logging
 from typing import Any
 
+from .action_delta_policy import (
+    apply_breakthrough_flag_rule,
+    is_pure_cultivation,
+    merge_rule_delta,
+    validate_narrative_delta_consistency,
+)
 from .model_result import (
     ModelResultKind,
     classify_judge_result,
@@ -27,7 +33,9 @@ class TurnFlow:
         engine = self.engine
         session = engine.game_session
         session.turn_count += 1
-        result = engine._advance_local_story(session, text)
+        from .local_story import advance_local_story
+
+        result = advance_local_story(session, text)
         session.last_choices = result.choices
 
         if result.delta:
@@ -54,7 +62,6 @@ class TurnFlow:
             },
         })
         engine._emit("on_status_bar", format_status_bar(session))
-        engine._auto_save()
 
         if engine._check_game_over():
             return
@@ -123,7 +130,6 @@ class TurnFlow:
             )
             if fallback_used:
                 engine._emit("on_status_bar", format_status_bar(session))
-                engine._auto_save()
                 return
             if session.game_over:
                 session.turn_count -= 1
@@ -251,7 +257,7 @@ class TurnFlow:
     ) -> dict[str, Any] | None:
         engine = self.engine
         session = engine.game_session
-        consistent, consistency_reason = engine._validate_narrative_delta_consistency(
+        consistent, consistency_reason = validate_narrative_delta_consistency(
             narrative,
             state_delta,
         )
@@ -259,13 +265,14 @@ class TurnFlow:
             log.info("Narrative/state mismatch rejected: %s", consistency_reason)
             engine._emit("on_info", consistency_reason)
             engine._emit("on_status_bar", format_status_bar(session))
-            engine._auto_save()
             return None
 
         state_delta = engine._sanitize_action_delta(state_delta)
 
-        is_cultivation = engine._is_pure_cultivation(text)
-        state_delta = engine._apply_breakthrough_flag_rule(text, state_delta, is_cultivation)
+        is_cultivation = is_pure_cultivation(text)
+        state_delta = apply_breakthrough_flag_rule(
+            text, state_delta, is_cultivation=is_cultivation, session=session
+        )
 
         char_delta = state_delta.get("character")
         if isinstance(char_delta, dict) and "combat" in char_delta:
@@ -273,7 +280,7 @@ class TurnFlow:
             char_delta.pop("combat", None)
             state_delta = {**state_delta, "character": char_delta}
 
-        state_delta = engine._merge_rule_delta(state_delta, rule_delta)
+        state_delta = merge_rule_delta(state_delta, rule_delta)
         session.apply_delta(state_delta)
         self._try_emit_stage_advance()
 
@@ -306,7 +313,6 @@ class TurnFlow:
             engine._emit("on_narrative", narrative, session.turn_count)
 
         engine._emit("on_status_bar", format_status_bar(session))
-        engine._auto_save()
 
     def _try_emit_stage_advance(self) -> None:
         engine = self.engine

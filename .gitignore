@@ -50,3 +50,6 @@ demos/validation/screenshots/
 demos/validation/real_click/
 demos/validation/**/__pycache__/
 
+# Claude Code local MCP config (per-developer; must stay untracked)
+.mcp.json
+

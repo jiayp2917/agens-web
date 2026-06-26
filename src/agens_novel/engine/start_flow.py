@@ -253,7 +253,6 @@ class StartFlow:
         engine._emit("on_character_created", engine.game_session)
         engine._emit("on_status_bar", format_status_bar(engine.game_session))
         engine._record_opening_context(opening)
-        engine._auto_save()
 
 
 def apply_world_builder_generated_session(
