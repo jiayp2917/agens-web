@@ -45,3 +45,14 @@
 - PostgreSQL 生产 schema 以 Alembic 为准；本地与测试同样使用 PostgreSQL。
 - API key、数据库密码、Session Secret、邀请码真实值不得写入仓库、前端包、文档或日志。
 - 当前本机浏览器自动验收优先使用 Chrome DevTools MCP；Codex 内置浏览器存在环境闪退风险，不作为可靠验收入口。
+
+# 2026-06-27 Status Note
+
+- For production model hotfix status, read
+  `docs/PRODUCTION_V5_MIGRATION_CHECKLIST.md`,
+  `docs/NEXT_GOVERNANCE_BACKLOG.md`, and `CHANGELOG.md`.
+- Model runtime env uses `AGNES_*`; service/runtime controls still use
+  `AGENS_*`.
+- Last successful production smoke showed non-fallback guest start/choice, but
+  resume-time SSH reachability failed, so production account flow and fresh
+  current-state confirmation remain open.

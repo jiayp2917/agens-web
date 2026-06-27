@@ -123,3 +123,20 @@
 - 任何数据库字段、索引或表结构变化，都必须先进 Alembic migration，并使用 PostgreSQL 测试库验证；SQLite 已不再是当前兼容目标。
 - 任何模型、数据库、Session、Cookie、邀请码相关配置，都只能写占位值或环境变量名，不写真实值。
 - React 继续迭代时，应继续拆分重组件和样式：优先收束 `SettingsSaveDialog.tsx`、`CharacterCreatePage.tsx` 与 `styles.css`，根组件 `main.tsx` 保持只做应用状态编排。
+
+# 2026-06-27 Addendum
+
+- Production live-model fallback root cause was a model env-prefix mismatch:
+  model code reads `AGNES_*`, while production had used `AGENS_*` for model
+  values.
+- The repo-side fix is committed: `dc05e9f4` enables narrator repair in turn and
+  breakthrough flows and aligns model env examples/tests; `2ea29972` restores
+  legacy Docker builder compatibility.
+- Production env was backed up and corrected without printing secret values.
+- Last successful production guest start/choice smoke before interruption:
+  `fallback_active=False`, `model_failures=0`, and `choices_count=4` for both
+  local-origin and public-origin requests.
+- Resume-time SSH reachability to `192.168.1.250:22` failed on 2026-06-27, so
+  the smoke above is last-successful evidence, not a fresh current-state
+  confirmation.
+- Production account registration/login/save/load remains unverified.

@@ -8,6 +8,28 @@ approved entrypoint hotfix that restored service health.
 Do not treat v5 production behavior as fully accepted until every item below
 has evidence. Current status is restored but still partially accepted.
 
+## 2026-06-27 Model Env Hotfix Addendum
+
+- Root cause for the live-model fallback was the model env-prefix mismatch:
+  the app reads `AGNES_API_KEY`, `AGNES_BASE_URL`, `AGNES_MODEL`, and
+  `AGNES_REQUEST_TIMEOUT_SECONDS`; production model values had been placed
+  under `AGENS_*`.
+- Production env was backed up and the correct `AGNES_*` variables were added
+  without printing secret values.
+- Turn and breakthrough narrator calls now pass
+  `repair_incomplete_output=True`, so incomplete structured narrator output can
+  be repaired instead of immediately falling back.
+- Full rebuild was blocked by the host build path, so the effective production
+  recovery used a hotfix image based on the existing `jiayp-agens-web:local`
+  image and copied updated code/assets into it.
+- Last successful production smoke before interruption: local-origin and
+  public-origin guest start/choice both returned `fallback_active=False`,
+  `model_failures=0`, and `choices_count=4`.
+- Resume-time reachability check on 2026-06-27 failed for
+  `192.168.1.250:22`; the successful smoke above is last-known evidence, not a
+  fresh current confirmation.
+- Production account registration/login/save/load is still not accepted.
+
 ## Current Known State
 
 - Public `https://game.jiayp2917.xyz/api/health` returns HTTP 200.

@@ -6,6 +6,18 @@ validation as production acceptance.
 
 ## Current Evidence
 
+- 2026-06-27 production model hotfix evidence:
+  - model runtime env is `AGNES_*`, not `AGENS_*`
+  - `dc05e9f4` enabled narrator repair for turn/breakthrough flows and aligned
+    model env examples/tests
+  - `2ea29972` made `Dockerfile` compatible with the host legacy Docker builder
+  - production env was backed up and corrected without printing secret values
+  - last successful production guest start/choice smoke showed
+    `fallback_active=False`, `model_failures=0`, and `choices_count=4` for both
+    local-origin and public-origin requests
+  - resume-time recheck could not reach `192.168.1.250:22`, so this is
+    last-successful evidence rather than fresh current-state confirmation
+  - production account flow remains unverified
 - Local code validation is green as of 2026-06-26:
   - `python -m compileall -q src tests web scripts migrations`
   - `pytest -q tests\web` with local `TEST_DATABASE_URL` -> 50 passed

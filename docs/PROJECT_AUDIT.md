@@ -230,3 +230,25 @@ $env:TEST_DATABASE_URL = "postgresql+psycopg://agens_test@127.0.0.1:55432/agens_
 - 验证：`compileall -q src tests web scripts migrations` 通过；`pytest -q tests\web` 为 `49 passed, 1 skipped`；`pytest -q` 为 `425 passed, 1 skipped`；`pytest -q tests/unit/engine/...` + `tests/unit/game/test_database_common.py` 为 `56 passed`；`npm.cmd run build` 通过（1602 modules / 24.34 kB CSS / 190.37 kB JS）。
 - 显式声明：本批次**不**代表生产账号流或 production live model 已验收；P0 生产动作仍由 `docs/PRODUCTION_V5_MIGRATION_CHECKLIST.md` 与 `docs/NEXT_GOVERNANCE_BACKLOG.md` P0 段记录，需要服务器线程处理。
 - 剩余风险：上一轮基线中 production account flow 与 production live model 仍未验收；`GameEngine.handle_action` / `new_game` / `_generate_profile_opening` 的模型失败分支 + `attempt_breakthrough` 的 `llm_error` 分支仍是下一批 P1 候选；React 样式文件拆分仍为 P2。
+# 2026-06-27 Production Model Hotfix Status
+
+- Model runtime configuration is `AGNES_*`:
+  `AGNES_API_KEY`, `AGNES_BASE_URL`, `AGNES_MODEL`, and
+  `AGNES_REQUEST_TIMEOUT_SECONDS`. Service/runtime controls remain `AGENS_*`.
+- Code commits already landed:
+  - `dc05e9f4` enables `repair_incomplete_output=True` in turn and
+    breakthrough narrator flows and aligns docs/examples/tests to `AGNES_*`.
+  - `2ea29972` removes the BuildKit-only Dockerfile cache mount so the host can
+    use the legacy Docker builder.
+- Production env was backed up and corrected without printing secret values.
+  The effective recovery used a hotfix image path based on the existing
+  `jiayp-agens-web:local` image because the full rebuild path was blocked.
+- Last successful production smoke before interruption: both local-origin and
+  public-origin guest start/choice returned `fallback_active=False`,
+  `model_failures=0`, and `choices_count=4`.
+- Resume-time recheck on 2026-06-27 could not freshly confirm production:
+  TCP/SSH to `192.168.1.250:22` failed. Treat the smoke above as
+  last-successful evidence, not a current-state confirmation.
+- Still not accepted: production account registration/login/save/load, backup
+  restore drill, and a fresh production live-model smoke after SSH reachability
+  is restored.

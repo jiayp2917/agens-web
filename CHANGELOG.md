@@ -1,5 +1,41 @@
 # Changelog
 
+## 2026-06-27
+
+### Changed - production model env-prefix hotfix closeout
+
+- Confirmed and documented the model-runtime env boundary: model calls read
+  `AGNES_API_KEY`, `AGNES_BASE_URL`, `AGNES_MODEL`, and
+  `AGNES_REQUEST_TIMEOUT_SECONDS`; service/runtime controls continue to use
+  `AGENS_*`.
+- The prior code fix is already committed in `dc05e9f4`: turn and breakthrough
+  narrator paths pass `repair_incomplete_output=True`, and deployment
+  examples/tests use the correct `AGNES_*` model prefix.
+- The deployment builder compatibility fix is already committed in `2ea29972`:
+  `Dockerfile` no longer requires BuildKit-only `RUN --mount=type=cache`.
+- Production env was backed up and the correct `AGNES_*` model variables were
+  added without printing secret values. The old `AGENS_*` values were kept
+  during transition.
+- Full production rebuild was blocked on the host build path, so the effective
+  recovery used a hotfix image based on the existing `jiayp-agens-web:local`
+  image and copied updated source/assets into it.
+- Last successful production smoke before interruption: local-origin and
+  public-origin guest start/choice both reported `fallback_active=False`,
+  `model_failures=0`, and `choices_count=4`.
+- Resume-time recheck on 2026-06-27 could not freshly confirm the server:
+  `192.168.1.250:22` failed TCP reachability and SSH timed out. Treat the smoke
+  above as last-successful evidence, not current live confirmation.
+- Production account registration/login/save/load remains unverified.
+
+### Verification - 2026-06-27 closeout
+
+- Previously completed local code validation for the committed hotfix:
+  `compileall` passed, targeted engine/web tests passed, `pytest -q tests\web`
+  with local `TEST_DATABASE_URL` passed as `50 passed`, and full `pytest -q`
+  with local `TEST_DATABASE_URL` passed as `417 passed`.
+- This documentation closeout only changed docs after those commits; no secrets
+  were read or written.
+
 ## 2026-06-26
 
 ### Changed - PostgreSQL test gate, backend splits, and failure-path coverage
