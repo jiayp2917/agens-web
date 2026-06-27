@@ -212,30 +212,6 @@ class TestGameEngineNewGame:
 
 
 class TestGameEngineQueries:
-    def test_get_status(self) -> None:
-        engine = GameEngine()
-        engine.game_session.char_name = "许满"
-        engine.game_session.realm = "金丹"
-        text = engine.get_status()
-        assert "许满" in text
-        assert "金丹" in text
-
-    def test_get_inventory_empty(self) -> None:
-        engine = GameEngine()
-        assert "背包为空" in engine.get_inventory()
-
-    def test_get_skills_empty(self) -> None:
-        engine = GameEngine()
-        assert "尚未习得" in engine.get_skills()
-
-    def test_get_map_empty(self) -> None:
-        engine = GameEngine()
-        assert "尚未探索" in engine.get_map()
-
-    def test_get_quests_empty(self) -> None:
-        engine = GameEngine()
-        assert "没有任务" in engine.get_quests()
-
     def test_get_log_empty(self) -> None:
         engine = GameEngine()
         assert "暂无" in engine.get_log()

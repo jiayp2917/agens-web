@@ -1,4 +1,4 @@
-import { useMemo, useState } from "react";
+import { useMemo } from "react";
 import { Home, Save, Settings } from "lucide-react";
 import type { DialogMode, Session } from "../lib/api";
 import { choiceSemantics, realmLifespanCap } from "../lib/catalog";
@@ -26,7 +26,6 @@ export function GamePage({
 }) {
   const character = session.character || {};
   const world = session.world || {};
-  const [panel, setPanel] = useState<keyof Session["panels"]>("status");
   const lifespanCap = toPositiveNumber(character.lifespan, realmLifespanCap[String(character.realm || "")] || 100);
   const lifespanMax = Math.max(realmLifespanCap[String(character.realm || "")] || 100, lifespanCap);
   const remainingLifespan = Math.max(
@@ -57,7 +56,7 @@ export function GamePage({
   return (
     <section className="game-page">
       <header className="game-summary game-topbar">
-        <a className="brand game-brand" href="https://www.jiayp2917.xyz/" target="_blank" rel="noreferrer">jiayp</a>
+        <a className="page-brand game-brand" href="https://www.jiayp2917.xyz/" target="_blank" rel="noreferrer">jiayp</a>
         <div className="summary-actions">
           <button className="plain-btn return-home-btn" type="button" onClick={onHome}><Home size={16} />返回首页</button>
           <button className="icon-btn" onClick={() => openDialog("saves")} aria-label="存档"><Save size={20} /></button>
@@ -87,28 +86,6 @@ export function GamePage({
             <dt>家世</dt><dd>{character.family_background || "凡俗"}</dd>
             <dt>气运</dt><dd>{luck}</dd>
           </dl>
-          <div className="tool-grid">
-            {([
-              ["status", "状态"],
-              ["inventory", "背包"],
-              ["skills", "功法"],
-              ["map", "地图"],
-              ["quests", "任务"],
-              ["realm", "境界"],
-            ] as Array<[keyof Session["panels"], string]>).map(([key, label]) => (
-              <button key={key} className={panel === key ? "selected-tool" : ""} onClick={() => setPanel(key)}>{label}</button>
-            ))}
-          </div>
-          {panel === "status" ? (
-            <dl className="panel-summary">
-              <dt>位置</dt><dd>{world.location || "山门"}</dd>
-              <dt>回合</dt><dd>{session.turn_count}</dd>
-              <dt>寿元</dt><dd>{remainingLifespan}/{lifespanMax} 年</dd>
-              <dt>气运</dt><dd>{luck}</dd>
-            </dl>
-          ) : (
-            <pre className="panel-output">{String(session.panels?.[panel] || "暂无内容。")}</pre>
-          )}
         </aside>
         <section className="story-panel">
           <header className="chronicle-heading">

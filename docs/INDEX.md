@@ -1,5 +1,21 @@
 # 项目文档索引
 
+## 2026-06-27 Local Main-Flow Update
+
+- Read `docs/PROJECT_AUDIT.md`, `docs/NEXT_GOVERNANCE_BACKLOG.md`, and
+  `CHANGELOG.md` for the latest local main-flow fix.
+- Fixed locally: valid A/B/C/D choices no longer return HTTP 200 with unchanged
+  `turn_count` when breakthrough is not currently allowed.
+- Fixed locally: narrative/state mismatch rejection keeps `game_turns`
+  contiguous by recording the base rule settlement.
+- Validation baseline after the fix: `tests\web` -> `53 passed`, full
+  `pytest -q` -> `414 passed, 1 xfailed`, frontend `npm.cmd run build`
+  passed. The expected xfail is the real-LLM integration path when the
+  upstream provider returns HTTP 500; it is not local acceptance evidence.
+- Still open: rerun the visible Chrome 20-turn live-model player validation and
+  keep production account/live-model acceptance under the server validation
+  thread.
+
 后续智能体先读本文，再按任务读取对应文档。本仓库是 Web-only 项目。
 
 ## 当前权威文档

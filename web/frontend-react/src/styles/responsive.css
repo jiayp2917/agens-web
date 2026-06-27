@@ -27,7 +27,8 @@
     padding: 12px 16px;
   }
 
-  .brand {
+  .brand,
+  .page-brand {
     font-size: 32px;
   }
 
@@ -179,27 +180,22 @@
   }
 
   .story-log {
-    padding-left: 6px;
+    padding-left: 0;
     max-height: none;
     overflow: visible;
   }
 
-  .chronicle-card {
-    padding: 14px 12px;
+  .chronicle-item {
+    grid-template-columns: minmax(72px, auto) minmax(0, 1fr);
+    gap: 10px;
+    padding: 12px 8px;
   }
 
-  .chronicle-card header {
-    grid-template-columns: 1fr auto;
-    gap: 8px;
-  }
-
-  .chronicle-card header em {
-    grid-row: span 2;
-  }
-
-  .chronicle-card p {
+  .chronicle-age,
+  .chronicle-item p {
     font-size: 24px;
   }
+
 
   .choice-list {
     grid-template-columns: 1fr;
@@ -282,7 +278,8 @@
     font-size: 38px;
   }
 
-  .chronicle-card p {
+  .chronicle-age,
+  .chronicle-item p {
     font-size: 22px;
   }
 

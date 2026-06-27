@@ -154,13 +154,6 @@ class WebRunner:
             "events": self.events[-80:],
             "panels": {
                 "status_bar": format_status_bar(session),
-                "status": self.engine.get_status(),
-                "inventory": self.engine.get_inventory(),
-                "skills": self.engine.get_skills(),
-                "map": self.engine.get_map(),
-                "quests": self.engine.get_quests(),
-                "realm": self.engine.get_realm_info(),
-                "equipment": self.engine.get_equipment_info(),
             },
         }
 
@@ -388,24 +381,40 @@ class WebGameService:
         only when the runner/session snapshot is no longer available.
         """
         if is_guest_user_id(user_id) or user_id is None:
-            runner = self._runner(session_id, user_id=user_id)
-            summary = build_death_summary(runner.engine.game_session)
-            return {
-                "session_id": session_id,
-                "is_guest": True,
-                "summary": summary or {},
-            }
-        try:
-            runner = self._runner(session_id, user_id=user_id)
-            summary = build_death_summary(runner.engine.game_session)
-            if summary is not None:
-                return {
-                    "session_id": session_id,
-                    "is_guest": False,
-                    "summary": summary,
-                }
-        except (KeyError, PermissionError):
-            raise
+            return self._live_death_summary(session_id, user_id=user_id, is_guest=True)
+
+        live = self._try_live_death_summary(session_id, user_id=user_id, is_guest=False)
+        if live is not None:
+            return live
+
+        return self._stored_death_summary(session_id, user_id)
+
+    def _live_death_summary(
+        self,
+        session_id: str,
+        *,
+        user_id: str | None,
+        is_guest: bool,
+    ) -> dict[str, Any]:
+        runner = self._runner(session_id, user_id=user_id)
+        summary = build_death_summary(runner.engine.game_session)
+        return {
+            "session_id": session_id,
+            "is_guest": is_guest,
+            "summary": summary or {},
+        }
+
+    def _try_live_death_summary(
+        self,
+        session_id: str,
+        *,
+        user_id: str,
+        is_guest: bool,
+    ) -> dict[str, Any] | None:
+        live = self._live_death_summary(session_id, user_id=user_id, is_guest=is_guest)
+        return live if live["summary"] else None
+
+    def _stored_death_summary(self, session_id: str, user_id: str) -> dict[str, Any]:
         achievements = self.db.list_run_achievements(user_id, session_id)
         rewards = [
             r
@@ -681,7 +690,7 @@ class WebGameService:
         if raw.upper() in letter_map and letter_map[raw.upper()] < len(choices):
             return choices[letter_map[raw.upper()]]
         if raw:
-            return raw
+            raise ValueError("请选择 A/B/C/D。")
         raise ValueError("请选择 A/B/C/D。")
 
 

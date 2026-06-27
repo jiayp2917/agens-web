@@ -2,6 +2,65 @@
 
 ## 2026-06-27
 
+### Changed - documentation status sync
+
+- Updated current-status docs to align the latest local validation baseline:
+  `compileall` passed, `pytest -q tests\web` with local `TEST_DATABASE_URL`
+  passed as `54 passed`, full `pytest -q` passed as `416 passed`,
+  and `web\frontend-react npm.cmd run build` passed.
+- Documented that automated local validation is now green without counting
+  fallback as production live-model acceptance.
+- Recorded the local PostgreSQL test-cluster caveat: the
+  `.tmp\pg-test-20260626-55432` data directory may require stale
+  `postmaster.pid` recovery after confirming no PostgreSQL process is running.
+
+### Changed - precise UI panel cleanup
+
+- Unified the visible `jiayp` brand anchor on home, character creation, and
+  gameplay screens through the shared `page-brand` class. The home topbar keeps
+  only the right-side action controls in normal flow.
+- Tightened the character-creation fate selector: clicking the open summary can
+  collapse it, selected rows use a radio-style black dot instead of a checkmark,
+  options are sorted by the unified color order, and visible labels no longer
+  append `白/绿/蓝/紫/橙/红` text after the item name.
+- Removed the old Web tool-panel surface from gameplay: no visible
+  状态/背包/功法/地图/任务/境界 tabs, no 位置 summary row, and no freeform panel output
+  block. Core runtime fields such as realm, inventory, location, quests, and
+  map data are retained for rules, rewards, fallback, and old-save tolerance.
+- Reduced the session panel payload to `status_bar` only and removed the
+  corresponding `GameEngine.get_*` Web panel query methods. Public gameplay
+  endpoints, PostgreSQL schema, and Alembic revisions are unchanged.
+- Changed the chronicle feed from card/timeline items to row-style story lines
+  headed by age, matching the approved reference direction.
+- Documented the story-line follow-up: the first database-backed version should
+  bind each run to one of three `catalog_story_seeds` arcs; this batch does not
+  add migrations or new API fields.
+
+### Changed - local main-flow governance batch
+
+- Tightened `/api/sessions/{id}/choice` to game-mode v5 fixed choices: the
+  endpoint now accepts `choice_index` or A/B/C/D letters only. Arbitrary
+  `choice` text now returns the existing 400 service-error path instead of
+  bypassing the four-choice contract.
+- Split `WebGameService.death_summary()` into live-summary and stored-summary
+  helpers. The public route and response shape are unchanged; the service path
+  is easier to audit without changing database schema or Alembic revisions.
+- Added Web API coverage for rejecting free-text `/choice` payloads while
+  preserving letter-based choice submission.
+- Fixed a player-flow blocker found by local visible-Chrome validation: a
+  legal A/B/C/D choice containing premature breakthrough intent no longer
+  returns HTTP 200 with unchanged `turn_count`; when realm rules say the
+  breakthrough is ineligible, the action settles as an ordinary turn.
+- Fixed a turn-log consistency gap: narrative/state mismatch rejection now
+  discards the untrusted model narrative/state but still applies the base rule
+  settlement and records a contiguous `game_turns` row.
+- Fixed the same persistence gap for accepted local-story fallback: when the
+  narrator returns no usable choices and the run switches to local fallback, the
+  transition turn is now recorded so registered-user `game_turns` stays
+  contiguous.
+- This batch is local-only: no SSH, deployment, production DB, production
+  account flow, or production live-model acceptance was performed.
+
 ### Changed - production model env-prefix hotfix closeout
 
 - Confirmed and documented the model-runtime env boundary: model calls read

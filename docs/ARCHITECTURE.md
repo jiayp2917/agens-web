@@ -1,5 +1,18 @@
 # 项目模块架构说明
 
+## 2026-06-27 Main-Flow Architecture Note
+
+- `GameEngine.handle_action()` now routes breakthrough-intent actions to the
+  dedicated breakthrough flow only when `RealmSystem.can_attempt_breakthrough()`
+  allows it. Otherwise the action stays in the ordinary `TurnFlow` path.
+- `TurnFlow` owns the repaired mismatch behavior: model narrative/state can be
+  rejected while the base rule settlement still advances and records the turn.
+- `WebGameService._record_settled_turn()` continues to persist only settled
+  registered-user turns, relying on `turn_history[-1]["turn"] ==
+  session.turn_count` to avoid logging partial or stale turns.
+- These changes preserve the existing API shape, PostgreSQL schema, and
+  Alembic revisions.
+
 > **状态：v5 已实现 / 阶段 7/8 联调收尾中**
 > **阅读对象**：新加入开发者、技术复核者、想了解全局的玩家
 > **与现有文档关系**：本文是**模块视角**的地图；[RUNTIME_FLOW.md](RUNTIME_FLOW.md) 是**链路视角**的流程；[GAME_MODE_SPEC.md](GAME_MODE_SPEC.md) 是游戏模式 v5 的产品 + 技术规格；[PROJECT_AUDIT.md](PROJECT_AUDIT.md) 是结构边界和技术债队列。
@@ -48,7 +61,7 @@
 | `turn_rules.py` | `settle_turn(choice_text, session)` | **规则引擎权威结算**：分类 A/B/C/D、按境界抽 elapsed_years、按风险系数与难度系数调整、属性增量、剩余寿元、`game_over_reason` 判定 |
 | `action_delta_policy.py` | `apply_breakthrough_flag_rule`, `validate_narrative_delta_consistency` | 纯函数规则引擎；渡劫境界追加 `tribulation_elixir` / `ascension_protection` 标志；narrative vs delta 一致性校验 |
 | `choices.py` | `complete_choices()`, `fallback_choices()`, `normalize_choices()` | A/B/C/D 归一化；模型输出不足 4 个时用 `fallback_choices(session)` 按当前 `location` 兜底；D 固定为气运/天命路线 |
-| `render.py` | `format_status_bar`, `format_status_card`, `format_inventory`, `format_skills`, `format_map`, `format_quests`, `format_log`, `format_realm`, `format_equipment` | 状态 → 面板字符串；`GameEngine.get_*()` 把这些渲染结果填到 `session.panels` |
+| `render.py` | `format_status_bar`, `format_log` 以及历史/测试用文本格式化函数 | 状态 → 文本字符串；Web 响应当前只暴露 `panels.status_bar`，旧状态/背包/功法/地图/任务/境界工具面板不再作为产品入口 |
 | `local_story.py` | `start_local_story()`, `advance_local_story()`, `validate_local_story_graph()` | 模型不可用兜底；`misty_gate` 默认 6 节点图；测试用图完整性校验 |
 | `profile_opening.py` | `profile_default_world`, `profile_opening`, `profile_concept` | 开场编年史模板；按角色名、天赋、灵根、家世、难度和六维属性生成本地开局 |
 | `world_generator.py` | `build_world_prompt`, `build_world_fallback`, `parse_world_response` | World Builder prompt + 本地兜底模板 |
@@ -108,7 +121,7 @@
 | `HomePage.tsx` | 首页品牌 + 5 入口按钮 + QQ 群卡片；纯展示，不调 API | — |
 | `AuthPage.tsx` | 登录 / 注册表单；含"返回首页" | `POST /api/auth/login`、`POST /api/auth/register` |
 | `CharacterCreatePage.tsx` | 角色创建；4 个 catalog 拉取 + 自行选择 / 随机生成 + 6 维滑块；提交后切到 game | `GET /api/catalog/{talents|spirit_roots|family_backgrounds|difficulties}` + `POST /api/sessions/{id}/start` |
-| `GamePage.tsx` | 游戏主界面；左侧 260px 状态栏 + 6 工具标签；右侧叙事区 + 4 选项 | `POST /api/sessions/{id}/choice`（用户点击）；由 `App.runTurn()` 中转 |
+| `GamePage.tsx` | 游戏主界面；左侧角色摘要 + 编年史故事行 + 4 选项；移动端顶部摘要 + 单列选项 | `POST /api/sessions/{id}/choice`（用户点击）；由 `App.runTurn()` 中转 |
 | `EndingPage.tsx` | 飞升 / 本局结束页 + `death_summary` 侧栏（成就 / 奖励 / 最近 6 条叙事） | `GET /api/sessions/{id}/death_summary` |
 
 ### 5.3 7 个组件（`components/`）

@@ -2,7 +2,24 @@ import type { ReactNode } from "react";
 import { ChevronDown } from "lucide-react";
 import type { CatalogItem } from "../lib/catalog";
 import { rarityToColor } from "../lib/util";
-import { RarityDot, rarityClassName } from "./RarityDot";
+import { RarityDot } from "./RarityDot";
+
+const colorOrder = new Map([
+  ["白", 0],
+  ["绿", 1],
+  ["蓝", 2],
+  ["紫", 3],
+  ["橙", 4],
+  ["红", 5],
+]);
+
+const sortedByColor = (items: CatalogItem[]) =>
+  [...items].sort((left, right) => {
+    const leftColor = rarityToColor(left.rarity || left.grade);
+    const rightColor = rarityToColor(right.rarity || right.grade);
+    const colorDiff = (colorOrder.get(leftColor) ?? 0) - (colorOrder.get(rightColor) ?? 0);
+    return colorDiff || left.name.localeCompare(right.name, "zh-Hans-CN");
+  });
 
 export function CatalogGroup({
   title,
@@ -27,6 +44,7 @@ export function CatalogGroup({
 }) {
   const selected: CatalogItem = items.find((item) => item.name === selectedName) || { name: selectedName };
   const selectedColor = rarityToColor(selected.rarity || selected.grade);
+  const orderedItems = sortedByColor(items);
   return (
     <section className={`catalog-group ${open ? "is-open" : ""}`}>
       <button type="button" className="catalog-summary" onClick={onToggle} aria-expanded={open}>
@@ -37,12 +55,11 @@ export function CatalogGroup({
         <span className="selected-pill">
           <RarityDot color={selectedColor} />
           <span>{selected.name}</span>
-          <em className={rarityClassName(selectedColor)}>{selectedColor}</em>
         </span>
         <span className="catalog-chevron" aria-hidden="true"><ChevronDown size={16} /></span>
       </button>
       {open && <div className="catalog-list">
-        {items.map((item) => (
+        {orderedItems.map((item) => (
           <CatalogOption
             key={item.name}
             item={item}
@@ -75,10 +92,9 @@ function CatalogOption({
       onClick={() => onSelect(item.name)}
       disabled={disabled}
     >
-      {selected ? <span className="selection-check selected" aria-hidden="true">✓</span> : <span className="selection-check empty" aria-hidden="true" />}
+      <span className="selection-check" aria-hidden="true" />
       <RarityDot color={color} />
       <span>{item.name}</span>
-      <em className={rarityClassName(color)}>{color}</em>
     </button>
   );
 }

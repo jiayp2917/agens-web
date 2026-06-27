@@ -129,6 +129,11 @@ class TurnFlow:
                 emit_local_story_narrative=True,
             )
             if fallback_used:
+                self._record_local_story_fallback_turn(
+                    text,
+                    rule_delta,
+                    reason=narrator_status.reason,
+                )
                 engine._emit("on_status_bar", format_status_bar(session))
                 return
             if session.game_over:
@@ -141,9 +146,10 @@ class TurnFlow:
         if isinstance(judge_result, dict):
             narrative, state_delta = self._apply_judge_result(narrative, state_delta, judge_result)
 
-        applied_delta = self._validate_and_apply_delta(text, narrative, state_delta, rule_delta)
-        if applied_delta is None:
+        applied = self._validate_and_apply_delta(text, narrative, state_delta, rule_delta)
+        if applied is None:
             return
+        narrative, applied_delta = applied
 
         self._record_and_emit_turn(text, narrative, applied_delta)
 
@@ -188,7 +194,7 @@ class TurnFlow:
         narrative: str,
         state_delta: dict[str, Any],
         rule_delta: dict[str, Any],
-    ) -> dict[str, Any] | None:
+    ) -> tuple[str, dict[str, Any]] | None:
         engine = self.engine
         session = engine.game_session
         if not state_delta or not engine._should_run_judge(text, state_delta, rule_delta):
@@ -258,7 +264,7 @@ class TurnFlow:
         narrative: str,
         state_delta: dict[str, Any],
         rule_delta: dict[str, Any],
-    ) -> dict[str, Any] | None:
+    ) -> tuple[str, dict[str, Any]] | None:
         engine = self.engine
         session = engine.game_session
         consistent, consistency_reason = validate_narrative_delta_consistency(
@@ -268,8 +274,8 @@ class TurnFlow:
         if not consistent:
             log.info("Narrative/state mismatch rejected: %s", consistency_reason)
             engine._emit("on_info", consistency_reason)
-            engine._emit("on_status_bar", format_status_bar(session))
-            return None
+            narrative = ""
+            state_delta = {"character": {}, "world": {}, "meta": {}}
 
         state_delta = engine._sanitize_action_delta(state_delta)
 
@@ -291,7 +297,44 @@ class TurnFlow:
         if engine._check_game_over():
             return None
 
-        return state_delta
+        return narrative, state_delta
+
+    def _record_local_story_fallback_turn(
+        self,
+        text: str,
+        rule_delta: dict[str, Any],
+        *,
+        reason: str,
+    ) -> None:
+        session = self.engine.game_session
+        narrative = "模型叙事不完整，本回合已切换为本地故事继续。"
+        fallback_meta = {
+            "elapsed_years": 0,
+            "calendar_summary": "模型输出不完整，转入本地故事。",
+            "choice_category": "fallback",
+            "local_story_fallback": True,
+            "fallback_reason": reason,
+        }
+        state_delta = {
+            "character": {},
+            "world": {},
+            "meta": fallback_meta,
+        }
+        session.turn_history.append({
+            "turn": session.turn_count,
+            "input": text,
+            "narrative": narrative,
+            "delta": state_delta,
+            "choices": session.last_choices,
+            "local_story": {
+                "story_id": session.local_story_id,
+                "node_id": session.local_story_node_id,
+            },
+        })
+        session.chat_history.append({"role": "user", "content": text})
+        session.chat_history.append({"role": "assistant", "content": narrative})
+        if len(session.chat_history) > 20:
+            session.chat_history = session.chat_history[-20:]
 
     def _record_and_emit_turn(
         self,

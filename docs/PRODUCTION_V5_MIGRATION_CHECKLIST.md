@@ -1,5 +1,24 @@
 # Production v5 Migration Checklist
 
+## 2026-06-27 Local Main-Flow Fix Addendum
+
+- Local-only fix landed after visible-Chrome validation found HTTP 200 with
+  unchanged `turn_count` on valid choice clicks. This was a code/main-flow
+  issue, not a production/server operation.
+- Fixed local behavior:
+  - free-text `/choice` payloads are rejected;
+  - premature breakthrough choices settle as ordinary turns when realm rules
+    reject breakthrough;
+  - narrative/state mismatch rejection records contiguous `game_turns`;
+  - accepted local-story fallback records its transition turn so registered-user
+    `game_turns` remains contiguous when the narrator returns no usable choices.
+- Local validation after this fix: `tests\web` -> `54 passed`, full
+  `pytest -q` -> `416 passed`, frontend `npm.cmd run build` passed. This local
+  green state does not prove production live-model success.
+- Production acceptance is unchanged by this local fix. Production account
+  registration/login/save/load and production live-model success still need
+  server-thread evidence. Any fallback response still fails the live-model gate.
+
 This checklist gates the next `agens-web` production action. It records the
 2026-06-24 production v5 deployment sequence, including the build stop,
 build-only retry, Alembic success, entrypoint CRLF startup failure, and the
@@ -73,11 +92,11 @@ has evidence. Current status is restored but still partially accepted.
 - Local validation is green:
   - `.\.venv\Scripts\python.exe -m compileall -q src tests web scripts migrations`
   - `.\.venv\Scripts\python.exe -m pytest -q tests\web` with local
-    `TEST_DATABASE_URL`: `50 passed`
+    `TEST_DATABASE_URL`: `54 passed`
   - `.\.venv\Scripts\python.exe -m pytest -q` with local
-    `TEST_DATABASE_URL`: `415 passed`
+    `TEST_DATABASE_URL`: `416 passed`
   - `cd web\frontend-react; npm.cmd run build`: passed, 1603 modules,
-    24.34 kB CSS, 190.95 kB JS
+    23.69 kB CSS, 189.87 kB JS
 - Chrome smoke evidence exists for:
   - historical 2026-06-24 desktop guest start, 375px mobile guest start,
     fallback continuation, and latest chronicle card at `玄元历 2 年` after turn
@@ -86,7 +105,7 @@ has evidence. Current status is restored but still partially accepted.
     returned HTTP 200, `fallback_prompt.active=false`, and the UI refreshed
     narrative plus A/B/C/D choices. This predates Option C and is historical
     evidence only.
-- Current PostgreSQL local test evidence exists:
+- Historical 2026-06-26 PostgreSQL local test evidence:
   - `TEST_DATABASE_URL` against a safe local PostgreSQL test database
   - `pytest -q tests\web`: `50 passed`
   - `pytest -q tests\web\test_web_api.py::test_postgres_database_url_smoke`: passed

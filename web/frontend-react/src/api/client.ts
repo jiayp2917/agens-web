@@ -19,7 +19,7 @@ export type Session = {
   character: Record<string, any>;
   world: Record<string, any>;
   events: Array<Record<string, any>>;
-  panels: Record<string, string>;
+  panels?: Record<string, string>;
 };
 
 export type SaveRow = {

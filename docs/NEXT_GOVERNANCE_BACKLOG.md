@@ -6,6 +6,40 @@ validation as production acceptance.
 
 ## Current Evidence
 
+- 2026-06-27 local main-flow governance evidence:
+  - UI panel cleanup removed the old visible gameplay tool tabs
+    (状态/背包/功法/地图/任务/境界), the 位置 summary row, and arbitrary panel output
+    from the React gameplay surface. Runtime state fields remain for rules,
+    rewards, fallback, and old-save tolerance.
+  - Character creation fate groups now collapse when their own summary is
+    clicked, use a radio-style black dot selection marker, sort by the unified
+    color order, and no longer append color text after item names.
+  - The gameplay chronicle feed now uses row-style age-led story entries rather
+    than the old card/timeline presentation.
+  - `/api/sessions/{id}/choice` is now restricted to `choice_index` or
+    A/B/C/D letters; arbitrary free text is rejected with 400.
+  - Premature breakthrough-intent choices now settle as ordinary turns when
+    realm rules say breakthrough is not available, preventing HTTP 200 with
+    unchanged `turn_count`.
+  - Narrative/state mismatch rejection now keeps `game_turns` contiguous by
+    discarding untrusted model output while still recording the base rule
+    settlement.
+  - Accepted local-story fallback now records the transition turn with
+    `local_story_fallback=true`, so registered-user `game_turns` does not skip
+    a turn when the narrator returns no usable choices.
+  - `WebGameService.death_summary()` was split into live-summary and
+    stored-summary helpers without changing the public route or response shape.
+  - Local PostgreSQL web tests passed with
+    `TEST_DATABASE_URL=postgresql+psycopg://agens_test@127.0.0.1:55432/agens_web_test`.
+    Current result: `pytest -q tests\web` -> `54 passed`; full `pytest -q` ->
+    `416 passed`; frontend `npm.cmd run build` passed.
+  - Local PostgreSQL validation required recovering
+    `.tmp\pg-test-20260626-55432` from a stale `postmaster.pid` after
+    confirming no server was running, then starting it with `pg_ctl`. Formalize
+    this startup/recovery path so future agents do not restart or recreate the
+    test cluster unnecessarily.
+  - This is local validation only. It does not accept production account flow
+    or production live-model success.
 - 2026-06-27 production model hotfix evidence:
   - model runtime env is `AGNES_*`, not `AGENS_*`
   - `dc05e9f4` enabled narrator repair for turn/breakthrough flows and aligned
@@ -18,7 +52,7 @@ validation as production acceptance.
   - resume-time recheck could not reach `192.168.1.250:22`, so this is
     last-successful evidence rather than fresh current-state confirmation
   - production account flow remains unverified
-- Local code validation is green as of 2026-06-26:
+- Historical local code validation as of 2026-06-26:
   - `python -m compileall -q src tests web scripts migrations`
   - `pytest -q tests\web` with local `TEST_DATABASE_URL` -> 50 passed
   - `pytest -q tests\unit\engine\test_flow_failure_paths.py tests\unit\engine\test_game_engine_turn.py tests\unit\engine\test_game_engine_setup.py tests\unit\engine\test_game_engine_state.py` -> 56 passed
@@ -185,6 +219,8 @@ These are safe local governance slices when production approval is deferred.
    - continue reducing duplication inside `WebGameService`
    - avoid changing API schema or persistence behavior
    - prefer private helpers before router/module splits
+   - completed local slice: fixed-choice `/choice` parsing and
+     `death_summary` live/stored helper split
 3. PostgreSQL 数据层共享 helper 收敛（Option C 已删除 SQLite 双轨，仅保留 PostgreSQL 单后端）：
    - 当前 `database_postgres.py` 的 test-only auto-DDL 已拆到 `database_postgres_schema.py`
    - 继续抽取 catalog row shaping / progress summary 等共享 helper（仅 `database_postgres.py`）
@@ -193,6 +229,13 @@ These are safe local governance slices when production approval is deferred.
    - continue splitting `CharacterCreatePage` and style files only around
      verified UI workflows
    - use Chrome smoke after visual changes
+5. Story-line catalog design:
+   - first database-backed story-line version should reuse
+     `catalog_story_seeds` for three curated main arcs
+   - opening binds each run to one story seed; normal turns may vary but should
+     stay inside that arc's broad direction
+   - do not add Alembic/API changes until the story-seed contract is written
+     and reviewed
 
 ## P2: Cleanup And Documentation
 

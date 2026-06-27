@@ -4,11 +4,12 @@ import type { Session } from "../lib/api";
 import {
   manualAttributeBudget,
 } from "../lib/catalog";
-import { colorLabel } from "../lib/util";
 import { CatalogGroup } from "../components/CatalogGroup";
 import { AttributeAllocator } from "../components/AttributeAllocator";
 import { useCatalogs } from "../hooks/useCatalogs";
 import { useCharacterFormReducer } from "../hooks/useCharacterFormReducer";
+
+type FateGroupKey = "talent" | "root" | "family";
 
 export function CharacterCreatePage({
   session,
@@ -22,7 +23,7 @@ export function CharacterCreatePage({
   onBack: () => void;
 }) {
   const catalogs = useCatalogs();
-  const [openFateGroup, setOpenFateGroup] = useState<"talent" | "root" | "family">("talent");
+  const [openFateGroup, setOpenFateGroup] = useState<FateGroupKey | "">("talent");
   const {
     state,
     manualTalents,
@@ -33,9 +34,6 @@ export function CharacterCreatePage({
     randomFamilies,
     attrTotal,
     remainingPoints,
-    selectedTalent,
-    selectedRoot,
-    selectedFamily,
     rollRandom,
     setChoiceMode,
     setTalent,
@@ -49,7 +47,7 @@ export function CharacterCreatePage({
 
   const fateGroups = [
     {
-      key: "talent" as const,
+      key: "talent" as FateGroupKey,
       title: "天赋",
       description: "影响修行节奏、突破叙事与关键事件。",
       manual: manualTalents,
@@ -59,7 +57,7 @@ export function CharacterCreatePage({
       icon: <Sparkles size={18} />,
     },
     {
-      key: "root" as const,
+      key: "root" as FateGroupKey,
       title: "灵根",
       description: "影响境界突破、机缘类型与修炼取向。",
       manual: manualRoots,
@@ -68,7 +66,7 @@ export function CharacterCreatePage({
       onSelect: setSpiritRoot,
     },
     {
-      key: "family" as const,
+      key: "family" as FateGroupKey,
       title: "家世",
       description: "决定出生叙事、初始关系与外界牵连。",
       manual: manualFamilies,
@@ -97,7 +95,7 @@ export function CharacterCreatePage({
     <section className="character-page">
       <form className="character-form creation-layout" onSubmit={submit}>
         <div className="creation-hero-bar">
-          <a className="brand creation-brand" href="https://www.jiayp2917.xyz/" target="_blank" rel="noreferrer">jiayp</a>
+          <a className="page-brand creation-brand" href="https://www.jiayp2917.xyz/" target="_blank" rel="noreferrer">jiayp</a>
           <button className="plain-btn" type="button" onClick={onBack}><Home size={16} />返回首页</button>
         </div>
 
@@ -142,10 +140,10 @@ export function CharacterCreatePage({
               disabled={choiceMode === "random"}
               icon={group.icon}
               open={openFateGroup === group.key}
-              onToggle={() => setOpenFateGroup(group.key)}
+              onToggle={() => setOpenFateGroup((current) => current === group.key ? "" : group.key)}
             />
           ))}
-          <p className="unlock-note">当前：{colorLabel(selectedTalent || { name: talent })} · {colorLabel(selectedRoot || { name: spiritRoot })} · {colorLabel(selectedFamily || { name: familyBackground })}</p>
+          <p className="unlock-note">当前：{talent} · {spiritRoot} · {familyBackground}</p>
         </section>
 
         <section className="creation-panel attribute-panel">

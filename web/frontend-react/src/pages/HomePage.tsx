@@ -18,10 +18,6 @@ export function HomePage({
   return (
     <section className="home">
       <div className="home-shell">
-        <div className="home-brandline" aria-hidden="true">
-          <span>jiayp</span>
-          <i />
-        </div>
         <div className="hero">
           <h1>文字修仙模拟器<span className="seal">修</span></h1>
           <div className="hero-rule" aria-hidden="true" />

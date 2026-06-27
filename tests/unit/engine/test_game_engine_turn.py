@@ -227,6 +227,12 @@ class TestGameEngineHandleAction:
         assert calls == ["narrator"]
         assert narratives and "因果残影" in narratives[-1][0]
         assert not any("状态栏为准" in msg for msg in infos)
+        assert engine.game_session.turn_history[-1]["turn"] == 1
+        assert engine.game_session.turn_history[-1]["input"] == "修炼"
+        assert engine.game_session.turn_history[-1]["delta"]["meta"]["local_story_fallback"] is True
+        assert engine.game_session.turn_history[-1]["delta"]["meta"]["elapsed_years"] == 0
+        assert "turn_summary" not in engine.game_session.turn_history[-1]["delta"]["meta"]
+        assert engine.game_session.turn_history[-1]["local_story"]["story_id"]
 
     def test_incomplete_model_output_is_reported_separately_from_request_failure(self, monkeypatch) -> None:
         monkeypatch.setenv("AGNES_API_KEY", "sk-test-1234567890")
@@ -252,7 +258,7 @@ class TestGameEngineHandleAction:
         assert engine.game_session.local_story_active is True
         assert len(engine.game_session.last_choices) == 4
 
-    def test_narrative_claim_without_structured_delta_is_rejected(self, monkeypatch) -> None:
+    def test_narrative_claim_without_structured_delta_settles_rule_turn(self, monkeypatch) -> None:
         monkeypatch.setenv("AGNES_API_KEY", "sk-test-1234567890")
         engine = GameEngine()
         engine.game_session.game_started = True
@@ -283,6 +289,10 @@ class TestGameEngineHandleAction:
         assert not hasattr(engine.game_session, "mp")
         assert narratives == []
         assert any("状态栏为准" in msg for msg in infos)
+        assert engine.game_session.turn_count == 1
+        assert engine.game_session.turn_history[-1]["turn"] == 1
+        assert engine.game_session.turn_history[-1]["narrative"] == ""
+        assert "elapsed_years" in engine.game_session.turn_history[-1]["delta"]["meta"]
 
     def test_notice_board_description_is_not_treated_as_claimed_reward(self, monkeypatch) -> None:
         monkeypatch.setenv("AGNES_API_KEY", "sk-test-1234567890")
@@ -691,19 +701,26 @@ class TestBreakthroughRouting:
         engine.game_session.game_started = True
         assert engine._parse_breakthrough_action("突破") is True
 
-    def test_handle_action_routes_breakthrough(self, monkeypatch) -> None:
-        """Typing "尝试突破" routes to attempt_breakthrough, not narrator."""
+    def test_ineligible_breakthrough_choice_settles_as_ordinary_turn(self, monkeypatch) -> None:
+        """A premature breakthrough button must not return success with no turn."""
         monkeypatch.setenv("AGNES_API_KEY", "sk-test-1234567890")
         engine = GameEngine()
         infos: list[str] = []
         engine.on_info = lambda msg: infos.append(msg)
+        call_log: list[str] = []
 
         with _patch_turn_runner():
             engine.new_game("许满")
 
-        # Character is at stage 1, not max — breakthrough should be ineligible.
-        engine.handle_action("尝试突破")
-        assert any("需达到" in m for m in infos) or any("未满" in m for m in infos)
+        # Character is at stage 1, not max. The action still consumes a normal
+        # turn so the web API cannot return HTTP 200 with unchanged turn_count.
+        with _patch_turn_runner(call_log):
+            engine.handle_action("尝试突破")
+
+        assert any("继续推进" in m for m in infos)
+        assert call_log == ["narrator", "judge"]
+        assert engine.game_session.turn_count == 1
+        assert engine.game_session.turn_history[-1]["turn"] == 1
 
 
 class TestBreakthroughPreparationGate:

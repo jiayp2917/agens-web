@@ -15,8 +15,6 @@ export const rarityToColor = (mark?: string) => {
   if (m === "红" || m === "神话") return "红";
   return "白";
 };
-// Render a catalog item label using the unified color palette.
-export const colorLabel = (item: CatalogItem) => `${item.name} · ${rarityToColor(item.rarity || item.grade)}`;
 export const toPositiveNumber = (value: unknown, fallback: number) => {
   const number = Number(value);
   return Number.isFinite(number) && number > 0 ? number : fallback;

@@ -1,5 +1,27 @@
 # Alpha Review And Lessons
 
+## 2026-06-27 Local Main-Flow Addendum
+
+- A visible local Chrome validation found the build was only partially playable:
+  the run reached `turn_count=12`, then repeated HTTP 200 responses without
+  turn progression. The same class of issue also appeared after turn 1 on a
+  premature breakthrough-related choice.
+- Local code has now been updated so ineligible breakthrough-intent choices
+  settle as ordinary turns and narrative/state mismatch rejection no longer
+  creates missing `game_turns` rows.
+- Current automated validation after the fix: `compileall -q src tests web
+  scripts migrations`, `pytest -q tests\web` -> `53 passed`, full `pytest -q`
+  -> `414 passed, 1 xfailed`, and frontend `npm.cmd run build`.
+- The xfail is
+  `tests/integration/test_e2e_real_llm.py::test_e2e_new_game_action_save_load`
+  for an upstream real-LLM HTTP 500 response; fallback or upstream failure
+  still cannot be treated as live-model acceptance.
+- This does not replace player acceptance. Re-run the visible Chrome 20-turn
+  live-model flow, including local PostgreSQL account save/load, before calling
+  the version "playable without obvious main-flow bugs".
+- Production account flow and production live-model success remain separate
+  server-thread gates; fallback responses still fail live-model acceptance.
+
 记录日期：2026-06-21
 
 本文记录本轮对“可给他人受控游玩”的问题确认、已修内容、成功/失败经验和后续执行规则。本文不包含真实 API Key、数据库密码、Session Secret、邀请码或生产连接串。

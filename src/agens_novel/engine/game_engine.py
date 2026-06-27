@@ -43,14 +43,8 @@ from .start_flow import (
 from .turn_runner import run_turn_sync
 from .turn_flow import TurnFlow
 from .render import (
-    format_equipment,
-    format_inventory,
     format_log,
-    format_map,
-    format_quests,
     format_realm,
-    format_skills,
-    format_status_card,
 )
 
 log = logging.getLogger(__name__)
@@ -262,9 +256,10 @@ class GameEngine:
             self._turn_flow.handle_local_story_action(text)
             return
 
-        # Route natural-language breakthrough intent before event resolution
-        # so "突破" mid-event is still treated as breakthrough.
-        if self._parse_breakthrough_action(text):
+        # Route natural-language breakthrough intent only when the realm rules
+        # allow a real breakthrough. Otherwise the chosen button still settles
+        # as an ordinary turn instead of returning 200 with no progression.
+        if self._should_route_breakthrough_action(text):
             self.attempt_breakthrough()
             return
 
@@ -302,6 +297,16 @@ class GameEngine:
             "准备突破",
         )
         return any(kw in compact for kw in keywords)
+
+    def _should_route_breakthrough_action(self, text: str) -> bool:
+        if not self._parse_breakthrough_action(text):
+            return False
+        can, reason = self.realm_system.can_attempt_breakthrough(self.game_session)
+        if can:
+            return True
+        if reason:
+            self._emit("on_info", f"{reason} 本次行动按修炼/探索继续推进。")
+        return False
 
     def _resolve_choice_input(self, text: str) -> str | None:
         """Map A/B/C/D or 1/2/3/4 input to the current model choice.
@@ -391,29 +396,8 @@ class GameEngine:
 
     # ─── Read-only queries ─────────────────────────────────────────────
 
-    def get_status(self) -> str:
-        return format_status_card(self.game_session)
-
-    def get_inventory(self) -> str:
-        return format_inventory(self.game_session)
-
-    def get_skills(self) -> str:
-        return format_skills(self.game_session)
-
-    def get_map(self) -> str:
-        return format_map(self.game_session)
-
-    def get_quests(self) -> str:
-        return format_quests(self.game_session)
-
     def get_log(self, count: int = 5) -> str:
         return format_log(self.game_session, count)
-
-    def get_realm_info(self) -> str:
-        return format_realm(self.game_session)
-
-    def get_equipment_info(self) -> str:
-        return format_equipment(self.game_session)
 
     # ─── Internal helpers ──────────────────────────────────────────────
 

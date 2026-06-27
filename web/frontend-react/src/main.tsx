@@ -112,7 +112,7 @@ function App() {
   return (
     <main className={`app view-${view}`} style={assetVars}>
       <header className="topbar">
-        <a className="brand" href="https://www.jiayp2917.xyz/" target="_blank" rel="noreferrer">
+        <a className="brand page-brand" href="https://www.jiayp2917.xyz/" target="_blank" rel="noreferrer">
           jiayp
         </a>
         <div className="topbar-actions">

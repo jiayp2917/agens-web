@@ -1,5 +1,19 @@
 # 游戏模式全流程细则（v5）
 
+## 2026-06-27 Implementation Note
+
+- A/B/C/D remains the only product input contract. `/choice` accepts
+  `choice_index` or A/B/C/D letters; arbitrary free-text `choice` requests are
+  not part of game-mode v5 and return HTTP 400.
+- Breakthrough text inside a choice is not enough to bypass realm rules. If
+  breakthrough is ineligible, the selected button resolves as an ordinary
+  rule-settled turn so the player is not stuck on HTTP 200 with no progress.
+- Model narrative is not authoritative. When narrative claims gains or realm
+  changes without matching structured `state_delta`, the narrative/state is
+  rejected but the base rule settlement still records a complete turn.
+- Acceptance for "playable without obvious main-flow bug" still requires a new
+  visible-Chrome 20-turn live-model run after this fix.
+
 > 状态：**v5 已实现 / 阶段 7/8 联调收尾中**。游戏模式核心规则已切换到 A/B/C/D 四按钮、无 HP/MP、事件判定战斗、寿元寿命表、六维属性和动态流逝年数；服务层、迁移和 React 入口仍需按本表持续验收。
 > 文档定位：游戏模式的产品 spec + 技术实现规格，是“游戏模式”的单一事实来源。
 >

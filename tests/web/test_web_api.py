@@ -150,7 +150,8 @@ def test_web_api_minimum_game_flow(tmp_path: Path, monkeypatch) -> None:
             json={"action": "继续请教"},
         ).json()
         assert acted["turn_count"] == 2
-        assert acted["panels"]["status"]
+        assert list(acted["panels"]) == ["status_bar"]
+        assert acted["panels"]["status_bar"]
 
         with app.state.service.db.engine.connect() as conn:
             turn_count = conn.execute(
@@ -174,6 +175,182 @@ def test_web_api_minimum_game_flow(tmp_path: Path, monkeypatch) -> None:
             "runs_completed": 1,
             "ascension_count": 0,
         }
+
+
+def test_choice_endpoint_rejects_free_text_and_accepts_choice_letter(
+    tmp_path: Path,
+    monkeypatch,
+) -> None:
+    monkeypatch.setenv("AGNES_API_KEY", "sk-test-web-api")
+    monkeypatch.setenv("SESSION_COOKIE_SECURE", "0")
+    app = create_app()
+    client = TestClient(app)
+
+    _create_invite(app)
+    _register(client)
+    session_id = client.post("/api/sessions", json={}).json()["session_id"]
+
+    with patch("agens_novel.engine.game_engine.run_turn_sync", side_effect=_runner):
+        client.post(f"/api/sessions/{session_id}/start", json={"char_name": "fixed-choice"})
+
+        rejected = client.post(
+            f"/api/sessions/{session_id}/choice",
+            json={"choice": "free typed action"},
+        )
+        assert rejected.status_code == 400
+        assert client.get(f"/api/sessions/{session_id}").json()["turn_count"] == 0
+
+        accepted = client.post(
+            f"/api/sessions/{session_id}/choice",
+            json={"choice": "A"},
+        )
+        assert accepted.status_code == 200
+        assert accepted.json()["turn_count"] == 1
+
+
+def test_ineligible_breakthrough_choice_advances_and_records_turn(
+    tmp_path: Path,
+    monkeypatch,
+) -> None:
+    monkeypatch.setenv("AGNES_API_KEY", "sk-test-web-api")
+    monkeypatch.setenv("SESSION_COOKIE_SECURE", "0")
+    app = create_app()
+    client = TestClient(app)
+
+    _create_invite(app)
+    _register(client)
+    session_id = client.post("/api/sessions", json={}).json()["session_id"]
+    client.post(f"/api/sessions/{session_id}/start", json={"char_name": "breakthrough-button"})
+    app.state.service.runners[session_id].engine.game_session.last_choices = [
+        "尝试突破",
+        "外出历练",
+        "检查经脉",
+        "随缘而行",
+    ]
+
+    with patch("agens_novel.engine.game_engine.run_turn_sync", side_effect=_runner):
+        chosen = client.post(
+            f"/api/sessions/{session_id}/choice",
+            json={"choice": "A"},
+        )
+
+    assert chosen.status_code == 200
+    body = chosen.json()
+    assert body["turn_count"] == 1
+    assert body["fallback_prompt"]["active"] is False
+    with app.state.service.db.engine.connect() as conn:
+        row = conn.execute(
+            text(
+                """
+                SELECT count(*) AS c, max(turn_no) AS max_turn
+                FROM game_turns
+                WHERE run_id = :run_id
+                """
+            ),
+            {"run_id": session_id},
+        ).mappings().one()
+    assert dict(row) == {"c": 1, "max_turn": 1}
+
+
+def test_mismatched_narrative_still_records_contiguous_turns(
+    tmp_path: Path,
+    monkeypatch,
+) -> None:
+    monkeypatch.setenv("AGNES_API_KEY", "sk-test-web-api")
+    monkeypatch.setenv("SESSION_COOKIE_SECURE", "0")
+    app = create_app()
+    client = TestClient(app)
+
+    _create_invite(app)
+    _register(client)
+    session_id = client.post("/api/sessions", json={}).json()["session_id"]
+    client.post(f"/api/sessions/{session_id}/start", json={"char_name": "mismatch-flow"})
+
+    def mismatch_once(agent_name: str, *_args, **_kwargs):
+        if agent_name == "narrator":
+            return _narrator_result("你获得一枚清灵丹，又习得云水诀。")
+        if agent_name == "judge":
+            return _judge_result()
+        return _runner(agent_name)
+
+    with patch("agens_novel.engine.game_engine.run_turn_sync", side_effect=mismatch_once):
+        first = client.post(
+            f"/api/sessions/{session_id}/choice",
+            json={"choice": "A"},
+        ).json()
+    with patch("agens_novel.engine.game_engine.run_turn_sync", side_effect=_runner):
+        second = client.post(
+            f"/api/sessions/{session_id}/choice",
+            json={"choice": "A"},
+        ).json()
+
+    assert first["turn_count"] == 1
+    assert second["turn_count"] == 2
+    assert all(item.get("name") != "清灵丹" for item in second["character"]["inventory"])
+    with app.state.service.db.engine.connect() as conn:
+        rows = conn.execute(
+            text(
+                """
+                SELECT turn_no
+                FROM game_turns
+                WHERE run_id = :run_id
+                ORDER BY turn_no
+                """
+            ),
+            {"run_id": session_id},
+        ).scalars().all()
+    assert rows == [1, 2]
+
+
+def test_local_story_fallback_records_turn(
+    tmp_path: Path,
+    monkeypatch,
+) -> None:
+    monkeypatch.setenv("AGNES_API_KEY", "sk-test-web-api")
+    monkeypatch.setenv("SESSION_COOKIE_SECURE", "0")
+    app = create_app()
+    client = TestClient(app)
+
+    _create_invite(app)
+    _register(client)
+    session_id = client.post("/api/sessions", json={}).json()["session_id"]
+    client.post(f"/api/sessions/{session_id}/start", json={"char_name": "fallback-flow"})
+
+    def incomplete_narrator(agent_name: str, *_args, **_kwargs):
+        if agent_name == "narrator":
+            return {
+                "narrative": "你获得一枚清灵丹。",
+                "state_delta": {},
+                "choices": [],
+                "llm_error": "",
+            }
+        return _runner(agent_name)
+
+    with patch("agens_novel.engine.game_engine.run_turn_sync", side_effect=incomplete_narrator):
+        chosen = client.post(
+            f"/api/sessions/{session_id}/choice",
+            json={"choice": "A"},
+        )
+
+    assert chosen.status_code == 200
+    body = chosen.json()
+    assert body["turn_count"] == 1
+    assert body["fallback_prompt"]["active"] is True
+    with app.state.service.db.engine.connect() as conn:
+        row = conn.execute(
+            text(
+                """
+                SELECT turn_no, elapsed_years, event_kind, state_delta
+                FROM game_turns
+                WHERE run_id = :run_id
+                """
+            ),
+            {"run_id": session_id},
+        ).mappings().one()
+    assert row["turn_no"] == 1
+    assert row["elapsed_years"] == 0
+    assert row["event_kind"] == "fallback"
+    assert row["state_delta"]["meta"]["local_story_fallback"] is True
 
 
 def test_web_save_load_restores_snapshot_and_chat_history(tmp_path: Path, monkeypatch) -> None:

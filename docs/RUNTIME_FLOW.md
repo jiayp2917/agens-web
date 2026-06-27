@@ -1,5 +1,24 @@
 # Web 运行流程
 
+## 2026-06-27 Choice And Turn Persistence Update
+
+- The React product path submits fixed A/B/C/D choices through
+  `POST /api/sessions/{id}/choice`; free-text `choice` payloads are rejected.
+- If a selected choice contains breakthrough intent but `RealmSystem` says
+  breakthrough is not available, `GameEngine.handle_action()` now continues
+  the selection as an ordinary settled turn. The API must not report success
+  with unchanged `turn_count`.
+- If model narrative claims a reward, realm change, skill, quest, or map update
+  without matching structured `state_delta`, `TurnFlow` discards the untrusted
+  narrative/state, applies the base rule settlement, and records the turn.
+- For registered users, `_record_settled_turn()` should now see a matching
+  latest `turn_history` entry and persist contiguous `game_turns` rows for
+  these repaired paths.
+- Local validation after this update used PostgreSQL via `TEST_DATABASE_URL`:
+  `tests\web` -> `53 passed`, full `pytest -q` -> `414 passed, 1 xfailed`.
+  The xfail is the real-LLM integration case for an upstream HTTP 500, not a
+  local game-flow regression.
+
 > **当前实现状态：v5 已实现 / 阶段 7/8 联调收尾中。** React 主入口已经切到 A/B/C/D 四按钮固定语义：A 稳妥、B 机遇、C 风险、D 气运；无自由文本主入口，无 HP/MP 常驻 UI。`docs/GAME_MODE_SPEC.md` 是当前游戏模式规格和验收来源。
 
 本文记录当前 Web-only 运行链路。产品入口是浏览器 UI + FastAPI 后端，不再包含移动端打包或设备验证路径。

@@ -110,6 +110,10 @@ button:focus-visible {
   pointer-events: none;
 }
 
+.app.view-home > .topbar {
+  justify-content: flex-end;
+}
+
 .topbar > * {
   pointer-events: auto;
 }
@@ -134,6 +138,28 @@ button:focus-visible {
 }
 
 .brand::after {
+  content: "";
+  display: block;
+  width: 72px;
+  height: 8px;
+  margin-top: 7px;
+  background: linear-gradient(90deg, rgba(32, 27, 21, 0.4), transparent 72%);
+  border-top: 1px solid rgba(32, 27, 21, 0.24);
+}
+
+.page-brand {
+  position: fixed;
+  top: 24px;
+  left: clamp(20px, 3vw, 56px);
+  z-index: 35;
+  color: var(--ink);
+  font-size: 34px;
+  font-weight: 600;
+  line-height: 1;
+  text-decoration: none;
+}
+
+.page-brand::after {
   content: "";
   display: block;
   width: 72px;

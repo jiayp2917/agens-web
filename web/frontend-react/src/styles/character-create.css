@@ -25,10 +25,6 @@
   min-height: 52px;
 }
 
-.creation-brand {
-  font-size: 34px;
-}
-
 .creation-panel {
   min-height: 0;
   display: grid;
@@ -206,11 +202,6 @@
   white-space: nowrap;
 }
 
-.selected-pill em {
-  font-style: normal;
-  font-weight: 700;
-}
-
 .catalog-chevron {
   width: 28px;
   height: 28px;
@@ -239,30 +230,34 @@
 }
 
 .catalog-row {
-  grid-template-columns: 20px auto minmax(0, 1fr) auto;
+  grid-template-columns: 20px auto minmax(0, 1fr);
   min-height: 54px;
   padding: 8px 10px;
   border-radius: var(--radius-sm);
 }
 
 .selection-check {
-  color: var(--jade);
-}
-
-.selection-check.empty {
   width: 17px;
   height: 17px;
+  display: inline-grid;
+  place-items: center;
+  border: 1px solid rgba(95, 85, 72, 0.36);
+  border-radius: 50%;
+  background: rgba(255, 250, 240, 0.72);
+}
+
+.catalog-row.is-selected .selection-check::after {
+  content: "";
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  background: var(--ink);
 }
 
 .catalog-row span:not(.rarity-dot) {
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
-}
-
-.catalog-row em {
-  font-style: normal;
-  font-weight: 700;
 }
 
 .rarity-dot {

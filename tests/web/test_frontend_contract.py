@@ -86,6 +86,7 @@ def test_react_homepage_buttons_have_handlers() -> None:
     assert "D 写下自己的行动" not in source
     assert "requireAuth" not in source
     assert 'href="https://www.jiayp2917.xyz/"' in source
+    assert 'className="brand page-brand"' in source
     assert "BgmToggle" in source
     assert 'assetUrl("assets/audio/bgm.flac")' in source
     assert "agens web" not in source.lower()
@@ -149,8 +150,15 @@ def test_react_character_creation_uses_catalogs_and_game_mode() -> None:
     assert "影响境界突破、机缘类型与修炼取向。" in source
     assert "决定出生叙事、初始关系与外界牵连。" in source
     assert "openFateGroup" in source
+    assert 'useState<FateGroupKey | "">("talent")' in source
+    assert 'current === group.key ? "" : group.key' in source
     assert "catalog-list" in source
     assert "selection-check" in source
+    assert "colorOrder" in source
+    assert "sortedByColor(items)" in source
+    assert "<em" not in source
+    assert "✓" not in source
+    assert "colorLabel" not in source
     assert 'className="attr-meter"' in source
     assert 'role="meter"' in source
     assert "aria-valuenow={value}" in source
@@ -165,7 +173,6 @@ def test_react_character_creation_uses_catalogs_and_game_mode() -> None:
     assert ".home-actions button svg" in css and "position: absolute;" in css
     # v5 cleanup: dropdown labels use the unified 6-color palette, not legacy rarity strings.
     assert "rarityToColor" in source
-    assert "colorLabel" in source
     for color in ("白", "绿", "蓝", "紫", "橙", "红"):
         assert f'"{color}"' in source, f"missing palette color {color} in util.ts"
     for slug in ("white", "green", "blue", "purple", "orange", "red"):
@@ -192,6 +199,7 @@ def test_react_game_page_has_escape_route_and_stable_meters() -> None:
     assert "realmLifespanCap" in source
     assert "value={remainingLifespan}" in source
     assert "ChronicleItem" in source
+    assert "chronicle-age" in source
     assert "buildChronicleRecords" in source
     assert "getCurrentChronicleYear" in source
     assert "cleanChronicleText" in source
@@ -201,13 +209,24 @@ def test_react_game_page_has_escape_route_and_stable_meters() -> None:
     assert "cleanChoiceText" in source
     assert "往事时间轴" in source
     assert ".stat-meter" in css
+    assert ".page-brand" in css
+    assert ".chronicle-age" in css
     assert "height: 100dvh;" in css
     assert "overflow: hidden;" in css
     assert "grid-template-rows: auto minmax(0, 1fr) auto auto;" in css
     assert "grid-template-columns: 58px minmax(0, 1fr) auto;" in css
+    assert "tool-grid" not in source
+    assert "panel-summary" not in source
+    assert "panel-output" not in source
+    assert "timeline-pin" not in source
+    assert "chronicle-card" not in source
+    assert "<dt>位置</dt>" not in source
+    assert 'className="story-log chronicle-log"' in source
     # v5 cleanup: lifespan reads the remaining value, not the realm cap; UI shows remaining/max.
     assert "character.remaining_lifespan" in source
-    assert "{remainingLifespan}/{lifespanMax}" in source
+    assert "value={remainingLifespan}" in source
+    assert "max={lifespanMax}" in source
+    assert "{remainingLifespan}</strong>/{lifespanMax}" in source
     for removed in ("经验", "感悟", "灵石", "experience", "experience_to_next", "insight", "gold"):
         assert removed not in source
 

@@ -6,6 +6,8 @@
 
 > **2026-06-26 更新**：本地 Web/API 测试已接入安全本地 PostgreSQL 测试库，`TEST_DATABASE_URL=postgresql+psycopg://agens_test@127.0.0.1:55432/agens_web_test` 时 `tests\web` 真实执行并通过 `50 passed`，全量 `pytest -q` 为 `415 passed`。当前事实口径为 PostgreSQL-only；下方 2026-06-24 的 SQLite smoke 仅是历史证据，不代表当前运行方式。
 
+> **2026-06-27 更新**：本地主流程/UI 面板清理后的最新验证为 `compileall -q src tests web scripts migrations` 通过，`pytest -q tests\web` 为 `54 passed`，全量 `pytest -q` 为 `416 passed`，前端 `npm.cmd run build` 通过。本地自动化验证不代表 production live-model 成功；fallback 仍不能算 live-model 验收。
+
 ## 当前边界
 
 - 产品入口是浏览器 Web UI + FastAPI 后端。
@@ -33,15 +35,14 @@
 最近一次本地验证结果：
 
 - `.\.venv\Scripts\python.exe -m compileall -q src tests web scripts migrations`：通过。
-- `.\.venv\Scripts\python.exe -m pytest -q tests\web`（设置本地 `TEST_DATABASE_URL`）：`50 passed`。
+- `.\.venv\Scripts\python.exe -m pytest -q tests\web`（设置本地 `TEST_DATABASE_URL`）：`54 passed`。
 - `.\.venv\Scripts\python.exe -m pytest -q tests\unit\engine\test_flow_failure_paths.py tests\unit\engine\test_game_engine_turn.py tests\unit\engine\test_game_engine_setup.py tests\unit\engine\test_game_engine_state.py`：`56 passed`。
 - `.\.venv\Scripts\python.exe -m pytest -q tests\unit\game\test_database_common.py tests\unit\game\test_game_turns_storage.py tests\web\test_web_api.py::test_postgres_database_url_smoke`：`13 passed`。
-- `.\.venv\Scripts\python.exe -m pytest -q`（设置本地 `TEST_DATABASE_URL`）：`415 passed`。
-- `cd D:\chat\agens-web\web\frontend-react; npm.cmd run build`：通过，1603 modules / 24.34 kB CSS / 190.95 kB JS。
+- `.\.venv\Scripts\python.exe -m pytest -q`（设置本地 `TEST_DATABASE_URL`）：`416 passed`。
+- `cd D:\chat\agens-web\web\frontend-react; npm.cmd run build`：通过，1603 modules / 23.69 kB CSS / 189.87 kB JS。
 - `.\.venv\Scripts\python.exe -m pytest -q tests\web\test_frontend_contract.py tests\web\test_web_api.py::test_session_routes_map_service_errors`：`24 passed`。
 - `.\.venv\Scripts\python.exe -m pytest -q tests\web\test_web_api.py::test_web_api_minimum_game_flow tests\web\test_web_api.py::test_session_routes_map_service_errors`：`9 passed`，覆盖 `/choice` 与 `/action` 共用回合推进路径。
-- `curl.exe -i --max-time 10 https://game.jiayp2917.xyz/api/health`：HTTP 200，`{"status":"ok"}`。
-- `curl.exe -i --max-time 10 https://game.jiayp2917.xyz/api/catalog/talents`：HTTP 200，公网可读 10 条 talent seed。
+- 生产公网 health/catalog curl 属于服务器只读验证证据，不计入本地自动化验收；详见下方生产状态段。
 - Chrome DevTools MCP：桌面 1280x900 与移动 375x812 均可完成访客新游戏、角色创建、进入游戏、模型失败兜底、继续本局；修复后移动截图保存在 `D:\2917\agens-web-mobile-smoke-after-fix.png`。
 - Chrome DevTools MCP：375x812 随机角色属性复核通过，六项属性均为只读 meter，`aria-valuenow` 与可见输出一致。
 - Chrome DevTools MCP（2026-06-24 历史证据）：桌面本地账号流当时使用临时 SQLite 和本地一次性邀请码完成注册/登录、账号新局、保存 `slot_1`、读取 `slot_1`，`/api/saves` 返回 `slot_1` / `存档测试` / `turn_count=0`。Option C 后的当前 PostgreSQL 复验见下方 2026-06-26 证据。
@@ -97,7 +98,7 @@ Browser UI
 - Web 前端只能通过 API 调用游戏逻辑。
 - `GameEngine` 是唯一游戏逻辑入口。
 - 结构化状态只通过 `GameSession.apply_delta()`、境界系统和突破逻辑生效。
-- 背包、功法、地图、任务等面板只能读取 Session/Engine 输出，不自行伪造。
+- Web 产品入口不再展示状态/背包/功法/地图/任务/境界工具面板；对应运行时状态字段仅保留给规则、奖励、兜底和旧存档兼容使用，前端不得自行伪造。
 
 ## 瘦身清单
 
@@ -130,7 +131,7 @@ Browser UI
 | 优先级 | 问题 | 处理方向 |
 | --- | --- | --- |
 | P1 | `game_engine.py` 体量过大，承担回合、突破、兜底、存档、模型异常等多类职责。 | 先稳定 Web 服务接口，后续拆出模型失败处理、本地故事 runner、突破流程和存读档调度。 |
-| P1 | 叙事与状态仍可能不同步，表现为文字获得/升层但背包、功法、状态未落账。 | 收紧 Narrator delta、Judge 修正、`apply_delta()` 和 Web 状态响应。 |
+| P1 | 叙事与规则状态仍可能不同步，表现为文字获得道具/功法或升层但权威 `GameSession` 未落账。 | 收紧 Narrator delta、Judge 修正、`apply_delta()` 和 Web 状态响应。 |
 | P1 | 模型返回文本但缺少结构化选项时，容易进入兜底或阻断流程。 | 保持格式修复重试，并在 API 响应中区分请求失败、输出不完整、审核失败和本地兜底。 |
 | P2 | 本地故事兜底只达到最小可玩。 | 改成数据文件化故事节点，逐步扩展多套故事。 |
 | P2 | Web 多用户会引入会话隔离和密钥安全问题。 | API 层统一鉴权、限流、脱敏日志和 per-user session 存储。 |
@@ -140,7 +141,7 @@ Browser UI
 | P2 | PostgreSQL 设计和 Alembic 迁移已经补齐 Alpha 必需表，但生产仍需索引评审、备份恢复和回滚演练。 | 设置 `TEST_DATABASE_URL` 跑空库迁移和账号游玩链路；生产运行时 `AGENS_ENV=production` 自动拒绝 `AGENS_PG_AUTO_DDL=1`；安排维护窗口做回滚演练。 |
 | P2 | 访客局只在单进程内存中，容器重启、多 worker 或多副本会丢失。 | Alpha 阶段明确提示；正式多人部署前引入共享会话存储或只允许账号局跨进程恢复。 |
 | P2 | 匿名访客仍可能消耗模型额度。 | 增加访客日限额、IP/设备限额、模型预算保护和边缘层限流。 |
-| P2 | 本地 PostgreSQL 测试库需要明确启动/清理脚本，避免后续 agent 因缺少 `TEST_DATABASE_URL` 误判为跳过或假绿。 | 将当前 `.tmp` 独立 PG 测试库启动方式固化为脚本或文档；默认不写真实密码。 |
+| P2 | 本地 PostgreSQL 测试库需要明确启动/清理脚本，避免后续 agent 因缺少 `TEST_DATABASE_URL` 误判为跳过或假绿。2026-06-27 验证前曾遇到 `.tmp\pg-test-20260626-55432` stale `postmaster.pid`，需先确认无 PG 进程再移除并 `pg_ctl start`。 | 将当前 `.tmp` 独立 PG 测试库启动/恢复方式固化为脚本或文档；默认不写真实密码。 |
 | P3 | 测试目录需继续从旧产品分类迁移到 Web 分类。 | 保留核心测试，新增 API 和浏览器测试，删除旧 UI 契约测试。 |
 | P2 | React 局部组件仍偏重，后续 UI 迭代容易互相影响；`GamePage` 编年史计算已先抽到 `lib/chronicle.ts`。 | P2 已拆分认证、首页、角色创建、游戏页、设置/存档弹窗、模型设置面板、存档槽列表、BGM 和终局页组件；下一步按需继续抽 `CharacterCreatePage` 与 `styles.css`。 |
 
@@ -165,11 +166,20 @@ $env:TEST_DATABASE_URL = "postgresql+psycopg://agens_test@127.0.0.1:55432/agens_
 ## 2026-06-23 内测收尾：UI 紧凑 + 寿元语义 + 颜色体系 + 死代码清理
 
 - 首页去冗余：删除 eyebrow 段和 A/B/C/D 描述段；品牌 `jiayp2917` → `jiayp`；删除 `.brand::after` 玉色绿点；`.home-preview` 高度从 470px 降到 360px。1080p 桌面端首屏内可见（无强滚动）。
-- 角色创建下拉切换到 6 色（白/绿/蓝/紫/橙/红）字 + 同色色点：`util.ts` 新增 `rarityToColor` + `colorLabel`，`styles.css` 新增 `.rarity-white/-green/-blue/-orange` 并复用既有 `.rarity-purple/-red`。
+- 角色创建下拉切换到 6 色（白/绿/蓝/紫/橙/红）体系 + 同色色点：`util.ts` 保留 `rarityToColor`，前端不再把颜色字作为尾随文本展示。
 - 游戏页选项按钮压缩：`.choice-list button` 76px → 60px，徽标 32px → 28px；移动端 58px → 56px；叙事面板阅读权重高于按钮。
 - 寿元语义修正：`GamePage` 读 `character.remaining_lifespan`（fallback `lifespan - age`，`Math.min` 兜底）；面板摘要改为 `{remainingLifespan}/{lifespanMax} 年`，与 `StatLine` 一致。
 - 死代码清理：combat 子系统（`src/agens_novel/game/combat.py` 与 `combat_narrator.md`）、`persistence/` 空壳、`WEB_ITERATION_PLAN.md`、`build-apk/` skill、`web/frontend-react/.tmp/` smoke 脚本、`.venv311/` 冗余虚拟环境、孤立 `__pycache__/*.pyc`、累计 uvicorn 日志全部删除；10 处 `combat` / `persistence` 陈旧注释替换为规则引擎 / 存档语义。
 - 契约测试 `tests/web/test_frontend_contract.py` 新增：首页 eyebrow 段删除、品牌精简、6 色字面量、`character.remaining_lifespan` 读取、`{remainingLifespan}/{lifespanMax}` 显示。验证：`compileall -q src tests web` 干净；`pytest -q` 466 passed；`npm run build` 1590 modules / 15.18 kB css / 179.71 kB js。
+
+## 2026-06-27 精确 UI 面板清理
+
+- 首页、角色创建页和游玩页的 `jiayp` 品牌统一使用 `page-brand` 坐标与字号，避免三页左上角位置漂移。
+- 角色创建“命数”区保留摘要式折叠卡，但点击当前展开项可以收起；选中态改为圆点内黑点；列表按白、绿、蓝、紫、橙、红排序；玩家可见标签不再追加颜色字。
+- 游戏页删除旧工具面板入口：状态、背包、功法、地图、任务、境界 tab，以及 `位置` 摘要和任意面板输出块。核心境界、背包、位置、任务、地图等运行时状态没有删除，只是不再作为 Web 工具面板展示。
+- Web 响应中的 `panels` 缩减为 `status_bar`，`GameEngine.get_status/get_inventory/get_skills/get_map/get_quests/get_realm_info/get_equipment_info` 等 Web 面板查询方法下线。
+- 编年史展示改为 `年龄：正文` 行式故事展示，弱化旧时间轴卡片视觉。
+- 三条故事线入库仍是后续设计：第一版建议复用 `catalog_story_seeds` 承载三条主线，开局绑定其中一条，Narrator 和本地 fallback 围绕主线生成变体；本轮不改 schema、不新增 Alembic、不改 API。
 
 ## 2026-06-23 UI 截图二次修复与只读复盘
 
@@ -252,3 +262,35 @@ $env:TEST_DATABASE_URL = "postgresql+psycopg://agens_test@127.0.0.1:55432/agens_
 - Still not accepted: production account registration/login/save/load, backup
   restore drill, and a fresh production live-model smoke after SSH reachability
   is restored.
+
+# 2026-06-27 Local Main-Flow Governance Batch
+
+- Scope: local code, docs, and tests only. No SSH, sudo, deployment, production
+  DB mutation, production restart, secret reading, or production account flow.
+- Player-path fix: `/api/sessions/{id}/choice` now accepts only
+  `choice_index` or A/B/C/D letters. Free-text `choice` payloads return 400,
+  keeping the v5 fixed-choice contract aligned with the React UI.
+- Main-flow fix from local visible-Chrome evidence:
+  - Premature breakthrough-intent choices no longer short-circuit into the
+    ineligible breakthrough path and return 200 with unchanged `turn_count`.
+    When realm rules reject breakthrough, the selected button now continues as
+    an ordinary settled turn.
+  - Narrative/state mismatch rejection no longer creates a missing turn row.
+    The untrusted model narrative/state is discarded, base rule settlement is
+    applied, and `game_turns` remains contiguous.
+- Complexity reduction: `WebGameService.death_summary()` now delegates to
+  live-summary and stored-summary helpers. Public API response shape,
+  PostgreSQL schema, and Alembic revisions are unchanged.
+- Test coverage: `tests/web/test_web_api.py` now covers rejection of free-text
+  `/choice` payloads, successful A-letter choice submission, ineligible
+  breakthrough choices advancing/recording a turn, and mismatch rejection
+  preserving contiguous turn numbers.
+- Follow-up fix: accepted local-story fallback now records the transition turn
+  with `local_story_fallback=true`, preventing registered-user `game_turns`
+  gaps when the narrator returns no usable choices.
+- Local validation after this fix: `compileall -q src tests web scripts
+  migrations`, targeted engine/web regressions, `pytest -q tests\web` -> `54
+  passed`, full `pytest -q` -> `416 passed`, and frontend `npm.cmd run build`.
+- Boundary note: this local batch does not prove production live-model success.
+  Fallback still does not count as live-model acceptance; production account
+  registration/login/save/load remains a server-thread item.

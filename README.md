@@ -1,5 +1,26 @@
 # agens-novel-web
 
+## 2026-06-27 Local Main-Flow Status
+
+- Current local code fixes cover the visible-Chrome blocker where a valid
+  A/B/C/D choice could return HTTP 200 without advancing `turn_count`.
+- `/api/sessions/{id}/choice` now accepts only `choice_index` or A/B/C/D
+  letters. Free-text `choice` payloads are rejected with HTTP 400.
+- Premature breakthrough-intent choices now settle as ordinary turns when the
+  realm rules say breakthrough is not available.
+- Narrative/state mismatch handling now discards untrusted model output while
+  still applying base rule settlement and recording contiguous `game_turns`.
+- Narrator no-choice fallback now records the local-story transition turn, so
+  registered-user `game_turns` remains contiguous when fallback is accepted.
+- Verified locally with safe PostgreSQL test URL
+  `postgresql+psycopg://agens_test@127.0.0.1:55432/agens_web_test`:
+  `compileall -q src tests web scripts migrations`, `pytest -q tests\web`
+  -> `54 passed`, full `pytest -q` -> `416 passed`, and
+  frontend `npm.cmd run build`.
+- Not accepted yet: a fresh visible-Chrome 20-turn live-model player run,
+  production account registration/login/save/load, and production live-model
+  success. Fallback still does not count as live-model success.
+
 Web-only 文字修仙模拟器。当前 `master` 是浏览器版本主线。
 
 ## 当前目标
