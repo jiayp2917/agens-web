@@ -1,5 +1,19 @@
 # agens-novel-web
 
+## 2026-06-28 Governance Dispatch Status
+
+- Current model-settings correction is delegated to code thread
+  `019ee0bd-4f73-7553-a8ac-9ab1d8bc7dad`; this README does not claim it has
+  landed yet.
+- Production/server validation and later deployment gates are delegated to
+  server thread `019ee2ee-823e-7441-bdaa-881782da7949`.
+- This governance thread records blockers, local PostgreSQL status, and
+  post-implementation validation gates in
+  `docs/GOVERNANCE_EXECUTION_STATUS_20260628.md`.
+- Local PostgreSQL is expected at `127.0.0.1:55432`; check with
+  `F:\pg\bin\pg_isready.exe -h 127.0.0.1 -p 55432` before attempting any
+  `pg_ctl start`.
+
 ## 2026-06-27 Local Main-Flow Status
 
 - Current local code fixes cover the visible-Chrome blocker where a valid

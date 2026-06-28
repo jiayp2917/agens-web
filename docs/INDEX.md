@@ -1,5 +1,16 @@
 # 项目文档索引
 
+## 2026-06-28 Governance Dispatch Update
+
+- Read `docs/GOVERNANCE_EXECUTION_STATUS_20260628.md` before claiming the
+  model-settings correction, production account flow, production migration, or
+  visible-Chrome 20-turn acceptance is complete.
+- Code implementation belongs to thread `019ee0bd-4f73-7553-a8ac-9ab1d8bc7dad`.
+  Server/production checks belong to thread
+  `019ee2ee-823e-7441-bdaa-881782da7949`.
+- This governance thread may commit status documentation, but implementation
+  changes must be committed by the code thread after its validation gates pass.
+
 ## 2026-06-27 Local Main-Flow Update
 
 - Read `docs/PROJECT_AUDIT.md`, `docs/NEXT_GOVERNANCE_BACKLOG.md`, and

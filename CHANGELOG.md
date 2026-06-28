@@ -2,6 +2,18 @@
 
 ## 2026-06-27
 
+### Changed - governance dispatch status
+
+- Added `docs/GOVERNANCE_EXECUTION_STATUS_20260628.md` to record the current
+  responsibility split, cannot-execute-yet items, local PostgreSQL handling,
+  post-implementation validation gates, and generated evidence handling.
+- Updated `README.md`, `docs/INDEX.md`, and
+  `docs/NEXT_GOVERNANCE_BACKLOG.md` so future agents do not mistake delegated
+  implementation or production gates for completed acceptance.
+- This documentation batch does not implement or accept user-scoped model
+  settings, production migration, production account flow, or visible-Chrome
+  20-turn live-model validation.
+
 ### Changed - documentation status sync
 
 - Updated current-status docs to align the latest local validation baseline:
