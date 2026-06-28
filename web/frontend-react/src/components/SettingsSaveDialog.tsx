@@ -46,10 +46,12 @@ export function SettingsSaveDialog({
 
   useEffect(() => {
     refreshSaves();
-    if (user?.is_admin) {
+    if (user) {
       api<ModelSettings>("/api/settings/model").then(setSettings).catch(() => setSettings(null));
+    } else {
+      setSettings(null);
     }
-  }, [user?.id, user?.is_admin]);
+  }, [user?.id]);
 
   const save = async (name: string) => {
     try {

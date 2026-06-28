@@ -67,6 +67,8 @@ def validate_runtime_config() -> None:
         raise RuntimeError("INVITE_ADMIN_CODE is required in production.")
     if not os.environ.get("AGENS_ALLOWED_ORIGINS", "").strip():
         raise RuntimeError("AGENS_ALLOWED_ORIGINS is required in production.")
+    if not os.environ.get("MODEL_CONFIG_SECRET", "").strip():
+        raise RuntimeError("MODEL_CONFIG_SECRET is required in production.")
 
 
 def allowed_hosts_from_env() -> list[str]:
@@ -444,15 +446,30 @@ def create_app() -> FastAPI:
         return service.legacy_bonuses(user["id"])
 
     @app.get("/api/settings/model")
-    def get_model_settings(_admin: dict[str, Any] = Depends(current_admin)) -> dict[str, Any]:
-        return service.model_settings()
+    def get_model_settings(user: dict[str, Any] = Depends(current_user)) -> dict[str, Any]:
+        return service.model_settings(user["id"])
 
     @app.post("/api/settings/model")
     def post_model_settings(
         payload: ModelSettingsRequest,
+        user: dict[str, Any] = Depends(current_user),
+    ) -> dict[str, Any]:
+        return service_call(lambda: service.update_model_settings(user["id"], payload.model_dump()))
+
+    @app.delete("/api/settings/model")
+    def delete_model_settings(user: dict[str, Any] = Depends(current_user)) -> dict[str, Any]:
+        return service_call(lambda: service.clear_model_settings(user["id"]))
+
+    @app.get("/api/admin/settings/model")
+    def get_admin_model_settings(_admin: dict[str, Any] = Depends(current_admin)) -> dict[str, Any]:
+        return service.admin_model_settings()
+
+    @app.post("/api/admin/settings/model")
+    def post_admin_model_settings(
+        payload: ModelSettingsRequest,
         _admin: dict[str, Any] = Depends(current_admin),
     ) -> dict[str, Any]:
-        return service.update_model_settings(payload.model_dump())
+        return service_call(lambda: service.update_admin_model_settings(payload.model_dump()))
 
     frontend_dir = FRONTEND_REACT_DIST if FRONTEND_REACT_DIST.exists() else None
     if frontend_dir is not None and frontend_dir.exists():

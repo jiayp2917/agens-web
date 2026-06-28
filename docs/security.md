@@ -23,6 +23,7 @@ AGENS_ALLOWED_ORIGINS=https://game.jiayp2917.xyz
 AGENS_ALLOWED_HOSTS=game.jiayp2917.xyz,agens-web,localhost,127.0.0.1
 TRUST_PROXY_HEADERS=0
 AGNES_API_KEY=CHANGE_ME
+MODEL_CONFIG_SECRET=CHANGE_ME
 ```
 
 `deploy/production.env.example` 只能放占位值，不放真实密码或 key。
@@ -32,11 +33,13 @@ AGNES_API_KEY=CHANGE_ME
 - `GET /api/health`、`POST /api/auth/register`、`POST /api/auth/login` 公开。
 - 访客可以 `POST /api/sessions` 创建新局、推进回合、结束本局；存读档和模型设置接口对访客返回 401。
 - 已登录用户可以访问自己的游戏会话、存档和存档列表。
-- 模型设置写入和读取仅管理员可用。
-- 普通用户只能访问自己的 session/save。
+- Logged-in users may read, save, and clear their own personal model config; users without one fall back to the system Agens default.
+- Admins must use the separate /api/admin/settings/model endpoint for the system default; user and admin model settings must not be mixed.
+- Ordinary users can only access their own session/save/model config.
 - `INVITE_ADMIN_CODE` 只用于创建首个管理员；普通邀请码应由管理员通过后端接口创建。
 - 生产/PostgreSQL 模式下缺少 `SESSION_SECRET`、`DATABASE_URL` 或 `INVITE_ADMIN_CODE` 会启动失败。
 - 生产/PostgreSQL 模式下缺少 `AGENS_ALLOWED_ORIGINS` 会启动失败。
+- Production also requires MODEL_CONFIG_SECRET; decrypting stored model keys without a valid secret must fail closed.
 - 生产模式关闭 `/docs`、`/redoc`、`/openapi.json`。
 - 生产模式启用 Host 白名单，来源为 `AGENS_ALLOWED_HOSTS` 和 `AGENS_ALLOWED_ORIGINS`。
 - Cookie 登录态的状态变更请求需要匹配 `AGENS_ALLOWED_ORIGINS` 或同源 Host。
@@ -90,3 +93,10 @@ echo "after script: $env:AGNES_API_KEY"
 select-string -Path runtime\logs\*.jsonl,runtime\artifacts\**\*.json -Pattern "<secret-pattern>" -List
 .\.venv\Scripts\python.exe -m pytest -q
 ```
+
+## 2026-06-28 Model Key Storage
+
+- Guests cannot configure model settings. Registered users can configure only their own personal model settings.
+- Admins maintain the system default Agens config through a separate admin endpoint.
+- PostgreSQL stores encrypted key blobs plus `api_key_set` and masked metadata only; raw API keys are not returned by API responses and must not be logged.
+- Production requires `MODEL_CONFIG_SECRET`. If encrypted stored keys cannot be decrypted, the runtime fails closed and treats the model key as unavailable.

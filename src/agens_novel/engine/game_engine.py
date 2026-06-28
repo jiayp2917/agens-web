@@ -92,6 +92,7 @@ class GameEngine:
         self.on_stream_chunk: Callback | None = None
         self.on_finale: Callback | None = None
         self.on_model_failure_choice: Callable[[str, str], str] | None = None
+        self.model_config: dict[str, Any] = {}
         self._fallback_policy = ModelFallbackPolicy(
             lambda: self.on_model_failure_choice,
             _safe_log_reason,
@@ -116,6 +117,10 @@ class GameEngine:
 
     def _run_agent(self, agent_name: str, user_input: str, session: GameSession, **kwargs: Any) -> dict[str, Any]:
         """Call the agent runner through the GameEngine module patch seam."""
+        model_config = self.model_config if isinstance(self.model_config, dict) else {}
+        for key in ("model", "base_url", "api_key", "api_key_set", "source", "key_error"):
+            if key in model_config:
+                kwargs.setdefault(key, model_config.get(key))
         return run_turn_sync(agent_name, user_input, session, **kwargs)
 
     def _set_choices(
@@ -179,16 +184,18 @@ class GameEngine:
         result: dict[str, Any],
     ) -> None:
         """Write a non-secret model diagnostic line for runtime triage."""
-        model = os.environ.get("AGNES_MODEL", "agnes-2.0-flash")
-        base_url = os.environ.get("AGNES_BASE_URL", "https://apihub.agnes-ai.com/v1")
+        model_config = self.model_config if isinstance(self.model_config, dict) else {}
+        model = model_config.get("model") or os.environ.get("AGNES_MODEL", "agnes-2.0-flash")
+        base_url = model_config.get("base_url") or os.environ.get("AGNES_BASE_URL", "https://apihub.agnes-ai.com/v1")
         log.info(
-            "model_result agent=%s source=%s status=%s model=%s base_url=%s key_set=%s reason=%s diagnostics=%s",
+            "model_result agent=%s source=%s status=%s model=%s base_url=%s key_set=%s config_source=%s reason=%s diagnostics=%s",
             agent,
             source,
             getattr(status, "value", status),
             model,
             base_url,
-            bool(os.environ.get("AGNES_API_KEY")),
+            bool(model_config.get("api_key_set")),
+            model_config.get("source") or "env",
             _safe_log_reason(reason),
             result_diagnostics(result),
         )

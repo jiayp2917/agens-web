@@ -281,3 +281,9 @@ These are safe local governance slices when production approval is deferred.
   - follow `docs/PRODUCTION_V5_MIGRATION_CHECKLIST.md`
   - never read or print secrets
   - never use `AGENS_PG_AUTO_DDL=1` in production
+
+## 2026-06-28 Local Closure: User-Scoped Model Settings
+
+- Local code now implements the P0 product rule: `/api/settings/model` is user-scoped, `/api/admin/settings/model` manages the system default, and guests are rejected.
+- New Alembic revision `20260622_0005` adds encrypted key storage and `user_model_configs`.
+- Local automated validation passed with PostgreSQL. This is not production deployment or live-model acceptance; server rollout still needs `MODEL_CONFIG_SECRET`, Alembic upgrade, restart, and non-fallback live-model smoke.

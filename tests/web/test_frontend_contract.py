@@ -58,6 +58,10 @@ def test_react_frontend_wires_save_load_and_settings() -> None:
     assert "覆盖保存" in source
     assert "保存到此档" in source
     assert "/api/settings/model" in source
+    assert "settings?.source" in source
+    assert "clearPersonalSettings" in source
+    assert 'onAuth("login")' in source
+    assert "??????????" not in source
     assert "当前 Key 状态" in source
     assert "留空则保持当前 Key" in source
     assert "访客游玩不提供云端存档" in source
@@ -154,6 +158,8 @@ def test_react_character_creation_uses_catalogs_and_game_mode() -> None:
     assert 'current === group.key ? "" : group.key' in source
     assert "catalog-list" in source
     assert "selection-check" in source
+    assert "rarityClassName(color)" in source
+    assert "<RarityDot color={color} />" not in source
     assert "colorOrder" in source
     assert "sortedByColor(items)" in source
     assert "<em" not in source

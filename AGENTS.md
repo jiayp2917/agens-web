@@ -159,3 +159,10 @@ cd <repo>
 ### 4. 目标驱动执行
 
 每次改动都要能通过明确验证：后端 API、浏览器 UI、核心引擎测试或文档检查。
+
+## 2026-06-28 Model Settings Boundary
+
+- `/api/settings/model` is a logged-in user endpoint, not an admin/global endpoint. Each registered user owns one personal model config and may clear it to use the system Agens default.
+- `/api/admin/settings/model` is the admin-only system-default endpoint. Do not mix it with user settings.
+- Stored API keys must be encrypted with `MODEL_CONFIG_SECRET`; PostgreSQL must not store raw keys, and responses/logs must only expose `api_key_set` and masked state.
+- Model calls must receive the resolved per-session config explicitly. Do not inject user keys into `os.environ`.

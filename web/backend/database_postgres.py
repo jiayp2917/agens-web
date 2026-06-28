@@ -290,30 +290,34 @@ class PostgresWebDatabase:
             ).mappings().first()
         return row_with_json(row) if row else None
 
-    def save_model_config(self, config: dict[str, Any]) -> dict[str, Any]:
-        now = now_ts()
-        data = {
+    def _model_config_data(self, config: dict[str, Any], *, updated_at: float | None = None) -> dict[str, Any]:
+        return {
             "provider": str(config.get("provider") or "Agens"),
             "base_url": str(config.get("base_url") or "https://apihub.agnes-ai.com/v1"),
             "model": str(config.get("model") or "agnes-2.0-flash"),
             "api_key_masked": str(config.get("api_key_masked") or "<unset>"),
             "api_key_set": bool(config.get("api_key_set")),
-            "updated_at": now,
+            "api_key_encrypted": str(config.get("api_key_encrypted") or ""),
+            "updated_at": updated_at if updated_at is not None else now_ts(),
         }
+
+    def save_model_config(self, config: dict[str, Any]) -> dict[str, Any]:
+        data = self._model_config_data(config)
         with self.engine.begin() as conn:
             conn.execute(
                 text(
                     """
                     INSERT INTO model_config
-                        (id, provider, base_url, model, api_key_masked, api_key_set, updated_at)
+                        (id, provider, base_url, model, api_key_masked, api_key_set, api_key_encrypted, updated_at)
                     VALUES
-                        (1, :provider, :base_url, :model, :api_key_masked, :api_key_set, :updated_at)
+                        (1, :provider, :base_url, :model, :api_key_masked, :api_key_set, :api_key_encrypted, :updated_at)
                     ON CONFLICT(id) DO UPDATE SET
                         provider = excluded.provider,
                         base_url = excluded.base_url,
                         model = excluded.model,
                         api_key_masked = excluded.api_key_masked,
                         api_key_set = excluded.api_key_set,
+                        api_key_encrypted = excluded.api_key_encrypted,
                         updated_at = excluded.updated_at
                     """
                 ),
@@ -325,6 +329,46 @@ class PostgresWebDatabase:
         with self.engine.begin() as conn:
             row = conn.execute(text("SELECT * FROM model_config WHERE id = 1")).mappings().first()
         return dict(row) if row else None
+
+    def save_user_model_config(self, user_id: str, config: dict[str, Any]) -> dict[str, Any]:
+        data = self._model_config_data(config)
+        data["user_id"] = user_id
+        with self.engine.begin() as conn:
+            conn.execute(
+                text(
+                    """
+                    INSERT INTO user_model_configs
+                        (user_id, provider, base_url, model, api_key_masked, api_key_set, api_key_encrypted, updated_at)
+                    VALUES
+                        (:user_id, :provider, :base_url, :model, :api_key_masked, :api_key_set, :api_key_encrypted, :updated_at)
+                    ON CONFLICT(user_id) DO UPDATE SET
+                        provider = excluded.provider,
+                        base_url = excluded.base_url,
+                        model = excluded.model,
+                        api_key_masked = excluded.api_key_masked,
+                        api_key_set = excluded.api_key_set,
+                        api_key_encrypted = excluded.api_key_encrypted,
+                        updated_at = excluded.updated_at
+                    """
+                ),
+                data,
+            )
+        return data
+
+    def get_user_model_config(self, user_id: str) -> dict[str, Any] | None:
+        with self.engine.begin() as conn:
+            row = conn.execute(
+                text("SELECT * FROM user_model_configs WHERE user_id = :user_id"),
+                {"user_id": user_id},
+            ).mappings().first()
+        return dict(row) if row else None
+
+    def delete_user_model_config(self, user_id: str) -> None:
+        with self.engine.begin() as conn:
+            conn.execute(
+                text("DELETE FROM user_model_configs WHERE user_id = :user_id"),
+                {"user_id": user_id},
+            )
 
     # ── Death rewards (P4) ──────────────────────────────────────────────────
 

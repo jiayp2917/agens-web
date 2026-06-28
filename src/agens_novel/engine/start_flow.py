@@ -148,7 +148,7 @@ class StartFlow:
         if os.environ.get(START_MODEL_WORLD_ENV) != "1":
             return fallback
 
-        if not os.environ.get("AGNES_API_KEY"):
+        if not _engine_has_api_key(engine):
             engine._emit("on_info", "未检测到 API Key，使用本地模板生成世界观。")
             return fallback
 
@@ -178,7 +178,7 @@ class StartFlow:
         if os.environ.get(START_MODEL_OPENING_ENV) != "1":
             return "", fallback_choices(engine.game_session)
 
-        if not os.environ.get("AGNES_API_KEY"):
+        if not _engine_has_api_key(engine):
             reason = "AGNES_API_KEY 未设置。"
             if engine._confirm_local_fallback("profile_opening_missing_key", reason):
                 engine._emit("on_info", engine._fallback_notice_for(reason))
@@ -340,3 +340,11 @@ def apply_profile_world_profile(session: GameSession, world_profile: dict[str, A
         session.region = world_profile["world_name"]
     if world_profile.get("initial_situation"):
         session.lore_facts.insert(0, world_profile["initial_situation"])
+
+
+
+def _engine_has_api_key(engine: Any) -> bool:
+    config = getattr(engine, "model_config", {})
+    if isinstance(config, dict) and "api_key_set" in config:
+        return bool(config.get("api_key_set"))
+    return bool(os.environ.get("AGNES_API_KEY"))

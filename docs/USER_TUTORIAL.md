@@ -22,7 +22,7 @@
 - **新游戏**：访客可直接开始，不强制登录。
 - **读档**：账号用户读取云存档；访客没有云存档。
 - **教程**：查看 A/B/C/D 与存档规则。
-- **设置**：管理员可配置模型；普通玩家只看到说明。
+- **Settings**: logged-in accounts can configure their own model; guests see a login/register prompt. Without a personal config, the game uses the system Agens default.
 - **邀请码注册**：注册账号后获得云存档能力。
 
 顶栏品牌文字为 `jiayp`，点击打开 [https://www.jiayp2917.xyz/](https://www.jiayp2917.xyz/)。首页会显示 QQ 群号 `985776771` 和群二维码。
@@ -161,3 +161,7 @@ A：向 QQ 群 `985776771` 群主索取。
 - [GAME_MODE_SPEC.md](GAME_MODE_SPEC.md) - 游戏模式 v5 产品 + 技术规格
 - [RUNTIME_FLOW.md](RUNTIME_FLOW.md) - 当前运行链路
 - [ALPHA_REVIEW_AND_LESSONS.md](ALPHA_REVIEW_AND_LESSONS.md) - Alpha 复盘与剩余风险
+
+## Model Settings
+
+Registered users can open Settings and save a personal model provider, Base URL, model name, and API Key. If you leave the API Key blank, the current personal key is kept. Use "Use system default Agens" to clear the personal config and return to the system default. Guests must log in or register before configuring models.

@@ -20,6 +20,7 @@ _TEST_TABLES = (
     "sessions",
     "saves",
     "model_config",
+    "user_model_configs",
     "catalog_talents",
     "catalog_family_backgrounds",
     "catalog_spirit_roots",

@@ -110,3 +110,9 @@
 Follow `AGENTS.md` Governance Constraints before refactor, feature, cleanup, deployment, or documentation work.
 
 Do not add custom layers before checking whether existing FastAPI, SQLAlchemy/Alembic, React, Python, or project-local helpers can solve the problem with less code. Keep current facts, historical notes, future plans, and TODOs separated.
+
+## 2026-06-28 Model Settings Boundary
+
+- Ordinary registered users configure personal model settings through `/api/settings/model`; guests receive 401.
+- Users with no personal config use the system default Agens config. Admins manage that default through `/api/admin/settings/model`.
+- `MODEL_CONFIG_SECRET` is required for encrypted stored keys in production. Never write raw model API keys to docs, logs, frontend code, saves, snapshots, or database plaintext columns.

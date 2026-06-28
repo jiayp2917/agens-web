@@ -30,7 +30,7 @@ _MAX_CANDIDATE_LEN = 65536
 
 
 def load_settings(state: dict[str, Any]) -> dict[str, Any]:
-    return load_agent_settings(AGENT_NAME)
+    return load_agent_settings(AGENT_NAME, state)
 
 
 def build_prompt(state: dict[str, Any]) -> dict[str, Any]:
@@ -81,6 +81,7 @@ async def call_agnes_llm(state: dict[str, Any]) -> dict[str, Any]:
             messages,
             model=state.get("model"),
             base_url=state.get("base_url"),
+            api_key=state.get("api_key"),
             temperature=0.2,
             max_tokens=512,
             stream=False,

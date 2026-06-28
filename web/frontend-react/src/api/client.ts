@@ -37,6 +37,7 @@ export type ModelSettings = {
   model: string;
   api_key_set: boolean;
   api_key_masked: string;
+  source: "user" | "system";
 };
 
 export async function api<T>(path: string, init: RequestInit = {}): Promise<T> {

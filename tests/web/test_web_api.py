@@ -417,39 +417,167 @@ def test_web_model_failure_exposes_fallback_and_can_end(tmp_path: Path, monkeypa
     assert ended["error"] == "玩家结束本局。"
 
 
-def test_model_settings_never_returns_raw_api_key(tmp_path: Path, monkeypatch) -> None:
+
+def _login_user(client: TestClient, username: str, invite: str) -> dict:
+    return client.post(
+        "/api/auth/register",
+        json={"username": username, "password": "password-123", "invite_code": invite},
+    ).json()["user"]
+
+
+def _model_payload(api_key: str = "") -> dict[str, str]:
+    return {
+        "provider": "DeepSeek",
+        "base_url": "https://api.deepseek.com/v1",
+        "model": "deepseek-chat",
+        "api_key": api_key,
+    }
+
+
+def test_user_model_settings_save_read_clear_and_encrypts_key(tmp_path: Path, monkeypatch) -> None:
     monkeypatch.setenv("SESSION_COOKIE_SECURE", "0")
-    monkeypatch.setenv("INVITE_ADMIN_CODE", "admin-invite-123")
+    monkeypatch.setenv("MODEL_CONFIG_SECRET", "test-model-config-secret")
     app = create_app()
     client = TestClient(app)
-    client.post(
+    _create_invite(app)
+    user = _login_user(client, "player", "invite-code-123")
+
+    initial = client.get("/api/settings/model")
+    assert initial.status_code == 200
+    assert initial.json()["source"] == "system"
+
+    raw_key = "test-user-key-123456789"
+    saved = client.post("/api/settings/model", json=_model_payload(raw_key))
+    assert saved.status_code == 200
+    body = saved.json()
+    assert body["source"] == "user"
+    assert body["provider"] == "DeepSeek"
+    assert body["api_key_set"] is True
+    assert body["api_key_masked"] != raw_key
+    assert raw_key not in json.dumps(body, ensure_ascii=False)
+
+    read_back = client.get("/api/settings/model").json()
+    assert read_back["source"] == "user"
+    assert raw_key not in json.dumps(read_back, ensure_ascii=False)
+
+    with app.state.service.db.engine.connect() as conn:
+        row = conn.execute(
+            text("SELECT user_id, api_key_encrypted, api_key_masked FROM user_model_configs")
+        ).mappings().one()
+    assert row["user_id"] == user["id"]
+    assert row["api_key_encrypted"].startswith("fernet:")
+    assert raw_key not in row["api_key_encrypted"]
+    assert raw_key not in row["api_key_masked"]
+
+    cleared = client.delete("/api/settings/model")
+    assert cleared.status_code == 200
+    assert cleared.json()["source"] == "system"
+    assert app.state.service.db.get_user_model_config(user["id"]) is None
+
+
+def test_model_settings_are_isolated_per_user(tmp_path: Path, monkeypatch) -> None:
+    monkeypatch.setenv("SESSION_COOKIE_SECURE", "0")
+    monkeypatch.setenv("MODEL_CONFIG_SECRET", "test-model-config-secret")
+    app = create_app()
+    _create_invite(app, "invite-a-123")
+    _create_invite(app, "invite-b-123")
+
+    client_a = TestClient(app)
+    user_a = _login_user(client_a, "player_a", "invite-a-123")
+    client_a.post("/api/settings/model", json=_model_payload("test-user-a-key-123456"))
+
+    client_b = TestClient(app)
+    user_b = _login_user(client_b, "player_b", "invite-b-123")
+    assert client_b.get("/api/settings/model").json()["source"] == "system"
+    client_b.post("/api/settings/model", json=_model_payload("test-user-b-key-123456"))
+
+    assert client_a.get("/api/settings/model").json()["source"] == "user"
+    assert client_b.get("/api/settings/model").json()["source"] == "user"
+    assert app.state.service.db.get_user_model_config(user_a["id"])["api_key_encrypted"] != app.state.service.db.get_user_model_config(user_b["id"])["api_key_encrypted"]
+
+
+def test_guest_model_settings_rejected_and_admin_system_endpoint_is_admin_only(tmp_path: Path, monkeypatch) -> None:
+    monkeypatch.setenv("SESSION_COOKIE_SECURE", "0")
+    monkeypatch.setenv("MODEL_CONFIG_SECRET", "test-model-config-secret")
+    monkeypatch.setenv("INVITE_ADMIN_CODE", "admin-invite-123")
+    app = create_app()
+    guest = TestClient(app)
+    assert guest.get("/api/settings/model").status_code == 401
+    assert guest.post("/api/settings/model", json=_model_payload("test-guest-key-123456")).status_code == 401
+    assert guest.delete("/api/settings/model").status_code == 401
+    assert guest.get("/api/admin/settings/model").status_code == 401
+
+    _create_invite(app, "normal-invite-123")
+    user_client = TestClient(app)
+    _login_user(user_client, "normal_user", "normal-invite-123")
+    assert user_client.get("/api/admin/settings/model").status_code == 403
+    assert user_client.post("/api/admin/settings/model", json=_model_payload("test-user-key-123456")).status_code == 403
+
+    admin_client = TestClient(app)
+    admin_client.post(
         "/api/auth/register",
         json={"username": "admin", "password": "password-123", "invite_code": "admin-invite-123"},
     )
-    raw_key = "sk-test-web-secret-123456789"
-    saved = client.post(
-        "/api/settings/model",
-        json={
-            "provider": "Agens",
-            "base_url": "https://apihub.agnes-ai.com/v1",
-            "model": "agnes-2.0-flash",
-            "api_key": raw_key,
-        },
-    ).json()
-    assert saved["api_key_set"] is True
-    assert saved["api_key_masked"] != raw_key
-    assert raw_key not in json.dumps(saved, ensure_ascii=False)
+    saved = admin_client.post("/api/admin/settings/model", json=_model_payload("test-admin-key-123456"))
+    assert saved.status_code == 200
+    assert saved.json()["source"] == "system"
+    assert saved.json()["api_key_set"] is True
+    assert "test-admin-key" not in json.dumps(saved.json(), ensure_ascii=False)
 
 
-def test_post_model_settings_rejects_oversized_field(tmp_path: Path) -> None:
-    """F-002: 四个字段均有 max_length 约束。超长值必须返回 422。"""
+def test_model_settings_missing_secret_fails_closed(tmp_path: Path, monkeypatch) -> None:
+    monkeypatch.setenv("SESSION_COOKIE_SECURE", "0")
+    monkeypatch.setenv("MODEL_CONFIG_SECRET", "test-model-config-secret")
+    monkeypatch.setenv("AGNES_API_KEY", "test-env-key-must-not-be-used")
     app = create_app()
     client = TestClient(app)
-    app.state.service.db.create_user("admin", "hash", is_admin=True)
-    token = __import__("web.backend.auth", fromlist=["create_session_token"]).create_session_token(
-        app.state.service.db.get_user_by_username("admin")["id"]
-    )
-    client.cookies.set("agens_session", token)
+    _create_invite(app)
+    user = _login_user(client, "player", "invite-code-123")
+    client.post("/api/settings/model", json=_model_payload("test-user-key-123456"))
+
+    monkeypatch.delenv("MODEL_CONFIG_SECRET", raising=False)
+    runtime = app.state.service._runtime_model_config(user["id"])
+    assert runtime["source"] == "user"
+    assert runtime["api_key"] == ""
+    assert runtime["api_key_set"] is False
+    assert runtime["key_error"]
+
+    rejected = client.post("/api/settings/model", json=_model_payload("test-new-user-key-123456"))
+    assert rejected.status_code == 400
+
+
+def test_runtime_model_config_uses_current_user_without_env_pollution(tmp_path: Path, monkeypatch) -> None:
+    monkeypatch.setenv("SESSION_COOKIE_SECURE", "0")
+    monkeypatch.setenv("MODEL_CONFIG_SECRET", "test-model-config-secret")
+    monkeypatch.setenv("AGNES_API_KEY", "test-env-key-should-not-win")
+    app = create_app()
+    _create_invite(app, "invite-a-123")
+    _create_invite(app, "invite-b-123")
+
+    client_a = TestClient(app)
+    user_a = _login_user(client_a, "player_a", "invite-a-123")
+    client_a.post("/api/settings/model", json=_model_payload("test-user-a-key-123456"))
+
+    client_b = TestClient(app)
+    user_b = _login_user(client_b, "player_b", "invite-b-123")
+    client_b.post("/api/settings/model", json=_model_payload("test-user-b-key-123456"))
+
+    config_a = app.state.service._runtime_model_config(user_a["id"])
+    config_b = app.state.service._runtime_model_config(user_b["id"])
+    assert config_a["api_key"] == "test-user-a-key-123456"
+    assert config_b["api_key"] == "test-user-b-key-123456"
+    assert os.environ["AGNES_API_KEY"] == "test-env-key-should-not-win"
+    assert config_a["api_key"] != config_b["api_key"]
+
+
+def test_post_model_settings_rejects_oversized_field(tmp_path: Path, monkeypatch) -> None:
+    """F-002: four fields have max_length constraints and oversized values return 422."""
+    monkeypatch.setenv("SESSION_COOKIE_SECURE", "0")
+    monkeypatch.setenv("MODEL_CONFIG_SECRET", "test-model-config-secret")
+    app = create_app()
+    client = TestClient(app)
+    _create_invite(app)
+    _login_user(client, "player", "invite-code-123")
     cases = [
         ("provider", "x" * 200),
         ("base_url", "https://" + "a" * 600),
@@ -457,12 +585,7 @@ def test_post_model_settings_rejects_oversized_field(tmp_path: Path) -> None:
         ("api_key", "k" * 1024),
     ]
     for field, oversize_value in cases:
-        payload = {
-            "provider": "Agens",
-            "base_url": "https://apihub.agnes-ai.com/v1",
-            "model": "agnes-2.0-flash",
-            "api_key": "",
-        }
+        payload = _model_payload("")
         payload[field] = oversize_value
         resp = client.post("/api/settings/model", json=payload)
         assert resp.status_code == 422, f"{field}: expected 422, got {resp.status_code}"
@@ -638,6 +761,7 @@ def test_production_hides_openapi_and_rejects_untrusted_host(tmp_path: Path, mon
     monkeypatch.setenv("INVITE_ADMIN_CODE", "admin-invite-123")
     monkeypatch.setenv("SESSION_SECRET", "not-the-dev-secret")
     monkeypatch.setenv("AGENS_ALLOWED_ORIGINS", "https://game.example.test")
+    monkeypatch.setenv("MODEL_CONFIG_SECRET", "test-model-config-secret")
     monkeypatch.setenv("SESSION_COOKIE_SECURE", "0")
     app = create_app()
 
@@ -811,6 +935,19 @@ def test_alembic_game_mode_v5_bridge_covers_runtime_tables() -> None:
     assert 'down_revision = "20260621_0002"' in migration
 
 
+def test_alembic_user_model_configs_migration_covers_runtime_tables() -> None:
+    migration = (
+        Path(__file__).resolve().parents[2]
+        / "migrations"
+        / "versions"
+        / "20260622_0005_user_model_configs.py"
+    ).read_text(encoding="utf-8")
+    assert 'revision = "20260622_0005"' in migration
+    assert 'down_revision = "20260622_0004"' in migration
+    assert "user_model_configs" in migration
+    assert "api_key_encrypted" in migration
+
+
 def test_model_failure_events_are_public_safe(tmp_path: Path, monkeypatch) -> None:
     monkeypatch.setenv("SESSION_COOKIE_SECURE", "0")
     app = create_app()
@@ -896,6 +1033,12 @@ def test_postgres_database_url_smoke(monkeypatch) -> None:
     db = create_database()
     assert db.engine.url.drivername.startswith("postgresql")
     assert db.list_catalog("catalog_talents")
+    with db.engine.connect() as conn:
+        assert conn.execute(text("SELECT to_regclass('public.user_model_configs')")).scalar() == "user_model_configs"
+        columns = conn.execute(
+            text("SELECT column_name FROM information_schema.columns WHERE table_name = 'model_config'")
+        ).scalars().all()
+    assert "api_key_encrypted" in columns
 
     app = create_app()
     client = TestClient(app, base_url="https://game.example.test")

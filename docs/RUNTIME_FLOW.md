@@ -55,9 +55,10 @@ http://127.0.0.1:8000/
    - Web 端不执行“关闭程序”，结束本局只清理当前局状态并返回首页。
 
 2. 设置
-   - `GET /api/settings/model` 返回脱敏模型配置，仅管理员可访问。
-   - `POST /api/settings/model` 更新 provider、base_url、model 和可选 API key，仅管理员可访问。
-   - API key 只进入当前后端进程环境和数据库脱敏摘要，不返回前端明文。
+   - GET /api/settings/model returns the logged-in user effective model config summary with source user/system; guests receive 401.
+   - POST /api/settings/model saves only the current user personal provider/base_url/model/API key. DELETE /api/settings/model clears the personal config and falls back to system Agens.
+   - GET/POST /api/admin/settings/model is admin-only and manages the system default config.
+   - API keys are stored in PostgreSQL as application-encrypted material; responses expose only api_key_set and masked state, never raw keys or process-global environment writes.
 
 3. 会话
    - `POST /api/auth/register` 使用邀请码注册。
@@ -128,3 +129,10 @@ $env:TEST_DATABASE_URL = "postgresql+psycopg://agens_test@127.0.0.1:55432/agens_
 .\.venv\Scripts\python.exe -m pytest -q tests/web
 .\.venv\Scripts\python.exe -m pytest -q
 ```
+
+## 2026-06-28 Model Settings Runtime Flow
+
+- `GET /api/settings/model` returns the logged-in user's effective config summary with `source: "user" | "system"`; guests receive 401.
+- `POST /api/settings/model` saves only the current user's personal config. `DELETE /api/settings/model` clears it and falls back to system Agens.
+- `GET/POST /api/admin/settings/model` manages the system default config and requires admin auth.
+- During gameplay, `WebGameService` resolves the current session user's effective config and passes it into `GameEngine`/agent calls explicitly. User keys are not injected into process-global `os.environ`.

@@ -2,7 +2,7 @@ import type { ReactNode } from "react";
 import { ChevronDown } from "lucide-react";
 import type { CatalogItem } from "../lib/catalog";
 import { rarityToColor } from "../lib/util";
-import { RarityDot } from "./RarityDot";
+import { RarityDot, rarityClassName } from "./RarityDot";
 
 const colorOrder = new Map([
   ["白", 0],
@@ -88,12 +88,11 @@ function CatalogOption({
   return (
     <button
       type="button"
-      className={`catalog-row ${selected ? "is-selected" : ""}`}
+      className={`catalog-row ${rarityClassName(color)} ${selected ? "is-selected" : ""}`}
       onClick={() => onSelect(item.name)}
       disabled={disabled}
     >
       <span className="selection-check" aria-hidden="true" />
-      <RarityDot color={color} />
       <span>{item.name}</span>
     </button>
   );

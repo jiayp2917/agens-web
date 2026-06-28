@@ -1,16 +1,16 @@
 # 2026-06-28 Governance Execution Status
 
 This document records what the governance thread can and cannot execute for the
-current `agens-web` cleanup batch. It is a handoff and gate document only; it
-does not claim that the user-scoped model-settings implementation has landed.
+current agens-web cleanup batch. It is a handoff and gate document only; local
+implementation status is separate from production deployment status.
 
 ## Current Responsibility Split
 
-- Code thread `019ee0bd-4f73-7553-a8ac-9ab1d8bc7dad` owns local code changes:
-  user-scoped model settings, encrypted PostgreSQL storage, model-call
-  isolation, frontend settings UI, character-creation double-circle cleanup,
-  tests, implementation docs, and the implementation commit.
-- Server thread `019ee2ee-823e-7441-bdaa-881782da7949` owns production/server
+- Code thread 019ee0bd-4f73-7553-a8ac-9ab1d8bc7dad owns local code changes
+  and the implementation commit for user-scoped model settings, encrypted
+  PostgreSQL storage, model-call isolation, frontend settings UI,
+  character-creation double-circle cleanup, tests, and implementation docs.
+- Server thread 019ee2ee-823e-7441-bdaa-881782da7949 owns production/server
   checks and deployment gates. It must stay read-only unless the user explicitly
   approves a concrete production mutation batch.
 - This governance thread owns dispatch, blocker tracking, local PostgreSQL
@@ -21,8 +21,8 @@ does not claim that the user-scoped model-settings implementation has landed.
 
 | Item | Why it cannot be executed now | How to handle |
 | --- | --- | --- |
-| User-scoped model settings acceptance | The implementation is delegated to the code thread and was not yet reported as completed in this governance thread. Current known old risks are admin-only `/api/settings/model`, process-global model key injection, and singleton `model_config`. | Wait for the code thread's final report and commit. Then review diff, migration, tests, and docs before any local/production acceptance claim. |
-| Production migration for `user_model_configs` | The migration and code are not yet landed locally, and production database mutation needs separate approval. | After code lands and is reviewed, ask for an explicit server-thread deployment/migration batch. Require app backup, PostgreSQL backup/restore point, `MODEL_CONFIG_SECRET` presence check without printing it, and Alembic validation. |
+| User-scoped model settings local acceptance | Local implementation is expected to be reviewed from the code-thread commit and automated validation output. This does not prove production deployment or live-model success. | Review diff, migration, tests, and docs before any production acceptance claim. Fallback is still failure for live-model acceptance. |
+| Production migration for user_model_configs | Production database mutation needs separate approval even after local code lands. | After code is reviewed, ask for an explicit server-thread deployment/migration batch. Require app backup, PostgreSQL backup/restore point, MODEL_CONFIG_SECRET presence check without printing it, and Alembic validation. |
 | Production account registration/login/save/load | This creates or uses production account state and needs a safe non-secret account/invite path or explicit one-time test-account approval. | Provide a temporary non-secret test path, or approve creation and cleanup of a one-time production test account/invite in the server thread. |
 | Production user model-settings validation | It depends on the new code, `MODEL_CONFIG_SECRET`, migration, and safe production account path. | Run only after deployment approval and after the server thread verifies the runtime secret exists without printing it. |
 | Visible Chrome 20-turn live-model acceptance | It must be run after the model-settings fix so the test covers the real product rule: system default, user key, clear-to-default, save/load, and non-fallback turn flow. | After implementation commit, start local backend/frontend with local PostgreSQL and run a visible Chrome player flow. Fallback is failure for live-model acceptance even when HTTP returns 200. |

@@ -55,6 +55,23 @@ POSTGRES_SCHEMA_STATEMENTS = (
         model TEXT NOT NULL,
         api_key_masked TEXT NOT NULL,
         api_key_set BOOLEAN NOT NULL,
+        api_key_encrypted TEXT NOT NULL DEFAULT '',
+        updated_at DOUBLE PRECISION NOT NULL
+    )
+    """,
+    """
+    ALTER TABLE model_config
+    ADD COLUMN IF NOT EXISTS api_key_encrypted TEXT NOT NULL DEFAULT ''
+    """,
+    """
+    CREATE TABLE IF NOT EXISTS user_model_configs (
+        user_id TEXT PRIMARY KEY REFERENCES users(id) ON DELETE CASCADE,
+        provider TEXT NOT NULL,
+        base_url TEXT NOT NULL,
+        model TEXT NOT NULL,
+        api_key_masked TEXT NOT NULL,
+        api_key_set BOOLEAN NOT NULL,
+        api_key_encrypted TEXT NOT NULL DEFAULT '',
         updated_at DOUBLE PRECISION NOT NULL
     )
     """,

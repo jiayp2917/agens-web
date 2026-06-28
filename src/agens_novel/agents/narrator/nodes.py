@@ -30,7 +30,7 @@ _MAX_HISTORY_TURNS = 20
 
 
 def load_settings(state: dict[str, Any]) -> dict[str, Any]:
-    return load_agent_settings(AGENT_NAME)
+    return load_agent_settings(AGENT_NAME, state)
 
 
 def build_prompt(state: dict[str, Any]) -> dict[str, Any]:
@@ -103,6 +103,7 @@ async def call_agnes_llm(state: dict[str, Any]) -> dict[str, Any]:
                 messages,
                 model=state.get("model"),
                 base_url=state.get("base_url"),
+                api_key=state.get("api_key"),
                 temperature=0.8,
                 max_tokens=1536,
                 on_chunk=stream_callback,
@@ -113,6 +114,7 @@ async def call_agnes_llm(state: dict[str, Any]) -> dict[str, Any]:
                 messages,
                 model=state.get("model"),
                 base_url=state.get("base_url"),
+                api_key=state.get("api_key"),
                 temperature=0.8,
                 max_tokens=1536,
                 stream=False,
@@ -290,6 +292,7 @@ async def _repair_incomplete_output(
             messages,
             model=state.get("model"),
             base_url=state.get("base_url"),
+            api_key=state.get("api_key"),
             temperature=0.2,
             max_tokens=900,
             stream=False,

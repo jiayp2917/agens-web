@@ -110,3 +110,10 @@ npm run build
 - [docs/PROJECT_AUDIT.md](docs/PROJECT_AUDIT.md)：结构边界、瘦身清单和技术债。
 - [docs/RUNTIME_FLOW.md](docs/RUNTIME_FLOW.md)：当前核心运行流程。
 - [docs/security.md](docs/security.md)：密钥与安全边界。
+
+## 2026-06-28 Model Settings Governance
+
+- Model settings are now user-scoped: registered users can save, read, and clear their own provider/base URL/model/API key configuration.
+- Guests cannot configure model settings. Users without a personal config fall back to the system default Agens configuration.
+- Admin system-default maintenance is separate at `/api/admin/settings/model`; ordinary users use `/api/settings/model`.
+- PostgreSQL stores only encrypted key material plus masked metadata. Production must set `MODEL_CONFIG_SECRET`; raw API keys must never appear in API responses, logs, saves, session snapshots, or frontend bundles.

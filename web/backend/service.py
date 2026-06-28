@@ -27,6 +27,13 @@ from agens_novel.game.constants import (
 from agens_novel.session.game_session import GameSession
 from agens_novel.settings import Settings
 
+from .model_config_security import (
+    ModelConfigSecretError,
+    decrypt_api_key,
+    encrypt_api_key,
+    mask_api_key,
+)
+
 from .database import WebDatabaseProtocol
 from .database_postgres import PostgresWebDatabase
 from .service_summaries import build_death_summary
@@ -276,6 +283,7 @@ class WebGameService:
         self, session_id: str, profile: dict[str, Any], user_id: str | None = None
     ) -> dict[str, Any]:
         runner = self._runner(session_id, user_id=user_id)
+        self._apply_runner_model_config(runner)
         normalized = self._normalize_profile(profile)
         # Apply legacy bonuses from prior runs (P4) — registered users only.
         if user_id and not is_guest_user_id(user_id):
@@ -309,6 +317,7 @@ class WebGameService:
         return self._advance_turn(runner, action)
 
     def _advance_turn(self, runner: WebRunner, action: str) -> dict[str, Any]:
+        self._apply_runner_model_config(runner)
         before = _turn_start_snapshot(runner.engine.game_session)
         runner.engine.handle_action(action)
         self._record_settled_turn(runner, before, action)
@@ -456,42 +465,133 @@ class WebGameService:
             return []
         return self.db.list_legacy_bonuses(user_id)
 
-    def model_settings(self) -> dict[str, Any]:
-        stored = self.db.get_model_config() or {}
-        settings = Settings()
-        api_key_set = bool(os.environ.get("AGNES_API_KEY")) or bool(stored.get("api_key_set"))
-        return {
-            "provider": stored.get("provider") or "Agens",
-            "base_url": os.environ.get("AGNES_BASE_URL") or stored.get("base_url") or settings.base_url,
-            "model": os.environ.get("AGNES_MODEL") or stored.get("model") or settings.model,
-            "api_key_set": api_key_set,
-            "api_key_masked": settings.public_summary()["api_key"]
-            if os.environ.get("AGNES_API_KEY")
-            else stored.get("api_key_masked", "<unset>"),
-        }
+    def model_settings(self, user_id: str) -> dict[str, Any]:
+        return self._public_model_settings(self._effective_model_config(user_id))
 
-    def update_model_settings(self, payload: dict[str, Any]) -> dict[str, Any]:
+    def update_model_settings(self, user_id: str, payload: dict[str, Any]) -> dict[str, Any]:
+        current = self.db.get_user_model_config(user_id) or {}
+        config = self._build_stored_model_config(payload, existing=current)
+        self.db.save_user_model_config(user_id, config)
+        return self.model_settings(user_id)
+
+    def clear_model_settings(self, user_id: str) -> dict[str, Any]:
+        self.db.delete_user_model_config(user_id)
+        return self.model_settings(user_id)
+
+    def admin_model_settings(self) -> dict[str, Any]:
+        return self._public_model_settings(self._system_model_config())
+
+    def update_admin_model_settings(self, payload: dict[str, Any]) -> dict[str, Any]:
+        current = self.db.get_model_config() or {}
+        config = self._build_stored_model_config(payload, existing=current)
+        self.db.save_model_config(config)
+        return self.admin_model_settings()
+
+    def _build_stored_model_config(
+        self,
+        payload: dict[str, Any],
+        *,
+        existing: dict[str, Any] | None = None,
+    ) -> dict[str, Any]:
+        existing = existing or {}
         base_url = str(payload.get("base_url") or "https://apihub.agnes-ai.com/v1").strip()
         model = str(payload.get("model") or "agnes-2.0-flash").strip()
         provider = str(payload.get("provider") or "Agens").strip()
         api_key = str(payload.get("api_key") or "").strip()
-
-        os.environ["AGNES_BASE_URL"] = base_url
-        os.environ["AGNES_MODEL"] = model
+        encrypted = str(existing.get("api_key_encrypted") or "")
+        masked = str(existing.get("api_key_masked") or "<unset>")
         if api_key:
-            os.environ["AGNES_API_KEY"] = api_key
+            try:
+                encrypted = encrypt_api_key(api_key)
+            except ModelConfigSecretError as exc:
+                raise ValueError("MODEL_CONFIG_SECRET is required to save model keys.") from exc
+            masked = mask_api_key(api_key)
+        api_key_set = bool(encrypted)
+        return {
+            "provider": provider,
+            "base_url": base_url,
+            "model": model,
+            "api_key_set": api_key_set,
+            "api_key_masked": masked if api_key_set else "<unset>",
+            "api_key_encrypted": encrypted,
+        }
 
-        summary = Settings().public_summary()
-        self.db.save_model_config(
-            {
-                "provider": provider,
-                "base_url": base_url,
-                "model": model,
-                "api_key_set": bool(os.environ.get("AGNES_API_KEY")),
-                "api_key_masked": summary["api_key"],
+    def _public_model_settings(self, config: dict[str, Any]) -> dict[str, Any]:
+        return {
+            "provider": config.get("provider") or "Agens",
+            "base_url": config.get("base_url") or "https://apihub.agnes-ai.com/v1",
+            "model": config.get("model") or "agnes-2.0-flash",
+            "api_key_set": bool(config.get("api_key_set")),
+            "api_key_masked": str(config.get("api_key_masked") or "<unset>"),
+            "source": config.get("source") or "system",
+        }
+
+    def _system_model_config(self) -> dict[str, Any]:
+        stored = self.db.get_model_config() or {}
+        settings = Settings()
+        source = "system"
+        if stored:
+            config = {
+                "provider": stored.get("provider") or "Agens",
+                "base_url": stored.get("base_url") or settings.base_url,
+                "model": stored.get("model") or settings.model,
+                "api_key_set": bool(stored.get("api_key_encrypted")),
+                "api_key_masked": stored.get("api_key_masked") if stored.get("api_key_encrypted") else "<unset>",
+                "api_key_encrypted": stored.get("api_key_encrypted") or "",
+                "source": source,
             }
-        )
-        return self.model_settings()
+        else:
+            env_key = os.environ.get("AGNES_API_KEY", "")
+            config = {
+                "provider": "Agens",
+                "base_url": os.environ.get("AGNES_BASE_URL") or settings.base_url,
+                "model": os.environ.get("AGNES_MODEL") or settings.model,
+                "api_key_set": bool(env_key),
+                "api_key_masked": mask_api_key(env_key) if env_key else "<unset>",
+                "api_key_encrypted": "",
+                "source": source,
+                "api_key": env_key,
+            }
+        return config
+
+    def _effective_model_config(self, user_id: str | None) -> dict[str, Any]:
+        if user_id and not is_guest_user_id(user_id):
+            personal = self.db.get_user_model_config(user_id)
+            if personal is not None:
+                return {
+                    "provider": personal.get("provider") or "Agens",
+                    "base_url": personal.get("base_url") or "https://apihub.agnes-ai.com/v1",
+                    "model": personal.get("model") or "agnes-2.0-flash",
+                    "api_key_set": bool(personal.get("api_key_encrypted")),
+                    "api_key_masked": personal.get("api_key_masked") if personal.get("api_key_encrypted") else "<unset>",
+                    "api_key_encrypted": personal.get("api_key_encrypted") or "",
+                    "source": "user",
+                }
+        return self._system_model_config()
+
+    def _runtime_model_config(self, user_id: str | None) -> dict[str, Any]:
+        effective = self._effective_model_config(user_id)
+        encrypted = str(effective.get("api_key_encrypted") or "")
+        api_key = str(effective.get("api_key") or "")
+        key_error = ""
+        if encrypted:
+            try:
+                api_key = decrypt_api_key(encrypted)
+            except ModelConfigSecretError:
+                api_key = ""
+                key_error = "MODEL_CONFIG_SECRET unavailable"
+        return {
+            "provider": effective.get("provider") or "Agens",
+            "base_url": effective.get("base_url") or "https://apihub.agnes-ai.com/v1",
+            "model": effective.get("model") or "agnes-2.0-flash",
+            "api_key": api_key,
+            "api_key_set": bool(api_key),
+            "source": effective.get("source") or "system",
+            "key_error": key_error,
+        }
+
+    def _apply_runner_model_config(self, runner: WebRunner) -> None:
+        runner.engine.model_config = self._runtime_model_config(runner.user_id)
 
     def _require_non_guest_runner(
         self,

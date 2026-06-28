@@ -133,7 +133,7 @@
 | `BgmToggle.tsx` | 无 props；右上角扬声器；`<audio src="/assets/audio/bgm.flac" loop preload="none" />`；音量 0.42 |
 | `FallbackBanner.tsx` | `{ session, busy, runTurn }`；模型失败时顶部条幅 + "继续本局 / 结束本局" |
 | `SettingsSaveDialog.tsx` | `{ mode, session, user, onClose, setSession, setView, onAuth }`；存档 / 设置双 tab 弹窗；负责 tab、数据刷新和消息展示 |
-| `ModelSettingsPanel.tsx` | `{ user, settings, setSettings, setMessage, onAuth }`；管理员模型配置表单 + 非管理员/访客提示 |
+| ModelSettingsPanel.tsx | user, settings, setSettings, setMessage, onAuth; logged-in user personal model settings form + guest login/register prompt; system default maintenance uses the separate admin API |
 | `SaveSlotsPanel.tsx` | `{ user, saves, onSave, onLoad, onAuth }`；固定渲染 `slot_1..slot_5`，登录用户读写云存档，访客显示不可云存档提示 |
 
 ### 5.4 资源（`public/assets/`）
@@ -327,3 +327,10 @@ npm run build
 - [PROJECT_AUDIT.md](PROJECT_AUDIT.md) — 结构边界 + 技术债
 - [ALPHA_REVIEW_AND_LESSONS.md](ALPHA_REVIEW_AND_LESSONS.md) — Alpha 复盘
 - [USER_TUTORIAL.md](USER_TUTORIAL.md) — 中文玩家入门指南
+
+## 2026-06-28 Model Settings Architecture
+
+- `model_config` remains the singleton system default. It stores provider/base URL/model, masked key state, and encrypted key material.
+- `user_model_configs` stores one encrypted personal model config per `user_id` with `ON DELETE CASCADE` isolation.
+- `MODEL_CONFIG_SECRET` derives the application-layer encryption key. Missing secret while decrypting stored keys fails closed, so runtime does not fall back to another user's key or a process-global key.
+- Frontend settings are available to logged-in ordinary users. Admin-only system default management uses the separate `/api/admin/settings/model` API.

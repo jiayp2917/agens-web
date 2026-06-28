@@ -294,3 +294,10 @@ $env:TEST_DATABASE_URL = "postgresql+psycopg://agens_test@127.0.0.1:55432/agens_
 - Boundary note: this local batch does not prove production live-model success.
   Fallback still does not count as live-model acceptance; production account
   registration/login/save/load remains a server-thread item.
+
+## 2026-06-28 Model Settings Governance Status
+
+- P0 model-settings product rule is implemented locally: registered-user personal config plus system Agens fallback. Guests receive 401 on `/api/settings/model`.
+- Admin system default management is isolated at `/api/admin/settings/model`.
+- PostgreSQL now has `user_model_configs` and encrypted key material; `MODEL_CONFIG_SECRET` is mandatory for production decryption/encryption.
+- Local validation covers API isolation, no raw key response, encrypted PG storage, fail-closed missing-secret behavior, and frontend settings access. Production deployment and live-model acceptance remain separate server-thread work.

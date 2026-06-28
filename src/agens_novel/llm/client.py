@@ -49,7 +49,7 @@ def _resolve_config(
     explicit arg or ``AGNES_API_KEY``.
     """
     base = base_url or os.environ.get("AGNES_BASE_URL") or "https://apihub.agnes-ai.com/v1"
-    key = api_key or os.environ.get("AGNES_API_KEY", "")
+    key = os.environ.get("AGNES_API_KEY", "") if api_key is None else api_key
     mdl = model or os.environ.get("AGNES_MODEL", "agnes-2.0-flash")
     return base, key, mdl
 
