@@ -1,15 +1,11 @@
 # 项目文档索引
 
-## 2026-06-28 Governance Dispatch Update
+## 2026-06-28 Current Local Status
 
-- Read `docs/GOVERNANCE_EXECUTION_STATUS_20260628.md` before claiming the
-  model-settings correction, production account flow, production migration, or
-  visible-Chrome 20-turn acceptance is complete.
-- Code implementation belongs to thread `019ee0bd-4f73-7553-a8ac-9ab1d8bc7dad`.
-  Server/production checks belong to thread
-  `019ee2ee-823e-7441-bdaa-881782da7949`.
-- This governance thread may commit status documentation, but implementation
-  changes must be committed by the code thread after its validation gates pass.
+- User-scoped model settings landed in commit `44519d7`. Read `README.md`, `docs/RUNTIME_FLOW.md`, `docs/security.md`, and `docs/ARCHITECTURE.md` for the current API, storage, and runtime boundary.
+- Migration `20260622_0005_user_model_configs.py` adds encrypted per-user model config storage. Production still needs a separate approved Alembic/deploy batch before this is live.
+- Latest local validation: `tests\web` -> `59 passed`, full `pytest -q` -> `420 passed, 1 xfailed`, and frontend `npm.cmd run build` passed. The xfail is the known real-LLM upstream HTTP 500 path, not local acceptance evidence.
+- Server/production checks remain owned by thread `019ee2ee-823e-7441-bdaa-881782da7949`; fallback is not live-model success.
 
 ## 2026-06-27 Local Main-Flow Update
 
@@ -19,7 +15,7 @@
   `turn_count` when breakthrough is not currently allowed.
 - Fixed locally: narrative/state mismatch rejection keeps `game_turns`
   contiguous by recording the base rule settlement.
-- Validation baseline after the fix: `tests\web` -> `53 passed`, full
+- Previous validation baseline after the 2026-06-27 fix: `tests\web` -> `53 passed`, full
   `pytest -q` -> `414 passed, 1 xfailed`, frontend `npm.cmd run build`
   passed. The expected xfail is the real-LLM integration path when the
   upstream provider returns HTTP 500; it is not local acceptance evidence.
@@ -63,7 +59,7 @@
 | UI 当前细修状态 / 截图验收 | `docs/PROJECT_AUDIT.md` 的 2026-06-24 状态、`docs/UI_REFACTOR_PLAN.md` 的落地状态 |
 | 模块地图 / 接手项目 | `docs/ARCHITECTURE.md`、`docs/PROJECT_AUDIT.md`、`web/backend/app.py` |
 | 新玩家教程 / 用户支持 | `docs/USER_TUTORIAL.md`、`web/frontend-react/src/components/TutorialDialog.tsx` |
-| 历史待办核对 | `docs/archive/2026-06-20-claude-followups.md`、`docs/ALPHA_REVIEW_AND_LESSONS.md` |
+| 历史记录核对 | `docs/archive/`、`CHANGELOG.md`；仅作审计背景，不作为当前状态来源 |
 
 ## 当前执行边界
 

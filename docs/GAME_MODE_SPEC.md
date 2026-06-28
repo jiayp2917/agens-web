@@ -14,7 +14,7 @@
 - Acceptance for "playable without obvious main-flow bug" still requires a new
   visible-Chrome 20-turn live-model run after this fix.
 
-> 状态：**v5 已实现 / 阶段 7/8 联调收尾中**。游戏模式核心规则已切换到 A/B/C/D 四按钮、无 HP/MP、事件判定战斗、寿元寿命表、六维属性和动态流逝年数；服务层、迁移和 React 入口仍需按本表持续验收。
+> 状态：**v5 Alpha 本地可玩链路已落地，生产验收待部署批次**。游戏模式核心规则已切换到 A/B/C/D 四按钮、无 HP/MP、事件判定战斗、寿元寿命表、六维属性、动态流逝年数、PostgreSQL 回合记录和用户级模型配置。
 > 文档定位：游戏模式的产品 spec + 技术实现规格，是“游戏模式”的单一事实来源。
 >
 > ## 实现状态（截至 2026-06-22）
@@ -29,7 +29,7 @@
 > | §11 稀有度解锁门 | 白/绿/蓝/紫/橙/红 六档 + runs/ascension 门径 | ✅ 已接线（`constants.rarity_unlocked_for`、`/api/catalog/rarities`，终局写入 `player_progress`） |
 > | §11 死亡分类 | finale > karma > event > lifespan > player | ✅ 已实现（`death_rewards.categorize_death`） |
 > | 验证 | compileall + pytest + React build + 密钥审计 | ⏳ 以当前分支最新测试结果为准，不在文档中固化旧计数 |
-> | 待办 | React 375/768/1440 三档、游客/账号存档联调、旧前端归档删除 | ⏳ 阶段 7/8 与 legacy 清理收尾 |
+> | 待办 | 生产部署 `20260622_0005`、生产账号流、非 fallback live-model 验收、可见 Chrome 20 回合验收 | ⏳ 生产/浏览器验收，不是本地代码阻塞 |
 
 ## 0. TL;DR
 
@@ -78,7 +78,7 @@
 - 原“当前只开放引导模式”需在实施游戏模式时更新为“当前只开放游戏模式”。
 - 原文本行动入口在游戏模式下不适用；D 固定为气运/天命选项。
 - 9 阶境界、API key 脱敏、前端不得保存真实 key、Web 前端不得直接修改游戏状态等约束仍然适用。
-- 本文是 v5 规格；当前代码应优先让 React 主入口和 Web API 对齐本规格，旧前端只允许作为显式 legacy fallback。
+- 本文是 v5 规格；当前代码应优先让 React 主入口和 Web API 对齐本规格。旧 `web/frontend` 已删除，不再作为产品入口或 fallback。
 
 ---
 

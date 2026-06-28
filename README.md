@@ -1,18 +1,12 @@
 # agens-novel-web
 
-## 2026-06-28 Governance Dispatch Status
+## 2026-06-28 Current Local Status
 
-- Current model-settings correction is delegated to code thread
-  `019ee0bd-4f73-7553-a8ac-9ab1d8bc7dad`; this README does not claim it has
-  landed yet.
-- Production/server validation and later deployment gates are delegated to
-  server thread `019ee2ee-823e-7441-bdaa-881782da7949`.
-- This governance thread records blockers, local PostgreSQL status, and
-  post-implementation validation gates in
-  `docs/GOVERNANCE_EXECUTION_STATUS_20260628.md`.
-- Local PostgreSQL is expected at `127.0.0.1:55432`; check with
-  `F:\pg\bin\pg_isready.exe -h 127.0.0.1 -p 55432` before attempting any
-  `pg_ctl start`.
+- User-scoped model settings are implemented and committed in `44519d7`: registered users own personal model settings, guests receive 401, and users without personal config fall back to the system Agens default.
+- System default model settings are maintained through `/api/admin/settings/model`; ordinary users use `/api/settings/model`.
+- PostgreSQL stores encrypted key material only via `MODEL_CONFIG_SECRET`; raw model API keys must not appear in API responses, logs, saves, session snapshots, frontend bundles, or plaintext database columns.
+- Local PostgreSQL is expected at `127.0.0.1:55432`; check with `F:\pg\bin\pg_isready.exe -h 127.0.0.1 -p 55432` before attempting any `pg_ctl start`.
+- Production/server validation and deployment remain separate work owned by server thread `019ee2ee-823e-7441-bdaa-881782da7949`; local validation is not production acceptance.
 
 ## 2026-06-27 Local Main-Flow Status
 
@@ -29,11 +23,10 @@
 - Verified locally with safe PostgreSQL test URL
   `postgresql+psycopg://agens_test@127.0.0.1:55432/agens_web_test`:
   `compileall -q src tests web scripts migrations`, `pytest -q tests\web`
-  -> `54 passed`, full `pytest -q` -> `416 passed`, and
+  -> `59 passed`, full `pytest -q` -> `420 passed, 1 xfailed`, and
   frontend `npm.cmd run build`.
-- Not accepted yet: a fresh visible-Chrome 20-turn live-model player run,
-  production account registration/login/save/load, and production live-model
-  success. Fallback still does not count as live-model success.
+- Still not accepted: a fresh visible-Chrome 20-turn live-model player run,
+  production deployment of migration `20260622_0005`, production account registration/login/save/load, and production live-model success. Fallback still does not count as live-model success.
 
 Web-only 文字修仙模拟器。当前 `master` 是浏览器版本主线。
 

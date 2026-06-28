@@ -4,6 +4,8 @@
 
 > **2026-06-25 更新**：已执行审计计划（`zesty-popping-graham.md`）的**方案 C**——删除 `database_sqlite.py`，数据库统一为 PostgreSQL。P0 安全修复、P1 死代码清理、P2 PG-only 合并、P3 部分去重均已完成，详见 `CHANGELOG.md`（2026-06-25）。下文双轨分析与「建议方案 A」为历史记录，方案 C 为实际落地结果。
 
+> **2026-06-28 更新**：用户级模型配置治理已本地落地并提交 `44519d7`。`/api/settings/model` 为登录用户个人配置接口，`/api/admin/settings/model` 为系统默认配置接口；PostgreSQL 新增 `user_model_configs` 并以 `MODEL_CONFIG_SECRET` 加密存储 key。最新本地验证：`tests\web` 59 passed，全量 `pytest -q` 420 passed / 1 xfailed，前端 build 通过。
+
 > **2026-06-26 更新**：本地 Web/API 测试已接入安全本地 PostgreSQL 测试库，`TEST_DATABASE_URL=postgresql+psycopg://agens_test@127.0.0.1:55432/agens_web_test` 时 `tests\web` 真实执行并通过 `50 passed`，全量 `pytest -q` 为 `415 passed`。当前事实口径为 PostgreSQL-only；下方 2026-06-24 的 SQLite smoke 仅是历史证据，不代表当前运行方式。
 
 > **2026-06-27 更新**：本地主流程/UI 面板清理后的最新验证为 `compileall -q src tests web scripts migrations` 通过，`pytest -q tests\web` 为 `54 passed`，全量 `pytest -q` 为 `416 passed`，前端 `npm.cmd run build` 通过。本地自动化验证不代表 production live-model 成功；fallback 仍不能算 live-model 验收。
@@ -12,7 +14,7 @@
 
 - 产品入口是浏览器 Web UI + FastAPI 后端。
 - 当前核心游戏逻辑继续复用 `src/agens_novel/`。
-- 当前只开放游戏模式（v5 已实现 / 阶段 7/8 联调收尾中）：A/B/C/D 四按钮固定语义，A 稳妥 / B 机遇 / C 风险 / D 气运。
+- 当前只开放游戏模式 v5 Alpha：A/B/C/D 四按钮固定语义，A 稳妥 / B 机遇 / C 风险 / D 气运。
 - 引导模式、小说模式只作为禁用入口保留，不开放运行逻辑。
 - 模型失败、无 key、无有效选项时，用户可选择本地故事兜底继续或结束本局。
 - 境界顺序固定为：练气、筑基、金丹、元婴、化神、合体、大乘、渡劫、飞升。
@@ -186,7 +188,7 @@ $env:TEST_DATABASE_URL = "postgresql+psycopg://agens_test@127.0.0.1:55432/agens_
 - 首页：标题保持单行，删除标题下方红点；入口按钮文字按整颗按钮居中，图标左侧辅助；QQ群左侧圆形标识从 `Q` 改为“仙”。
 - 角色创建页：命数列表选中标识前置；天赋、灵根、家世改为可收缩区块，列表内部滚动，避免家世内容被 2K 高度挤出；去掉撞色的提示胶囊，改为普通说明文本。
 - 终局摘要：`凡人长寿` 成就从“寿元上限 >= 80”改为“实际年龄 >= 80”；注册用户 `/death_summary` 优先基于当前 session 重算摘要，旧数据库成就只作为兜底，避免 16 岁角色显示“撑过八十载”。
-- 只读复盘线程 `019ee96e-5685-7223-8796-55c1c7b52205` 结论：P0/P1 仍是 UI 批次验收、生产 Alembic/PG smoke、真实浏览器/公网游玩链路；冗余清理优先缓存、构建产物、历史归档；技术债集中在 React 大样式文件、后端服务边界、SQLite/PostgreSQL 双轨和源码字符串测试假绿。
+- 只读复盘线程 `019ee96e-5685-7223-8796-55c1c7b52205` 结论：P0/P1 仍是 UI 批次验收、生产 Alembic/PG smoke、真实浏览器/公网游玩链路；冗余清理优先缓存、构建产物、历史归档；技术债集中在 React 大样式文件、后端服务边界、生产验收缺口和源码字符串测试假绿。
 - 背景素材暂未替换；新首页/角色页背景提示词已补入 `docs/UI_REFACTOR_PLAN.md`。
 
 ## 2026-06-24 UI 批次收尾

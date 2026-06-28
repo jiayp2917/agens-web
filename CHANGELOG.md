@@ -1,5 +1,13 @@
 # Changelog
 
+## 2026-06-28
+
+### Changed - documentation and historical artifact cleanup
+
+- Updated current project documentation after commit `44519d7` so user-scoped model settings are recorded as landed locally, while production deployment, production account flow, non-fallback live-model acceptance, and visible Chrome 20-turn validation remain separate gates.
+- Removed obsolete untracked Playwright evidence files from `output/playwright/`; generated validation artifacts are not part of the product source tree unless explicitly promoted.
+- Retired stale governance-dispatch wording that said model-settings implementation was still delegated/not landed.
+
 ## 2026-06-27
 
 ### Changed - governance dispatch status

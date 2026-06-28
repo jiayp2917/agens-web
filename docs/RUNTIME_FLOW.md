@@ -19,7 +19,7 @@
   The xfail is the real-LLM integration case for an upstream HTTP 500, not a
   local game-flow regression.
 
-> **当前实现状态：v5 已实现 / 阶段 7/8 联调收尾中。** React 主入口已经切到 A/B/C/D 四按钮固定语义：A 稳妥、B 机遇、C 风险、D 气运；无自由文本主入口，无 HP/MP 常驻 UI。`docs/GAME_MODE_SPEC.md` 是当前游戏模式规格和验收来源。
+> **当前实现状态：v5 Alpha 本地可玩链路已落地。** React 主入口已经切到 A/B/C/D 四按钮固定语义：A 稳妥、B 机遇、C 风险、D 气运；无自由文本主入口，无 HP/MP 常驻 UI；模型设置为用户个人配置 + 系统默认 Agens 兜底。`docs/GAME_MODE_SPEC.md` 是当前游戏模式规格和验收来源。
 
 本文记录当前 Web-only 运行链路。产品入口是浏览器 UI + FastAPI 后端，不再包含移动端打包或设备验证路径。
 
@@ -118,7 +118,7 @@ Browser UI
 - PostgreSQL 启动后可补充 catalog 种子数据，但不能依赖应用隐式建表。
 - 状态变更 API 需要同源/允许来源校验。
 - 生产模式关闭 `/docs`、`/redoc`、`/openapi.json`，并启用 Host 白名单。
-- 当前 React 主入口已切到游戏模式（v5 已实现 / 阶段 7/8 联调收尾中）：A/B/C/D 四按钮固定语义，支持访客新局 + 邀请码账号存档。
+- 当前 React 主入口已切到游戏模式 v5 Alpha：A/B/C/D 四按钮固定语义，支持访客新局、邀请码账号存档，以及注册用户个人模型配置。
 - 境界顺序固定为：练气、筑基、金丹、元婴、化神、合体、大乘、渡劫、飞升。
 
 ## 验证

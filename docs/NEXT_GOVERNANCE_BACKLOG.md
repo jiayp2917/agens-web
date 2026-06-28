@@ -6,23 +6,18 @@ validation as production acceptance.
 
 ## Current Evidence
 
-- 2026-06-28 governance dispatch evidence:
-  - Model-settings correction is not yet accepted in this governance thread.
-    Implementation is delegated to code thread
-    `019ee0bd-4f73-7553-a8ac-9ab1d8bc7dad`.
-  - Server/production validation and later deployment gates are delegated to
-    server thread `019ee2ee-823e-7441-bdaa-881782da7949`.
-  - Current unresolved P0 product rule: model settings must become registered
-    user personal config plus system Agens default fallback; guests cannot
-    configure models; admin system-default maintenance must use a separate
-    admin-only endpoint.
-  - Current unresolved P0 safety rule: PostgreSQL must not store raw model API
-    keys; encrypted key material requires `MODEL_CONFIG_SECRET`; missing secret
-    must fail closed when encrypted stored keys are needed.
-  - Local PostgreSQL check is `F:\pg\bin\pg_isready.exe -h 127.0.0.1 -p 55432`.
-    If it already accepts connections, do not run `pg_ctl start` again.
-  - Full blocker list and handling path:
-    `docs/GOVERNANCE_EXECUTION_STATUS_20260628.md`.
+- 2026-06-28 user-scoped model settings governance landed locally in commit `44519d7`:
+  - `/api/settings/model` is a logged-in user endpoint for personal config. Guests receive 401.
+  - `/api/admin/settings/model` is the separate admin-only system default endpoint.
+  - `user_model_configs` stores one encrypted config per `user_id`; system default remains in `model_config`.
+  - Stored model keys use application-layer encryption with `MODEL_CONFIG_SECRET`; missing or invalid secret fails closed.
+  - Runtime model calls resolve the current session/user config explicitly and do not mutate process-global `AGNES_API_KEY`.
+  - Character creation no longer renders a second rarity dot beside the selected radio indicator.
+  - Local validation passed: `pytest -q tests\web` -> `59 passed`; full `pytest -q` -> `420 passed, 1 xfailed`; frontend `npm.cmd run build` passed.
+- Still open after local commit:
+  - Production migration/deploy for Alembic `20260622_0005` needs separate server-thread approval.
+  - Production account flow and non-fallback live-model acceptance remain unverified.
+  - Visible Chrome 20-turn local/live-model player validation still needs a fresh run.
 
 - 2026-06-27 local main-flow governance evidence:
   - UI panel cleanup removed the old visible gameplay tool tabs
@@ -49,8 +44,8 @@ validation as production acceptance.
     stored-summary helpers without changing the public route or response shape.
   - Local PostgreSQL web tests passed with
     `TEST_DATABASE_URL=postgresql+psycopg://agens_test@127.0.0.1:55432/agens_web_test`.
-    Current result: `pytest -q tests\web` -> `54 passed`; full `pytest -q` ->
-    `416 passed`; frontend `npm.cmd run build` passed.
+    Previous 2026-06-27 result: `pytest -q tests\web` -> `54 passed`; full `pytest -q` ->
+    `416 passed`; frontend `npm.cmd run build` passed. Latest 2026-06-28 model-settings validation is recorded above.
   - Local PostgreSQL validation required recovering
     `.tmp\pg-test-20260626-55432` from a stale `postmaster.pid` after
     confirming no server was running, then starting it with `pg_ctl`. Formalize
