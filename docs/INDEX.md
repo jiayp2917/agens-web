@@ -17,6 +17,7 @@
 - `CLAUDE.md`：Claude/Claude Code 接手本项目时的边界说明。
 - `docs/RUNTIME_FLOW.md`：当前运行链路、API 流程、本地启动和模型配置流。
 - `docs/GAME_MODE_SPEC.md`：游戏模式 v5 的产品与规则规格。
+- `docs/PLAYABLE_GAMEPLAY_ROADMAP_20260629.md`：当前阶段路线；先 P0 遗留验收闭环，再进入玩法内容改造。
 - `docs/ARCHITECTURE.md`：模块地图和后端/引擎/前端分层说明。
 - `docs/security.md`：密钥、账号、生产环境和公网 Alpha 安全边界。
 - `docs/PROJECT_AUDIT.md`：当前结构边界、已清理内容、剩余技术债。
@@ -38,6 +39,7 @@
 | --- | --- |
 | 当前运行链路 / 本地启动 | `docs/RUNTIME_FLOW.md`、`README.md` |
 | 游戏规则 / 游玩内容设计 | `docs/GAME_MODE_SPEC.md`、`docs/USER_TUTORIAL.md` |
+| 阶段计划 / 玩法迭代执行 | `docs/PLAYABLE_GAMEPLAY_ROADMAP_20260629.md`、`docs/NEXT_GOVERNANCE_BACKLOG.md` |
 | 模块地图 / 接手项目 | `docs/ARCHITECTURE.md`、`docs/PROJECT_AUDIT.md` |
 | 代码复杂度治理 | `docs/PROJECT_AUDIT.md`、`docs/NEXT_GOVERNANCE_BACKLOG.md` |
 | 公网部署 / 密钥 / 安全 | `docs/security.md`、`docs/PRODUCTION_V5_MIGRATION_CHECKLIST.md` |

@@ -20,6 +20,7 @@
   local game-flow regression.
 
 > **当前实现状态：v5 Alpha 本地可玩链路已落地。** React 主入口已经切到 A/B/C/D 四按钮固定语义：A 稳妥、B 机遇、C 风险、D 气运；无自由文本主入口，无 HP/MP 常驻 UI；模型设置为用户个人配置 + 系统默认 Agens 兜底。`docs/GAME_MODE_SPEC.md` 是当前游戏模式规格和验收来源。
+> 当前阶段计划见 `docs/PLAYABLE_GAMEPLAY_ROADMAP_20260629.md`：先完成 P0 遗留验收闭环，再在现有架构内做玩法内容改造。
 
 本文记录当前 Web-only 运行链路。产品入口是浏览器 UI + FastAPI 后端，不再包含移动端打包或设备验证路径。
 

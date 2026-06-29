@@ -13,6 +13,7 @@ This is the active backlog for `agens-web`. It separates local code work, local 
 - Latest local automated validation after model-settings governance: `tests\web` 59 passed, full `pytest -q` 420 passed / 1 xfailed, frontend build passed.
 - Main-flow fixes already landed locally: fixed-choice `/choice`, no HTTP 200 without turn progression for ineligible breakthrough choices, contiguous `game_turns` after mismatch/fallback paths.
 - Production/server acceptance is still separate. Fallback is not live-model success.
+- The active phase plan is `docs/PLAYABLE_GAMEPLAY_ROADMAP_20260629.md`: close P0 validation first, then improve gameplay content without broad architecture changes.
 
 ## P0: Acceptance And Deployment Gates
 
@@ -37,6 +38,8 @@ These items block claiming the project is a stable playable public build.
    - Reduce repeated retreat/breakthrough loops.
    - Add clearer stage goals, meaningful rewards, and visible consequences.
    - Ensure model narrative claims are backed by structured state changes or rejected cleanly.
+   - Treat the first playable slice and full-run pacing as gameplay acceptance targets per `docs/GAME_MODE_SPEC.md` §3.5.
+   - Use an abstract xianxia trope library only. Do not copy real novel characters, sects, plot text, or proprietary settings.
 2. Tighten model failure paths.
    - Cover StartFlow, TurnFlow, BreakthroughFlow fallback and `llm_error` paths.
    - API responses should distinguish provider failure, incomplete output, validation rejection, and local fallback.
@@ -48,11 +51,17 @@ These items block claiming the project is a stable playable public build.
 4. Frontend maintenance.
    - Continue splitting `CharacterCreatePage` and style files around verified workflows.
    - Use Chrome smoke after visual changes.
+5. Gameplay system iteration.
+   - Move character creation to a six-attribute point pool per `docs/GAME_MODE_SPEC.md` §4.1.
+   - Add an opening chronicle before the first player choice per `docs/GAME_MODE_SPEC.md` §3.5.
+   - Build event pools by steady, opportunity, risk, and luck routes.
+   - Keep small-realm progress mostly implicit; reserve major-realm breakthroughs for stage events.
 
 ## P2: Documentation And Cleanup
 
 1. Keep current docs short and authoritative.
    - `docs/INDEX.md` routes current reading.
+   - `docs/PLAYABLE_GAMEPLAY_ROADMAP_20260629.md` contains the current phase plan.
    - `docs/PROJECT_AUDIT.md` contains current structure and risk only.
    - This file contains active backlog only.
    - `CHANGELOG.md` and `docs/archive/` retain history.
