@@ -1,5 +1,7 @@
 # Alpha Review And Lessons
 
+> Archived Note: this file is historical. Current structure/risk status lives in docs/PROJECT_AUDIT.md; current backlog lives in docs/NEXT_GOVERNANCE_BACKLOG.md.
+
 ## 2026-06-27 Local Main-Flow Addendum
 
 - A visible local Chrome validation found the build was only partially playable:

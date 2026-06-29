@@ -325,7 +325,7 @@ npm run build
 - [RUNTIME_FLOW.md](RUNTIME_FLOW.md) — 当前运行链路（流程视角）
 - [GAME_MODE_SPEC.md](GAME_MODE_SPEC.md) — 游戏模式 v5 产品 + 技术规格
 - [PROJECT_AUDIT.md](PROJECT_AUDIT.md) — 结构边界 + 技术债
-- [ALPHA_REVIEW_AND_LESSONS.md](ALPHA_REVIEW_AND_LESSONS.md) — Alpha 复盘
+- [Archived Alpha review](archive/2026-06-governance/ALPHA_REVIEW_AND_LESSONS.md) — Alpha 复盘
 - [USER_TUTORIAL.md](USER_TUTORIAL.md) — 中文玩家入门指南
 
 ## 2026-06-28 Model Settings Architecture

@@ -160,7 +160,7 @@ A：向 QQ 群 `985776771` 群主索取。
 - [ARCHITECTURE.md](ARCHITECTURE.md) - 项目模块架构说明
 - [GAME_MODE_SPEC.md](GAME_MODE_SPEC.md) - 游戏模式 v5 产品 + 技术规格
 - [RUNTIME_FLOW.md](RUNTIME_FLOW.md) - 当前运行链路
-- [ALPHA_REVIEW_AND_LESSONS.md](ALPHA_REVIEW_AND_LESSONS.md) - Alpha 复盘与剩余风险
+- [Archived Alpha review](archive/2026-06-governance/ALPHA_REVIEW_AND_LESSONS.md) - 历史 Alpha 复盘
 
 ## Model Settings
 

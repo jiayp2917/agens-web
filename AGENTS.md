@@ -140,7 +140,7 @@ cd <repo>
 
 ## 文档索引
 
-后续智能体先读 `docs/INDEX.md`。Web 化路线见 `docs/WEB_ITERATION_PLAN.md`，当前结构边界和技术债见 `docs/PROJECT_AUDIT.md`。
+后续智能体先读 `docs/INDEX.md`。当前运行链路见 `docs/RUNTIME_FLOW.md`，结构边界和技术债见 `docs/PROJECT_AUDIT.md`，下一批治理工作见 `docs/NEXT_GOVERNANCE_BACKLOG.md`。历史计划只看 `docs/archive/`。
 
 ## 通用编码准则
 

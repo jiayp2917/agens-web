@@ -1,284 +1,82 @@
 # Next Governance Backlog
 
-This file is the active backlog for continuing `agens-web` governance. It
-separates local work from production work so future agents do not treat local
-validation as production acceptance.
+This is the active backlog for `agens-web`. It separates local code work, local validation, and production/server work so local success is not mistaken for production acceptance.
 
 ## Current Evidence
 
-- 2026-06-28 user-scoped model settings governance landed locally in commit `44519d7`:
-  - `/api/settings/model` is a logged-in user endpoint for personal config. Guests receive 401.
-  - `/api/admin/settings/model` is the separate admin-only system default endpoint.
+- User-scoped model settings are implemented locally in commit `44519d7`:
+  - `/api/settings/model` is a logged-in user endpoint for personal config.
+  - `/api/admin/settings/model` is the admin-only system default endpoint.
   - `user_model_configs` stores one encrypted config per `user_id`; system default remains in `model_config`.
-  - Stored model keys use application-layer encryption with `MODEL_CONFIG_SECRET`; missing or invalid secret fails closed.
-  - Runtime model calls resolve the current session/user config explicitly and do not mutate process-global `AGNES_API_KEY`.
-  - Character creation no longer renders a second rarity dot beside the selected radio indicator.
-  - Local validation passed: `pytest -q tests\web` -> `59 passed`; full `pytest -q` -> `420 passed, 1 xfailed`; frontend `npm.cmd run build` passed.
-- Still open after local commit:
-  - Production migration/deploy for Alembic `20260622_0005` needs separate server-thread approval.
-  - Production account flow and non-fallback live-model acceptance remain unverified.
-  - Visible Chrome 20-turn local/live-model player validation still needs a fresh run.
+  - Stored model keys use application-layer encryption with `MODEL_CONFIG_SECRET` and fail closed if decryption cannot be performed.
+  - Runtime model calls resolve config by current session/user and do not mutate process-global `AGNES_API_KEY`.
+- Latest local automated validation after model-settings governance: `tests\web` 59 passed, full `pytest -q` 420 passed / 1 xfailed, frontend build passed.
+- Main-flow fixes already landed locally: fixed-choice `/choice`, no HTTP 200 without turn progression for ineligible breakthrough choices, contiguous `game_turns` after mismatch/fallback paths.
+- Production/server acceptance is still separate. Fallback is not live-model success.
 
-- 2026-06-27 local main-flow governance evidence:
-  - UI panel cleanup removed the old visible gameplay tool tabs
-    (状态/背包/功法/地图/任务/境界), the 位置 summary row, and arbitrary panel output
-    from the React gameplay surface. Runtime state fields remain for rules,
-    rewards, fallback, and old-save tolerance.
-  - Character creation fate groups now collapse when their own summary is
-    clicked, use a radio-style black dot selection marker, sort by the unified
-    color order, and no longer append color text after item names.
-  - The gameplay chronicle feed now uses row-style age-led story entries rather
-    than the old card/timeline presentation.
-  - `/api/sessions/{id}/choice` is now restricted to `choice_index` or
-    A/B/C/D letters; arbitrary free text is rejected with 400.
-  - Premature breakthrough-intent choices now settle as ordinary turns when
-    realm rules say breakthrough is not available, preventing HTTP 200 with
-    unchanged `turn_count`.
-  - Narrative/state mismatch rejection now keeps `game_turns` contiguous by
-    discarding untrusted model output while still recording the base rule
-    settlement.
-  - Accepted local-story fallback now records the transition turn with
-    `local_story_fallback=true`, so registered-user `game_turns` does not skip
-    a turn when the narrator returns no usable choices.
-  - `WebGameService.death_summary()` was split into live-summary and
-    stored-summary helpers without changing the public route or response shape.
-  - Local PostgreSQL web tests passed with
-    `TEST_DATABASE_URL=postgresql+psycopg://agens_test@127.0.0.1:55432/agens_web_test`.
-    Previous 2026-06-27 result: `pytest -q tests\web` -> `54 passed`; full `pytest -q` ->
-    `416 passed`; frontend `npm.cmd run build` passed. Latest 2026-06-28 model-settings validation is recorded above.
-  - Local PostgreSQL validation required recovering
-    `.tmp\pg-test-20260626-55432` from a stale `postmaster.pid` after
-    confirming no server was running, then starting it with `pg_ctl`. Formalize
-    this startup/recovery path so future agents do not restart or recreate the
-    test cluster unnecessarily.
-  - This is local validation only. It does not accept production account flow
-    or production live-model success.
-- 2026-06-27 production model hotfix evidence:
-  - model runtime env is `AGNES_*`, not `AGENS_*`
-  - `dc05e9f4` enabled narrator repair for turn/breakthrough flows and aligned
-    model env examples/tests
-  - `2ea29972` made `Dockerfile` compatible with the host legacy Docker builder
-  - production env was backed up and corrected without printing secret values
-  - last successful production guest start/choice smoke showed
-    `fallback_active=False`, `model_failures=0`, and `choices_count=4` for both
-    local-origin and public-origin requests
-  - resume-time recheck could not reach `192.168.1.250:22`, so this is
-    last-successful evidence rather than fresh current-state confirmation
-  - production account flow remains unverified
-- Historical local code validation as of 2026-06-26:
-  - `python -m compileall -q src tests web scripts migrations`
-  - `pytest -q tests\web` with local `TEST_DATABASE_URL` -> 50 passed
-  - `pytest -q tests\unit\engine\test_flow_failure_paths.py tests\unit\engine\test_game_engine_turn.py tests\unit\engine\test_game_engine_setup.py tests\unit\engine\test_game_engine_state.py` -> 56 passed
-  - `pytest -q tests\unit\game\test_database_common.py tests\unit\game\test_game_turns_storage.py tests\web\test_web_api.py::test_postgres_database_url_smoke` -> 13 passed
-  - `pytest -q` with local `TEST_DATABASE_URL` -> 415 passed
-  - `web\frontend-react npm.cmd run build` -> passed, 1603 modules,
-    24.34 kB CSS, 190.95 kB JS
-- Historical 2026-06-24 baseline before Option C:
-  - `pytest -q tests\web` -> 49 passed, 1 skipped
-  - `pytest -q` -> 425 passed, 1 skipped
-  - `pytest -q tests/unit/engine/test_game_engine_turn.py tests/unit/engine/test_game_engine_setup.py tests/unit/engine/test_game_engine_state.py tests/unit/game/test_database_common.py` -> 56 passed
-  - `web\frontend-react npm.cmd run build` (1602 modules / 24.34 kB CSS / 190.37 kB JS)
-- Local Chrome validation covers:
-  - desktop guest create/start/one-turn flow against local PostgreSQL
-  - local Chrome UI account flow against PostgreSQL: invite registration,
-    logged-in home state, account new game, save to `slot_1`, and load from
-    `slot_1` all passed; screenshot:
-    `D:\chat\agens-web\output\agens-web-local-pg-account-ui-20260626.png`
-  - 2560x1440 layout smoke with no horizontal overflow; screenshot:
-    `D:\chat\agens-web\output\agens-web-local-pg-2k-20260626.png`
-  - narrow-window smoke at the Chrome DevTools minimum effective width
-    (~500 px) with no horizontal overflow; screenshot:
-    `D:\chat\agens-web\output\agens-web-local-pg-mobile-500w-20260626.png`
-  - live-model guest turn returned HTTP 200, but it took about 63 seconds and
-    the narrator diagnostic reported incomplete structured narrative; treat this
-    as a gameplay-flow/performance risk, not as full model-quality acceptance
+## P0: Acceptance And Deployment Gates
 
-## 2026-06-24 P1 local complexity governance batch
+These items block claiming the project is a stable playable public build.
 
-- Boundary: in-repo only. No server / SSH / Cloudflare / Caddy / Tunnel /
-  DNS / firewall / production database / production account / production
-  live model / Chrome / Playwright work. No Alembic upgrade, no service
-  restart.
-- Changes:
-  - `GameEngine._run_breakthrough_narrator()` owns the
-    `run_turn_sync("narrator", ...)` call and the raw exception branch in
-    `attempt_breakthrough()`. The exception fallback uses
-    `source="breakthrough_narrator_exception"`. The post-call
-    `if result.get("llm_error")` block and the
-    `source="breakthrough_narrator_error"` fallback are still inline in
-    `attempt_breakthrough()` and remain a P1 candidate.
-  - `WebGameService._require_non_guest_runner(action=...)` centralises the
-    `is_guest_user_id → PermissionError("访客…")` guard used by `save` and
-    `load`. The other call sites (`get_session`, `start_session`, `choose`,
-    `act`, `end_session`, `death_summary`) keep calling
-    `self._runner(session_id, user_id=user_id)` directly; the intermediate
-    `_with_runner()` thin alias was removed in the same pass because it
-    added no semantics. API schema, status codes, and DB behavior
-    unchanged.
-  - `web/backend/database_common.encode_game_turn_json()` central helper
-    for the `choices` / `state_delta` / `state_after` JSON encoding used
-    by both `record_game_turn` writers. SQL, schema, and applied Alembic
-    revision unchanged.
-  - `web/frontend-react/src/pages/CharacterCreatePage.tsx` collapses the
-    three repeated `<CatalogGroup>` blocks into a `fateGroups` config
-    array + `.map()`; `web/frontend-react/src/styles/character-create.css`
-    merges the duplicate `.character-page` rule.
-- Cleanup within the same pass:
-  - Removed unused `GAME_TURN_JSON_FIELDS` constant from
-    `web/backend/database_common.py` (no callers in the repo).
-- Explicit non-acceptance: this batch is **not** a production account or
-  live-model acceptance. P0 production work still requires the Codex /
-  server thread batch described in `docs/PRODUCTION_V5_MIGRATION_CHECKLIST.md`.
-- Local production package evidence exists:
-  - package `D:\chat\outputs\packages\agens-web\agens-web-11ae5e9-20260624-173644.zip`
-  - manifest `D:\chat\outputs\packages\agens-web\agens-web-11ae5e9-20260624-173644.manifest.md`
-  - approved deployment prompt `D:\chat\outputs\packages\agens-web\agens-web-11ae5e9-20260624-173644.server-deploy-prompt.md`
-  - entrypoint CRLF hotfix prompt `D:\chat\outputs\packages\agens-web\agens-web-11ae5e9-20260624-173644.entrypoint-crlf-hotfix-prompt.md`
-  - entrypoint CRLF hotfix package `D:\chat\outputs\packages\agens-web\agens-web-entrypoint-crlf-hotfix-20260624-185815.zip`
-  - entrypoint CRLF hotfix package SHA256 `261ecef7fbeac0928b076802e4cd458607c651ae15153f9ea700a01afd8ce1f4`
-  - commit `11ae5e9699277ce08b42a9331932354895922149`
-  - SHA256 `526b8b6cbbc1abd60b1a03b1d73369778abf8c723d439579526532d9744017ad`
-- Production is partially accepted:
-  - production Alembic is now `20260622_0004`
-  - production contains `game_runs`, `game_turns`, and `player_progress`
-  - server read-only preflight on 2026-06-24 confirmed package hash, public
-    health/catalog, container health, and backup/staging path candidates, but
-    did not execute backup, deployment, migration, restart, or smoke acceptance
-  - the approved 2026-06-24 deployment attempt created PostgreSQL and app
-    backups and replaced `/srv/jiayp/apps/agens-web`, but stopped before
-    Alembic/restart because Docker build could not resolve
-    `langchain-core>=0.3.0`
-  - the running old container was still healthy after the failed build; disk
-    source and running image are now intentionally recorded as out of sync until
-    a retry or separately approved recovery closes it
-  - read-only follow-up diagnosis showed `python:3.12-slim` can currently see
-    `langchain-core` versions including `0.3.0`; the failure is most likely
-    transient or build-context-specific pip index/network behavior, not an
-    invalid dependency constraint
-  - the approved build-only retry succeeded through host-network fallback and
-    produced image `sha256:f2d2b86e3de0c9aff5131ed238c84eb435cb0d31983e5e4629b8b75add4d6c15`
-  - the approved migration/restart batch upgraded Alembic to `20260622_0004`
-    and confirmed all three v5 tables, then stopped after the new container
-    failed with `env: 'sh\r': No such file or directory`
-  - public health was HTTP 502 at that stop point until the later entrypoint
-    CRLF hotfix restored service
-  - local source has been hardened with `.gitattributes` LF rules and Dockerfile
-    CRLF stripping for the entrypoint
-  - local hotfix package contains only `.gitattributes`, `Dockerfile`, and
-    `deploy/docker-entrypoint.sh`; package entrypoint was verified as LF-only
-  - server read-only hotfix preflight confirmed the deployed entrypoint has
-    `crlf_count=10`, deployed Dockerfile hardening is missing, backups still
-    exist, hotfix package is visible to the server thread, and public health is
-    still HTTP 502
-  - the approved entrypoint CRLF hotfix succeeded, changed only
-    `.gitattributes`, `Dockerfile`, and `deploy/docker-entrypoint.sh` on the
-    server, and backed those files up at
-    `/srv/jiayp/backups/agens-web/entrypoint-crlf-hotfix-20260624-185815/`
-  - the restored production image is
-    `sha256:445367f496bf3b1acb8b091442f775b9c74240251cc19efdfab2d45562dbc791`
-  - current service evidence after hotfix: container healthy, origin health
-    HTTP 200, public health HTTP 200, public catalog talents returns 10 rows,
-    Alembic remains `20260622_0004`, v5 tables exist, log sensitive-marker scan
-    count is 0, guest start and one guest turn returned HTTP 200
-  - server-thread P0 recheck after the server recovered confirmed homepage
-    root/www HTTP 200, game health HTTP 200, catalog 10 rows, container healthy,
-    origin health HTTP 200, Alembic `20260622_0004`, v5 tables present, and log
-    sensitive-marker scan count 0
-  - production guest live smoke is still not accepted: start returned HTTP 200
-    with `fallback_prompt.active=false`, but the one-turn request returned HTTP
-    200 with `fallback_prompt.active=true`
-  - remaining acceptance gaps: production account flow was not tested because no
-    safe non-secret test account path was available; production live-model
-    success was not accepted because the guest smoke returned
-    `fallback_prompt_active=true`
+1. Production deploy for user-scoped model settings.
+   - Requires server-thread approval and execution.
+   - Must include app backup, PostgreSQL backup/restore point, `MODEL_CONFIG_SECRET` presence check without printing value, Alembic upgrade to `20260622_0005`, restart, and health checks.
+2. Production account flow.
+   - Verify registration, login, save, load, and cross-session restore with a safe non-secret test account path.
+   - Do not print passwords, cookies, invite codes, keys, or database URLs.
+3. Production live model acceptance.
+   - Prove start and at least one choice turn are non-fallback.
+   - HTTP 200 alone is not enough.
+4. Local visible Chrome 20-turn player validation.
+   - Use local PostgreSQL, ordinary account login, model setting fallback/user/clear flow, role creation, at least 20 turns, save/load, and `game_turns` continuity checks.
+   - Record response time, fallback state, narrative/state mismatch, repeated loops, and screenshots/log paths.
 
-## P0: Needs Explicit Approval
+## P1: Gameplay Quality And Main-Flow Governance
 
-These tasks modify remote production state. Do not execute without explicit
-approval for the concrete command batch.
+1. Improve playable content before broad architecture work.
+   - Reduce repeated retreat/breakthrough loops.
+   - Add clearer stage goals, meaningful rewards, and visible consequences.
+   - Ensure model narrative claims are backed by structured state changes or rejected cleanly.
+2. Tighten model failure paths.
+   - Cover StartFlow, TurnFlow, BreakthroughFlow fallback and `llm_error` paths.
+   - API responses should distinguish provider failure, incomplete output, validation rejection, and local fallback.
+3. Continue small complexity slices only when they support main-flow stability.
+   - `GameEngine`: split model failure, local story, breakthrough helpers one responsibility at a time.
+   - `WebGameService`: keep reducing duplicate runner/error/persistence orchestration.
+   - `database_postgres.py`: extract row shaping and helper functions without schema changes.
+   - `app.py`: router split is optional and lower priority than gameplay correctness.
+4. Frontend maintenance.
+   - Continue splitting `CharacterCreatePage` and style files around verified workflows.
+   - Use Chrome smoke after visual changes.
 
-1. Verify production account registration/login/save/load with a safe
-   non-secret test account, invite, or separately approved test-account creation
-   path.
-2. Verify production live-model success without printing secrets; do not count
-   fallback as live-model success.
-3. Continue public Alpha observation for log redaction, rate limiting, cookie
-   behavior, and origin restrictions.
-4. Confirm existing backup paths before any new mutation:
-   - app backup:
-     `/srv/jiayp/backups/agens-web/agens-web-app-20260624-180650.tar.gz`
-   - old app source:
-     `/srv/jiayp/apps/agens-web.pre-v5-20260624-180650`
-   - PostgreSQL backup:
-     `/srv/jiayp/backups/postgres/postgres-20260624-180554.sql.gz`
-   - entrypoint hotfix backup:
-     `/srv/jiayp/backups/agens-web/entrypoint-crlf-hotfix-20260624-185815/`
-5. If future service health fails, choose a separately approved recovery path:
-   app-only recovery, image rebuild, or full DB + app rollback in a maintenance
-   window.
+## P2: Documentation And Cleanup
 
-Authoritative checklist: `docs/PRODUCTION_V5_MIGRATION_CHECKLIST.md`.
-
-## P1: Local Complexity Reduction
-
-These are safe local governance slices when production approval is deferred.
-
-1. `GameEngine` split planning and tests:
-   - keep `GameEngine` as the public gameplay entrypoint
-   - extract only one responsibility at a time
-   - start with model failure/local story/breakthrough helpers if tests already
-     cover the behavior
-2. Web service boundary:
-   - continue reducing duplication inside `WebGameService`
-   - avoid changing API schema or persistence behavior
-   - prefer private helpers before router/module splits
-   - completed local slice: fixed-choice `/choice` parsing and
-     `death_summary` live/stored helper split
-3. PostgreSQL 数据层共享 helper 收敛（Option C 已删除 SQLite 双轨，仅保留 PostgreSQL 单后端）：
-   - 当前 `database_postgres.py` 的 test-only auto-DDL 已拆到 `database_postgres_schema.py`
-   - 继续抽取 catalog row shaping / progress summary 等共享 helper（仅 `database_postgres.py`）
-   - 不改表定义或已应用的 Alembic revision
-4. React maintenance:
-   - continue splitting `CharacterCreatePage` and style files only around
-     verified UI workflows
-   - use Chrome smoke after visual changes
-5. Story-line catalog design:
-   - first database-backed story-line version should reuse
-     `catalog_story_seeds` for three curated main arcs
-   - opening binds each run to one story seed; normal turns may vary but should
-     stay inside that arc's broad direction
-   - do not add Alembic/API changes until the story-seed contract is written
-     and reviewed
-
-## P2: Cleanup And Documentation
-
-1. Keep `docs/INDEX.md`, `docs/PROJECT_AUDIT.md`, and this backlog aligned
-   after each governance slice.
-2. Treat `output/playwright/` and other local screenshots as generated
-   artifacts unless explicitly promoted to evidence.
-3. Keep old SQLite references clearly marked as historical evidence; current
-   runtime/test facts are PostgreSQL-only.
-4. Do not delete historical artifacts without inventory, backup, and
-   quarantine.
+1. Keep current docs short and authoritative.
+   - `docs/INDEX.md` routes current reading.
+   - `docs/PROJECT_AUDIT.md` contains current structure and risk only.
+   - This file contains active backlog only.
+   - `CHANGELOG.md` and `docs/archive/` retain history.
+2. Formalize local PostgreSQL startup/recovery.
+   - Check `pg_isready` before starting.
+   - Do not remove `.tmp\pg-test-20260626-55432` while PG is running.
+   - Document stale `postmaster.pid` recovery separately.
+3. Handle generated evidence deliberately.
+   - Treat `output/playwright/`, screenshots, and JSON traces as generated artifacts unless explicitly promoted.
+   - Do not delete historical artifacts without inventory, backup, and quarantine.
 
 ## Validation Rules
 
-- For backend/service changes:
+- Backend/service changes:
   - targeted tests first
-  - `compileall`
-  - `pytest -q tests\web`
-  - full `pytest -q` when touching shared gameplay/service code
-- For frontend/UI changes:
+  - `python -m compileall -q src tests web scripts migrations`
+  - `python -m pytest -q tests\web`
+  - full `python -m pytest -q` when touching shared gameplay/service code
+- Frontend/UI changes:
   - `npm.cmd run build`
-  - relevant contract tests
-  - Chrome smoke for changed viewport/workflow
-- For production:
+  - relevant frontend contract tests
+  - visible Chrome smoke for changed viewport/workflow
+- Production:
   - follow `docs/PRODUCTION_V5_MIGRATION_CHECKLIST.md`
   - never read or print secrets
   - never use `AGENS_PG_AUTO_DDL=1` in production
-
-## 2026-06-28 Local Closure: User-Scoped Model Settings
-
-- Local code now implements the P0 product rule: `/api/settings/model` is user-scoped, `/api/admin/settings/model` manages the system default, and guests are rejected.
-- New Alembic revision `20260622_0005` adds encrypted key storage and `user_model_configs`.
-- Local automated validation passed with PostgreSQL. This is not production deployment or live-model acceptance; server rollout still needs `MODEL_CONFIG_SECRET`, Alembic upgrade, restart, and non-fallback live-model smoke.
+  - never count fallback as live-model success

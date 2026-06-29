@@ -1,81 +1,53 @@
 # 项目文档索引
 
-## 2026-06-28 Current Local Status
+后续智能体先读本文，再按任务读取对应文档。本仓库是 Web-only 项目：浏览器 UI + FastAPI 后端 + PostgreSQL，移动端、旧 CLI/REPL、旧 `web/frontend` 都不是当前维护入口。
 
-- User-scoped model settings landed in commit `44519d7`. Read `README.md`, `docs/RUNTIME_FLOW.md`, `docs/security.md`, and `docs/ARCHITECTURE.md` for the current API, storage, and runtime boundary.
-- Migration `20260622_0005_user_model_configs.py` adds encrypted per-user model config storage. Production still needs a separate approved Alembic/deploy batch before this is live.
-- Latest local validation: `tests\web` -> `59 passed`, full `pytest -q` -> `420 passed, 1 xfailed`, and frontend `npm.cmd run build` passed. The xfail is the known real-LLM upstream HTTP 500 path, not local acceptance evidence.
-- Server/production checks remain owned by thread `019ee2ee-823e-7441-bdaa-881782da7949`; fallback is not live-model success.
+## 当前状态
 
-## 2026-06-27 Local Main-Flow Update
-
-- Read `docs/PROJECT_AUDIT.md`, `docs/NEXT_GOVERNANCE_BACKLOG.md`, and
-  `CHANGELOG.md` for the latest local main-flow fix.
-- Fixed locally: valid A/B/C/D choices no longer return HTTP 200 with unchanged
-  `turn_count` when breakthrough is not currently allowed.
-- Fixed locally: narrative/state mismatch rejection keeps `game_turns`
-  contiguous by recording the base rule settlement.
-- Previous validation baseline after the 2026-06-27 fix: `tests\web` -> `53 passed`, full
-  `pytest -q` -> `414 passed, 1 xfailed`, frontend `npm.cmd run build`
-  passed. The expected xfail is the real-LLM integration path when the
-  upstream provider returns HTTP 500; it is not local acceptance evidence.
-- Still open: rerun the visible Chrome 20-turn live-model player validation and
-  keep production account/live-model acceptance under the server validation
-  thread.
-
-后续智能体先读本文，再按任务读取对应文档。本仓库是 Web-only 项目。
+- 当前主线：游戏模式 v5 Alpha，A/B/C/D 四按钮固定语义（A 稳妥 / B 机遇 / C 风险 / D 气运），无自由文本主入口，无 HP/MP 常驻 UI。
+- 数据库路线：PostgreSQL-only，本地测试和生产都以 Alembic schema 为准；SQLite 已删除，仅作为历史记录出现在 `CHANGELOG.md` 或归档文档中。
+- 模型设置：注册用户可配置个人模型；访客不可配置；无个人配置时使用系统 Agens 默认。用户 key 只允许加密存储和脱敏展示。
+- 最新本地自动化基线：用户级模型设置治理已在本地提交 `44519d7`，`tests\web` 59 passed，全量 `pytest -q` 420 passed / 1 xfailed，前端 build 通过。
+- 尚未完成：生产部署 Alembic `20260622_0005`、生产账号注册/登录/存档/读档、production live model 非 fallback 验收、可见 Chrome 20 回合真实玩家验收。
 
 ## 当前权威文档
 
-- `AGENTS.md`：项目硬约束、当前玩法契约、目录边界。
-- `docs/RUNTIME_FLOW.md`：当前可运行 Alpha 链路。当前实现已切换到游戏模式：A/B/C/D 四按钮（稳妥/机遇/风险/气运），无 HP/MP，规则引擎权威结算。
-- `docs/security.md`：外网 Alpha 安全边界、生产环境变量、反代要求。
-- `docs/PROJECT_AUDIT.md`：结构边界、技术债、归档和瘦身方向。
-- `docs/GAME_MODE_SPEC.md`：游戏模式 v5 规格——当前构建目标。代码随此规格切换到游戏模式。
-- `docs/ARCHITECTURE.md`：项目模块架构说明（web/backend + src/agens_novel + web/frontend-react 三层模块地图与串联流程；面向开发者与想了解全局的读者）。
-- `docs/UI_REFACTOR_PLAN.md`：已审核通过的编年史 UI 原型图、页面拆分、组件样式和重构验收标准。
-- `docs/USER_TUTORIAL.md`：面向玩家的完整中文入门教程，从访客/账号选择到飞升/死亡全流程。
-- `docs/ALPHA_REVIEW_AND_LESSONS.md`：Alpha 问题确认、已修内容、成功/失败经验、剩余风险和后续执行规则。
-- `docs/PRODUCTION_V5_MIGRATION_CHECKLIST.md`：生产 v5 表缺失后的部署、备份、迁移和只读验收门槛。
-- `docs/NEXT_GOVERNANCE_BACKLOG.md`：下一批治理 backlog，区分本地复杂度治理与需要明确授权的生产变更。
-- `README.md`：最短启动说明和项目入口。
-- `CHANGELOG.md`：按日期记录已落地变更。
+- `README.md`：项目入口、启动和当前状态摘要。
+- `AGENTS.md`：项目硬约束、玩法契约、代码治理规则。
+- `CLAUDE.md`：Claude/Claude Code 接手本项目时的边界说明。
+- `docs/RUNTIME_FLOW.md`：当前运行链路、API 流程、本地启动和模型配置流。
+- `docs/GAME_MODE_SPEC.md`：游戏模式 v5 的产品与规则规格。
+- `docs/ARCHITECTURE.md`：模块地图和后端/引擎/前端分层说明。
+- `docs/security.md`：密钥、账号、生产环境和公网 Alpha 安全边界。
+- `docs/PROJECT_AUDIT.md`：当前结构边界、已清理内容、剩余技术债。
+- `docs/NEXT_GOVERNANCE_BACKLOG.md`：下一批 P0/P1/P2 工作队列。
+- `docs/USER_TUTORIAL.md`：面向玩家的中文入门说明。
+- `docs/PRODUCTION_V5_MIGRATION_CHECKLIST.md`：生产迁移和只读验收清单；生产闭环前保留。
+- `CHANGELOG.md`：按日期保留历史变更，不作为当前状态唯一来源。
 
-## 辅助和历史文档
+## 归档内容
 
-- `docs/archive/`：历史草稿和已归档计划，不作为当前状态来源。
+- `docs/archive/`：历史草稿、旧 UI 计划、旧 Alpha 复盘和原型截图。只作审计背景，不作为当前事实来源。
+- `docs/archive/2026-06-governance/ALPHA_REVIEW_AND_LESSONS.md`：Alpha 历史复盘。
+- `docs/archive/2026-06-governance/UI_REFACTOR_PLAN.md`：已落地 UI 原型计划。
+- `docs/archive/2026-06-governance/ui-prototypes/`：历史 UI 原型图和 HTML。
 
 ## 按任务阅读
 
 | 任务 | 优先阅读 |
 | --- | --- |
-| 当前运行链路 / 游玩流程 | `docs/RUNTIME_FLOW.md`、`web/backend/app.py` |
-| 公网部署 / 密钥 / 安全 | `docs/security.md`、`deploy/production.env.example`、`deploy/docker-compose.yml` |
-| 生产 v5 迁移 / 缺表修复 | `docs/PRODUCTION_V5_MIGRATION_CHECKLIST.md`、`docs/PROJECT_AUDIT.md` |
-| 结构清理 / 技术债 | `docs/NEXT_GOVERNANCE_BACKLOG.md`、`docs/PROJECT_AUDIT.md`、`docs/INDEX.md` |
-| Alpha 复盘 / 成功失败经验 | `docs/ALPHA_REVIEW_AND_LESSONS.md`、`CHANGELOG.md` |
-| 游戏模式 v5 设计 | `docs/GAME_MODE_SPEC.md` |
-| UI 重构 / 原型落地 | `docs/UI_REFACTOR_PLAN.md`、`docs/ui-prototypes/`、`web/frontend-react/src/pages/`、`web/frontend-react/src/styles.css` |
-| UI 当前细修状态 / 截图验收 | `docs/PROJECT_AUDIT.md` 的 2026-06-24 状态、`docs/UI_REFACTOR_PLAN.md` 的落地状态 |
-| 模块地图 / 接手项目 | `docs/ARCHITECTURE.md`、`docs/PROJECT_AUDIT.md`、`web/backend/app.py` |
-| 新玩家教程 / 用户支持 | `docs/USER_TUTORIAL.md`、`web/frontend-react/src/components/TutorialDialog.tsx` |
-| 历史记录核对 | `docs/archive/`、`CHANGELOG.md`；仅作审计背景，不作为当前状态来源 |
+| 当前运行链路 / 本地启动 | `docs/RUNTIME_FLOW.md`、`README.md` |
+| 游戏规则 / 游玩内容设计 | `docs/GAME_MODE_SPEC.md`、`docs/USER_TUTORIAL.md` |
+| 模块地图 / 接手项目 | `docs/ARCHITECTURE.md`、`docs/PROJECT_AUDIT.md` |
+| 代码复杂度治理 | `docs/PROJECT_AUDIT.md`、`docs/NEXT_GOVERNANCE_BACKLOG.md` |
+| 公网部署 / 密钥 / 安全 | `docs/security.md`、`docs/PRODUCTION_V5_MIGRATION_CHECKLIST.md` |
+| 生产账号流 / live model 验收 | `docs/PRODUCTION_V5_MIGRATION_CHECKLIST.md`、服务器线程 `019ee2ee-823e-7441-bdaa-881782da7949` |
+| UI 后续细修 | `docs/PROJECT_AUDIT.md`、`web/frontend-react/src/`、历史原型归档 |
+| 历史核对 | `CHANGELOG.md`、`docs/archive/` |
 
-## 当前执行边界
+## 执行边界
 
-- 生产入口使用 React/Vite build 产物；旧 `web/frontend` 已删除，资产迁入 `web/frontend-react/public/assets`。
-- 当前主线是游戏模式；引导模式、小说模式不是当前开放运行逻辑。
-- PostgreSQL 生产 schema 以 Alembic 为准；本地与测试同样使用 PostgreSQL。
+- fallback 不能算 live-model 成功，即使 HTTP 200。
+- 本地自动化测试不等于生产验收；生产验证归服务器线程处理。
 - API key、数据库密码、Session Secret、邀请码真实值不得写入仓库、前端包、文档或日志。
-- 当前本机浏览器自动验收优先使用 Chrome DevTools MCP；Codex 内置浏览器存在环境闪退风险，不作为可靠验收入口。
-
-# 2026-06-27 Status Note
-
-- For production model hotfix status, read
-  `docs/PRODUCTION_V5_MIGRATION_CHECKLIST.md`,
-  `docs/NEXT_GOVERNANCE_BACKLOG.md`, and `CHANGELOG.md`.
-- Model runtime env uses `AGNES_*`; service/runtime controls still use
-  `AGENS_*`.
-- Last successful production smoke showed non-fallback guest start/choice, but
-  resume-time SSH reachability failed, so production account flow and fresh
-  current-state confirmation remain open.
+- 文档更新时必须区分当前事实、历史证据、未来计划和 TODO，不要把旧计划写成当前状态。

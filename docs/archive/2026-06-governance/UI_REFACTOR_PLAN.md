@@ -1,18 +1,20 @@
 # UI 重构计划：编年史原型落地
 
+> Archived Note: this file is historical. Current UI status lives in docs/PROJECT_AUDIT.md; current task routing lives in docs/INDEX.md.
+
 日期：2026-06-23
 
-本文记录已审核通过的 UI 原型图和后续前端重构计划。后续 UI 改造以本文和 `docs/ui-prototypes/` 下图片为准，不再按旧页面视觉继续扩展。
+本文记录已审核通过的 UI 原型图和后续前端重构计划。后续 UI 改造以本文和 `ui-prototypes/` 下图片为准，不再按旧页面视觉继续扩展。
 
 ## 已确认原型
 
 | 编号 | 文件 | 对应范围 |
 | --- | --- | --- |
-| 1 | `docs/ui-prototypes/2026-06-23-home-approved.png` | 首页 |
-| 2 | `docs/ui-prototypes/2026-06-23-character-create-approved.png` | 角色创建页 |
-| 3 | `docs/ui-prototypes/2026-06-23-desktop-chronicle-approved.png` | 桌面端游戏页 |
-| 4 | `docs/ui-prototypes/2026-06-23-mobile-chronicle-approved.png` | 移动端游戏页 |
-| 5 | `docs/ui-prototypes/2026-06-23-component-board-approved.png` | 按钮、图标、状态条、时间轴、弹窗等组件规范 |
+| 1 | `ui-prototypes/2026-06-23-home-approved.png` | 首页 |
+| 2 | `ui-prototypes/2026-06-23-character-create-approved.png` | 角色创建页 |
+| 3 | `ui-prototypes/2026-06-23-desktop-chronicle-approved.png` | 桌面端游戏页 |
+| 4 | `ui-prototypes/2026-06-23-mobile-chronicle-approved.png` | 移动端游戏页 |
+| 5 | `ui-prototypes/2026-06-23-component-board-approved.png` | 按钮、图标、状态条、时间轴、弹窗等组件规范 |
 
 ## 目标
 
@@ -77,7 +79,7 @@
 - 玩家可见颜色只允许：白、绿、蓝、紫、橙、红。
 - 不显示“稀有、传说、地、天”等旧等级词。
 - 手选不出现橙/红；随机可出现更高颜色。
-- 命数栏采用 `docs/ui-prototypes/fate-collapse-prototype.html` 的方案 A：摘要式折叠卡。折叠态显示标题、说明、当前选择、颜色点和箭头；展开态显示紧凑列表；一次只展开一个分组，默认展开“天赋”。
+- 命数栏采用 `ui-prototypes/fate-collapse-prototype.html` 的方案 A：摘要式折叠卡。折叠态显示标题、说明、当前选择、颜色点和箭头；展开态显示紧凑列表；一次只展开一个分组，默认展开“天赋”。
 - 命数栏的已选标识必须放在条目前侧；天赋、灵根、家世列表支持收缩和内部滚动，确保家世及后续内容可见。
 - 气运视觉可突出，但不得明示隐藏触发规则。
 - 1080p 和 2K 下不出现页面级纵向滚动。

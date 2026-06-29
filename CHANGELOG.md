@@ -1,5 +1,17 @@
 # Changelog
 
+## 2026-06-29
+
+### Changed
+- Compact docs governance surface: `README.md`, `docs/INDEX.md`, `docs/PROJECT_AUDIT.md`, and `docs/NEXT_GOVERNANCE_BACKLOG.md` now emphasize current facts, active backlog, and clear acceptance boundaries instead of repeating historical batch logs.
+- Update `AGENTS.md`, `CLAUDE.md`, `docs/ARCHITECTURE.md`, and `docs/USER_TUTORIAL.md` to route historical material through the docs archive.
+
+### Archived
+- Move historical Alpha review, UI refactor plan, and UI prototype assets under `docs/archive/2026-06-governance/`.
+
+### Verification
+- Documentation-only change. Verified with reference scans for obsolete active-doc links and `git diff --check`.
+
 ## 2026-06-28
 
 ### Changed - documentation and historical artifact cleanup
