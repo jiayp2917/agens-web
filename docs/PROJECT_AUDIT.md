@@ -74,6 +74,20 @@
 - 生产侧继续做日志脱敏、限流、Cookie/Origin、备份恢复演练和索引评审。
 - 历史文档只保留在 `docs/archive/` 和 `CHANGELOG.md`，当前文档只写当前事实和下一步。
 
+## 2026-06-30 成功与失败经验
+
+成功经验：
+- 本地、生产、代码修改必须拆开验收；本地 20 回合 non-fallback 不能替代生产 non-fallback。
+- 生产变更前先做包 hash、敏感文件名扫描、app/PG 备份、`MODEL_CONFIG_SECRET` present/missing 检查，再部署和迁移。
+- 生产报告只输出状态、revision、表名、HTTP 状态、fallback 布尔和备份路径，不输出账号、cookie、邀请码、数据库 URL 或模型 key。
+- 账号注册/登录/存档/读档和 live model 是两条不同门禁，不能混成一个“生产通过”。
+
+失败教训：
+- 服务健康和账号流通过不代表 live model 成功；`fallback_active=true` 且 `turn_count=0` 仍是阻断问题。
+- 验收脚本自身可能失败，必须区分脚本 bug 和产品 bug；脚本要尽量短、可复核、输出脱敏摘要。
+- 浏览器证据必须机器可读；损坏 JSON 会削弱后续自动审计可信度。
+- UI 问题（如 `A：A：...` 重复前缀）需要真实浏览器看页面，单靠 API 不会暴露。
+
 ## 验证入口
 
 ```powershell

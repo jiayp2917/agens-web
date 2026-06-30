@@ -29,6 +29,26 @@ This is the active backlog for `agens-web`. It separates local code work, local 
   - Production live-model acceptance failed: start was non-fallback, but one choice turn returned `fallback_active=true` with `turn_count=0`. Fallback is not live-model success.
 - The active phase plan is `docs/PLAYABLE_GAMEPLAY_ROADMAP_20260629.md`: close P0 validation first, then improve gameplay content without broad architecture changes.
 
+## 2026-06-30 Lessons
+
+Successful patterns to keep:
+
+- Split local, production, and code-change work. Local 20-turn Chrome success did not hide the separate production live-model gate.
+- Generate deployment packages from tracked files only, scan them before upload, and keep generated Playwright evidence out of commits by default.
+- Treat `MODEL_CONFIG_SECRET` as a server-side runtime secret: generate or install it on the server, report only present/missing, and never paste values into chat or docs.
+- Require backups before production mutation. The successful production batch created app and PostgreSQL backups before source replacement, image build, migration, and service recreate.
+- Check real business semantics, not only transport success. Registration/login/save/load/cross-session restore were verified separately from health/catalog and from live-model non-fallback.
+- Use explicit stop gates. The production batch stopped at live-model fallback instead of claiming success from HTTP 200.
+
+Failure lessons and follow-up rules:
+
+- A deployment can be healthy while gameplay acceptance still fails. `fallback_active=true` with `turn_count=0` is a product/runtime failure even when health checks pass.
+- Test scripts must be simple and audited. The initial production invite creation probe failed because `docker exec` missed stdin wiring; script errors must not be mistaken for product failures.
+- Evidence artifacts must be machine-readable. The local 20-turn browser JSON had escaping/encoding damage, so future evidence writers must output strict JSON or a separate NDJSON/CSV summary.
+- UI sanity checks catch issues that API checks miss. The headed browser found duplicate option prefixes such as `A：A：...`.
+- Do not let internal arbitration text reach players. Mismatch diagnostics must become logs or natural in-world partial-success/failure text.
+- Keep production diagnosis sanitized: collect fallback source/error class/provider status/timeout/repair-path evidence, not request payloads, model keys, cookies, account details, invite codes, or database URLs.
+
 ## P0: Acceptance And Deployment Gates
 
 These items block claiming the project is a stable playable public build.

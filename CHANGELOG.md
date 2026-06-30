@@ -14,6 +14,10 @@
 - Production live-model acceptance is still failed: start was non-fallback, but
   one choice turn returned `fallback_active=true` with `turn_count=0`. HTTP
   200 and fallback gameplay do not count as live-model success.
+- Captured the rollout lessons in `docs/NEXT_GOVERNANCE_BACKLOG.md` and
+  `docs/PROJECT_AUDIT.md`: separate local/production/code gates, require
+  backups and sanitized server evidence, keep fallback as a hard failure, and
+  fix browser evidence writers so traces are machine-readable.
 
 ### Verified - local visible Chrome 20-turn slice
 
