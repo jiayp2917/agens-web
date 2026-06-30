@@ -507,6 +507,8 @@ class WebGameService:
             except ModelConfigSecretError as exc:
                 raise ValueError("MODEL_CONFIG_SECRET is required to save model keys.") from exc
             masked = mask_api_key(api_key)
+        elif not encrypted:
+            raise ValueError("API Key is required when creating a stored model config.")
         api_key_set = bool(encrypted)
         return {
             "provider": provider,
@@ -558,7 +560,7 @@ class WebGameService:
     def _effective_model_config(self, user_id: str | None) -> dict[str, Any]:
         if user_id and not is_guest_user_id(user_id):
             personal = self.db.get_user_model_config(user_id)
-            if personal is not None:
+            if personal is not None and personal.get("api_key_encrypted"):
                 return {
                     "provider": personal.get("provider") or "Agens",
                     "base_url": personal.get("base_url") or "https://apihub.agnes-ai.com/v1",
@@ -729,7 +731,13 @@ class WebGameService:
     def _normalize_profile(self, profile: dict[str, Any]) -> dict[str, Any]:
         normalized = dict(profile)
         if normalized.get("randomize_attributes"):
-            normalized["attributes"] = _random_attributes()
+            if normalized.get("attributes"):
+                normalized["attributes"] = normalize_profile_attributes(
+                    normalized.get("attributes", {}),
+                    random_mode=True,
+                )
+            else:
+                normalized["attributes"] = _random_attributes()
         else:
             normalized["attributes"] = normalize_profile_attributes(normalized.get("attributes", {}))
         normalized["randomize_attributes"] = bool(normalized.get("randomize_attributes"))

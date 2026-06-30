@@ -20,6 +20,7 @@
   local game-flow regression.
 
 > **当前实现状态：v5 Alpha 本地可玩链路已落地。** React 主入口已经切到 A/B/C/D 四按钮固定语义：A 稳妥、B 机遇、C 风险、D 气运；无自由文本主入口，无 HP/MP 常驻 UI；模型设置为用户个人配置 + 系统默认 Agens 兜底。`docs/GAME_MODE_SPEC.md` 是当前游戏模式规格和验收来源。
+> 当前自动化基线：本地 PostgreSQL 可用；`tests\web` 63 passed；带 `TEST_DATABASE_URL` 的全量 `pytest -q` 428 passed / 4 xfailed；前端 build 通过。4 个 xfailed 是 `tests/unit/engine/test_playable_gap_locks.py` 记录的 P1 玩法缺口。
 > 当前阶段计划见 `docs/PLAYABLE_GAMEPLAY_ROADMAP_20260629.md`：先完成 P0 遗留验收闭环，再在现有架构内做玩法内容改造。
 
 本文记录当前 Web-only 运行链路。产品入口是浏览器 UI + FastAPI 后端，不再包含移动端打包或设备验证路径。
@@ -74,6 +75,7 @@ http://127.0.0.1:8000/
 4. 角色创建
    - 前端角色页提交角色名、天赋、灵根、家世、难度和六维属性；不再提交游戏名称或隐藏开局码。
    - 六维属性遵循 `docs/GAME_MODE_SPEC.md` §4.1：手动模式单项 2-8 且总和必须为 30；随机模式单项 0-10 且总和固定为 30。后端会重新校验角色创建入参。
+   - 随机模式提交前端展示的随机属性池；后端只在随机模式未带属性时兜底生成新池，避免“看到的随机值”和实际入局值不一致。
    - `POST /api/sessions/{id}/start` 调用 `GameEngine.start_from_profile()`。
    - World Builder 负责开场叙事和 A/B/C/D；无 key 或模型失败时进入本地故事兜底，并在前端提供继续或结束本局。
    - 特殊开局只由后端识别，前端不明示隐藏规则。

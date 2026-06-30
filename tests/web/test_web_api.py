@@ -556,6 +556,42 @@ def test_model_settings_are_isolated_per_user(tmp_path: Path, monkeypatch) -> No
     assert app.state.service.db.get_user_model_config(user_a["id"])["api_key_encrypted"] != app.state.service.db.get_user_model_config(user_b["id"])["api_key_encrypted"]
 
 
+def test_user_model_settings_reject_empty_initial_key_and_keep_existing_key(tmp_path: Path, monkeypatch) -> None:
+    monkeypatch.setenv("SESSION_COOKIE_SECURE", "0")
+    monkeypatch.setenv("MODEL_CONFIG_SECRET", "test-model-config-secret")
+    monkeypatch.setenv("AGNES_API_KEY", "test-system-key-123456")
+    app = create_app()
+    client = TestClient(app)
+    _create_invite(app)
+    user = _login_user(client, "player_empty_key", "invite-code-123")
+
+    rejected = client.post("/api/settings/model", json=_model_payload(""))
+    assert rejected.status_code == 400
+    assert client.get("/api/settings/model").json()["source"] == "system"
+    assert app.state.service.db.get_user_model_config(user["id"]) is None
+
+    saved = client.post("/api/settings/model", json=_model_payload("test-user-key-123456"))
+    assert saved.status_code == 200
+    encrypted = app.state.service.db.get_user_model_config(user["id"])["api_key_encrypted"]
+
+    updated = client.post(
+        "/api/settings/model",
+        json={
+            "provider": "Qwen",
+            "base_url": "https://dashscope.aliyuncs.com/compatible-mode/v1",
+            "model": "qwen-plus",
+            "api_key": "",
+        },
+    )
+    assert updated.status_code == 200
+    assert updated.json()["source"] == "user"
+    assert updated.json()["api_key_set"] is True
+    assert app.state.service.db.get_user_model_config(user["id"])["api_key_encrypted"] == encrypted
+    runtime = app.state.service._runtime_model_config(user["id"])
+    assert runtime["api_key"] == "test-user-key-123456"
+    assert runtime["provider"] == "Qwen"
+
+
 def test_guest_model_settings_rejected_and_admin_system_endpoint_is_admin_only(tmp_path: Path, monkeypatch) -> None:
     monkeypatch.setenv("SESSION_COOKIE_SECURE", "0")
     monkeypatch.setenv("MODEL_CONFIG_SECRET", "test-model-config-secret")
@@ -1103,14 +1139,27 @@ def test_randomized_start_uses_30_point_attribute_pool(tmp_path: Path, monkeypat
     _create_invite(app)
     _register(client)
     session_id = client.post("/api/sessions", json={}).json()["session_id"]
+    preview_attrs = {
+        "root_bone": 0,
+        "comprehension": 10,
+        "luck": 7,
+        "willpower": 3,
+        "physique": 6,
+        "soul": 4,
+    }
 
     with patch("agens_novel.engine.game_engine.run_turn_sync", side_effect=_runner):
         started = client.post(
             f"/api/sessions/{session_id}/start",
-            json={"char_name": "random-pool", "randomize_attributes": True},
+            json={
+                "char_name": "random-pool",
+                "randomize_attributes": True,
+                "attributes": preview_attrs,
+            },
         ).json()
 
     attrs = started["character"]["attributes"]
+    assert attrs == preview_attrs
     assert sum(attrs.values()) == 30
     assert all(0 <= value <= 10 for value in attrs.values())
 

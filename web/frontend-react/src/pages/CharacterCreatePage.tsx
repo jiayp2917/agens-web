@@ -87,7 +87,7 @@ export function CharacterCreatePage({
       family_background: familyBackground,
       difficulty,
       randomize_attributes: randomizeAttributes,
-      attributes: randomizeAttributes ? {} : attrValues,
+      attributes: attrValues,
     });
   };
 

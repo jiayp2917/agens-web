@@ -9,6 +9,7 @@ This is the active backlog for `agens-web`. It separates local code work, local 
   - Local PostgreSQL at `127.0.0.1:55432` is accepting connections.
   - `tests/unit/engine/test_playable_gap_locks.py` has been reviewed and accepted as a strict xfail gap guard: T1-T4 are known P1 gaps, T5-T7 are passing lock tests.
   - The first P1 gameplay slice is implemented locally: character creation uses the six-attribute 30-point pool from `docs/GAME_MODE_SPEC.md` §4.1. Manual mode is 2-8 per stat / total 30; random mode is 0-10 per stat / total 30.
+  - Review follow-up fixed random attribute preview persistence: React now submits the shown random pool, backend validates it instead of re-rolling, and switching back to manual resets to a legal manual pool.
   - A Chrome observation where users/sessions/game_turns dropped to zero is not yet a deterministic product bug. `tests\web` truncates the shared `TEST_DATABASE_URL` database before each test, so visible Chrome must be re-run without concurrent pytest and preferably against an isolated database.
 - User-scoped model settings are implemented locally in commit `44519d7`:
   - `/api/settings/model` is a logged-in user endpoint for personal config.
@@ -16,7 +17,8 @@ This is the active backlog for `agens-web`. It separates local code work, local 
   - `user_model_configs` stores one encrypted config per `user_id`; system default remains in `model_config`.
   - Stored model keys use application-layer encryption with `MODEL_CONFIG_SECRET` and fail closed if decryption cannot be performed.
   - Runtime model calls resolve config by current session/user and do not mutate process-global `AGNES_API_KEY`.
-- Latest local automated validation after the 30-point pool and model-settings input fix: `tests\web` 62 passed, full `pytest -q` with `TEST_DATABASE_URL` 427 passed / 4 xfailed, frontend build passed.
+  - Empty first-time stored model configs are rejected so an empty user row cannot shadow the effective system Agens default.
+- Latest local automated validation after the 30-point pool and model-settings input fix: `tests\web` 63 passed, full `pytest -q` with `TEST_DATABASE_URL` 428 passed / 4 xfailed, frontend build passed.
 - Main-flow fixes already landed locally: fixed-choice `/choice`, no HTTP 200 without turn progression for ineligible breakthrough choices, contiguous `game_turns` after mismatch/fallback paths.
 - Production/server acceptance is still separate. Fallback is not live-model success.
 - The active phase plan is `docs/PLAYABLE_GAMEPLAY_ROADMAP_20260629.md`: close P0 validation first, then improve gameplay content without broad architecture changes.

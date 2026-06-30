@@ -36,6 +36,7 @@ runtime/**/*.log
 # Tool residues
 .workbuddy/
 .playwright-cli/
+output/playwright/
 web/frontend-react/node_modules/
 web/frontend-react/dist/
 web/frontend-react/*.tsbuildinfo
@@ -52,4 +53,3 @@ demos/validation/**/__pycache__/
 
 # Claude Code local MCP config (per-developer; must stay untracked)
 .mcp.json
-

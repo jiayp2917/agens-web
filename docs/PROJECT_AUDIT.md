@@ -35,9 +35,10 @@
 
 - 本地 PostgreSQL 测试库目标：`127.0.0.1:55432/agens_web_test`。
 - 用户级模型设置治理本地提交：`44519d7`。
-- 2026-06-30 本地自动化基线：`pg_isready` confirmed `127.0.0.1:55432`; `tests\web` 62 passed；带 `TEST_DATABASE_URL` 的全量 `pytest -q` 427 passed / 4 xfailed；前端 build 通过。
+- 2026-06-30 本地自动化基线：`pg_isready` confirmed `127.0.0.1:55432`; `tests\web` 63 passed；带 `TEST_DATABASE_URL` 的全量 `pytest -q` 428 passed / 4 xfailed；前端 build 通过。
 - 已修复本地可见 Chrome 发现的主流程问题：合法 A/B/C/D 选择不应 HTTP 200 但不推进；叙事/状态 mismatch 时保持 `game_turns` 连续；fallback 过渡回合会记录。
 - 角色创建属性池已按 `GAME_MODE_SPEC.md` §4.1 落地：手动 2-8/总和 30，随机 0-10/总和 30。
+- 2026-06-30 复核修复：随机角色创建会提交并使用前端展示的随机属性池；从随机切回手动会恢复合法手动池；空 Key 的首次模型配置不会生成遮蔽系统默认的用户配置。
 - `tests/unit/engine/test_playable_gap_locks.py` 已作为 strict xfail gap guard 接受；其中 4 个 xfail 是 P1 真实缺口，不是当前自动化失败。
 - 本地 Chrome 旧证据覆盖过账号注册/登录/存档/读档、2K 和窄屏布局，但仍需要在模型设置治理后重新做 20 回合真实玩家验收。
 

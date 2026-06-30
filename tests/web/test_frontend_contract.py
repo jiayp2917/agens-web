@@ -178,6 +178,10 @@ def test_react_character_creation_uses_catalogs_and_game_mode() -> None:
     assert "export const randomAttributeMax = 10" in source
     assert "Object.fromEntries(attributes.map(([key]) => [key, 5]))" in source
     assert "randomAttributePool" in source
+    assert "attributes: attrValues" in source
+    assert "randomizeAttributes ? {} : attrValues" not in source
+    assert 'action.choiceMode === "manual" && state.choiceMode !== "manual"' in source
+    assert "attrValues: defaultAttributes()" in source
     assert "attrTotal !== manualAttributeBudget" in source
     assert "总和必须等于" in source
     assert "总和不超过" not in source

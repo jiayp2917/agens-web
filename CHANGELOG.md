@@ -2,6 +2,23 @@
 
 ## 2026-06-30
 
+### Fixed - review follow-up for model settings and character attributes
+
+- Fixed random character creation so the six-attribute pool shown in the React
+  preview is the pool submitted to `/start`; the backend now validates a
+  supplied random pool and only generates a new one when none is supplied.
+- Fixed switching from random creation back to manual creation so the manual
+  form returns to a valid 5/5/5/5/5/5 pool instead of retaining random-only
+  0-10 values that the backend would reject.
+- Fixed stored model settings so a first-time config cannot be saved with an
+  empty API Key and accidentally shadow the effective default. Existing stored
+  configs may still leave the Key field empty to keep the previously encrypted
+  key while changing provider/base URL/model.
+- Added regression coverage for the random attribute preview contract and empty
+  initial model-key rejection.
+- Updated `docs/INDEX.md` and `docs/RUNTIME_FLOW.md` current-state baselines,
+  and ignored generated `output/playwright/` browser evidence by default.
+
 ### Changed - gameplay point pool and local validation guard
 
 - Implemented the first P1 gameplay slice from `docs/GAME_MODE_SPEC.md` §4.1:
@@ -16,7 +33,9 @@
   through the masked status text.
 - Added an account-session regression test covering register -> create session
   -> start -> choice, verifying the flow stays on the registered user path and
-  does not write `game_turns` while the corresponding `sessions` row is absent.
+  does not write orphaned `game_turns` when the corresponding `sessions` row is
+  absent. Full account save/load acceptance remains a separate local Chrome and
+  production validation gate.
 - Documented the local Chrome validation caveat: `tests\web` truncates the
   shared `TEST_DATABASE_URL` database before each test, so visible Chrome runs
   must not share that database concurrently with pytest.
@@ -27,9 +46,9 @@
 - `.\.venv\Scripts\python.exe -m compileall -q src tests web scripts migrations`
   -> passed.
 - `TEST_DATABASE_URL=postgresql+psycopg://agens_test@127.0.0.1:55432/agens_web_test`
-  `.\.venv\Scripts\python.exe -m pytest -q tests\web` -> 62 passed.
+  `.\.venv\Scripts\python.exe -m pytest -q tests\web` -> 63 passed.
 - `TEST_DATABASE_URL=postgresql+psycopg://agens_test@127.0.0.1:55432/agens_web_test`
-  `.\.venv\Scripts\python.exe -m pytest -q` -> 427 passed, 4 xfailed.
+  `.\.venv\Scripts\python.exe -m pytest -q` -> 428 passed, 4 xfailed.
 - `web\frontend-react npm.cmd run build` -> passed.
 
 ## 2026-06-29

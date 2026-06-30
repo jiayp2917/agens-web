@@ -43,6 +43,9 @@ const defaultAttributes = () =>
 function reducer(state: State, action: Action): State {
   switch (action.type) {
     case "set-choice-mode":
+      if (action.choiceMode === "manual" && state.choiceMode !== "manual") {
+        return { ...state, choiceMode: action.choiceMode, attrValues: defaultAttributes() };
+      }
       return { ...state, choiceMode: action.choiceMode };
     case "set-talent":
       return { ...state, talent: action.value };

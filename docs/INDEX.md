@@ -7,7 +7,7 @@
 - 当前主线：游戏模式 v5 Alpha，A/B/C/D 四按钮固定语义（A 稳妥 / B 机遇 / C 风险 / D 气运），无自由文本主入口，无 HP/MP 常驻 UI。
 - 数据库路线：PostgreSQL-only，本地测试和生产都以 Alembic schema 为准；SQLite 已删除，仅作为历史记录出现在 `CHANGELOG.md` 或归档文档中。
 - 模型设置：注册用户可配置个人模型；访客不可配置；无个人配置时使用系统 Agens 默认。用户 key 只允许加密存储和脱敏展示。
-- 最新本地自动化基线：用户级模型设置治理已在本地提交 `44519d7`，`tests\web` 59 passed，全量 `pytest -q` 420 passed / 1 xfailed，前端 build 通过。
+- 最新本地自动化基线：用户级模型设置治理已在本地提交 `44519d7`；30 点属性池与后续复核修复已在本地落地；`tests\web` 63 passed，全量 `pytest -q` 428 passed / 4 xfailed，前端 build 通过。4 个 xfailed 是 P1 玩法 gap guard，不代表当前自动化失败。
 - 尚未完成：生产部署 Alembic `20260622_0005`、生产账号注册/登录/存档/读档、production live model 非 fallback 验收、可见 Chrome 20 回合真实玩家验收。
 
 ## 当前权威文档
