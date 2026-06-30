@@ -32,6 +32,13 @@
 
 目标：证明当前底座可以支撑后续玩法迭代。
 
+2026-06-30 状态更新：
+
+- 本地真实可见 Chrome 20 回合验收已完成。
+- 生产部署与迁移已完成：Alembic 已到 `20260622_0005`，`user_model_configs` 存在。
+- 生产账号注册、登录、存档、读档、跨会话恢复已通过。
+- production live model 仍未验收通过：生产 start 为 non-fallback，但一回合 choice 返回 `fallback_active=true` 且 `turn_count=0`。
+
 必须完成：
 
 - 本地 PostgreSQL 健康检查和自动化验证。

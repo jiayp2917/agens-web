@@ -22,23 +22,22 @@ This is the active backlog for `agens-web`. It separates local code work, local 
 - Latest local automated validation after the playable-gap follow-up: `tests\web` 63 passed, full `pytest -q` with `TEST_DATABASE_URL` 432 passed, frontend build passed.
 - Main-flow fixes already landed locally: fixed-choice `/choice`, no HTTP 200 without turn progression for ineligible breakthrough choices, contiguous `game_turns` after mismatch/fallback paths.
 - Local Chrome 20-turn evidence still found P1 gameplay quality gaps: slow live-model turns, misleading breakthrough options after ineligible breakthrough rejection, player-visible mismatch warnings, state/chronicle age drift, untracked narrative rewards, and unstable option semantics.
-- Production/server acceptance is still separate. Fallback is not live-model success.
+- 2026-06-30 production/server batch:
+  - Deployed the current package, generated/installed `MODEL_CONFIG_SECRET` without printing it, backed up app/PostgreSQL, rebuilt only `agens-web`, and migrated Alembic to `20260622_0005`.
+  - Production `user_model_configs` exists; public/origin health, catalog, container health, and sensitive-marker log scan passed.
+  - One-time real-account registration, login, save, load, and cross-session restore passed without printing account, cookie, invite, database URL, or key values.
+  - Production live-model acceptance failed: start was non-fallback, but one choice turn returned `fallback_active=true` with `turn_count=0`. Fallback is not live-model success.
 - The active phase plan is `docs/PLAYABLE_GAMEPLAY_ROADMAP_20260629.md`: close P0 validation first, then improve gameplay content without broad architecture changes.
 
 ## P0: Acceptance And Deployment Gates
 
 These items block claiming the project is a stable playable public build.
 
-1. Production deploy for user-scoped model settings.
-   - Requires server-thread approval and execution.
-   - Must include app backup, PostgreSQL backup/restore point, `MODEL_CONFIG_SECRET` presence check without printing value, Alembic upgrade to `20260622_0005`, restart, and health checks.
-2. Production account flow.
-   - Verify registration, login, save, load, and cross-session restore with a safe non-secret test account path.
-   - Do not print passwords, cookies, invite codes, keys, or database URLs.
-3. Production live model acceptance.
+1. Production live model acceptance.
    - Prove start and at least one choice turn are non-fallback.
    - HTTP 200 alone is not enough.
-4. Local visible Chrome 20-turn player validation.
+   - Current blocker: the 2026-06-30 production choice smoke returned `fallback_active=true` with `turn_count=0`.
+2. Local visible Chrome 20-turn player validation.
    - Done locally on 2026-06-30 for the current slice.
    - Re-run after fixes to option constraints, state/chronicle consistency, or major UI changes.
    - Do not run concurrently with pytest against the same database; Web tests truncate the shared test DB.
@@ -48,7 +47,9 @@ These items block claiming the project is a stable playable public build.
 1. Improve playable content before broad architecture work.
    - Done in current local slice: 30-point six-attribute creation pool.
    - Done in current local slice: silent visible rewards without narration are rejected, invalid local-story input no longer consumes a turn, local-story self-loops vary their result text, and eligible breakthroughs append a settled turn.
+   - Diagnose production choice fallback with only sanitized evidence: fallback source/error class, provider status, timeout, and structured-output repair path. Do not print model keys or request payload secrets.
    - Reduce repeated retreat/breakthrough loops.
+   - Remove duplicate option prefixes such as `A：A：...` from the player UI.
    - Filter or rewrite breakthrough/realm options from structured state so invalid breakthrough options are not shown after a rejection.
    - Remove player-visible internal mismatch warnings; convert them into natural in-world failure/partial-success text plus debug logs.
    - Keep state bar age, chronicle age, and `game_turns` age from one authoritative source.
@@ -92,6 +93,7 @@ These items block claiming the project is a stable playable public build.
 3. Handle generated evidence deliberately.
    - Treat `output/playwright/`, screenshots, and JSON traces as generated artifacts unless explicitly promoted.
    - Do not delete historical artifacts without inventory, backup, and quarantine.
+   - Fix evidence writers so browser traces are strict parseable JSON, or emit a separate NDJSON/CSV summary for automated auditing.
 
 ## Validation Rules
 

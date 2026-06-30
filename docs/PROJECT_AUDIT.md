@@ -41,21 +41,23 @@
 - 2026-06-30 复核修复：随机角色创建会提交并使用前端展示的随机属性池；从随机切回手动会恢复合法手动池；空 Key 的首次模型配置不会生成遮蔽系统默认的用户配置。
 - `tests/unit/engine/test_playable_gap_locks.py` 已转为通过型玩法 guard；原 4 个 P1 gap 已修复并由 T1-T4 锁定。
 - 2026-06-30 本地真实 Chrome 20 回合验收完成：登录、系统默认 Agens、个人模型配置保存/清除、角色创建、存档/读档、20 个 non-fallback choice、`game_turns` 1-20 连续均通过。证据位于 `output/playwright/agens-web-local-20turn-validation-20260630-browser.json` 和 `output/playwright/agens-web-local-20turn-validation-20260630-final.png`，默认作为生成证据不提交。
+- 2026-06-30 本地 headed sanity 复核通过：访客新游戏、角色创建、start、一回合 choice 均通过，未见 fallback banner。证据位于 `output/playwright/agens-web-local-sanity-20260630-*`，默认不提交。
+- 2026-06-30 生产批次通过部署与账号流：Alembic 已到 `20260622_0005`，`user_model_configs` 存在，public/origin health、catalog、容器健康和日志敏感标记扫描通过；一次性真实账号注册、登录、存档、读档、跨会话恢复通过。production live model 未通过：start non-fallback，但一回合 choice 返回 `fallback_active=true` 且 `turn_count=0`。
 
 ## 剩余 P0 风险
 
 | 问题 | 当前状态 | 下一步 |
 | --- | --- | --- |
-| 生产未部署用户级模型配置 | 本地已有 Alembic `20260622_0005`，生产仍需单独部署。 | 服务器线程确认 `MODEL_CONFIG_SECRET`、备份、迁移、重启和只读验收。 |
-| 生产账号流未验收 | 注册/登录/存档/读档仍需真实环境补验。 | 已授权服务器线程使用一次性真实测试账号补验；不得输出账号、密码、cookie 或邀请码。 |
-| production live model 未验收 | fallback 不算成功，HTTP 200 不等于 live model 成功。 | 服务器线程证明 start 和 choice 均非 fallback，且不输出 secrets。 |
+| production live model 未验收 | 2026-06-30 生产 start non-fallback，但一回合 choice 返回 `fallback_active=true` 且 `turn_count=0`；HTTP 200 不等于 live model 成功。 | 代码线程/服务器线程共同定位 production choice fallback 原因，修复后重新证明 start 和 choice 均非 fallback，且不输出 secrets。 |
 | Chrome 验收与 pytest 共库并发 | `tests\web` 会逐测清空 `TEST_DATABASE_URL`，与可见 Chrome 共用库会造成 users/sessions/game_turns 突然归零的假象。 | Chrome 验收使用独立 DB，或确认无 pytest 并发后再跑。 |
 
 ## 剩余 P1 技术债
 
 | 问题 | 风险 | 处理方向 |
 | --- | --- | --- |
+| 生产 choice fallback | 本地 20 回合 non-fallback，但生产账号流一回合 choice fallback，说明生产模型路径或结构化输出稳定性仍弱。 | 脱敏采集 fallback source/错误类别/耗时；检查生产系统默认模型配置、超时、结构化修复、provider 响应和 prompt 差异。 |
 | live model 响应慢 | 本地 20 回合 choice 平均约 42.9 秒，最大约 106 秒，真实玩家会明显等待。 | 优化提示词、超时、重试/降级提示、流式反馈和结构化输出修复。 |
+| 选项文案重复前缀 | headed sanity 看到页面选项出现 `A：A：...`、`B：B：...` 等重复字母。 | 统一选项 label 与正文的责任边界，后端不要把 A/B/C/D 前缀混入正文，或前端渲染前去重。 |
 | 突破/境界选项仍会误导 | 系统能拦截不合格突破，但后续仍生成“冲击筑基/突破至练气六层”等不符合当前境界的选项。 | 基于结构化境界过滤或重写候选选项，不让无效突破进入玩家选择面板。 |
 | 叙事与状态仍可能不一致 | 第 19 回合出现“叙事声明的收获缺少结构化记录，行动结果暂不生效”，且状态年龄与编年史年龄不同步。 | 收紧 `state_delta`、Judge、`apply_delta()` 和 mismatch 测试；内部仲裁提示不要直接暴露给玩家。 |
 | 游玩内容弱 | 金灵根路线发散到雷法/水法，目标感和阶段奖励不够稳定。 | 先设计主线目标、阶段事件、奖励落账，再迭代内容。 |
@@ -68,7 +70,7 @@
 ## 剩余 P2 工作
 
 - 继续固化本地 PostgreSQL 启动/恢复说明；当前已有 `scripts/start_local_pg.ps1`，还缺 stale `postmaster.pid` 恢复文档。
-- 决定 `output/playwright/`、截图和 JSON 证据的归档/忽略策略；默认不提交临时验证产物。
+- 决定 `output/playwright/`、截图和 JSON 证据的归档/忽略策略；默认不提交临时验证产物。当前 20 回合证据文件存在 JSON 转义/编码损坏，后续应改为 strict JSON writer 或同时输出 NDJSON/CSV 摘要。
 - 生产侧继续做日志脱敏、限流、Cookie/Origin、备份恢复演练和索引评审。
 - 历史文档只保留在 `docs/archive/` 和 `CHANGELOG.md`，当前文档只写当前事实和下一步。
 

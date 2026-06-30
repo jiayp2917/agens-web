@@ -2,6 +2,19 @@
 
 ## 2026-06-30
 
+### Verified - production deploy and account flow
+
+- Server-thread production batch deployed the current source package and
+  migrated Alembic to `20260622_0005`.
+- Production `user_model_configs` exists; public/origin health, catalog,
+  container health, and sensitive-marker log scan passed.
+- One-time real-account registration, login, save, load, and cross-session
+  restore passed without printing account, cookie, invite, database URL, or key
+  values.
+- Production live-model acceptance is still failed: start was non-fallback, but
+  one choice turn returned `fallback_active=true` with `turn_count=0`. HTTP
+  200 and fallback gameplay do not count as live-model success.
+
 ### Verified - local visible Chrome 20-turn slice
 
 - Completed a local real Chrome validation against PostgreSQL with an ordinary
@@ -13,10 +26,16 @@
   `agens-web-local-20turn-validation-20260630-browser.json` and
   `agens-web-local-20turn-validation-20260630-final.png`. These files remain
   generated artifacts and are not committed by default.
+- Headed sanity recheck also passed for guest new game, character creation,
+  start, and one choice turn; generated evidence remains under
+  `output/playwright/`.
 - Recorded remaining P1 gameplay quality issues: slow live-model responses,
   misleading breakthrough options after invalid breakthrough rejection,
   player-visible narrative/state mismatch warnings, state/chronicle age drift,
   and narrative rewards or injuries without stable structured display.
+- Recorded P2 evidence-quality issue: the 20-turn browser evidence file is not
+  strict parseable JSON because of text escaping/encoding damage, although its
+  raw request list and DB checks were still usable.
 
 ### Fixed - playable gap guards
 

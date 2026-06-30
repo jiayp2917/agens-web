@@ -54,20 +54,25 @@ has evidence. Current status is restored but still partially accepted.
 - Public `https://game.jiayp2917.xyz/api/health` returns HTTP 200.
 - Public `https://game.jiayp2917.xyz/api/catalog/talents` returns 10 rows.
 - Origin `http://127.0.0.1:18000/api/health` returns HTTP 200.
-- Production Alembic revision is `20260622_0004`.
+- Production Alembic revision is `20260622_0005`.
 - Production PostgreSQL now contains:
   - `game_runs`
   - `game_turns`
+  - `user_model_configs`
   - `player_progress`
-- The latest `agens-web` container is healthy and runs image
-  `sha256:445367f496bf3b1acb8b091442f775b9c74240251cc19efdfab2d45562dbc791`.
+- The latest `agens-web` container is healthy after the 2026-06-30 deploy.
+- The 2026-06-30 production deploy generated/installed `MODEL_CONFIG_SECRET`
+  without printing it, created app/PostgreSQL backups, rebuilt only
+  `agens-web`, migrated to `20260622_0005`, and passed public/origin
+  health, catalog, container-health, and sensitive-marker log checks.
+- One-time real-account registration, login, save, load, and cross-session
+  restore passed without printing account, password, cookie, invite, database
+  URL, or key values.
 - The entrypoint CRLF failure has been fixed by the approved hotfix package:
   `D:\chat\outputs\packages\agens-web\agens-web-entrypoint-crlf-hotfix-20260624-185815.zip`.
-- Guest start and one guest turn returned HTTP 200 in production smoke.
-- Production live-model success is not accepted: the guest turn reported
-  `fallback_prompt_active=true`.
-- Production account registration/login/save/load is not accepted: no safe
-  non-secret production test account path was available.
+- Production live-model success is still not accepted: the 2026-06-30 account
+  flow start was non-fallback, but one choice turn returned
+  `fallback_active=true` with `turn_count=0`.
 - Old app source is preserved at
   `/srv/jiayp/apps/agens-web.pre-v5-20260624-180650`, with an app tar backup at
   `/srv/jiayp/backups/agens-web/agens-web-app-20260624-180650.tar.gz`.
