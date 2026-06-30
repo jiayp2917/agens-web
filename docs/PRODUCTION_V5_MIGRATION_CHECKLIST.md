@@ -73,6 +73,17 @@ has evidence. Current status is restored but still partially accepted.
 - Production live-model success is still not accepted: the 2026-06-30 account
   flow start was non-fallback, but one choice turn returned
   `fallback_active=true` with `turn_count=0`.
+- Sanitized follow-up diagnosis found that the choice fallback happened before
+  any provider request, timeout, or repair path: a legacy `model_config` row had
+  no `api_key_encrypted` and shadowed the container environment system key, so
+  narrator runtime saw `key_set=false`. Local code now falls back to the env
+  system key for that legacy-row shape; production still needs redeploy and
+  start+choice non-fallback revalidation.
+- The same local follow-up did not accept the 20-turn live browser gate: local
+  visible Chrome passed account registration/login, start, save, and load, but
+  entered local-story fallback at visible turn 7 because narrator returned no
+  usable choices. This is local gameplay/model-output work, not production
+  deployment acceptance.
 - Old app source is preserved at
   `/srv/jiayp/apps/agens-web.pre-v5-20260624-180650`, with an app tar backup at
   `/srv/jiayp/backups/agens-web/agens-web-app-20260624-180650.tar.gz`.

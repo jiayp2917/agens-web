@@ -44,7 +44,18 @@ export function GamePage({
   const currentTurn = Math.max(0, Number(session.turn_count) || 0);
   const realm = `${character.realm || "练气"}${character.realm_stage || 1}层`;
   const luck = character.attributes?.luck ?? character.luck ?? "平稳";
-  const cleanChoiceText = (choice: string) => String(choice || "").replace(/^【(?:稳妥|机遇|风险|气运)】\s*/, "").trim();
+  const cleanChoiceText = (choice: string) => {
+    let text = String(choice || "").replace(/^【(?:稳妥|机遇|风险|气运)】\s*/, "").trim();
+    for (let i = 0; i < 3; i += 1) {
+      const next = text
+        .replace(/^(?:[（(]?\s*[A-Da-d1-4]\s*[）)]?|选项\s*[A-Da-d])(?:\s*[\.:：、)）．。-]|\s+(?=(?:稳妥|机遇|风险|气运)\s*[：:]))\s*/, "")
+        .replace(/^(?:稳妥|机遇|风险|气运)\s*[：:]\s*/, "")
+        .trim();
+      if (next === text) break;
+      text = next;
+    }
+    return text;
+  };
   const chronicleRecords = useMemo(() => buildChronicleRecords({
     events,
     age,

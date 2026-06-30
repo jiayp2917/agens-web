@@ -533,18 +533,21 @@ class WebGameService:
         stored = self.db.get_model_config() or {}
         settings = Settings()
         source = "system"
+        env_key = os.environ.get("AGNES_API_KEY", "")
         if stored:
+            encrypted = str(stored.get("api_key_encrypted") or "")
             config = {
                 "provider": stored.get("provider") or "Agens",
                 "base_url": stored.get("base_url") or settings.base_url,
                 "model": stored.get("model") or settings.model,
-                "api_key_set": bool(stored.get("api_key_encrypted")),
-                "api_key_masked": stored.get("api_key_masked") if stored.get("api_key_encrypted") else "<unset>",
-                "api_key_encrypted": stored.get("api_key_encrypted") or "",
+                "api_key_set": bool(encrypted or env_key),
+                "api_key_masked": stored.get("api_key_masked") if encrypted else (mask_api_key(env_key) if env_key else "<unset>"),
+                "api_key_encrypted": encrypted,
                 "source": source,
             }
+            if not encrypted and env_key:
+                config["api_key"] = env_key
         else:
-            env_key = os.environ.get("AGNES_API_KEY", "")
             config = {
                 "provider": "Agens",
                 "base_url": os.environ.get("AGNES_BASE_URL") or settings.base_url,

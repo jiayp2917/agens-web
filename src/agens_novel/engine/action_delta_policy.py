@@ -8,7 +8,8 @@ from typing import Any
 from ..session.game_session import GameSession
 from .choices import dedupe_strings
 
-INCONSISTENT_NARRATIVE_NOTICE = "天道记录以状态栏为准：本回合叙事声明的收获缺少结构化记录，行动结果暂不生效。"
+INCONSISTENT_NARRATIVE_NOTICE = "narrative/state mismatch: authoritative state change was missing structured data"
+PLAYER_NARRATIVE_MISMATCH_NOTICE = "本回合以基础规则结算，传闻与收获尚未入册。"
 
 
 _MEDITATION_KEYWORDS: tuple[str, ...] = (
@@ -56,7 +57,6 @@ _CLAIM_RULES: tuple[tuple[tuple[re.Pattern[str], ...], tuple[tuple[str, str], ..
     ),
     (
         (
-            re.compile(r"(?:你|玩家|弟子)?(?:获得|拾得|捡到|购买|收下|得到|领到|领取)(?:了)?[^，。；\n]{0,24}"),
             re.compile(r"(?:奖励|发放|交给)(?:你|玩家|弟子)[^，。；\n]{0,24}"),
         ),
         (("character", "inventory_add"), ("character", "inventory")),

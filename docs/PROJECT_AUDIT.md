@@ -35,31 +35,30 @@
 
 - 本地 PostgreSQL 测试库目标：`127.0.0.1:55432/agens_web_test`。
 - 用户级模型设置治理本地提交：`44519d7`。
-- 2026-06-30 本地自动化基线：`pg_isready` confirmed `127.0.0.1:55432`; `tests\web` 63 passed；带 `TEST_DATABASE_URL` 的全量 `pytest -q` 432 passed；前端 build 通过。
+- 2026-06-30 本地自动化基线：`pg_isready` confirmed `127.0.0.1:55432`; `tests\web` 64 passed；带 `TEST_DATABASE_URL` 的全量 `pytest -q` 438 passed；前端 build 通过。
 - 已修复本地可见 Chrome 发现的主流程问题：合法 A/B/C/D 选择不应 HTTP 200 但不推进；叙事/状态 mismatch 时保持 `game_turns` 连续；fallback 过渡回合会记录。
 - 角色创建属性池已按 `GAME_MODE_SPEC.md` §4.1 落地：手动 2-8/总和 30，随机 0-10/总和 30。
 - 2026-06-30 复核修复：随机角色创建会提交并使用前端展示的随机属性池；从随机切回手动会恢复合法手动池；空 Key 的首次模型配置不会生成遮蔽系统默认的用户配置。
 - `tests/unit/engine/test_playable_gap_locks.py` 已转为通过型玩法 guard；原 4 个 P1 gap 已修复并由 T1-T4 锁定。
-- 2026-06-30 本地真实 Chrome 20 回合验收完成：登录、系统默认 Agens、个人模型配置保存/清除、角色创建、存档/读档、20 个 non-fallback choice、`game_turns` 1-20 连续均通过。证据位于 `output/playwright/agens-web-local-20turn-validation-20260630-browser.json` 和 `output/playwright/agens-web-local-20turn-validation-20260630-final.png`，默认作为生成证据不提交。
+- 2026-06-30 本地真实 Chrome 跟进验收：普通账号注册/登录、系统默认 Agens 开局、角色创建、存档/读档通过；重复选项前缀与内部 mismatch 文案未再出现；第 7 回合 narrator incomplete output 进入 local story fallback，未通过 20 回合 live-model 验收。摘要证据位于 `output/playwright/agens-web-local-visible-validation-summary-20260630.json`，默认作为生成证据不提交。
 - 2026-06-30 本地 headed sanity 复核通过：访客新游戏、角色创建、start、一回合 choice 均通过，未见 fallback banner。证据位于 `output/playwright/agens-web-local-sanity-20260630-*`，默认不提交。
 - 2026-06-30 生产批次通过部署与账号流：Alembic 已到 `20260622_0005`，`user_model_configs` 存在，public/origin health、catalog、容器健康和日志敏感标记扫描通过；一次性真实账号注册、登录、存档、读档、跨会话恢复通过。production live model 未通过：start non-fallback，但一回合 choice 返回 `fallback_active=true` 且 `turn_count=0`。
+- 2026-06-30 生产 fallback 根因已脱敏定位并本地修复：旧 `model_config` 系统行没有 `api_key_encrypted` 时遮蔽了容器 env 系统 key，导致 narrator runtime `key_set=false`。本地兼容逻辑已改为此类旧行不遮蔽 env key；生产仍需部署后重验 start+choice non-fallback。
 
 ## 剩余 P0 风险
 
 | 问题 | 当前状态 | 下一步 |
 | --- | --- | --- |
-| production live model 未验收 | 2026-06-30 生产 start non-fallback，但一回合 choice 返回 `fallback_active=true` 且 `turn_count=0`；HTTP 200 不等于 live model 成功。 | 代码线程/服务器线程共同定位 production choice fallback 原因，修复后重新证明 start 和 choice 均非 fallback，且不输出 secrets。 |
+| production live model 未复验 | 2026-06-30 根因已定位为旧 `model_config` 行遮蔽 env 系统 key，本地已修兼容逻辑；生产仍停留在修复前代码。 | 重新部署本地修复后，由服务器线程证明 start 和 choice 均 non-fallback，且不输出 secrets。 |
 | Chrome 验收与 pytest 共库并发 | `tests\web` 会逐测清空 `TEST_DATABASE_URL`，与可见 Chrome 共用库会造成 users/sessions/game_turns 突然归零的假象。 | Chrome 验收使用独立 DB，或确认无 pytest 并发后再跑。 |
 
 ## 剩余 P1 技术债
 
 | 问题 | 风险 | 处理方向 |
 | --- | --- | --- |
-| 生产 choice fallback | 本地 20 回合 non-fallback，但生产账号流一回合 choice fallback，说明生产模型路径或结构化输出稳定性仍弱。 | 脱敏采集 fallback source/错误类别/耗时；检查生产系统默认模型配置、超时、结构化修复、provider 响应和 prompt 差异。 |
-| live model 响应慢 | 本地 20 回合 choice 平均约 42.9 秒，最大约 106 秒，真实玩家会明显等待。 | 优化提示词、超时、重试/降级提示、流式反馈和结构化输出修复。 |
-| 选项文案重复前缀 | headed sanity 看到页面选项出现 `A：A：...`、`B：B：...` 等重复字母。 | 统一选项 label 与正文的责任边界，后端不要把 A/B/C/D 前缀混入正文，或前端渲染前去重。 |
-| 突破/境界选项仍会误导 | 系统能拦截不合格突破，但后续仍生成“冲击筑基/突破至练气六层”等不符合当前境界的选项。 | 基于结构化境界过滤或重写候选选项，不让无效突破进入玩家选择面板。 |
-| 叙事与状态仍可能不一致 | 第 19 回合出现“叙事声明的收获缺少结构化记录，行动结果暂不生效”，且状态年龄与编年史年龄不同步。 | 收紧 `state_delta`、Judge、`apply_delta()` 和 mismatch 测试；内部仲裁提示不要直接暴露给玩家。 |
+| live model 响应慢且结构化输出不稳 | 本地跟进验收到第 7 回合触发 fallback；已观察到 choice 耗时 9.6s、38.7s、20.6s、38.8s、50.5s、50.8s、14.4s。 | 优化提示词、超时、重试/降级提示、流式反馈和结构化输出修复；fallback 仍不能算 live-model 成功。 |
+| 叙事与状态仍可能不一致 | 本轮已隐藏内部 mismatch 文案并明确普通编年史物品叙事不强制进 inventory；但状态年龄与编年史年龄仍需统一。 | 继续收紧权威状态字段、Judge、`apply_delta()` 和年龄来源；系统级收益要结构化或自然改写。 |
+| 编年史输出仍有格式污染 | 跟进验收中出现可见的 stray markdown fence ` ```json`。 | 清理模型输出残留 fence/JSON 标记，或在渲染前做安全文本净化。 |
 | 游玩内容弱 | 金灵根路线发散到雷法/水法，目标感和阶段奖励不够稳定。 | 先设计主线目标、阶段事件、奖励落账，再迭代内容。 |
 | 状态展示不足 | 气运增长到 23 缺解释，轻伤、雷果等叙事结果没有稳定状态/物品展示。 | 明确属性成长上限/展示规则；轻伤、道具、功法等要落账或改写成非确定收益。 |
 | `GameEngine` 仍偏大 | 仍承担回合、突破、兜底、模型失败等多职责。 | 只按主流程需要拆模型失败、本地故事、突破 helper，避免大拆。 |
@@ -70,7 +69,7 @@
 ## 剩余 P2 工作
 
 - 继续固化本地 PostgreSQL 启动/恢复说明；当前已有 `scripts/start_local_pg.ps1`，还缺 stale `postmaster.pid` 恢复文档。
-- 决定 `output/playwright/`、截图和 JSON 证据的归档/忽略策略；默认不提交临时验证产物。当前 20 回合证据文件存在 JSON 转义/编码损坏，后续应改为 strict JSON writer 或同时输出 NDJSON/CSV 摘要。
+- 决定 `output/playwright/`、截图和 JSON 证据的归档/忽略策略；默认不提交临时验证产物。已新增 strict JSON/NDJSON/CSV evidence writer，后续真实 Chrome 脚本应接入它。
 - 生产侧继续做日志脱敏、限流、Cookie/Origin、备份恢复演练和索引评审。
 - 历史文档只保留在 `docs/archive/` 和 `CHANGELOG.md`，当前文档只写当前事实和下一步。
 

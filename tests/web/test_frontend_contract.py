@@ -230,6 +230,7 @@ def test_react_game_page_has_escape_route_and_stable_meters() -> None:
     assert "玄历" in source
     assert "ChoiceButton" in source
     assert "cleanChoiceText" in source
+    assert "[A-Da-d]" in source and "：、)）" in source
     assert "往事时间轴" in source
     assert ".stat-meter" in css
     assert ".page-brand" in css

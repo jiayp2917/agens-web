@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import re
 from typing import Any
 
 from ..session.game_session import GameSession
@@ -9,6 +10,13 @@ from ..session.game_session import GameSession
 CHOICE_LABELS = ("A", "B", "C", "D")
 CHOICE_FALLBACK_NOTICE = "天道紊乱，暂以因果残影指引。"
 # D 语义: "气运" - 随缘/天命，强绑定 luck 属性。UI 固定为第 4 按钮。
+
+_LETTER_PREFIX_RE = re.compile(
+    r"^\s*(?:[（(]?\s*[A-Da-d1-4]\s*[）)]?|选项\s*[A-Da-d])"
+    r"(?:\s*[\.:：、)）．。-]|\s+(?=(?:稳妥|机遇|风险|气运)\s*[：:]))\s*"
+)
+_SEMANTIC_PREFIX_RE = re.compile(r"^\s*【(?:稳妥|机遇|风险|气运)】\s*")
+_SEMANTIC_WORD_PREFIX_RE = re.compile(r"^\s*(?:稳妥|机遇|风险|气运)\s*[：:]\s*")
 
 
 def normalize_choices(raw_choices: Any) -> list[str]:
@@ -22,6 +30,27 @@ def normalize_choices(raw_choices: Any) -> list[str]:
             if len(choices) == len(CHOICE_LABELS):
                 break
     return dedupe_strings(choices)[: len(CHOICE_LABELS)]
+
+
+def clean_choice_text(text: str) -> str:
+    """Strip model-provided A/B/C/D labels from a choice body.
+
+    The UI already renders stable button letters. Keeping model prefixes creates
+    duplicated labels such as ``A：A：闭关`` in headed validation.
+    """
+    cleaned = str(text or "").strip()
+    for _ in range(3):
+        next_text = _LETTER_PREFIX_RE.sub("", cleaned, count=1).strip()
+        next_text = _SEMANTIC_WORD_PREFIX_RE.sub("", next_text, count=1).strip()
+        if next_text == cleaned:
+            break
+        cleaned = next_text
+    return cleaned
+
+
+def display_choice_text(text: str) -> str:
+    """Return choice text for UI display, without semantic or letter prefixes."""
+    return clean_choice_text(_SEMANTIC_PREFIX_RE.sub("", str(text or ""), count=1))
 
 
 def complete_choices(raw_choices: Any, session: GameSession) -> list[str]:
@@ -53,7 +82,7 @@ def fallback_choices(session: GameSession) -> list[str]:
     return [
         f"【稳妥】在{location}稳住气息，观察灵气与地势变化",
         f"【机遇】寻找附近修士交谈，打听当前机缘与风险",
-        "【风险】检查随身物品、功法与破境准备",
+        "【风险】外出历练，寻找护持与关键线索",
         "【气运】随缘而行，听天命、赌因果",
     ]
 
@@ -77,9 +106,4 @@ def _choice_text(item: Any) -> str:
         text = str(value) if value is not None else ""
     else:
         text = ""
-    text = text.strip()
-    for prefix in ("A.", "B.", "C.", "D.", "A、", "B、", "C、", "D、", "A:", "B:", "C:", "D:"):
-        if text.upper().startswith(prefix):
-            text = text[len(prefix):].strip()
-            break
-    return text
+    return clean_choice_text(text)

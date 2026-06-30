@@ -136,6 +136,7 @@ class GameEngine:
         """Set current choices from model output, falling back only when empty."""
         choices = complete_choices(raw_choices, self.game_session)
         if choices:
+            choices = self._filter_unavailable_breakthrough_choices(choices)
             self.game_session.last_choices = choices
             return False
 
@@ -314,6 +315,22 @@ class GameEngine:
         if reason:
             self._emit("on_info", f"{reason} 本次行动按修炼/探索继续推进。")
         return False
+
+    def _filter_unavailable_breakthrough_choices(self, choices: list[str]) -> list[str]:
+        """Rewrite breakthrough-looking options when realm rules reject them."""
+        if not any(self._parse_breakthrough_action(choice) for choice in choices):
+            return choices
+        can, _reason = self.realm_system.can_attempt_breakthrough(self.game_session)
+        if can:
+            return choices
+        fallbacks = fallback_choices(self.game_session)
+        rewritten: list[str] = []
+        for index, choice in enumerate(choices):
+            if self._parse_breakthrough_action(choice):
+                rewritten.append(fallbacks[index] if index < len(fallbacks) else fallbacks[-1])
+            else:
+                rewritten.append(choice)
+        return rewritten
 
     def _resolve_choice_input(self, text: str) -> str | None:
         """Map A/B/C/D or 1/2/3/4 input to the current model choice.

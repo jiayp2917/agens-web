@@ -288,11 +288,41 @@ class TestGameEngineHandleAction:
         assert engine.game_session.techniques == []
         assert not hasattr(engine.game_session, "mp")
         assert narratives == []
-        assert any("状态栏为准" in msg for msg in infos)
+        assert any("基础规则结算" in msg for msg in infos)
+        assert not any("状态栏为准" in msg or "state_delta" in msg for msg in infos)
         assert engine.game_session.turn_count == 1
         assert engine.game_session.turn_history[-1]["turn"] == 1
         assert engine.game_session.turn_history[-1]["narrative"] == ""
         assert "elapsed_years" in engine.game_session.turn_history[-1]["delta"]["meta"]
+
+    def test_minor_narrative_item_claim_does_not_force_inventory_entry(self, monkeypatch) -> None:
+        monkeypatch.setenv("AGNES_API_KEY", "sk-test-1234567890")
+        engine = GameEngine()
+        engine.game_session.game_started = True
+        engine.game_session.inventory = []
+        narratives: list[tuple[str, int]] = []
+        infos: list[str] = []
+        engine.on_narrative = lambda text, turn: narratives.append((text, turn))
+        engine.on_info = lambda msg: infos.append(msg)
+
+        def runner(agent_name, user_input, session, **kw):
+            if agent_name == "narrator":
+                return {
+                    "narrative": "你在山道旁拾得一枚残破木符，只觉其纹路有些古怪。",
+                    "state_delta": {"character": {"attributes": {"luck": 1}}},
+                    "choices": ["收好木符继续前行", "询问路过弟子", "绕去后山查看"],
+                    "llm_error": "",
+                }
+            if agent_name == "judge":
+                return _canned_judge()
+            return {}
+
+        with patch("agens_novel.engine.game_engine.run_turn_sync", side_effect=runner):
+            engine.handle_action("沿山道看看")
+
+        assert engine.game_session.inventory == []
+        assert narratives and "残破木符" in narratives[-1][0]
+        assert not any("基础规则结算" in msg or "状态栏为准" in msg for msg in infos)
 
     def test_notice_board_description_is_not_treated_as_claimed_reward(self, monkeypatch) -> None:
         monkeypatch.setenv("AGNES_API_KEY", "sk-test-1234567890")
@@ -721,6 +751,34 @@ class TestBreakthroughRouting:
         assert call_log == ["narrator", "judge"]
         assert engine.game_session.turn_count == 1
         assert engine.game_session.turn_history[-1]["turn"] == 1
+
+    def test_ineligible_breakthrough_options_are_rewritten(self, monkeypatch) -> None:
+        monkeypatch.setenv("AGNES_API_KEY", "sk-test-1234567890")
+        engine = GameEngine()
+        engine.game_session.game_started = True
+        engine.game_session.realm = "练气"
+        engine.game_session.realm_stage = 1
+
+        def runner(agent_name, user_input, session, **kw):
+            if agent_name == "narrator":
+                return {
+                    "narrative": "你试探经脉，灵气尚浅。",
+                    "state_delta": {"character": {"attributes": {"willpower": 1}}},
+                    "choices": ["A：闭关吐纳", "B：请教师兄", "C：冲击筑基", "D：随缘听天命"],
+                    "llm_error": "",
+                }
+            if agent_name == "judge":
+                return _canned_judge()
+            return {}
+
+        with patch("agens_novel.engine.game_engine.run_turn_sync", side_effect=runner):
+            engine.handle_action("检查修为")
+
+        assert engine.game_session.turn_count == 1
+        assert engine.game_session.last_choices[0] == "闭关吐纳"
+        assert engine.game_session.last_choices[1] == "请教师兄"
+        assert "冲击" not in engine.game_session.last_choices[2]
+        assert "突破" not in engine.game_session.last_choices[2]
 
 
 class TestBreakthroughPreparationGate:

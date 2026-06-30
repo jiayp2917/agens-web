@@ -6,6 +6,7 @@ import logging
 from typing import Any
 
 from .action_delta_policy import (
+    PLAYER_NARRATIVE_MISMATCH_NOTICE,
     apply_breakthrough_flag_rule,
     is_pure_cultivation,
     merge_rule_delta,
@@ -277,7 +278,7 @@ class TurnFlow:
         )
         if not consistent:
             log.info("Narrative/state mismatch rejected: %s", consistency_reason)
-            engine._emit("on_info", consistency_reason)
+            engine._emit("on_info", PLAYER_NARRATIVE_MISMATCH_NOTICE)
             narrative = ""
             state_delta = {"character": {}, "world": {}, "meta": {}}
 

@@ -666,6 +666,30 @@ def test_runtime_model_config_uses_current_user_without_env_pollution(tmp_path: 
     assert config_a["api_key"] != config_b["api_key"]
 
 
+def test_legacy_system_model_config_without_encrypted_key_uses_env_key(
+    tmp_path: Path,
+    monkeypatch,
+) -> None:
+    monkeypatch.setenv("SESSION_COOKIE_SECURE", "0")
+    monkeypatch.setenv("MODEL_CONFIG_SECRET", "test-model-config-secret")
+    monkeypatch.setenv("AGNES_API_KEY", "test-env-key-legacy-system")
+    app = create_app()
+    app.state.service.db.save_model_config({
+        "provider": "Agens",
+        "base_url": "https://apihub.agnes-ai.com/v1",
+        "model": "agnes-2.0-flash",
+        "api_key_set": True,
+        "api_key_masked": "<legacy>",
+        "api_key_encrypted": "",
+    })
+
+    runtime = app.state.service._runtime_model_config(None)
+
+    assert runtime["source"] == "system"
+    assert runtime["api_key"] == "test-env-key-legacy-system"
+    assert runtime["api_key_set"] is True
+
+
 def test_post_model_settings_rejects_oversized_field(tmp_path: Path, monkeypatch) -> None:
     """F-002: four fields have max_length constraints and oversized values return 422."""
     monkeypatch.setenv("SESSION_COOKIE_SECURE", "0")

@@ -2,6 +2,35 @@
 
 ## 2026-06-30
 
+### Fixed - production fallback root cause and local UX guards
+
+- Server-thread sanitized diagnosis found the production choice fallback root
+  cause: the legacy system `model_config` row existed with `api_key_set=true`
+  but no `api_key_encrypted`, which shadowed the container `AGNES_API_KEY` and
+  made the narrator runtime see `key_set=false` before any provider request or
+  structured-output repair path.
+- Fixed `_system_model_config()` so a legacy DB system row without encrypted key
+  no longer shadows the environment system key. Encrypted DB keys still remain
+  the preferred stored system-default path.
+- Added regression coverage for the legacy DB row + env-key fallback path.
+- Cleaned model-provided choice labels on both backend and frontend display
+  paths to prevent duplicate prefixes such as `A：A：...`.
+- Rewrote unavailable breakthrough-looking choices when realm rules reject
+  breakthrough, so players are not shown invalid realm/breakthrough actions.
+- Changed narrative/state mismatch handling so internal arbitration text is
+  logged but the player sees a natural rule-settlement notice. Minor
+  chronicle-style item descriptions no longer force an `inventory` entry.
+- Added `scripts/playwright_evidence.py` to write strict JSON, NDJSON, and CSV
+  browser-validation evidence summaries.
+- Local visible Chrome follow-up after these fixes passed account
+  registration/login, system-default model start, character creation, and
+  save/load, but failed 20-turn live-model acceptance at visible turn 7 when
+  narrator output had no usable choices and local story fallback activated.
+- The follow-up browser pass confirmed duplicate choice prefixes were no
+  longer visible and internal mismatch diagnostics were not shown directly to
+  the player. Remaining P1 issues include slow live responses and stray
+  markdown fence text in chronicle output.
+
 ### Verified - production deploy and account flow
 
 - Server-thread production batch deployed the current source package and
@@ -19,13 +48,16 @@
   backups and sanitized server evidence, keep fallback as a hard failure, and
   fix browser evidence writers so traces are machine-readable.
 
-### Verified - local visible Chrome 20-turn slice
+### Historical - earlier local visible Chrome 20-turn slice
 
 - Completed a local real Chrome validation against PostgreSQL with an ordinary
   account: login, system default Agens model config, personal model config
   save/clear, character creation, save/load, and 20 choice turns all completed.
 - All 20 choice requests returned HTTP 200 with `fallback_active=false`; DB
   `game_turns` persisted turn numbers 1-20 without gaps or duplicates.
+- This is retained as historical evidence only. The later production-fallback /
+  UX follow-up in the same changelog is the latest local visible Chrome result
+  and did not pass 20-turn live-model acceptance.
 - Captured generated evidence under `output/playwright/`:
   `agens-web-local-20turn-validation-20260630-browser.json` and
   `agens-web-local-20turn-validation-20260630-final.png`. These files remain
@@ -33,7 +65,7 @@
 - Headed sanity recheck also passed for guest new game, character creation,
   start, and one choice turn; generated evidence remains under
   `output/playwright/`.
-- Recorded remaining P1 gameplay quality issues: slow live-model responses,
+- Recorded then-current P1 gameplay quality issues: slow live-model responses,
   misleading breakthrough options after invalid breakthrough rejection,
   player-visible narrative/state mismatch warnings, state/chronicle age drift,
   and narrative rewards or injuries without stable structured display.
@@ -102,11 +134,11 @@
 - `.\.venv\Scripts\python.exe -m compileall -q src tests web scripts migrations`
   -> passed.
 - `TEST_DATABASE_URL=postgresql+psycopg://agens_test@127.0.0.1:55432/agens_web_test`
-  `.\.venv\Scripts\python.exe -m pytest -q tests\web` -> 63 passed.
+  `.\.venv\Scripts\python.exe -m pytest -q tests\web` -> 64 passed.
 - `.\.venv\Scripts\python.exe -m pytest -q tests\unit\engine\test_playable_gap_locks.py`
   -> 7 passed.
 - `TEST_DATABASE_URL=postgresql+psycopg://agens_test@127.0.0.1:55432/agens_web_test`
-  `.\.venv\Scripts\python.exe -m pytest -q` -> 432 passed.
+  `.\.venv\Scripts\python.exe -m pytest -q` -> 438 passed.
 - `web\frontend-react npm.cmd run build` -> passed.
 
 ## 2026-06-29
