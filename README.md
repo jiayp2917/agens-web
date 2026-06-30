@@ -10,7 +10,8 @@ Web-only 文字修仙模拟器。当前 `master` 是浏览器版本主线：Reac
 - 模型 API key 只允许后端加密存储和脱敏展示，不得出现在响应、日志、存档、session snapshot、前端包或文档中。
 - 角色创建六维属性池已按 `docs/GAME_MODE_SPEC.md` §4.1 收束：手动单项 2-8、总和 30；随机单项 0-10、总和 30。
 - 最新本地自动化基线：本地 PostgreSQL 可用；`tests\web` 63 passed；带 `TEST_DATABASE_URL` 的全量 `pytest -q` 432 passed；前端 build 通过。
-- 尚未完成：生产部署 Alembic `20260622_0005`、生产账号注册/登录/存档/读档、production live model 非 fallback 验收、可见 Chrome 20 回合真实玩家验收。
+- 最新本地真实 Chrome 验收：登录、系统默认模型、个人模型配置保存/清除、角色创建、20 回合、存档/读档、`game_turns` 连续性均通过；20 个 choice 请求均 non-fallback，但仍有 P1 体验问题（响应慢、突破选项约束、叙事/状态落账）。
+- 尚未完成：生产部署 Alembic `20260622_0005`、生产账号注册/登录/存档/读档、production live model 非 fallback 验收。
 
 ## Local PostgreSQL
 

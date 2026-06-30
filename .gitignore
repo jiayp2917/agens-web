@@ -37,6 +37,7 @@ runtime/**/*.log
 .workbuddy/
 .playwright-cli/
 output/playwright/
+output/deploy/
 web/frontend-react/node_modules/
 web/frontend-react/dist/
 web/frontend-react/*.tsbuildinfo

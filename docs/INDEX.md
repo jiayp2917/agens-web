@@ -8,7 +8,8 @@
 - 数据库路线：PostgreSQL-only，本地测试和生产都以 Alembic schema 为准；SQLite 已删除，仅作为历史记录出现在 `CHANGELOG.md` 或归档文档中。
 - 模型设置：注册用户可配置个人模型；访客不可配置；无个人配置时使用系统 Agens 默认。用户 key 只允许加密存储和脱敏展示。
 - 最新本地自动化基线：用户级模型设置治理已在本地提交 `44519d7`；30 点属性池与后续复核修复已在本地落地；`tests\web` 63 passed，全量 `pytest -q` 432 passed，前端 build 通过。原 4 个 P1 gap guard 已转为通过测试。
-- 尚未完成：生产部署 Alembic `20260622_0005`、生产账号注册/登录/存档/读档、production live model 非 fallback 验收、可见 Chrome 20 回合真实玩家验收。
+- 最新本地真实 Chrome 验收已完成：登录、系统默认模型、个人模型配置保存/清除、角色创建、20 回合、存档/读档、`game_turns` 连续性均通过；20 个 choice 请求均 non-fallback。仍有 P1 体验问题，详见 `docs/PROJECT_AUDIT.md` 和 `docs/NEXT_GOVERNANCE_BACKLOG.md`。
+- 尚未完成：生产部署 Alembic `20260622_0005`、生产账号注册/登录/存档/读档、production live model 非 fallback 验收。
 
 ## 当前权威文档
 

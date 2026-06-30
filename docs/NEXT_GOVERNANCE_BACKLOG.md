@@ -10,7 +10,8 @@ This is the active backlog for `agens-web`. It separates local code work, local 
   - `tests/unit/engine/test_playable_gap_locks.py` is now a passing gameplay guard: T1-T4 cover formerly xfailed P1 gaps, and T5-T7 lock lifespan death and attribute-pool behavior.
   - The first P1 gameplay slice is implemented locally: character creation uses the six-attribute 30-point pool from `docs/GAME_MODE_SPEC.md` §4.1. Manual mode is 2-8 per stat / total 30; random mode is 0-10 per stat / total 30.
   - Review follow-up fixed random attribute preview persistence: React now submits the shown random pool, backend validates it instead of re-rolling, and switching back to manual resets to a legal manual pool.
-  - A Chrome observation where users/sessions/game_turns dropped to zero is not yet a deterministic product bug. `tests\web` truncates the shared `TEST_DATABASE_URL` database before each test, so visible Chrome must be re-run without concurrent pytest and preferably against an isolated database.
+  - Visible Chrome 20-turn local player validation completed after the model-settings and playable-gap fixes: login, system-default model config, personal config save/clear, character creation, save/load, 20 non-fallback choice turns, and contiguous `game_turns` all passed.
+  - Local Chrome evidence is generated under `output/playwright/` and remains untracked by default.
 - User-scoped model settings are implemented locally in commit `44519d7`:
   - `/api/settings/model` is a logged-in user endpoint for personal config.
   - `/api/admin/settings/model` is the admin-only system default endpoint.
@@ -20,6 +21,7 @@ This is the active backlog for `agens-web`. It separates local code work, local 
   - Empty first-time stored model configs are rejected so an empty user row cannot shadow the effective system Agens default.
 - Latest local automated validation after the playable-gap follow-up: `tests\web` 63 passed, full `pytest -q` with `TEST_DATABASE_URL` 432 passed, frontend build passed.
 - Main-flow fixes already landed locally: fixed-choice `/choice`, no HTTP 200 without turn progression for ineligible breakthrough choices, contiguous `game_turns` after mismatch/fallback paths.
+- Local Chrome 20-turn evidence still found P1 gameplay quality gaps: slow live-model turns, misleading breakthrough options after ineligible breakthrough rejection, player-visible mismatch warnings, state/chronicle age drift, untracked narrative rewards, and unstable option semantics.
 - Production/server acceptance is still separate. Fallback is not live-model success.
 - The active phase plan is `docs/PLAYABLE_GAMEPLAY_ROADMAP_20260629.md`: close P0 validation first, then improve gameplay content without broad architecture changes.
 
@@ -37,10 +39,9 @@ These items block claiming the project is a stable playable public build.
    - Prove start and at least one choice turn are non-fallback.
    - HTTP 200 alone is not enough.
 4. Local visible Chrome 20-turn player validation.
+   - Done locally on 2026-06-30 for the current slice.
+   - Re-run after fixes to option constraints, state/chronicle consistency, or major UI changes.
    - Do not run concurrently with pytest against the same database; Web tests truncate the shared test DB.
-   - Use local PostgreSQL, ordinary account login, model setting fallback/user/clear flow, role creation, at least 20 turns, save/load, and `game_turns` continuity checks.
-   - Re-check the previously observed account session invalidation only under an isolated DB/no-pytest run before classifying it as P0 product bug.
-   - Record response time, fallback state, narrative/state mismatch, repeated loops, and screenshots/log paths.
 
 ## P1: Gameplay Quality And Main-Flow Governance
 
@@ -48,8 +49,13 @@ These items block claiming the project is a stable playable public build.
    - Done in current local slice: 30-point six-attribute creation pool.
    - Done in current local slice: silent visible rewards without narration are rejected, invalid local-story input no longer consumes a turn, local-story self-loops vary their result text, and eligible breakthroughs append a settled turn.
    - Reduce repeated retreat/breakthrough loops.
+   - Filter or rewrite breakthrough/realm options from structured state so invalid breakthrough options are not shown after a rejection.
+   - Remove player-visible internal mismatch warnings; convert them into natural in-world failure/partial-success text plus debug logs.
+   - Keep state bar age, chronicle age, and `game_turns` age from one authoritative source.
    - Add clearer stage goals, meaningful rewards, and visible consequences.
    - Ensure model narrative claims are backed by structured state changes or rejected cleanly.
+   - Add visible handling for injuries, key items, techniques, and attribute growth, or prevent the narrative from asserting them.
+   - Improve live-model latency; the latest 20-turn local run averaged about 42.9 seconds per choice with a maximum about 106 seconds.
    - Treat the first playable slice and full-run pacing as gameplay acceptance targets per `docs/GAME_MODE_SPEC.md` §3.5.
    - Use an abstract xianxia trope library only. Do not copy real novel characters, sects, plot text, or proprietary settings.
 2. Tighten model failure paths.

@@ -2,6 +2,22 @@
 
 ## 2026-06-30
 
+### Verified - local visible Chrome 20-turn slice
+
+- Completed a local real Chrome validation against PostgreSQL with an ordinary
+  account: login, system default Agens model config, personal model config
+  save/clear, character creation, save/load, and 20 choice turns all completed.
+- All 20 choice requests returned HTTP 200 with `fallback_active=false`; DB
+  `game_turns` persisted turn numbers 1-20 without gaps or duplicates.
+- Captured generated evidence under `output/playwright/`:
+  `agens-web-local-20turn-validation-20260630-browser.json` and
+  `agens-web-local-20turn-validation-20260630-final.png`. These files remain
+  generated artifacts and are not committed by default.
+- Recorded remaining P1 gameplay quality issues: slow live-model responses,
+  misleading breakthrough options after invalid breakthrough rejection,
+  player-visible narrative/state mismatch warnings, state/chronicle age drift,
+  and narrative rewards or injuries without stable structured display.
+
 ### Fixed - playable gap guards
 
 - Converted `tests/unit/engine/test_playable_gap_locks.py` from strict xfail
