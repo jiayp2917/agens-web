@@ -1,8 +1,8 @@
 """Gap-locking tests for the 20-turn playable vertical slice.
 
-These tests pin spec-intended behavior for known gameplay gaps from the
-2026-06-29 playable roadmap. Strict xfail tests are real gaps: an XPASS means
-that the implementation changed and the marker should be reviewed.
+These tests pin spec-intended behavior for gameplay gaps from the 2026-06-29
+playable roadmap. Keep them passing before calling the 20-turn vertical slice
+playable.
 """
 
 from __future__ import annotations
@@ -92,10 +92,6 @@ def _patch_turn_runner(call_log: list | None = None) -> Any:
 
 
 class TestPlayableGapLocks:
-    @pytest.mark.xfail(
-        strict=True,
-        reason="P1-1a: silent inventory_add without narrative still persists today.",
-    )
     def test_T1_silent_inventory_add_without_narrative_does_not_persist(self, monkeypatch) -> None:
         monkeypatch.setenv("AGNES_API_KEY", "sk-test-1234567890")
         engine = GameEngine()
@@ -123,10 +119,6 @@ class TestPlayableGapLocks:
 
         assert not any(item.get("name") == "幽灵丹" for item in engine.game_session.inventory)
 
-    @pytest.mark.xfail(
-        strict=True,
-        reason="P1-1b: local_story self-loop nodes still replay identical narrative.",
-    )
     def test_T2_local_story_cultivation_self_loop_does_not_repeat_narrative(self, monkeypatch) -> None:
         from agens_novel.engine.local_story import advance_local_story, start_local_story
 
@@ -144,10 +136,6 @@ class TestPlayableGapLocks:
         ]
         assert len(set(narratives)) > 1
 
-    @pytest.mark.xfail(
-        strict=True,
-        reason="P1-1b: invalid local_story action still consumes a turn today.",
-    )
     def test_T3_local_story_no_match_does_not_consume_turn(self, monkeypatch) -> None:
         from agens_novel.engine.local_story import start_local_story
 
@@ -160,10 +148,6 @@ class TestPlayableGapLocks:
         engine.handle_action("unmatched-action-zzz123")
         assert engine.game_session.turn_count == before
 
-    @pytest.mark.xfail(
-        strict=True,
-        reason="P1-1c: eligible breakthrough still does not append a settled turn.",
-    )
     def test_T4_eligible_breakthrough_advances_turn_count_and_history(self, monkeypatch) -> None:
         monkeypatch.setenv("AGNES_API_KEY", "sk-test-1234567890")
         engine = GameEngine()

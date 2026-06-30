@@ -32,11 +32,17 @@ class TurnFlow:
         """Process one turn in the local preset story fallback."""
         engine = self.engine
         session = engine.game_session
-        session.turn_count += 1
         from .local_story import advance_local_story
 
         result = advance_local_story(session, text)
         session.last_choices = result.choices
+
+        if not result.matched:
+            engine._emit("on_info", result.narrative)
+            engine._emit("on_status_bar", format_status_bar(session))
+            return
+
+        session.turn_count += 1
 
         if result.delta:
             session.apply_delta(result.delta)
@@ -45,9 +51,7 @@ class TurnFlow:
         if result.breakthrough:
             engine._attempt_local_story_breakthrough()
 
-        if not result.matched:
-            engine._emit("on_info", result.narrative)
-        elif result.narrative:
+        if result.narrative:
             engine._emit("on_narrative", result.narrative, session.turn_count)
 
         session.turn_history.append({

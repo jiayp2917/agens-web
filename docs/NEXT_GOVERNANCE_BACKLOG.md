@@ -7,7 +7,7 @@ This is the active backlog for `agens-web`. It separates local code work, local 
 - 2026-06-30 local gameplay slice:
   - The 2026-06-29 roadmap merge is committed in `d405d926` and remains the active plan.
   - Local PostgreSQL at `127.0.0.1:55432` is accepting connections.
-  - `tests/unit/engine/test_playable_gap_locks.py` has been reviewed and accepted as a strict xfail gap guard: T1-T4 are known P1 gaps, T5-T7 are passing lock tests.
+  - `tests/unit/engine/test_playable_gap_locks.py` is now a passing gameplay guard: T1-T4 cover formerly xfailed P1 gaps, and T5-T7 lock lifespan death and attribute-pool behavior.
   - The first P1 gameplay slice is implemented locally: character creation uses the six-attribute 30-point pool from `docs/GAME_MODE_SPEC.md` §4.1. Manual mode is 2-8 per stat / total 30; random mode is 0-10 per stat / total 30.
   - Review follow-up fixed random attribute preview persistence: React now submits the shown random pool, backend validates it instead of re-rolling, and switching back to manual resets to a legal manual pool.
   - A Chrome observation where users/sessions/game_turns dropped to zero is not yet a deterministic product bug. `tests\web` truncates the shared `TEST_DATABASE_URL` database before each test, so visible Chrome must be re-run without concurrent pytest and preferably against an isolated database.
@@ -18,7 +18,7 @@ This is the active backlog for `agens-web`. It separates local code work, local 
   - Stored model keys use application-layer encryption with `MODEL_CONFIG_SECRET` and fail closed if decryption cannot be performed.
   - Runtime model calls resolve config by current session/user and do not mutate process-global `AGNES_API_KEY`.
   - Empty first-time stored model configs are rejected so an empty user row cannot shadow the effective system Agens default.
-- Latest local automated validation after the 30-point pool and model-settings input fix: `tests\web` 63 passed, full `pytest -q` with `TEST_DATABASE_URL` 428 passed / 4 xfailed, frontend build passed.
+- Latest local automated validation after the playable-gap follow-up: `tests\web` 63 passed, full `pytest -q` with `TEST_DATABASE_URL` 432 passed, frontend build passed.
 - Main-flow fixes already landed locally: fixed-choice `/choice`, no HTTP 200 without turn progression for ineligible breakthrough choices, contiguous `game_turns` after mismatch/fallback paths.
 - Production/server acceptance is still separate. Fallback is not live-model success.
 - The active phase plan is `docs/PLAYABLE_GAMEPLAY_ROADMAP_20260629.md`: close P0 validation first, then improve gameplay content without broad architecture changes.
@@ -46,6 +46,7 @@ These items block claiming the project is a stable playable public build.
 
 1. Improve playable content before broad architecture work.
    - Done in current local slice: 30-point six-attribute creation pool.
+   - Done in current local slice: silent visible rewards without narration are rejected, invalid local-story input no longer consumes a turn, local-story self-loops vary their result text, and eligible breakthroughs append a settled turn.
    - Reduce repeated retreat/breakthrough loops.
    - Add clearer stage goals, meaningful rewards, and visible consequences.
    - Ensure model narrative claims are backed by structured state changes or rejected cleanly.
@@ -54,7 +55,7 @@ These items block claiming the project is a stable playable public build.
 2. Tighten model failure paths.
    - Cover StartFlow, TurnFlow, BreakthroughFlow fallback and `llm_error` paths.
    - API responses should distinguish provider failure, incomplete output, validation rejection, and local fallback.
-   - Keep `tests/unit/engine/test_playable_gap_locks.py` as the guard for known P1 gaps; convert xfail entries to passing tests only when the corresponding gameplay fix lands.
+   - Keep `tests/unit/engine/test_playable_gap_locks.py` passing as the guard for previously identified playable-gap regressions.
 3. Continue small complexity slices only when they support main-flow stability.
    - `GameEngine`: split model failure, local story, breakthrough helpers one responsibility at a time.
    - `WebGameService`: keep reducing duplicate runner/error/persistence orchestration.
@@ -79,6 +80,7 @@ These items block claiming the project is a stable playable public build.
    - `CHANGELOG.md` and `docs/archive/` retain history.
 2. Formalize local PostgreSQL startup/recovery.
    - Check `pg_isready` before starting.
+   - Initial helper is now `scripts/start_local_pg.ps1`.
    - Do not remove `.tmp\pg-test-20260626-55432` while PG is running.
    - Document stale `postmaster.pid` recovery separately.
 3. Handle generated evidence deliberately.

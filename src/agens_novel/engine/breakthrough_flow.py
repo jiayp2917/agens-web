@@ -75,9 +75,12 @@ class BreakthroughFlow:
         if state_delta is None:
             return
 
+        session.turn_count += 1
+        self._ensure_breakthrough_meta(state_delta, bt_result)
         session.apply_delta(state_delta)
 
         is_finale = session.finale
+        self._record_breakthrough_turn(action_text, narrative, state_delta)
         self._emit_breakthrough_result(bt_result, narrative, is_finale)
 
         engine._emit("on_status_bar", format_status_bar(session))
@@ -124,6 +127,41 @@ class BreakthroughFlow:
         state_delta["character"].update(breakthrough_delta.get("character", {}))
         state_delta.setdefault("meta", {}).update(breakthrough_delta.get("meta", {}))
         return state_delta
+
+    def _ensure_breakthrough_meta(self, state_delta: dict[str, Any], bt_result: str) -> None:
+        meta = state_delta.setdefault("meta", {})
+        if not isinstance(meta, dict):
+            meta = {}
+            state_delta["meta"] = meta
+        meta.setdefault("elapsed_years", 0)
+        meta.setdefault("choice_category", "breakthrough")
+        if bt_result:
+            meta.setdefault("breakthrough_result", bt_result)
+        if bt_result == "success":
+            meta.setdefault("calendar_summary", "破境成功，境界向前推进。")
+        elif bt_result == "failure":
+            meta.setdefault("calendar_summary", "破境失败，本回合以反噬结果结算。")
+        else:
+            meta.setdefault("calendar_summary", "完成一次破境判定。")
+
+    def _record_breakthrough_turn(
+        self,
+        action_text: str,
+        narrative: str,
+        state_delta: dict[str, Any],
+    ) -> None:
+        session = self.engine.game_session
+        session.turn_history.append({
+            "turn": session.turn_count,
+            "input": action_text,
+            "narrative": narrative,
+            "delta": state_delta,
+            "choices": session.last_choices,
+        })
+        session.chat_history.append({"role": "user", "content": action_text})
+        session.chat_history.append({"role": "assistant", "content": narrative})
+        if len(session.chat_history) > 20:
+            session.chat_history = session.chat_history[-20:]
 
     def _judge_breakthrough_delta(
         self,

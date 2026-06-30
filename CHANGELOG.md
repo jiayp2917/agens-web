@@ -2,6 +2,24 @@
 
 ## 2026-06-30
 
+### Fixed - playable gap guards
+
+- Converted `tests/unit/engine/test_playable_gap_locks.py` from strict xfail
+  gap markers into passing regression guards.
+- Reject model-visible outcome deltas such as `inventory_add`,
+  `techniques_add`, quest, map, NPC, lore, or status additions when the model
+  provides no narrative for the player-visible result.
+- Fixed local-story invalid actions so they keep the current choices without
+  consuming a turn.
+- Fixed local-story self-loop choices so repeated selections vary their result
+  text instead of replaying the exact same narrative.
+- Fixed eligible breakthrough attempts so they increment `turn_count`, append a
+  settled `turn_history` entry, and remain eligible for account `game_turns`
+  persistence.
+- Added `scripts/start_local_pg.ps1` for safe local PostgreSQL recovery: it
+  checks `pg_isready` before starting and prints the local test DB URL hint
+  without touching production state.
+
 ### Fixed - review follow-up for model settings and character attributes
 
 - Fixed random character creation so the six-attribute pool shown in the React
@@ -25,9 +43,8 @@
   character creation now uses a six-attribute 30-point pool. Manual mode allows
   2-8 per attribute and requires total 30; random mode allows 0-10 per
   attribute and also totals 30.
-- Reviewed and accepted `tests/unit/engine/test_playable_gap_locks.py` as a
-  strict xfail gap guard. T1-T4 pin real remaining gameplay gaps; T5-T7 now
-  lock lifespan death and attribute-pool behavior.
+- Added `tests/unit/engine/test_playable_gap_locks.py` to lock known playable
+  vertical-slice gaps and attribute-pool behavior.
 - Fixed the model settings form so API Key input is cleared after both saving
   and clearing personal model config. The current key state remains visible only
   through the masked status text.
@@ -47,8 +64,10 @@
   -> passed.
 - `TEST_DATABASE_URL=postgresql+psycopg://agens_test@127.0.0.1:55432/agens_web_test`
   `.\.venv\Scripts\python.exe -m pytest -q tests\web` -> 63 passed.
+- `.\.venv\Scripts\python.exe -m pytest -q tests\unit\engine\test_playable_gap_locks.py`
+  -> 7 passed.
 - `TEST_DATABASE_URL=postgresql+psycopg://agens_test@127.0.0.1:55432/agens_web_test`
-  `.\.venv\Scripts\python.exe -m pytest -q` -> 428 passed, 4 xfailed.
+  `.\.venv\Scripts\python.exe -m pytest -q` -> 432 passed.
 - `web\frontend-react npm.cmd run build` -> passed.
 
 ## 2026-06-29

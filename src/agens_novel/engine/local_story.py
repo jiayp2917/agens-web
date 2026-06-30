@@ -332,8 +332,9 @@ def advance_local_story(session: GameSession, action_text: str) -> LocalStoryRes
     session.local_story_node_id = option.next_node
     next_node = _node(story_key, option.next_node)
     choices = [choice.text for choice in next_node.options]
+    result_text = _local_story_result_text(session, story_key, node_key, option)
     return LocalStoryResult(
-        narrative=option.result + "\n\n" + next_node.narrative,
+        narrative=result_text + "\n\n" + next_node.narrative,
         choices=choices,
         delta=option.delta,
         breakthrough=option.breakthrough,
@@ -374,6 +375,28 @@ def _match_option(node: LocalStoryNode, action_text: str) -> LocalStoryOption | 
         if any(keyword.lower().replace(" ", "") in compact for keyword in option.keywords):
             return option
     return None
+
+
+def _local_story_result_text(
+    session: GameSession,
+    story_key: str,
+    node_key: str,
+    option: LocalStoryOption,
+) -> str:
+    if option.next_node != node_key:
+        return option.result
+
+    repeat_counts = getattr(session, "_local_story_repeat_counts", {})
+    if not isinstance(repeat_counts, dict):
+        repeat_counts = {}
+    count_key = f"{story_key}:{node_key}:{option.text}"
+    repeat_count = int(repeat_counts.get(count_key) or 0) + 1
+    repeat_counts[count_key] = repeat_count
+    setattr(session, "_local_story_repeat_counts", repeat_counts)
+
+    if repeat_count <= 1:
+        return option.result
+    return f"{option.result}（第{repeat_count}次复盘此路，你把前一夜的散乱处又收束了一分。）"
 
 
 def validate_local_story_graph(story_id: str | None = None) -> list[str]:

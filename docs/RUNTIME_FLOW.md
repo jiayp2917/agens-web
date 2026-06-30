@@ -20,7 +20,7 @@
   local game-flow regression.
 
 > **当前实现状态：v5 Alpha 本地可玩链路已落地。** React 主入口已经切到 A/B/C/D 四按钮固定语义：A 稳妥、B 机遇、C 风险、D 气运；无自由文本主入口，无 HP/MP 常驻 UI；模型设置为用户个人配置 + 系统默认 Agens 兜底。`docs/GAME_MODE_SPEC.md` 是当前游戏模式规格和验收来源。
-> 当前自动化基线：本地 PostgreSQL 可用；`tests\web` 63 passed；带 `TEST_DATABASE_URL` 的全量 `pytest -q` 428 passed / 4 xfailed；前端 build 通过。4 个 xfailed 是 `tests/unit/engine/test_playable_gap_locks.py` 记录的 P1 玩法缺口。
+> 当前自动化基线：本地 PostgreSQL 可用；`tests\web` 63 passed；带 `TEST_DATABASE_URL` 的全量 `pytest -q` 432 passed；前端 build 通过。`tests/unit/engine/test_playable_gap_locks.py` 已从 strict xfail gap guard 转为通过型玩法 guard。
 > 当前阶段计划见 `docs/PLAYABLE_GAMEPLAY_ROADMAP_20260629.md`：先完成 P0 遗留验收闭环，再在现有架构内做玩法内容改造。
 
 本文记录当前 Web-only 运行链路。产品入口是浏览器 UI + FastAPI 后端，不再包含移动端打包或设备验证路径。
@@ -29,6 +29,7 @@
 
 ```powershell
 cd <repo>
+.\scripts\start_local_pg.ps1
 .\.venv\Scripts\python.exe -m pip install -e ".[dev]"
 .\.venv\Scripts\python.exe -m uvicorn web.backend.app:app --host 127.0.0.1 --port 8000 --reload
 ```
@@ -84,6 +85,8 @@ http://127.0.0.1:8000/
    - A/B/C/D 固定按钮调用 `POST /api/sessions/{id}/choice`，D 为气运/天命路线。
    - `POST /api/sessions/{id}/action` 仅保留给兜底“继续本局”和兼容调用，不再作为 React 主入口的自由文本输入。
    - 后端把行动交给 `GameEngine.handle_action()`，引擎继续负责 Narrator、必要 Judge、状态落账、事件化斗法、突破、死亡和飞升。
+   - 本地故事无效输入只提示并保留当前选项，不消耗回合；重复选择自循环节点会生成变化文本，避免完全相同叙事连发。
+   - 正式突破成功/失败会写入 `turn_history`，账号局后续可持久化为连续 `game_turns`。
    - API 响应统一返回叙事事件、角色状态、世界状态、A/B/C/D、回合数和终局状态。
 
 6. 存读档

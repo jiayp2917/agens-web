@@ -35,11 +35,11 @@
 
 - 本地 PostgreSQL 测试库目标：`127.0.0.1:55432/agens_web_test`。
 - 用户级模型设置治理本地提交：`44519d7`。
-- 2026-06-30 本地自动化基线：`pg_isready` confirmed `127.0.0.1:55432`; `tests\web` 63 passed；带 `TEST_DATABASE_URL` 的全量 `pytest -q` 428 passed / 4 xfailed；前端 build 通过。
+- 2026-06-30 本地自动化基线：`pg_isready` confirmed `127.0.0.1:55432`; `tests\web` 63 passed；带 `TEST_DATABASE_URL` 的全量 `pytest -q` 432 passed；前端 build 通过。
 - 已修复本地可见 Chrome 发现的主流程问题：合法 A/B/C/D 选择不应 HTTP 200 但不推进；叙事/状态 mismatch 时保持 `game_turns` 连续；fallback 过渡回合会记录。
 - 角色创建属性池已按 `GAME_MODE_SPEC.md` §4.1 落地：手动 2-8/总和 30，随机 0-10/总和 30。
 - 2026-06-30 复核修复：随机角色创建会提交并使用前端展示的随机属性池；从随机切回手动会恢复合法手动池；空 Key 的首次模型配置不会生成遮蔽系统默认的用户配置。
-- `tests/unit/engine/test_playable_gap_locks.py` 已作为 strict xfail gap guard 接受；其中 4 个 xfail 是 P1 真实缺口，不是当前自动化失败。
+- `tests/unit/engine/test_playable_gap_locks.py` 已转为通过型玩法 guard；原 4 个 P1 gap 已修复并由 T1-T4 锁定。
 - 本地 Chrome 旧证据覆盖过账号注册/登录/存档/读档、2K 和窄屏布局，但仍需要在模型设置治理后重新做 20 回合真实玩家验收。
 
 ## 剩余 P0 风险
@@ -57,7 +57,6 @@
 | 问题 | 风险 | 处理方向 |
 | --- | --- | --- |
 | 游玩内容弱 | 重复闭关/突破循环、目标感弱、奖励反馈弱。 | 先设计主线目标、阶段事件、奖励落账，再迭代内容。 |
-| P1 gap guard 仍有 4 个 xfail | silent inventory_add、local_story 重复/无效行动推进、突破不记录 settled turn 仍是已知缺口。 | 按 `test_playable_gap_locks.py` 逐项修复，XPASS 时复核并移除 xfail。 |
 | live model 响应慢 | 历史本地一回合约 63 秒，真实玩家会感到卡顿。 | 优化提示词、超时、重试/降级提示和结构化输出修复。 |
 | 叙事与状态仍可能不一致 | 模型说获得道具/升层，但权威 `GameSession` 未落账。 | 收紧 `state_delta`、Judge、`apply_delta()` 和 mismatch 测试。 |
 | `GameEngine` 仍偏大 | 仍承担回合、突破、兜底、模型失败等多职责。 | 只按主流程需要拆模型失败、本地故事、突破 helper，避免大拆。 |
@@ -67,7 +66,7 @@
 
 ## 剩余 P2 工作
 
-- 固化本地 PostgreSQL 启动/恢复脚本，避免 `TEST_DATABASE_URL` 缺失导致假绿或跳过。
+- 继续固化本地 PostgreSQL 启动/恢复说明；当前已有 `scripts/start_local_pg.ps1`，还缺 stale `postmaster.pid` 恢复文档。
 - 决定 `output/playwright/`、截图和 JSON 证据的归档/忽略策略；默认不提交临时验证产物。
 - 生产侧继续做日志脱敏、限流、Cookie/Origin、备份恢复演练和索引评审。
 - 历史文档只保留在 `docs/archive/` 和 `CHANGELOG.md`，当前文档只写当前事实和下一步。
@@ -77,6 +76,7 @@
 ```powershell
 cd D:\chat\agens-web
 F:\pg\bin\pg_isready.exe -h 127.0.0.1 -p 55432
+.\scripts\start_local_pg.ps1
 $env:TEST_DATABASE_URL = "postgresql+psycopg://agens_test@127.0.0.1:55432/agens_web_test"
 .\.venv\Scripts\python.exe -m compileall -q src tests web scripts migrations
 .\.venv\Scripts\python.exe -m pytest -q tests\web

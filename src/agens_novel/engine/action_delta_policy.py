@@ -136,6 +136,8 @@ def apply_breakthrough_flag_rule(
 def validate_narrative_delta_consistency(narrative: str, delta: dict[str, Any]) -> tuple[bool, str]:
     """Detect obvious narrative claims that lack matching structured delta."""
     if not narrative.strip():
+        if _has_visible_outcome_delta(delta):
+            return False, INCONSISTENT_NARRATIVE_NOTICE
         return True, ""
     if not isinstance(delta, dict):
         return False, INCONSISTENT_NARRATIVE_NOTICE
@@ -193,3 +195,19 @@ def merge_rule_delta(
 def _has_path(delta: dict[str, Any], section: str, key: str) -> bool:
     part = delta.get(section)
     return isinstance(part, dict) and key in part
+
+
+def _has_visible_outcome_delta(delta: dict[str, Any]) -> bool:
+    """Return True when model delta grants visible outcomes without narration."""
+    if not isinstance(delta, dict):
+        return False
+    visible_paths = (
+        ("character", "inventory_add"),
+        ("character", "techniques_add"),
+        ("character", "status_effects_add"),
+        ("world", "active_quests_add"),
+        ("world", "discovered_add"),
+        ("world", "npcs_present_add"),
+        ("world", "lore_add"),
+    )
+    return any(_has_path(delta, section, key) for section, key in visible_paths)
