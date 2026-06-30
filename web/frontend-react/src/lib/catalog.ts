@@ -44,9 +44,10 @@ export const manualTalentNames = new Set(["平平无奇", "草木亲和", "剑�
 export const manualSpiritRootNames = new Set(["金灵根", "木灵根", "水灵根", "火灵根", "土灵根", "冰灵根", "雷灵根", "风灵根"]);
 export const manualFamilyNames = new Set(["农家", "寒门", "小族", "宗门旁支"]);
 export const randomOnlySpiritRootNames = new Set(["阴阳灵根", "混沌灵根"]);
-export const manualAttributeBudget = 300;
-export const manualAttributeMin = 20;
-export const manualAttributeMax = 80;
+export const manualAttributeBudget = 30;
+export const manualAttributeMin = 2;
+export const manualAttributeMax = 8;
+export const randomAttributeMax = 10;
 export const choiceSemantics = [
   { key: "A", label: "稳妥", hint: "闭关、修炼、整顿，低风险推进" },
   { key: "B", label: "机遇", hint: "外出、结交、寻访，中风险探索" },

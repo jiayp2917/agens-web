@@ -5,13 +5,14 @@ import {
   manualAttributeBudget,
   manualAttributeMax,
   manualAttributeMin,
+  randomAttributeMax,
   manualFamilyNames,
   manualSpiritRootNames,
   manualTalentNames,
   randomOnlySpiritRootNames,
   type CatalogItem,
 } from "../lib/catalog";
-import { isManualRarity, pickRandom, randomBetween, rarityToColor, uniqueByName } from "../lib/util";
+import { isManualRarity, pickRandom, rarityToColor, uniqueByName } from "../lib/util";
 
 export type ChoiceMode = "manual" | "random";
 export type AttributeKey = (typeof attributes)[number][0];
@@ -37,7 +38,7 @@ type Action =
   | { type: "sync-manual-defaults"; talent: string; spiritRoot: string; familyBackground: string };
 
 const defaultAttributes = () =>
-  Object.fromEntries(attributes.map(([key]) => [key, 50])) as AttributeValues;
+  Object.fromEntries(attributes.map(([key]) => [key, 5])) as AttributeValues;
 
 function reducer(state: State, action: Action): State {
   switch (action.type) {
@@ -182,7 +183,7 @@ export function useCharacterFormReducer(catalogs: {
       talent: pickRandom(randomTalents).name,
       spiritRoot: pickRandom(randomRoots).name,
       familyBackground: pickRandom(randomFamilies).name,
-      attrValues: Object.fromEntries(attributes.map(([key]) => [key, randomBetween(18, 99)])) as AttributeValues,
+      attrValues: randomAttributePool(),
     }),
     setChoiceMode: (choiceMode: ChoiceMode) => dispatch({ type: "set-choice-mode", choiceMode }),
     setTalent: (value: string) => dispatch({ type: "set-talent", value }),
@@ -204,4 +205,19 @@ function setAttributeValue(current: AttributeValues, key: AttributeKey, nextValu
   const others = attributes.reduce((sum, [itemKey]) => sum + (itemKey === key ? 0 : current[itemKey]), 0);
   const capped = Math.min(value, manualAttributeBudget - others);
   return { ...current, [key]: Math.max(manualAttributeMin, capped) };
+}
+
+function randomAttributePool(): AttributeValues {
+  let remaining = manualAttributeBudget;
+  const values: Partial<AttributeValues> = {};
+  attributes.forEach(([key], index) => {
+    const slotsLeft = attributes.length - index - 1;
+    const value = slotsLeft === 0
+      ? remaining
+      : Math.floor(Math.random() * (Math.min(randomAttributeMax, remaining) - Math.max(0, remaining - slotsLeft * randomAttributeMax) + 1))
+        + Math.max(0, remaining - slotsLeft * randomAttributeMax);
+    values[key] = value;
+    remaining -= value;
+  });
+  return values as AttributeValues;
 }

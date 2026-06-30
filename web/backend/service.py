@@ -16,9 +16,9 @@ from agens_novel.engine.death_rewards import (
 )
 from agens_novel.engine.game_engine import GameEngine, MODEL_FAILURE_CONTINUE
 from agens_novel.engine.render import format_status_bar
+from agens_novel.engine.start_flow import normalize_profile_attributes
 from agens_novel.game.constants import (
     ATTRIBUTE_KEYS,
-    DEFAULT_ATTRIBUTES,
     DIFFICULTY_OPTIONS,
     FAMILY_BACKGROUNDS,
     SPIRIT_ROOTS,
@@ -300,6 +300,7 @@ class WebGameService:
                         for b in bonuses
                     ],
                 )
+                normalized["_allow_legacy_bonus_attributes"] = True
                 self.db.consume_legacy_bonuses(user_id)
         runner.engine.start_from_profile(normalized)
         self._persist(runner, title=runner.engine.game_session.char_name or "新局")
@@ -730,9 +731,8 @@ class WebGameService:
         if normalized.get("randomize_attributes"):
             normalized["attributes"] = _random_attributes()
         else:
-            attrs = normalized.get("attributes")
-            if not isinstance(attrs, dict):
-                normalized["attributes"] = dict(DEFAULT_ATTRIBUTES)
+            normalized["attributes"] = normalize_profile_attributes(normalized.get("attributes", {}))
+        normalized["randomize_attributes"] = bool(normalized.get("randomize_attributes"))
 
         catalog_talents = self._catalog_names("catalog_talents")
         catalog_families = self._catalog_names("catalog_family_backgrounds")
@@ -803,9 +803,21 @@ def is_guest_user_id(user_id: str | None) -> bool:
 
 
 def _random_attributes() -> dict[str, int]:
-    heroic = random.random() < 0.08
-    low, high = (75, 99) if heroic else (35, 88)
-    return {key: random.randint(low, high) for key in ATTRIBUTE_KEYS}
+    remaining = 30
+    keys = list(ATTRIBUTE_KEYS)
+    random.shuffle(keys)
+    values: dict[str, int] = {}
+    for index, key in enumerate(keys):
+        slots_left = len(keys) - index - 1
+        if slots_left == 0:
+            value = remaining
+        else:
+            low = max(0, remaining - slots_left * 10)
+            high = min(10, remaining)
+            value = random.randint(low, high)
+        values[key] = value
+        remaining -= value
+    return {key: values[key] for key in ATTRIBUTE_KEYS}
 
 
 # ── Death rewards helpers (P4) ──────────────────────────────────────────────

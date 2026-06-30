@@ -60,6 +60,10 @@ def test_react_frontend_wires_save_load_and_settings() -> None:
     assert "/api/settings/model" in source
     assert "settings?.source" in source
     assert "clearPersonalSettings" in source
+    assert "const [apiKeyDraft, setApiKeyDraft] = useState(\"\")" in source
+    assert "api_key: apiKeyDraft" in source
+    assert "setApiKeyDraft(\"\")" in source
+    assert "value={apiKeyDraft}" in source
     assert 'onAuth("login")' in source
     assert "??????????" not in source
     assert "当前 Key 状态" in source
@@ -168,6 +172,15 @@ def test_react_character_creation_uses_catalogs_and_game_mode() -> None:
     assert 'className="attr-meter"' in source
     assert 'role="meter"' in source
     assert "aria-valuenow={value}" in source
+    assert "export const manualAttributeBudget = 30" in source
+    assert "export const manualAttributeMin = 2" in source
+    assert "export const manualAttributeMax = 8" in source
+    assert "export const randomAttributeMax = 10" in source
+    assert "Object.fromEntries(attributes.map(([key]) => [key, 5]))" in source
+    assert "randomAttributePool" in source
+    assert "attrTotal !== manualAttributeBudget" in source
+    assert "总和必须等于" in source
+    assert "总和不超过" not in source
     assert "Math.min(manualAttributeMax, values[key])" not in source
     assert "choice_card_mountain.png" not in css
     assert "game_name" not in source

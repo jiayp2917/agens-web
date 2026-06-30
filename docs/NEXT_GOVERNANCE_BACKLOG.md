@@ -4,13 +4,19 @@ This is the active backlog for `agens-web`. It separates local code work, local 
 
 ## Current Evidence
 
+- 2026-06-30 local gameplay slice:
+  - The 2026-06-29 roadmap merge is committed in `d405d926` and remains the active plan.
+  - Local PostgreSQL at `127.0.0.1:55432` is accepting connections.
+  - `tests/unit/engine/test_playable_gap_locks.py` has been reviewed and accepted as a strict xfail gap guard: T1-T4 are known P1 gaps, T5-T7 are passing lock tests.
+  - The first P1 gameplay slice is implemented locally: character creation uses the six-attribute 30-point pool from `docs/GAME_MODE_SPEC.md` §4.1. Manual mode is 2-8 per stat / total 30; random mode is 0-10 per stat / total 30.
+  - A Chrome observation where users/sessions/game_turns dropped to zero is not yet a deterministic product bug. `tests\web` truncates the shared `TEST_DATABASE_URL` database before each test, so visible Chrome must be re-run without concurrent pytest and preferably against an isolated database.
 - User-scoped model settings are implemented locally in commit `44519d7`:
   - `/api/settings/model` is a logged-in user endpoint for personal config.
   - `/api/admin/settings/model` is the admin-only system default endpoint.
   - `user_model_configs` stores one encrypted config per `user_id`; system default remains in `model_config`.
   - Stored model keys use application-layer encryption with `MODEL_CONFIG_SECRET` and fail closed if decryption cannot be performed.
   - Runtime model calls resolve config by current session/user and do not mutate process-global `AGNES_API_KEY`.
-- Latest local automated validation after model-settings governance: `tests\web` 59 passed, full `pytest -q` 420 passed / 1 xfailed, frontend build passed.
+- Latest local automated validation after the 30-point pool and model-settings input fix: `tests\web` 62 passed, full `pytest -q` with `TEST_DATABASE_URL` 427 passed / 4 xfailed, frontend build passed.
 - Main-flow fixes already landed locally: fixed-choice `/choice`, no HTTP 200 without turn progression for ineligible breakthrough choices, contiguous `game_turns` after mismatch/fallback paths.
 - Production/server acceptance is still separate. Fallback is not live-model success.
 - The active phase plan is `docs/PLAYABLE_GAMEPLAY_ROADMAP_20260629.md`: close P0 validation first, then improve gameplay content without broad architecture changes.
@@ -29,12 +35,15 @@ These items block claiming the project is a stable playable public build.
    - Prove start and at least one choice turn are non-fallback.
    - HTTP 200 alone is not enough.
 4. Local visible Chrome 20-turn player validation.
+   - Do not run concurrently with pytest against the same database; Web tests truncate the shared test DB.
    - Use local PostgreSQL, ordinary account login, model setting fallback/user/clear flow, role creation, at least 20 turns, save/load, and `game_turns` continuity checks.
+   - Re-check the previously observed account session invalidation only under an isolated DB/no-pytest run before classifying it as P0 product bug.
    - Record response time, fallback state, narrative/state mismatch, repeated loops, and screenshots/log paths.
 
 ## P1: Gameplay Quality And Main-Flow Governance
 
 1. Improve playable content before broad architecture work.
+   - Done in current local slice: 30-point six-attribute creation pool.
    - Reduce repeated retreat/breakthrough loops.
    - Add clearer stage goals, meaningful rewards, and visible consequences.
    - Ensure model narrative claims are backed by structured state changes or rejected cleanly.
@@ -43,6 +52,7 @@ These items block claiming the project is a stable playable public build.
 2. Tighten model failure paths.
    - Cover StartFlow, TurnFlow, BreakthroughFlow fallback and `llm_error` paths.
    - API responses should distinguish provider failure, incomplete output, validation rejection, and local fallback.
+   - Keep `tests/unit/engine/test_playable_gap_locks.py` as the guard for known P1 gaps; convert xfail entries to passing tests only when the corresponding gameplay fix lands.
 3. Continue small complexity slices only when they support main-flow stability.
    - `GameEngine`: split model failure, local story, breakthrough helpers one responsibility at a time.
    - `WebGameService`: keep reducing duplicate runner/error/persistence orchestration.
@@ -52,7 +62,7 @@ These items block claiming the project is a stable playable public build.
    - Continue splitting `CharacterCreatePage` and style files around verified workflows.
    - Use Chrome smoke after visual changes.
 5. Gameplay system iteration.
-   - Move character creation to a six-attribute point pool per `docs/GAME_MODE_SPEC.md` §4.1.
+   - Done: move character creation to a six-attribute point pool per `docs/GAME_MODE_SPEC.md` §4.1.
    - Add an opening chronicle before the first player choice per `docs/GAME_MODE_SPEC.md` §3.5.
    - Build event pools by steady, opportunity, risk, and luck routes.
    - Keep small-realm progress mostly implicit; reserve major-realm breakthroughs for stage events.

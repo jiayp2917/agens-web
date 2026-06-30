@@ -120,7 +120,7 @@ export function CharacterCreatePage({
             <span>手选最高：紫；随机可出：白 / 绿 / 蓝 / 紫 / 橙 / 红</span>
             <span>当前难度：{difficulty}</span>
           </div>
-          <button className="primary-btn start-btn" disabled={busy || (choiceMode === "manual" && attrTotal > manualAttributeBudget)} type="submit">
+          <button className="primary-btn start-btn" disabled={busy || (choiceMode === "manual" && attrTotal !== manualAttributeBudget)} type="submit">
             {busy ? "进入中..." : <>开始修行<ChevronRight size={22} /></>}
           </button>
         </section>

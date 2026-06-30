@@ -73,6 +73,7 @@ http://127.0.0.1:8000/
 
 4. 角色创建
    - 前端角色页提交角色名、天赋、灵根、家世、难度和六维属性；不再提交游戏名称或隐藏开局码。
+   - 六维属性遵循 `docs/GAME_MODE_SPEC.md` §4.1：手动模式单项 2-8 且总和必须为 30；随机模式单项 0-10 且总和固定为 30。后端会重新校验角色创建入参。
    - `POST /api/sessions/{id}/start` 调用 `GameEngine.start_from_profile()`。
    - World Builder 负责开场叙事和 A/B/C/D；无 key 或模型失败时进入本地故事兜底，并在前端提供继续或结束本局。
    - 特殊开局只由后端识别，前端不明示隐藏规则。
@@ -130,6 +131,8 @@ $env:TEST_DATABASE_URL = "postgresql+psycopg://agens_test@127.0.0.1:55432/agens_
 .\.venv\Scripts\python.exe -m pytest -q tests/web
 .\.venv\Scripts\python.exe -m pytest -q
 ```
+
+`tests\web` 的 autouse fixture 会在每个测试前 truncate `TEST_DATABASE_URL` 指向的应用表。真实 Chrome 验收必须避免和 pytest 共用同一个数据库并发运行；否则账号、session、game_turns 被清空属于测试隔离副作用，不足以单独判定为产品 bug。
 
 ## 2026-06-28 Model Settings Runtime Flow
 

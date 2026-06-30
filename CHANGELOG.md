@@ -1,5 +1,37 @@
 # Changelog
 
+## 2026-06-30
+
+### Changed - gameplay point pool and local validation guard
+
+- Implemented the first P1 gameplay slice from `docs/GAME_MODE_SPEC.md` §4.1:
+  character creation now uses a six-attribute 30-point pool. Manual mode allows
+  2-8 per attribute and requires total 30; random mode allows 0-10 per
+  attribute and also totals 30.
+- Reviewed and accepted `tests/unit/engine/test_playable_gap_locks.py` as a
+  strict xfail gap guard. T1-T4 pin real remaining gameplay gaps; T5-T7 now
+  lock lifespan death and attribute-pool behavior.
+- Fixed the model settings form so API Key input is cleared after both saving
+  and clearing personal model config. The current key state remains visible only
+  through the masked status text.
+- Added an account-session regression test covering register -> create session
+  -> start -> choice, verifying the flow stays on the registered user path and
+  does not write `game_turns` while the corresponding `sessions` row is absent.
+- Documented the local Chrome validation caveat: `tests\web` truncates the
+  shared `TEST_DATABASE_URL` database before each test, so visible Chrome runs
+  must not share that database concurrently with pytest.
+
+### Verification
+
+- `F:\pg\bin\pg_isready.exe -h 127.0.0.1 -p 55432` -> accepting connections.
+- `.\.venv\Scripts\python.exe -m compileall -q src tests web scripts migrations`
+  -> passed.
+- `TEST_DATABASE_URL=postgresql+psycopg://agens_test@127.0.0.1:55432/agens_web_test`
+  `.\.venv\Scripts\python.exe -m pytest -q tests\web` -> 62 passed.
+- `TEST_DATABASE_URL=postgresql+psycopg://agens_test@127.0.0.1:55432/agens_web_test`
+  `.\.venv\Scripts\python.exe -m pytest -q` -> 427 passed, 4 xfailed.
+- `web\frontend-react npm.cmd run build` -> passed.
+
 ## 2026-06-29
 
 ### Changed

@@ -9,6 +9,7 @@ import pytest
 from fastapi.testclient import TestClient
 from sqlalchemy import create_engine, text
 
+from agens_novel.game.constants import ATTRIBUTE_KEYS
 from web.backend.app import create_app
 from web.backend.auth import hash_invite_code
 
@@ -30,12 +31,12 @@ def _world_builder_result() -> dict:
                 "family_background": "寒门",
                 "difficulty": "普通",
                 "attributes": {
-                    "root_bone": 50,
-                    "comprehension": 50,
-                    "luck": 50,
-                    "willpower": 50,
-                    "physique": 50,
-                    "soul": 50,
+                    "root_bone": 5,
+                    "comprehension": 5,
+                    "luck": 5,
+                    "willpower": 5,
+                    "physique": 5,
+                    "soul": 5,
                 },
                 "techniques": [{"name": "基础吐纳术", "level": 1, "type": "内功"}],
                 "inventory": [{"name": "粗布道袍", "quantity": 1, "type": "防具"}],
@@ -119,12 +120,12 @@ def test_web_api_minimum_game_flow(tmp_path: Path, monkeypatch) -> None:
                 "difficulty": "普通",
                 "randomize_attributes": False,
                 "attributes": {
-                    "root_bone": 50,
-                    "comprehension": 50,
-                    "luck": 50,
-                    "willpower": 50,
-                    "physique": 50,
-                    "soul": 50,
+                    "root_bone": 5,
+                    "comprehension": 5,
+                    "luck": 5,
+                    "willpower": 5,
+                    "physique": 5,
+                    "soul": 5,
                 },
             },
         ).json()
@@ -175,6 +176,65 @@ def test_web_api_minimum_game_flow(tmp_path: Path, monkeypatch) -> None:
             "runs_completed": 1,
             "ascension_count": 0,
         }
+
+
+def test_registered_account_session_start_choice_keeps_owner_and_session(
+    tmp_path: Path,
+    monkeypatch,
+) -> None:
+    monkeypatch.setenv("AGNES_API_KEY", "sk-test-web-api")
+    monkeypatch.setenv("SESSION_COOKIE_SECURE", "0")
+    app = create_app()
+    client = TestClient(app)
+
+    _create_invite(app)
+    user = _register(client)
+    created = client.post("/api/sessions", json={"title": "账号局"}).json()
+    session_id = created["session_id"]
+
+    assert created["user_id"] == user["id"]
+    assert created["guest"] is False
+    with app.state.service.db.engine.connect() as conn:
+        owner = conn.execute(
+            text("SELECT user_id FROM sessions WHERE id = :id"),
+            {"id": session_id},
+        ).scalar_one()
+    assert owner == user["id"]
+
+    with patch("agens_novel.engine.game_engine.run_turn_sync", side_effect=_runner):
+        started = client.post(
+            f"/api/sessions/{session_id}/start",
+            json={"char_name": "账号局", "attributes": {key: 5 for key in ATTRIBUTE_KEYS}},
+        )
+        assert started.status_code == 200
+        started_body = started.json()
+        assert started_body["user_id"] == user["id"]
+        assert started_body["guest"] is False
+        assert started_body["game_started"] is True
+
+        chosen = client.post(f"/api/sessions/{session_id}/choice", json={"choice_index": 0})
+        assert chosen.status_code == 200
+        chosen_body = chosen.json()
+        assert chosen_body["user_id"] == user["id"]
+        assert chosen_body["guest"] is False
+        assert chosen_body["turn_count"] == 1
+
+    with app.state.service.db.engine.connect() as conn:
+        counts = conn.execute(
+            text(
+                """
+                SELECT
+                    (SELECT count(*) FROM users WHERE id = :user_id) AS users_count,
+                    (SELECT count(*) FROM sessions WHERE id = :session_id AND user_id = :user_id) AS sessions_count,
+                    (SELECT count(*) FROM game_turns WHERE run_id = :session_id) AS turns_count
+                """
+            ),
+            {"user_id": user["id"], "session_id": session_id},
+        ).mappings().one()
+
+    assert counts["users_count"] == 1
+    assert counts["sessions_count"] == 1
+    assert counts["turns_count"] == 1
 
 
 def test_choice_endpoint_rejects_free_text_and_accepts_choice_letter(
@@ -989,12 +1049,12 @@ def test_start_accepts_seeded_catalog_character_options(tmp_path: Path, monkeypa
                 "difficulty": "普通",
                 "randomize_attributes": False,
                 "attributes": {
-                    "root_bone": 50,
-                    "comprehension": 50,
-                    "luck": 50,
-                    "willpower": 50,
-                    "physique": 50,
-                    "soul": 50,
+                    "root_bone": 5,
+                    "comprehension": 5,
+                    "luck": 5,
+                    "willpower": 5,
+                    "physique": 5,
+                    "soul": 5,
                 },
             },
         ).json()
@@ -1004,6 +1064,55 @@ def test_start_accepts_seeded_catalog_character_options(tmp_path: Path, monkeypa
     assert started["character"]["spirit_root"] == "混沌灵根"
     assert started["character"]["spirit_root_grade"] == "天"
     assert started["character"]["family_background"] == "隐世仙族"
+
+
+def test_start_rejects_invalid_manual_attribute_pool(tmp_path: Path, monkeypatch) -> None:
+    monkeypatch.setenv("AGNES_API_KEY", "sk-test-web-api")
+    monkeypatch.setenv("SESSION_COOKIE_SECURE", "0")
+    app = create_app()
+    client = TestClient(app)
+    _create_invite(app)
+    _register(client)
+    session_id = client.post("/api/sessions", json={}).json()["session_id"]
+
+    response = client.post(
+        f"/api/sessions/{session_id}/start",
+        json={
+            "char_name": "bad-pool",
+            "randomize_attributes": False,
+            "attributes": {
+                "root_bone": 5,
+                "comprehension": 5,
+                "luck": 5,
+                "willpower": 5,
+                "physique": 5,
+                "soul": 4,
+            },
+        },
+    )
+
+    assert response.status_code == 400
+    assert "30" in response.json()["detail"]
+
+
+def test_randomized_start_uses_30_point_attribute_pool(tmp_path: Path, monkeypatch) -> None:
+    monkeypatch.setenv("AGNES_API_KEY", "sk-test-web-api")
+    monkeypatch.setenv("SESSION_COOKIE_SECURE", "0")
+    app = create_app()
+    client = TestClient(app)
+    _create_invite(app)
+    _register(client)
+    session_id = client.post("/api/sessions", json={}).json()["session_id"]
+
+    with patch("agens_novel.engine.game_engine.run_turn_sync", side_effect=_runner):
+        started = client.post(
+            f"/api/sessions/{session_id}/start",
+            json={"char_name": "random-pool", "randomize_attributes": True},
+        ).json()
+
+    attrs = started["character"]["attributes"]
+    assert sum(attrs.values()) == 30
+    assert all(0 <= value <= 10 for value in attrs.values())
 
 
 @pytest.mark.skipif(not os.environ.get("TEST_DATABASE_URL"), reason="TEST_DATABASE_URL not configured")
@@ -1151,8 +1260,8 @@ def test_legacy_bonuses_applied_on_next_character(tmp_path: Path, monkeypatch) -
             json={
                 "char_name": "许满",
                 "attributes": {
-                    "root_bone": 50, "comprehension": 50, "luck": 50,
-                    "willpower": 50, "physique": 50, "soul": 50,
+                    "root_bone": 5, "comprehension": 5, "luck": 5,
+                    "willpower": 5, "physique": 5, "soul": 5,
                 },
             },
         ).json()

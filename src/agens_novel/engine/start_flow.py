@@ -7,7 +7,7 @@ import os
 from typing import Any
 
 from ..game.constants import (
-    DEFAULT_ATTRIBUTES,
+    ATTRIBUTE_KEYS,
     DIFFICULTY_OPTIONS,
     FAMILY_BACKGROUNDS,
     SPIRIT_ROOTS,
@@ -28,6 +28,13 @@ log = logging.getLogger(__name__)
 
 START_MODEL_WORLD_ENV = "AGENS_START_MODEL_WORLD"
 START_MODEL_OPENING_ENV = "AGENS_START_MODEL_OPENING"
+PROFILE_ATTRIBUTE_TOTAL = 30
+PROFILE_MANUAL_ATTRIBUTE_MIN = 2
+PROFILE_MANUAL_ATTRIBUTE_MAX = 8
+PROFILE_RANDOM_ATTRIBUTE_MIN = 0
+PROFILE_RANDOM_ATTRIBUTE_MAX = 10
+_PROFILE_ATTRIBUTE_DEFAULT = PROFILE_ATTRIBUTE_TOTAL // len(ATTRIBUTE_KEYS)
+_ALLOW_LEGACY_BONUS_ATTRIBUTES = "_allow_legacy_bonus_attributes"
 
 
 class StartFlow:
@@ -302,12 +309,11 @@ def apply_world_builder_generated_session(
 
 def apply_profile_session(session: GameSession, profile: dict[str, Any]) -> None:
     """Initialize a deterministic session from the character form profile."""
-    attrs = dict(DEFAULT_ATTRIBUTES)
-    incoming_attrs = profile.get("attributes", {})
-    if isinstance(incoming_attrs, dict):
-        for key, value in incoming_attrs.items():
-            if isinstance(key, str) and isinstance(value, int) and not isinstance(value, bool):
-                attrs[key] = max(0, min(100, value))
+    attrs = normalize_profile_attributes(
+        profile.get("attributes", {}),
+        random_mode=bool(profile.get("randomize_attributes")),
+        allow_legacy_bonus=bool(profile.get(_ALLOW_LEGACY_BONUS_ATTRIBUTES)),
+    )
 
     session.reset()
     session.game_started = True
@@ -331,6 +337,68 @@ def apply_profile_session(session: GameSession, profile: dict[str, Any]) -> None
     session.region = str(profile.get("region") or default_region)
     session.discovered_locations = [session.location]
     session.lore_facts = [default_lore]
+
+
+def normalize_profile_attributes(
+    incoming_attrs: Any,
+    *,
+    random_mode: bool = False,
+    allow_legacy_bonus: bool = False,
+) -> dict[str, int]:
+    """Validate and normalize character-creation attributes.
+
+    GAME_MODE_SPEC section 4.1 defines the public profile contract: manual
+    creation uses six attributes, each 2-8, with a fixed total of 30. Random
+    creation is normalized before this function is called and may use 0-10,
+    still totaling 30. Account legacy bonuses are applied after the public
+    input is validated, so service code may opt into a post-bonus total above
+    30.
+    """
+    if not incoming_attrs:
+        return {key: _PROFILE_ATTRIBUTE_DEFAULT for key in ATTRIBUTE_KEYS}
+    if not isinstance(incoming_attrs, dict):
+        raise ValueError("attributes must be an object")
+
+    missing = [key for key in ATTRIBUTE_KEYS if key not in incoming_attrs]
+    unknown = [str(key) for key in incoming_attrs if key not in ATTRIBUTE_KEYS]
+    if missing or unknown:
+        raise ValueError("attributes must contain exactly the six v5 keys")
+
+    attrs: dict[str, int] = {}
+    for key in ATTRIBUTE_KEYS:
+        value = incoming_attrs[key]
+        if not isinstance(value, int) or isinstance(value, bool):
+            raise ValueError("attribute values must be integers")
+        attrs[key] = value
+
+    total = sum(attrs.values())
+    if allow_legacy_bonus:
+        if total < PROFILE_ATTRIBUTE_TOTAL:
+            raise ValueError("attributes must not drop below the 30 point pool")
+        for value in attrs.values():
+            if value < PROFILE_RANDOM_ATTRIBUTE_MIN or value > 99:
+                raise ValueError("legacy-bonus attributes must stay between 0 and 99")
+        return attrs
+
+    if total != PROFILE_ATTRIBUTE_TOTAL:
+        raise ValueError("manual attributes must sum to 30")
+
+    if random_mode:
+        random_range_ok = all(
+            PROFILE_RANDOM_ATTRIBUTE_MIN <= value <= PROFILE_RANDOM_ATTRIBUTE_MAX
+            for value in attrs.values()
+        )
+        if not random_range_ok:
+            raise ValueError("random attributes must stay between 0 and 10")
+        return attrs
+
+    manual_range_ok = all(
+        PROFILE_MANUAL_ATTRIBUTE_MIN <= value <= PROFILE_MANUAL_ATTRIBUTE_MAX
+        for value in attrs.values()
+    )
+    if not manual_range_ok:
+        raise ValueError("manual attributes must stay between 2 and 8")
+    return attrs
 
 
 def apply_profile_world_profile(session: GameSession, world_profile: dict[str, Any]) -> None:

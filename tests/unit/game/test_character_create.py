@@ -21,7 +21,7 @@ def test_start_from_profile_initializes_session(tmp_path, monkeypatch):
         "spirit_root": "火灵根",
         "family_background": "寒门",
         "difficulty": "普通",
-        "attributes": {key: 60 for key in ATTRIBUTE_KEYS},
+        "attributes": {key: 5 for key in ATTRIBUTE_KEYS},
     })
 
     s = engine.game_session
@@ -47,12 +47,12 @@ def test_unknown_profile_seed_is_not_special(tmp_path, monkeypatch):
         "talent": "天命道胎",
         "spirit_root": "火灵根",
         "family_background": "隐世仙族",
-        "attributes": {key: 50 for key in ATTRIBUTE_KEYS},
+        "attributes": {key: 5 for key in ATTRIBUTE_KEYS},
     })
 
     s = engine.game_session
     assert s.char_name == "许满"
-    assert s.attributes == {key: 50 for key in ATTRIBUTE_KEYS}
+    assert s.attributes == {key: 5 for key in ATTRIBUTE_KEYS}
     assert s.family_background == "隐世仙族"
     assert s.talent == "天命道胎"
     assert s.spirit_root == "火灵根"

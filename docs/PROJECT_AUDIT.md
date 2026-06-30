@@ -35,8 +35,10 @@
 
 - 本地 PostgreSQL 测试库目标：`127.0.0.1:55432/agens_web_test`。
 - 用户级模型设置治理本地提交：`44519d7`。
-- 本地自动化基线：`tests\web` 59 passed，全量 `pytest -q` 420 passed / 1 xfailed，前端 build 通过。
+- 2026-06-30 本地自动化基线：`pg_isready` confirmed `127.0.0.1:55432`; `tests\web` 62 passed；带 `TEST_DATABASE_URL` 的全量 `pytest -q` 427 passed / 4 xfailed；前端 build 通过。
 - 已修复本地可见 Chrome 发现的主流程问题：合法 A/B/C/D 选择不应 HTTP 200 但不推进；叙事/状态 mismatch 时保持 `game_turns` 连续；fallback 过渡回合会记录。
+- 角色创建属性池已按 `GAME_MODE_SPEC.md` §4.1 落地：手动 2-8/总和 30，随机 0-10/总和 30。
+- `tests/unit/engine/test_playable_gap_locks.py` 已作为 strict xfail gap guard 接受；其中 4 个 xfail 是 P1 真实缺口，不是当前自动化失败。
 - 本地 Chrome 旧证据覆盖过账号注册/登录/存档/读档、2K 和窄屏布局，但仍需要在模型设置治理后重新做 20 回合真实玩家验收。
 
 ## 剩余 P0 风险
@@ -47,12 +49,14 @@
 | 生产账号流未验收 | 注册/登录/存档/读档缺安全测试路径。 | 使用非 secret 一次性测试账号或经批准的测试路径补验。 |
 | production live model 未验收 | fallback 不算成功，HTTP 200 不等于 live model 成功。 | 服务器线程证明 start 和 choice 均非 fallback，且不输出 secrets。 |
 | 本地真实玩家流程未重新验收 | 模型设置和主流程修复后还没完成 20 回合可见 Chrome 验收。 | 本地 PG + 真实 Chrome 跑账号流、模型设置、20 回合、存读档。 |
+| Chrome 验收与 pytest 共库并发 | `tests\web` 会逐测清空 `TEST_DATABASE_URL`，与可见 Chrome 共用库会造成 users/sessions/game_turns 突然归零的假象。 | Chrome 验收使用独立 DB，或确认无 pytest 并发后再跑。 |
 
 ## 剩余 P1 技术债
 
 | 问题 | 风险 | 处理方向 |
 | --- | --- | --- |
 | 游玩内容弱 | 重复闭关/突破循环、目标感弱、奖励反馈弱。 | 先设计主线目标、阶段事件、奖励落账，再迭代内容。 |
+| P1 gap guard 仍有 4 个 xfail | silent inventory_add、local_story 重复/无效行动推进、突破不记录 settled turn 仍是已知缺口。 | 按 `test_playable_gap_locks.py` 逐项修复，XPASS 时复核并移除 xfail。 |
 | live model 响应慢 | 历史本地一回合约 63 秒，真实玩家会感到卡顿。 | 优化提示词、超时、重试/降级提示和结构化输出修复。 |
 | 叙事与状态仍可能不一致 | 模型说获得道具/升层，但权威 `GameSession` 未落账。 | 收紧 `state_delta`、Judge、`apply_delta()` 和 mismatch 测试。 |
 | `GameEngine` 仍偏大 | 仍承担回合、突破、兜底、模型失败等多职责。 | 只按主流程需要拆模型失败、本地故事、突破 helper，避免大拆。 |

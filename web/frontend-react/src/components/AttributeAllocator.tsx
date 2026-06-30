@@ -4,6 +4,7 @@ import {
   manualAttributeBudget,
   manualAttributeMax,
   manualAttributeMin,
+  randomAttributeMax,
 } from "../lib/catalog";
 import type { AttributeKey, AttributeValues, ChoiceMode } from "../hooks/useCharacterFormReducer";
 
@@ -29,7 +30,7 @@ export function AttributeAllocator({
       <div className="attr-grid">
         {attributes.map(([key, label]) => {
           const value = values[key];
-          const meterMax = choiceMode === "random" ? 100 : manualAttributeMax;
+          const meterMax = choiceMode === "random" ? randomAttributeMax : manualAttributeMax;
           return (
             <label key={key} className={key === "luck" ? "luck-attr" : ""}>
               <span className="attr-icon" aria-hidden="true">{label.slice(0, 1)}</span>
@@ -44,7 +45,7 @@ export function AttributeAllocator({
                   aria-valuemax={meterMax}
                   aria-valuenow={value}
                 >
-                  <span style={{ width: `${Math.max(0, Math.min(100, value))}%` }} />
+                  <span style={{ width: `${Math.max(0, Math.min(100, (value / meterMax) * 100))}%` }} />
                 </span>
               ) : (
                 <input
@@ -63,11 +64,11 @@ export function AttributeAllocator({
       </div>
       <p className="attr-help">
         {choiceMode === "manual"
-          ? `单项 ${manualAttributeMin}-${manualAttributeMax}，总和不超过 ${manualAttributeBudget}`
-          : "随机属性已生成，不占用手动点数预算。"}
+          ? `单项 ${manualAttributeMin}-${manualAttributeMax}，总和必须等于 ${manualAttributeBudget}`
+          : "随机属性为 0-10 浮动，总和固定 30。"}
       </p>
-      {choiceMode === "manual" && remainingPoints < 0 && (
-        <p className="attr-error">点数超出 {Math.abs(remainingPoints)}，请降低属性后开始。</p>
+      {choiceMode === "manual" && remainingPoints !== 0 && (
+        <p className="attr-error">{remainingPoints > 0 ? `还需分配 ${remainingPoints} 点。` : `点数超出 ${Math.abs(remainingPoints)}，请降低属性后开始。`}</p>
       )}
     </>
   );

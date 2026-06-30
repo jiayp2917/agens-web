@@ -49,13 +49,14 @@ def test_local_story_choice_advances_node_and_delta(monkeypatch, tmp_path) -> No
     ):
         engine.start_from_profile({"char_name": "许满"})
 
+    before_willpower = engine.game_session.attributes["willpower"]
     first_choice = engine.game_session.last_choices[0]
     engine.handle_action(first_choice)
 
     assert engine.game_session.local_story_node_id == "outer_gate"
     assert len(engine.game_session.last_choices) == 4
     assert any(quest.get("name") == "外门入门试炼" for quest in engine.game_session.active_quests)
-    assert engine.game_session.attributes["willpower"] > 50
+    assert engine.game_session.attributes["willpower"] > before_willpower
 
 
 def test_local_story_graph_has_no_dead_nodes() -> None:

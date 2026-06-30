@@ -21,6 +21,7 @@ export function ModelSettingsPanel({
     base_url: "https://apihub.agnes-ai.com/v1",
     model: "agnes-2.0-flash",
   });
+  const [apiKeyDraft, setApiKeyDraft] = useState("");
 
   useEffect(() => {
     if (!settings) return;
@@ -33,27 +34,24 @@ export function ModelSettingsPanel({
 
   const saveSettings = async (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault();
-    const form = new FormData(event.currentTarget);
     const saved = await api<ModelSettings>("/api/settings/model", {
       method: "POST",
       body: JSON.stringify({
-        provider: String(form.get("provider") || ""),
-        base_url: String(form.get("base_url") || ""),
-        model: String(form.get("model") || ""),
-        api_key: String(form.get("api_key") || ""),
+        provider: modelForm.provider,
+        base_url: modelForm.base_url,
+        model: modelForm.model,
+        api_key: apiKeyDraft,
       }),
     });
     setSettings(saved);
     setMessage("模型设置已保存。真实 Key 不会回显。");
-    const apiKeyInput = event.currentTarget.elements.namedItem("api_key");
-    if (apiKeyInput instanceof HTMLInputElement) {
-      apiKeyInput.value = "";
-    }
+    setApiKeyDraft("");
   };
 
   const clearPersonalSettings = async () => {
     const saved = await api<ModelSettings>("/api/settings/model", { method: "DELETE" });
     setSettings(saved);
+    setApiKeyDraft("");
     setMessage("已清除个人配置，当前使用系统默认 Agens。");
   };
 
@@ -79,7 +77,16 @@ export function ModelSettingsPanel({
           <label>服务商<input name="provider" value={modelForm.provider} onChange={(event) => setModelForm((current) => ({ ...current, provider: event.target.value }))} /></label>
           <label>Base URL<input name="base_url" value={modelForm.base_url} onChange={(event) => setModelForm((current) => ({ ...current, base_url: event.target.value }))} /></label>
           <label>模型<input name="model" value={modelForm.model} onChange={(event) => setModelForm((current) => ({ ...current, model: event.target.value }))} /></label>
-          <label>API Key<input name="api_key" type="password" placeholder="留空则保持当前 Key" /></label>
+          <label>
+            API Key
+            <input
+              name="api_key"
+              type="password"
+              value={apiKeyDraft}
+              onChange={(event) => setApiKeyDraft(event.target.value)}
+              placeholder="留空则保持当前 Key"
+            />
+          </label>
           <p>当前来源：{settings?.source === "user" ? "个人配置" : "系统默认 Agens"}</p>
           <p>当前 Key 状态：{settings?.api_key_set ? `已配置（${settings.api_key_masked}）` : "未配置"}</p>
           <div className="inline-actions">
