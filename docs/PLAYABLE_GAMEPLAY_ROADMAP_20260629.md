@@ -34,19 +34,19 @@
 
 2026-06-30 状态更新：
 
-- 本地真实可见 Chrome 20 回合验收已完成。
+- 本地真实可见 Chrome 跟进验收已重跑但未通过：普通账号注册/登录、系统默认模型开局、角色创建、存档/读档通过；第 7 回合 narrator incomplete output 触发 local story fallback。
 - 生产部署与迁移已完成：Alembic 已到 `20260622_0005`，`user_model_configs` 存在。
 - 生产账号注册、登录、存档、读档、跨会话恢复已通过。
-- production live model 仍未验收通过：生产 start 为 non-fallback，但一回合 choice 返回 `fallback_active=true` 且 `turn_count=0`。
+- production live model 仍未验收通过：生产 start 为 non-fallback，但一回合 choice 返回 `fallback_active=true` 且 `turn_count=0`；本地已修复旧 `model_config` 行遮蔽 env key 的兼容逻辑，生产需重新部署后复验。
 
 必须完成：
 
 - 本地 PostgreSQL 健康检查和自动化验证。
-- 真实可见 Chrome 20 回合验收。
+- 真实可见 Chrome 20 回合 non-fallback 验收。
 - 验证用户模型配置：系统默认、个人 key、清除个人配置。
 - 验证账号注册、登录、存档、读档。
 - 检查 fallback、`game_turns` 连续性、叙事和状态一致性。
-- 生产部署、生产账号流、production live model 交给服务器线程，不在本地代码线程混做。
+- production live model 修复部署和复验交给服务器线程，不在本地代码线程混做。
 
 验收标准：
 

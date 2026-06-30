@@ -14,7 +14,7 @@
 - Acceptance for "playable without obvious main-flow bug" still requires a new
   visible-Chrome 20-turn live-model run after this fix.
 
-> 状态：**v5 Alpha 本地可玩链路已落地，生产验收待部署批次**。游戏模式核心规则已切换到 A/B/C/D 四按钮、无 HP/MP、事件判定战斗、寿元寿命表、六维属性、动态流逝年数、PostgreSQL 回合记录和用户级模型配置。
+> 状态：**v5 Alpha 本地可玩链路已落地，仍需 live-model 验收闭环**。游戏模式核心规则已切换到 A/B/C/D 四按钮、无 HP/MP、事件判定战斗、寿元寿命表、六维属性、动态流逝年数、PostgreSQL 回合记录和用户级模型配置。
 > 文档定位：游戏模式的产品 spec + 技术实现规格，是“游戏模式”的单一事实来源。
 >
 > ## 实现状态（截至 2026-06-22）
@@ -29,7 +29,7 @@
 > | §11 稀有度解锁门 | 白/绿/蓝/紫/橙/红 六档 + runs/ascension 门径 | ✅ 已接线（`constants.rarity_unlocked_for`、`/api/catalog/rarities`，终局写入 `player_progress`） |
 > | §11 死亡分类 | finale > karma > event > lifespan > player | ✅ 已实现（`death_rewards.categorize_death`） |
 > | 验证 | compileall + pytest + React build + 密钥审计 | ⏳ 以当前分支最新测试结果为准，不在文档中固化旧计数 |
-> | 待办 | 生产部署 `20260622_0005`、生产账号流、非 fallback live-model 验收、可见 Chrome 20 回合验收 | ⏳ 生产/浏览器验收，不是本地代码阻塞 |
+> | 待办 | 生产 live-model 修复部署后复验、本地可见 Chrome 20 回合 non-fallback 验收 | ⏳ 生产 start+choice 必须 non-fallback；本地最新跟进在第 7 回合进入 local story fallback |
 
 ## 0. TL;DR
 
