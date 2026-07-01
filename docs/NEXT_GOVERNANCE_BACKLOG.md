@@ -20,9 +20,14 @@ This is the active backlog for `agens-web`. It separates local code work, local 
   - Runtime model calls resolve config by current session/user and do not mutate process-global `AGNES_API_KEY`.
   - Empty first-time stored model configs are rejected so an empty user row cannot shadow the effective system Agens default.
 - 2026-06-30 follow-up fixed the production fallback root cause locally: a legacy system `model_config` row without `api_key_encrypted` no longer shadows the environment system key.
-- Latest local automated validation after the production fallback / UX follow-up: `tests\web` 64 passed, full `pytest -q` with `TEST_DATABASE_URL` 438 passed, frontend build passed.
+- Latest local automated validation after the narrator/visible-Chrome follow-up: `tests\web` 66 passed, full `pytest -q` with `TEST_DATABASE_URL` 457 passed, frontend build passed.
 - Main-flow fixes already landed locally: fixed-choice `/choice`, no HTTP 200 without turn progression for ineligible breakthrough choices, contiguous `game_turns` after mismatch/fallback paths.
-- Latest local visible Chrome follow-up passed account registration/login, system-default model start, character creation, save/load, duplicate-prefix cleanup, and internal-mismatch text hiding; it failed 20-turn live-model acceptance at visible turn 7 when narrator returned no usable choices and local story fallback activated.
+- Historical local visible Chrome follow-up passed account registration/login, system-default model start, character creation, save/load, duplicate-prefix cleanup, and internal-mismatch text hiding, but failed 20-turn live-model acceptance at visible turn 7 when narrator returned no usable choices and local story fallback activated.
+- Current local code now includes a follow-up fix for that turn-7 class: narrator parser recovery accepts fenced/bare JSON and Chinese A/B/C/D option lines, malformed-choice narrator turns keep the live narrative with local semantic choices instead of entering local story, and chronicle display strips stray Markdown/JSON fence markers.
+- 2026-07-01 early visible Chrome rerun still failed at turn 4 fallback after narrator returned no narrative and no A/B/C/D choices; this is retained as historical failure evidence under `output/playwright/local-visible-20turn-followup-20260701.*`.
+- 2026-07-01 intermediate visible Chrome rerun `local-visible-20turn-20260701-final` failed at turn 1 because the model repair output included an extra trailing `}` in `<state_update>`; a narrow parser recovery was added for that exact provider drift.
+- 2026-07-01 latest visible Chrome rerun `local-visible-20turn-20260701-final2` passed local P0 browser acceptance: account registration/login, system-default start, character creation, 20/20 choice turns non-fallback, and save/load passed. Strict JSON/NDJSON/CSV evidence is under `output/playwright/local-visible-20turn-20260701-final2.{json,ndjson,csv}` plus `output/playwright/local-visible-20turn-20260701-final2-source.json`. The run still shows P1 quality risk: average choice wait about 48.2s, max about 153.2s, and multiple narrator repair/mismatch-suppression passes.
+- Latest code guard after subagent review: narrator output with choices/state but no narrative remains incomplete; repair output is only accepted if it restores narrative, state, and choices; authoritative item acquisition claims require structured inventory delta or the visible narrative is suppressed to the base rule settlement. Semantic choice recovery remains a continuity guard, not full model-output quality acceptance.
 - 2026-06-30 production/server batch:
   - Deployed the current package, generated/installed `MODEL_CONFIG_SECRET` without printing it, backed up app/PostgreSQL, rebuilt only `agens-web`, and migrated Alembic to `20260622_0005`.
   - Production `user_model_configs` exists; public/origin health, catalog, container health, and sensitive-marker log scan passed.
@@ -60,7 +65,8 @@ These items block claiming the project is a stable playable public build.
    - HTTP 200 alone is not enough.
    - Current blocker: local fix for the diagnosed `model_config` shadowing issue must be deployed, then production start+choice must be re-proven non-fallback.
 2. Local visible Chrome 20-turn player validation.
-   - Not currently accepted after the 2026-06-30 follow-up: visible turn 7 entered local story fallback.
+   - Accepted locally by `local-visible-20turn-20260701-final2`: 20/20 choice turns were non-fallback and save/load passed.
+   - This does not replace production live-model acceptance and does not close P1 gameplay quality risks.
    - Re-run after fixes to option constraints, state/chronicle consistency, or major UI changes.
    - Do not run concurrently with pytest against the same database; Web tests truncate the shared test DB.
 
@@ -78,8 +84,10 @@ These items block claiming the project is a stable playable public build.
    - Add clearer stage goals, meaningful rewards, and visible consequences.
    - Ensure system-level model narrative claims are backed by structured state changes or rejected cleanly; ordinary chronicle-style item descriptions do not automatically become inventory entries.
    - Add visible handling for injuries, key items, techniques, and attribute growth, or prevent the narrative from asserting them.
-   - Improve live-model latency and structured-output stability; the latest follow-up observed choice waits of roughly 9.6s, 38.7s, 20.6s, 38.8s, 50.5s, 50.8s, and 14.4s before fallback at turn 7.
-   - Strip stray markdown/JSON fence artifacts from chronicle text; the follow-up browser pass showed a visible ````json` fragment in one chronicle entry.
+   - Improve live-model latency and structured-output stability; the latest accepted local Chrome run averaged about 48.2s per choice, maxed at about 153.2s, and relied heavily on narrator repair.
+   - Done locally: recover common narrator output drift (fenced/bare JSON, JSON-only payloads, Chinese option lines), avoid local-story fallback when the live narrator produced usable narrative but malformed choices, and fail closed on malformed state updates.
+   - Done locally: classify missing narrative as incomplete even when choices/state exist, and require repaired narrator output to contain narrative before accepting it as repaired.
+   - Done locally: strip stray markdown/JSON fence artifacts from chronicle text; final2 did not stop on visible fence/JSON pollution, but this should remain part of browser smoke checks.
    - Treat the first playable slice and full-run pacing as gameplay acceptance targets per `docs/GAME_MODE_SPEC.md` §3.5.
    - Use an abstract xianxia trope library only. Do not copy real novel characters, sects, plot text, or proprietary settings.
 2. Tighten model failure paths.
@@ -116,7 +124,7 @@ These items block claiming the project is a stable playable public build.
 3. Handle generated evidence deliberately.
    - Treat `output/playwright/`, screenshots, and JSON traces as generated artifacts unless explicitly promoted.
    - Do not delete historical artifacts without inventory, backup, and quarantine.
-   - Done locally: add a strict JSON/NDJSON/CSV evidence writer. Next real Chrome validation scripts should use it instead of ad hoc JSON.
+   - Done locally: add a strict JSON/NDJSON/CSV evidence writer and CLI; 2026-07-01 Chrome evidence was normalized through it.
 
 ## Validation Rules
 

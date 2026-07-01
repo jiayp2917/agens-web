@@ -58,6 +58,8 @@ _CLAIM_RULES: tuple[tuple[tuple[re.Pattern[str], ...], tuple[tuple[str, str], ..
     (
         (
             re.compile(r"(?:奖励|发放|交给)(?:你|玩家|弟子)[^，。；\n]{0,24}"),
+            re.compile(r"(?:你|玩家|弟子)?(?:获得|得到|收下|拿到)[^，。；\n]{0,24}(?:丹|药|法器|灵石|材料|奖励|奖赏|灵草|矿碎|矿石|玉简|秘籍|符箓)"),
+            re.compile(r"(?:你|玩家|弟子)?拾得[^，。；\n]{0,24}(?:并|，)?(?:收入|收好|带走|留下|据为己有)[^，。；\n]{0,16}"),
         ),
         (("character", "inventory_add"), ("character", "inventory")),
     ),

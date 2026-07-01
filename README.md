@@ -9,8 +9,8 @@ Web-only 文字修仙模拟器。当前 `master` 是浏览器版本主线：Reac
 - 用户级模型设置已本地落地：注册用户可保存个人 provider/base URL/model/API key，访客不可配置，无个人配置时使用系统 Agens 默认。
 - 模型 API key 只允许后端加密存储和脱敏展示，不得出现在响应、日志、存档、session snapshot、前端包或文档中。
 - 角色创建六维属性池已按 `docs/GAME_MODE_SPEC.md` §4.1 收束：手动单项 2-8、总和 30；随机单项 0-10、总和 30。
-- 最新本地自动化基线：本地 PostgreSQL 可用；`tests\web` 64 passed；带 `TEST_DATABASE_URL` 的全量 `pytest -q` 438 passed；前端 build 通过。
-- 最新本地真实 Chrome 跟进验收：普通账号注册/登录、系统默认模型开局、角色创建、存档/读档通过；第 7 回合因 narrator incomplete output 进入 local story fallback，未通过 20 回合 live 验收。重复选项前缀与内部 mismatch 文案未再出现，但仍有响应慢和 stray markdown fence 等 P1 体验问题。
+- 最新本地自动化基线：本地 PostgreSQL 可用；`tests\web` 66 passed；带 `TEST_DATABASE_URL` 的全量 `pytest -q` 457 passed；前端 build 通过。
+- 最新本地真实 Chrome 跟进验收：2026-07-01 `local-visible-20turn-20260701-final2` 通过，普通账号注册/登录、系统默认模型开局、角色创建、20/20 choice non-fallback、存档/读档均通过；平均回合耗时约 48.2s，最大约 153.2s。语义补齐 choices 只是不停流的降级恢复，不代表完整模型选项质量；live 响应慢、repair 依赖高、叙事/状态落账质量仍需继续收紧。
 - 最新生产批次：服务器线程已部署当前包并迁移到 Alembic `20260622_0005`，`user_model_configs` 存在，public/origin health、catalog、容器健康和日志敏感标记扫描通过；一次性真实账号注册、登录、存档、读档、跨会话恢复通过。
 - 尚未完成：production live model 非 fallback 复验。服务器线程已脱敏定位根因：生产旧 `model_config` 行存在但没有 encrypted key，遮蔽了容器 env 系统 key，导致 choice narrator `key_set=false` 并 fallback。本地已修兼容逻辑，仍需重新部署并证明 start+choice 均 non-fallback。
 

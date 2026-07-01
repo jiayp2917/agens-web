@@ -7,7 +7,7 @@ import json
 from agens_novel.agents.world_builder.nodes import _parse_world_output
 
 
-def test_parse_world_output_preserves_opening_choices() -> None:
+def test_parse_world_output_preserves_abcd_opening_choices() -> None:
     payload = {
         "character": {"name": "许满", "realm": "练气"},
         "world": {"location": "青玄宗山门"},
@@ -16,7 +16,7 @@ def test_parse_world_output_preserves_opening_choices() -> None:
             {"id": "A", "text": "留在山门吐纳"},
             {"id": "B", "action": "询问接引弟子"},
             "观察灵气流向",
-            "多余选项",
+            "随缘听天命",
         ],
     }
     text = f"前言\n<world_data>\n{json.dumps(payload, ensure_ascii=False)}\n</world_data>"
@@ -25,7 +25,7 @@ def test_parse_world_output_preserves_opening_choices() -> None:
 
     assert world_description == "前言"
     assert opening == "晨雾漫过山门。"
-    assert data["choices"] == ["留在山门吐纳", "询问接引弟子", "观察灵气流向"]
+    assert data["choices"] == ["留在山门吐纳", "询问接引弟子", "观察灵气流向", "随缘听天命"]
 
 
 def test_parse_world_output_does_not_pad_short_choices() -> None:

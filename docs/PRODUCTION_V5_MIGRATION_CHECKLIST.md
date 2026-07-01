@@ -15,9 +15,10 @@
 - Local validation after this fix: `tests\web` -> `54 passed`, full
   `pytest -q` -> `416 passed`, frontend `npm.cmd run build` passed. This local
   green state does not prove production live-model success.
-- Production acceptance is unchanged by this local fix. Production account
-  registration/login/save/load and production live-model success still need
-  server-thread evidence. Any fallback response still fails the live-model gate.
+- At that time, production acceptance was unchanged by this local fix. Later
+  2026-06-30 server-thread evidence accepted the production account flow, but
+  production live-model success still requires start+choice non-fallback proof.
+  Any fallback response still fails the live-model gate.
 
 This checklist gates the next `agens-web` production action. It records the
 2026-06-24 production v5 deployment sequence, including the build stop,
@@ -29,7 +30,8 @@ has evidence. Current status is restored but still partially accepted.
 
 ## 2026-06-27 Model Env Hotfix Addendum
 
-- Root cause for the live-model fallback was the model env-prefix mismatch:
+- Historical 2026-06-27 root cause for that hotfix batch was the model
+  env-prefix mismatch:
   the app reads `AGNES_API_KEY`, `AGNES_BASE_URL`, `AGNES_MODEL`, and
   `AGNES_REQUEST_TIMEOUT_SECONDS`; production model values had been placed
   under `AGENS_*`.
@@ -41,13 +43,15 @@ has evidence. Current status is restored but still partially accepted.
 - Full rebuild was blocked by the host build path, so the effective production
   recovery used a hotfix image based on the existing `jiayp-agens-web:local`
   image and copied updated code/assets into it.
-- Last successful production smoke before interruption: local-origin and
-  public-origin guest start/choice both returned `fallback_active=False`,
-  `model_failures=0`, and `choices_count=4`.
+- Historical 2026-06-27 smoke before interruption, not current acceptance:
+  local-origin and public-origin guest start/choice both returned
+  `fallback_active=False`, `model_failures=0`, and `choices_count=4`.
 - Resume-time reachability check on 2026-06-27 failed for
   `192.168.1.250:22`; the successful smoke above is last-known evidence, not a
   fresh current confirmation.
-- Production account registration/login/save/load is still not accepted.
+- This addendum is historical. The later 2026-06-30 production batch accepted
+  account registration/login/save/load, while production live-model acceptance
+  still remained blocked by a separate legacy `model_config` shadowing issue.
 
 ## Current Known State
 
@@ -79,11 +83,17 @@ has evidence. Current status is restored but still partially accepted.
   narrator runtime saw `key_set=false`. Local code now falls back to the env
   system key for that legacy-row shape; production still needs redeploy and
   start+choice non-fallback revalidation.
-- The same local follow-up did not accept the 20-turn live browser gate: local
-  visible Chrome passed account registration/login, start, save, and load, but
-  entered local-story fallback at visible turn 7 because narrator returned no
-  usable choices. This is local gameplay/model-output work, not production
-  deployment acceptance.
+- The same local follow-up originally failed the 20-turn live browser gate at
+  visible turn 7, then an early 2026-07-01 rerun failed at turn 4 fallback.
+  Local code now has targeted recovery for that class: narrator parsing accepts
+  fenced/bare JSON and Chinese A/B/C/D option lines, live narrative with
+  malformed choices no longer immediately enters local story, chronicle display
+  strips common Markdown/JSON fence markers, and the narrator prompt explicitly
+  rejects JSON-only output.
+- Latest local visible Chrome rerun `local-visible-20turn-20260701-final2`
+  passed 20/20 non-fallback turns plus save/load, but it does not prove
+  production live-model success. The run still shows P1 latency/repair risk
+  with about 48.2s average choice latency and about 153.2s maximum latency.
 - Old app source is preserved at
   `/srv/jiayp/apps/agens-web.pre-v5-20260624-180650`, with an app tar backup at
   `/srv/jiayp/backups/agens-web/agens-web-app-20260624-180650.tar.gz`.
@@ -105,7 +115,7 @@ has evidence. Current status is restored but still partially accepted.
 
 - Local git diff reviewed and scoped to intended source, tests, docs, and
   generated frontend build output policy.
-- Local validation is green:
+- Historical local validation for the 2026-06-24 package was green:
   - `.\.venv\Scripts\python.exe -m compileall -q src tests web scripts migrations`
   - `.\.venv\Scripts\python.exe -m pytest -q tests\web` with local
     `TEST_DATABASE_URL`: `54 passed`
@@ -134,6 +144,9 @@ has evidence. Current status is restored but still partially accepted.
 - Package manifest or archive hash is recorded before upload.
 - Server-side app backup path is recorded before replacement.
 - PostgreSQL backup or restore point is recorded before Alembic migration.
+- Latest local validation is tracked in `README.md`, `docs/INDEX.md`, and
+  `docs/NEXT_GOVERNANCE_BACKLOG.md`; do not use this historical count as the
+  current quality gate.
 
 ### 2026-06-24 Local Package Evidence
 
@@ -454,11 +467,13 @@ Completed evidence:
 - Guest start returned HTTP 200.
 - One guest turn returned HTTP 200 and still returned four options.
 
-Residual acceptance gaps:
+Historical 2026-06-24 hotfix closeout residual gaps, superseded in part by the
+2026-06-30 production deploy/account-flow batch:
 
-- Production account flow is not accepted because no safe non-secret test
-  account path was available. It needs a user-provided test account, invite, or
-  separately approved test-account creation path.
+- Production account flow was not accepted in this historical hotfix closeout
+  because no safe non-secret test account path was available. The later
+  2026-06-30 production batch accepted account registration/login/save/load and
+  cross-session restore.
 - Production live-model success is not accepted because the guest smoke returned
   `fallback_prompt_active=true`. The smoke proves the fallback gameplay path is
   restored, not that the production live model is healthy.
@@ -470,34 +485,38 @@ Residual acceptance gaps:
 Before full production acceptance, keep the restored service evidence current
 and close the remaining smoke gaps.
 
-1. Confirm production revision remains `20260622_0004` and v5 tables still
-   exist.
+1. Deploy the local fallback-root-cause fix that prevents a legacy system
+   `model_config` row without encrypted key from shadowing the env system key.
+2. Confirm production revision remains `20260622_0005` and v5/user-model tables
+   still exist.
 2. Confirm `agens-web` container remains healthy and public health/catalog still
    return expected results.
-3. Verify production account registration/login/save/load only with a safe
-   non-secret test account or a separately approved test-account creation path.
-4. Verify production live-model behavior without printing secrets; do not count
+3. Re-run production account registration/login/save/load as a regression smoke
+   only; the 2026-06-30 account flow already passed.
+4. Verify production live-model start and at least one choice without printing
+   secrets; do not count
    fallback as live-model success.
 5. Continue log redaction and rate-limit observation while the public Alpha is
    exposed.
 
 ## Read-Only Post-Deploy Verification
 
-- `alembic_version` equals the intended head, currently `20260622_0004`.
+- `alembic_version` equals the intended head, currently `20260622_0005`.
 - `information_schema.tables` confirms:
   - `game_runs`
   - `game_turns`
+  - `user_model_configs`
   - `player_progress`
 - `agens-web` container is healthy.
 - Origin health returns HTTP 200.
 - Public health returns HTTP 200.
 - Public catalog talents returns 10 rows.
 - Redaction/log scan does not expose secrets.
-- Guest start and one turn return HTTP 200.
-- Registered account flow is verified only if a safe test account and
-  non-secret credentials are explicitly provided.
-- Production live-model flow returns a non-fallback result. Fallback must be
-  recorded as restored gameplay only, not model success.
+- Guest or account start and one turn return HTTP 200.
+- Registered account flow is verified with sanitized evidence only; do not
+  print account, password, cookie, invite, database URL, or key values.
+- Production live-model flow returns non-fallback for start and choice. Fallback
+  must be recorded as restored gameplay only, not model success.
 
 ## Rollback Gate
 
@@ -513,6 +532,7 @@ Rollback is a separate production change. Before any rollback:
 If full acceptance is deferred, record the blocker as:
 
 > Production v5 is partially accepted: the service is healthy, production
-> Alembic is `20260622_0004`, the v5 tables exist, health/catalog and guest
-> fallback gameplay pass, but production account flow and live-model success are
-> not accepted yet. The last guest smoke returned `fallback_prompt_active=true`.
+> Alembic is `20260622_0005`, the v5/user-model tables exist, health/catalog
+> and production account registration/login/save/load passed, but production
+> live-model success is not accepted yet. The latest blocked production choice
+> returned `fallback_active=true` with `turn_count=0`; HTTP 200 is not enough.

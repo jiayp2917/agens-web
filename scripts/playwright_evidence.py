@@ -8,6 +8,7 @@ compact audit trail for turn-by-turn checks.
 from __future__ import annotations
 
 import csv
+import argparse
 import json
 from pathlib import Path
 from typing import Any
@@ -66,7 +67,7 @@ def _write_turn_csv(path: Path, turns: list[dict[str, Any]]) -> None:
         writer = csv.DictWriter(fp, fieldnames=fields, extrasaction="ignore")
         writer.writeheader()
         for turn in turns:
-            writer.writerow({field: turn.get(field, "") for field in fields})
+            writer.writerow({field: _csv_field(turn, field) for field in fields})
 
 
 def _json_safe(value: Any) -> Any:
@@ -81,6 +82,35 @@ def _json_safe(value: Any) -> Any:
     return value
 
 
+def _csv_field(turn: dict[str, Any], field: str) -> Any:
+    if field == "choice" and not turn.get("choice"):
+        return turn.get("selected_choice", "")
+    return turn.get(field, "")
+
+
 def _safe_name(name: str) -> str:
     cleaned = "".join(ch if ch.isalnum() or ch in {"-", "_"} else "-" for ch in name.strip())
     return cleaned.strip("-") or "playwright-evidence"
+
+
+def main() -> int:
+    parser = argparse.ArgumentParser(description="Write strict Playwright/Chrome evidence files.")
+    parser.add_argument("--input", required=True, help="JSON file containing summary and turns.")
+    parser.add_argument("--output-dir", default="output/playwright")
+    parser.add_argument("--name", required=True)
+    args = parser.parse_args()
+
+    raw = json.loads(Path(args.input).read_text(encoding="utf-8"))
+    summary = raw.get("summary") if isinstance(raw, dict) else {}
+    turns = raw.get("turns") if isinstance(raw, dict) else []
+    if not isinstance(summary, dict):
+        summary = {}
+    if not isinstance(turns, list):
+        turns = []
+    paths = write_playwright_evidence(args.output_dir, args.name, summary, turns)
+    print(json.dumps(paths, ensure_ascii=False, indent=2))
+    return 0
+
+
+if __name__ == "__main__":
+    raise SystemExit(main())

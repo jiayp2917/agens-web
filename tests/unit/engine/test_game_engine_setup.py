@@ -158,7 +158,7 @@ class TestGameEngineNewGame:
         assert len(engine.game_session.last_choices) == 4
         assert any("天道紊乱" in msg for msg in infos)
 
-    def test_empty_successful_choices_still_show_fallback_notice(self, monkeypatch) -> None:
+    def test_successful_narrative_without_choices_shows_recovery_notice(self, monkeypatch) -> None:
         monkeypatch.setenv("AGNES_API_KEY", "sk-test-1234567890")
         engine = GameEngine()
         infos: list[str] = []
@@ -181,7 +181,8 @@ class TestGameEngineNewGame:
             engine.handle_action("观察")
 
         assert len(engine.game_session.last_choices) == 4
-        assert any("未返回可用" in msg for msg in infos)
+        assert any("补齐下一步选择" in msg for msg in infos)
+        assert engine.game_session.local_story_active is False
 
     def test_new_game_without_api_key_uses_agent_error(self, monkeypatch) -> None:
         """World Builder reports a config error when no API key is set."""

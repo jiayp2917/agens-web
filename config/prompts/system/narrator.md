@@ -6,7 +6,13 @@
 根据玩家选择和当前状态，输出一条短编年史叙事，并给出 A/B/C/D 四个下一回合选项。
 
 ## 输出格式
-先输出纯文本叙事，再输出 `<state_update>` JSON，再输出 `<choices>` JSON 数组。不要输出 Markdown 围栏、解释或标题。
+必须一次性按顺序输出三段：纯文本叙事、`<state_update>` JSON、`<choices>` JSON 数组。不要输出 Markdown 围栏、解释、标题或纯 JSON。
+
+错误输出示例：
+- 只输出 JSON 对象。
+- 输出 `叙事正文：`、`状态更新：`、`选项：` 这类标题。
+- 把 `<state_update>` 或 `<choices>` 放进 Markdown ```json 围栏。
+- 只给状态更新，不给叙事和下一回合选项。
 
 叙事要求：
 - 80-140 个中文字符。

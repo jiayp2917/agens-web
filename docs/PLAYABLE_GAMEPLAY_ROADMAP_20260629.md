@@ -32,9 +32,10 @@
 
 目标：证明当前底座可以支撑后续玩法迭代。
 
-2026-06-30 状态更新：
+2026-07-01 状态更新：
 
-- 本地真实可见 Chrome 跟进验收已重跑但未通过：普通账号注册/登录、系统默认模型开局、角色创建、存档/读档通过；第 7 回合 narrator incomplete output 触发 local story fallback。
+- 本地真实可见 Chrome 跟进验收已通过：`local-visible-20turn-20260701-final2` 完成普通账号注册/登录、系统默认模型开局、角色创建、20/20 choice non-fallback、存档/读档。
+- 本地验收仍暴露 P1 质量风险：平均回合耗时约 48.2s、最大约 153.2s，且多回合依赖 narrator repair / mismatch suppression。
 - 生产部署与迁移已完成：Alembic 已到 `20260622_0005`，`user_model_configs` 存在。
 - 生产账号注册、登录、存档、读档、跨会话恢复已通过。
 - production live model 仍未验收通过：生产 start 为 non-fallback，但一回合 choice 返回 `fallback_active=true` 且 `turn_count=0`；本地已修复旧 `model_config` 行遮蔽 env key 的兼容逻辑，生产需重新部署后复验。
@@ -50,12 +51,12 @@
 
 验收标准：
 
-- 本地 20 回合能完成。
+- 本地 20 回合能完成；当前最新本地证据为 `output/playwright/local-visible-20turn-20260701-final2.{json,ndjson,csv}`。
 - 无 HTTP 200 但回合不推进。
 - fallback 不被当作 live model 成功。
 - 存读档恢复后状态一致。
 - 生产 start 和 choice 都必须证明 non-fallback，HTTP 200 不算成功。
-- 真实 Chrome 20 回合验收预计 30-45 分钟；若出现连续 fallback、单回合超时或重复不推进，停止并记录问题，不继续硬跑。
+- 真实 Chrome 20 回合验收预计 15-45 分钟；若出现连续 fallback、单回合超时或重复不推进，停止并记录问题，不继续硬跑。
 
 ## P1：玩法稳定与内容改造
 

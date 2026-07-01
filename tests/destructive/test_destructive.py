@@ -13,7 +13,7 @@ import pytest
 
 from agens_novel.agents.judge.nodes import _parse_judge_output
 from agens_novel.agents.narrator.nodes import _parse_narrator_output
-
+from agens_novel.engine.model_result import ModelResultKind, classify_narrator_result
 from agens_novel.session.game_session import GameSession
 
 
@@ -93,8 +93,14 @@ class TestParserDestructive:
     def test_narrator_parser_handles_malformed_output(self, text: str) -> None:
         narrative, delta, choices = _parse_narrator_output(text)
         assert isinstance(narrative, str)
-        assert isinstance(delta, dict)
+        assert delta is None or isinstance(delta, dict)
         assert isinstance(choices, list)
+        status = classify_narrator_result({
+            "narrative": narrative,
+            "state_delta": delta,
+            "choices": choices,
+        })
+        assert status.kind in {ModelResultKind.OK, ModelResultKind.INCOMPLETE_OUTPUT}
 
     @pytest.mark.parametrize("text", ["", "not json", '{"approved": "yes"}'])
     def test_judge_parser_handles_malformed_output(self, text: str) -> None:

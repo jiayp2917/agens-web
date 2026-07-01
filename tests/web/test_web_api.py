@@ -379,7 +379,7 @@ def test_local_story_fallback_records_turn(
     def incomplete_narrator(agent_name: str, *_args, **_kwargs):
         if agent_name == "narrator":
             return {
-                "narrative": "你获得一枚清灵丹。",
+                "narrative": "",
                 "state_delta": {},
                 "choices": [],
                 "llm_error": "",
@@ -411,6 +411,111 @@ def test_local_story_fallback_records_turn(
     assert row["elapsed_years"] == 0
     assert row["event_kind"] == "fallback"
     assert row["state_delta"]["meta"]["local_story_fallback"] is True
+
+
+def test_incomplete_narrator_choices_recover_without_local_story_fallback(
+    tmp_path: Path,
+    monkeypatch,
+) -> None:
+    monkeypatch.setenv("AGNES_API_KEY", "sk-test-web-api")
+    monkeypatch.setenv("SESSION_COOKIE_SECURE", "0")
+    app = create_app()
+    client = TestClient(app)
+
+    _create_invite(app)
+    _register(client)
+    session_id = client.post("/api/sessions", json={}).json()["session_id"]
+    client.post(f"/api/sessions/{session_id}/start", json={"char_name": "recover-flow"})
+
+    def incomplete_choices(agent_name: str, *_args, **_kwargs):
+        if agent_name == "narrator":
+            return {
+                "narrative": "你在药谷石亭听见外门弟子议论新开的任务。",
+                "state_delta": {},
+                "choices": [],
+                "llm_error": "",
+            }
+        return _runner(agent_name)
+
+    with patch("agens_novel.engine.game_engine.run_turn_sync", side_effect=incomplete_choices):
+        chosen = client.post(
+            f"/api/sessions/{session_id}/choice",
+            json={"choice": "A"},
+        )
+
+    assert chosen.status_code == 200
+    body = chosen.json()
+    assert body["turn_count"] == 1
+    assert body["fallback_prompt"]["active"] is False
+    assert len(body["choices"]) == 4
+    with app.state.service.db.engine.connect() as conn:
+        row = conn.execute(
+            text(
+                """
+                SELECT turn_no, elapsed_years, event_kind, state_delta
+                FROM game_turns
+                WHERE run_id = :run_id
+                """
+            ),
+            {"run_id": session_id},
+        ).mappings().one()
+    assert row["turn_no"] == 1
+    assert row["elapsed_years"] > 0
+    assert row["event_kind"] != "fallback"
+    assert row["state_delta"]["meta"]["choice_category"] in {"稳妥", "机遇", "风险", "气运"}
+    assert "local_story_fallback" not in row["state_delta"]["meta"]
+
+
+def test_malformed_state_update_records_local_story_fallback(
+    tmp_path: Path,
+    monkeypatch,
+) -> None:
+    monkeypatch.setenv("AGNES_API_KEY", "sk-test-web-api")
+    monkeypatch.setenv("SESSION_COOKIE_SECURE", "0")
+    app = create_app()
+    client = TestClient(app)
+
+    _create_invite(app)
+    _register(client)
+    session_id = client.post("/api/sessions", json={}).json()["session_id"]
+    client.post(f"/api/sessions/{session_id}/start", json={"char_name": "malformed-flow"})
+
+    def malformed_state_update(agent_name: str, *_args, **_kwargs):
+        if agent_name == "narrator":
+            return {
+                "narrative": "你在山门前停步，听见执事提起一卷残缺竹简。",
+                "state_delta": None,
+                "choices": ["登记借阅名册", "询问执事来历", "夜里潜去旧架", "随缘抽取一卷"],
+                "llm_error": "",
+            }
+        return _runner(agent_name)
+
+    with patch("agens_novel.engine.game_engine.run_turn_sync", side_effect=malformed_state_update):
+        chosen = client.post(
+            f"/api/sessions/{session_id}/choice",
+            json={"choice": "A"},
+        )
+
+    assert chosen.status_code == 200
+    body = chosen.json()
+    assert body["turn_count"] == 1
+    assert body["fallback_prompt"]["active"] is True
+    with app.state.service.db.engine.connect() as conn:
+        row = conn.execute(
+            text(
+                """
+                SELECT turn_no, elapsed_years, event_kind, state_delta
+                FROM game_turns
+                WHERE run_id = :run_id
+                """
+            ),
+            {"run_id": session_id},
+        ).mappings().one()
+    assert row["turn_no"] == 1
+    assert row["elapsed_years"] == 0
+    assert row["event_kind"] == "fallback"
+    assert row["state_delta"]["meta"]["local_story_fallback"] is True
+    assert "状态更新格式不完整" in row["state_delta"]["meta"]["fallback_reason"]
 
 
 def test_web_save_load_restores_snapshot_and_chat_history(tmp_path: Path, monkeypatch) -> None:

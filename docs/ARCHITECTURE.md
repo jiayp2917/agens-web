@@ -74,11 +74,16 @@
 
 | Agent | 路径 | 温度 / tokens | 节点要点 |
 | --- | --- | --- | --- |
-| **Narrator** | `agents/narrator/` | 默认 | 加载 `prompts/system/narrator.md`；拼接 `<当前状态>` + 最近 20 轮 `chat_history` + `<玩家行动>`；空输出 + `repair_incomplete_output=True` 时 1 次重试；解析 `<narrative>` + `<state_update>` |
+| **Narrator** | `agents/narrator/` | 默认 | 加载 `prompts/system/narrator.md`；拼接 `<当前状态>` + 最近 20 轮 `chat_history` + `<玩家行动>`；有可恢复内容但缺叙事/`<state_update>`/`<choices>` 时 1 次 repair；解析叙事正文 + `<state_update>` + `<choices>`，并兼容 fenced/bare JSON 与中文 A/B/C/D 行 |
 | **Judge** | `agents/judge/` | `temperature=0.2`, `max_tokens=512` | 审核 Narrator 提议的 `state_delta`；返回 `approved` / `corrected_delta` / `judgment_note` / `review_score`；LLMError 默认 `approved=False`（安全失败） |
-| **World Builder** | `agents/world_builder/` | `temperature=0.6`, `max_tokens=4096` | 新游戏开局生成世界 + 角色；解析 `<world_data>` JSON 标签；`normalize_choices` 归一化开场选项（上限 3，见共享 helper） |
+| **World Builder** | `agents/world_builder/` | `temperature=0.6`, `max_tokens=4096` | 新游戏开局生成世界 + 角色；解析 `<world_data>` JSON 标签；`normalize_choices` 归一化开场选项（上限 4，见共享 helper） |
 | **Sequential 包装** | `agents/sequential.py` | — | `SequentialAgentGraph` 通用 4 节点编排；3 个 Agent 共享同一编排 |
-| **共享 helper** | `agents/common.py` | — | `load_agent_settings()`（narrator / judge / world_builder 的 `load_settings` 均委托至此）+ `normalize_choices()`（选项归一化，上限 3） |
+| **共享 helper** | `agents/common.py` | — | `load_agent_settings()`（narrator / judge / world_builder 的 `load_settings` 均委托至此）+ `normalize_choices()`（选项归一化，上限 4） |
+
+验收边界：`fallback_choices()` 或 TurnFlow 的语义补齐只保证玩家不断流；
+它不是完整模型选项质量证明。live-model 成功仍要求非 fallback 且叙事、结构化
+状态、选项三者同时可用；缺叙事正文、坏 `state_update` 或系统收益未落账都必须
+被标记为不完整或按基础规则压制。
 
 ### 4.3 状态与会话（`session/`）
 

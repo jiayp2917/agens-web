@@ -12,6 +12,7 @@ from .action_delta_policy import (
     merge_rule_delta,
     validate_narrative_delta_consistency,
 )
+from .choices import fallback_choices, normalize_choices
 from .model_result import (
     ModelResultKind,
     classify_judge_result,
@@ -112,16 +113,22 @@ class TurnFlow:
             return
 
         narrative = narrator_result.get("narrative", "")
-        state_delta = narrator_result.get("state_delta", {})
-        if not isinstance(state_delta, dict):
-            state_delta = {}
+        raw_state_delta = narrator_result.get("state_delta", {})
+        malformed_state_delta = raw_state_delta is None or not isinstance(raw_state_delta, dict)
+        state_delta = raw_state_delta if isinstance(raw_state_delta, dict) else {}
         choices = narrator_result.get("choices", [])
         meta_delta = state_delta.get("meta") if isinstance(state_delta, dict) else {}
         is_terminal_delta = isinstance(meta_delta, dict) and bool(
             meta_delta.get("game_over") or meta_delta.get("finale")
         )
         if narrator_status.kind == ModelResultKind.INCOMPLETE_OUTPUT:
-            engine._emit("on_info", narrator_status.reason)
+            recovered_choices = [] if malformed_state_delta else self._recover_incomplete_narrator_choices(narrative, choices)
+            if recovered_choices:
+                choices = recovered_choices
+                engine._emit("on_info", "叙事模型选项格式不完整，已按本回合局面补齐下一步选择。")
+            else:
+                choices = []
+                engine._emit("on_info", narrator_status.reason)
         if is_terminal_delta:
             session.last_choices = []
         else:
@@ -281,6 +288,7 @@ class TurnFlow:
             engine._emit("on_info", PLAYER_NARRATIVE_MISMATCH_NOTICE)
             narrative = ""
             state_delta = {"character": {}, "world": {}, "meta": {}}
+            session.last_choices = fallback_choices(session)
 
         state_delta = engine._sanitize_action_delta(state_delta)
 
@@ -375,3 +383,16 @@ class TurnFlow:
             new_stage = stage_delta.get("meta", {}).get("new_stage", 0)
             max_stage = stage_delta.get("meta", {}).get("max_stage", 0)
             engine._emit("on_info", f"修为精进！{session.realm}第{new_stage}层（{new_stage}/{max_stage}）")
+
+    def _recover_incomplete_narrator_choices(self, narrative: str, choices: Any) -> list[str]:
+        """Use semantic local choices only when the live narrator produced narrative."""
+        if not str(narrative or "").strip():
+            return []
+        session = self.engine.game_session
+        recovered = normalize_choices(choices)
+        if recovered:
+            fallbacks = fallback_choices(session)
+            while len(recovered) < len(fallbacks):
+                recovered.append(fallbacks[len(recovered)])
+            return recovered[:len(fallbacks)]
+        return fallback_choices(session)

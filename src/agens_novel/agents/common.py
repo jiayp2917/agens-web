@@ -4,7 +4,7 @@ Every agent (narrator / world_builder / judge) follows the same
 ``load_settings → build_prompt → call_agnes_llm → save_artifact`` shape.
 ``load_agent_settings`` deduplicates the identical ``load_settings`` body (which
 only differs by the agent name in its log line) and ``normalize_choices``
-deduplicates the identical choices shaping used by narrator + world_builder.
+deduplicates the identical A/B/C/D choices shaping used by narrator + world_builder.
 """
 
 from __future__ import annotations
@@ -50,7 +50,7 @@ def load_agent_settings(agent_name: str, state: dict[str, Any] | None = None) ->
 
 
 def normalize_choices(value: Any) -> list[str]:
-    """Coerce a raw model choices payload into up to 3 non-empty strings."""
+    """Coerce a raw model choices payload into up to 4 non-empty strings."""
     choices: list[str] = []
     if not isinstance(value, list):
         return choices
@@ -65,6 +65,6 @@ def normalize_choices(value: Any) -> list[str]:
         text = text.strip()
         if text:
             choices.append(text)
-        if len(choices) == 3:
+        if len(choices) == 4:
             break
     return choices

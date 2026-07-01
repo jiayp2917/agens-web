@@ -1,5 +1,50 @@
 # Changelog
 
+## 2026-07-01
+
+### Fixed - narrator incomplete-output recovery
+
+- Broadened narrator parsing for common provider drift: fenced JSON, bare JSON
+  after narrative text, JSON-only payloads with a `narrative` field, and Chinese
+  `选项A/B/C/D` lines are now recovered before the engine classifies the result
+  as unusable.
+- Updated shared agent choice normalization to keep up to four A/B/C/D choices
+  instead of truncating the D luck/fate option.
+- Ordinary turns with live narrator narrative but malformed or missing choices
+  now keep the live-model turn, apply the authoritative rule settlement, and
+  fill next choices from local A/B/C/D semantics instead of immediately entering
+  local-story fallback. Empty output and request failures still use the model
+  failure/local-story path.
+- Narrator output with choices/state but no narrative text is now still
+  classified as incomplete, and the repair pass is only accepted when it
+  restores narrative text as well as structured state and choices.
+- Strengthened narrative/state checks for authoritative acquisition language:
+  system-level "obtained/received/taken" item claims must be backed by
+  structured inventory delta or the visible narrative is suppressed to the base
+  rule settlement. Minor chronicle flavor still does not automatically become
+  inventory.
+- Stray Markdown/JSON fence markers are stripped from chronicle display text.
+- Added regression tests for parser recovery and turn recovery.
+- Added `scripts/local_visible_playtest.cjs`, a visible local Chrome playtest
+  runner that seeds a one-time local invite, refuses to send empty choices, and
+  writes strict JSON/NDJSON/CSV evidence through `scripts/playwright_evidence.py`.
+- Hardened the narrator prompt against JSON-only output, Markdown fences, and
+  heading-only format drift.
+- Verified after the fix with `local-visible-20turn-20260701-rerun4`: local
+  visible Chrome completed registration/login, system-default start, character
+  creation, 20/20 non-fallback choice turns, and save/load. Average choice
+  latency was about 41.4s and max was about 87.7s, so live-model latency and
+  repair dependence remain P1 risks. Semantic choice recovery is a continuity
+  guard, not proof that every model response produced high-quality choices.
+- After subagent review, tightened two more guards: missing `<state_update>` no
+  longer masquerades as an empty delta, and rejected narrative/state mismatch
+  turns now replace stale model choices with generic A/B/C/D choices so players
+  are not offered nonexistent rewards. An intermediate visible Chrome rerun
+  failed at turn 1 on an extra trailing `}` in repaired `<state_update>` output;
+  a narrow parser recovery was added for that exact provider drift. The final
+  `local-visible-20turn-20260701-final2` rerun passed 20/20 non-fallback turns
+  and save/load, with average choice latency about 48.2s and max about 153.2s.
+
 ## 2026-06-30
 
 ### Fixed - production fallback root cause and local UX guards

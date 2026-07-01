@@ -50,10 +50,10 @@ def classify_narrator_result(result: dict[str, Any]) -> ModelResultStatus:
 
     if state_delta is None or not isinstance(state_delta, dict):
         return ModelResultStatus(ModelResultKind.INCOMPLETE_OUTPUT, "模型已返回叙事，但状态更新格式不完整。")
+    if not narrative:
+        return ModelResultStatus(ModelResultKind.INCOMPLETE_OUTPUT, "模型输出缺少叙事正文。")
     if narrative and not choices:
         return ModelResultStatus(ModelResultKind.INCOMPLETE_OUTPUT, "模型已返回叙事，但未返回可用 A/B/C/D 选项。")
-    if not narrative and not choices:
-        return ModelResultStatus(ModelResultKind.INCOMPLETE_OUTPUT, "模型输出缺少叙事和 A/B/C/D 选项。")
     return ModelResultStatus(ModelResultKind.OK)
 
 

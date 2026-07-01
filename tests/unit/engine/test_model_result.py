@@ -20,6 +20,20 @@ def test_narrator_text_without_choices_is_incomplete() -> None:
     assert "未返回可用 A/B/C" in status.reason
 
 
+def test_narrator_choices_without_text_is_incomplete() -> None:
+    result = {
+        "narrative": "",
+        "state_delta": {"character": {}, "world": {}, "meta": {}},
+        "choices": ["留在山门吐纳", "询问接引弟子", "冒险下山", "随缘而行"],
+        "llm_error": "",
+    }
+
+    status = classify_narrator_result(result)
+
+    assert status.kind == ModelResultKind.INCOMPLETE_OUTPUT
+    assert "缺少叙事正文" in status.reason
+
+
 def test_request_failure_is_separate_from_incomplete_output() -> None:
     result = {"narrative": "", "state_delta": {}, "choices": [], "llm_error": "timeout"}
 

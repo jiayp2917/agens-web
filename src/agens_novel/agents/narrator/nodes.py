@@ -123,11 +123,12 @@ async def call_agnes_llm(state: dict[str, Any]) -> dict[str, Any]:
         repaired_output = False
         if state.get("repair_incomplete_output"):
             narrative, state_delta, choices = _parse_narrator_output(output_text)
-            if narrative and not choices:
+            recoverable_content = bool(narrative) or _has_recoverable_state_delta(state_delta)
+            if recoverable_content and (state_delta is None or not narrative or not choices):
                 repaired_text = await _repair_incomplete_output(state, output_text, narrative, state_delta)
                 if repaired_text:
-                    _, _, repaired_choices = _parse_narrator_output(repaired_text)
-                    if repaired_choices:
+                    repaired_narrative, repaired_delta, repaired_choices = _parse_narrator_output(repaired_text)
+                    if repaired_narrative and repaired_delta is not None and len(repaired_choices) == 4:
                         output_text = repaired_text
                         repaired_output = True
         return {
@@ -189,12 +190,13 @@ def save_artifact(state: dict[str, Any]) -> dict[str, Any]:
 
 _TAG_RE = re.compile(r"<state_update>(.*?)</state_update>", re.DOTALL)
 _CHOICES_RE = re.compile(r"<choices>(.*?)</choices>", re.DOTALL)
+_FENCED_JSON_RE = re.compile(r"```(?:json|JSON)?\s*(?P<body>.*?)```", re.DOTALL)
 _ABC_LINE_RE = re.compile(
-    r"(?im)^\s*(?:[-*]\s*)?(?:[ABC]|[123])[\.、:：]\s*(?P<text>.+?)\s*$"
+    r"(?im)^\s*(?:[-*]\s*)?(?:选项\s*)?(?:[ABCD]|[1-4])[\.、:：]\s*(?P<text>.+?)\s*$"
 )
 
 
-def _parse_narrator_output(text: str) -> tuple[str, dict, list[str]]:
+def _parse_narrator_output(text: str) -> tuple[str, dict | None, list[str]]:
     """Extract (narrative, state_delta, choices) from the narrator LLM output.
 
     The narrative is everything before the first structured tag.
@@ -202,20 +204,31 @@ def _parse_narrator_output(text: str) -> tuple[str, dict, list[str]]:
     Choices can be emitted as ``<choices>["...", "...", "..."]</choices>``
     or as ``meta.choices`` inside the state update.
     """
+    text = _strip_markdown_json_fences(text)
     narrative = text
-    state_delta: dict = {}
+    state_delta: dict | None = None
     choices: list[str] = []
+    json_span: tuple[int, int] | None = None
+    json_narrative = ""
 
     m = _TAG_RE.search(text)
     if m:
         raw_json = m.group(1).strip()
-        try:
-            data = json.loads(raw_json)
-            if isinstance(data, dict):
-                state_delta = data
-                choices = normalize_choices(data.get("meta", {}).get("choices"))
-        except (json.JSONDecodeError, ValueError):
+        data = _parse_state_update_json(raw_json)
+        if isinstance(data, dict):
+            state_delta = data
+            choices = normalize_choices(data.get("meta", {}).get("choices"))
+        else:
+            state_delta = None
             log.warning("[narrator] state_update JSON parse failed: %s", raw_json[:200])
+    else:
+        json_match = _find_embedded_json_object(text)
+        if json_match:
+            start, end, data = json_match
+            state_delta = _state_delta_from_payload(data)
+            choices = _choices_from_payload(data)
+            json_narrative = str(data.get("narrative") or data.get("text") or "").strip()
+            json_span = (start, end)
 
     choices_match = _CHOICES_RE.search(text)
     if choices_match:
@@ -226,6 +239,10 @@ def _parse_narrator_output(text: str) -> tuple[str, dict, list[str]]:
     tag_starts = [match.start() for match in (m, choices_match) if match]
     if tag_starts:
         narrative = text[: min(tag_starts)].strip()
+    elif json_span:
+        narrative = (text[:json_span[0]] + text[json_span[1]:]).strip() or json_narrative
+    if choices:
+        narrative = _strip_inline_choice_lines(narrative)
 
     return narrative, state_delta, choices
 
@@ -238,6 +255,54 @@ def _parse_choices_payload(raw: str) -> Any:
         return [line for line in lines if line]
 
 
+def _parse_state_update_json(raw: str) -> dict[str, Any] | None:
+    """Parse a state_update object, tolerating only extra trailing right braces."""
+    try:
+        data = json.loads(raw)
+    except (json.JSONDecodeError, ValueError):
+        data = _parse_json_object_with_trailing_braces(raw)
+    return data if isinstance(data, dict) else None
+
+
+def _parse_json_object_with_trailing_braces(raw: str) -> dict[str, Any] | None:
+    """Recover provider drift like ``{...}}`` without accepting arbitrary junk."""
+    text = str(raw or "").strip()
+    if not text.startswith("{"):
+        return None
+    depth = 0
+    in_string = False
+    escaped = False
+    for index, current in enumerate(text):
+        if in_string:
+            if escaped:
+                escaped = False
+            elif current == "\\":
+                escaped = True
+            elif current == '"':
+                in_string = False
+            continue
+        if current == '"':
+            in_string = True
+        elif current == "{":
+            depth += 1
+        elif current == "}":
+            depth -= 1
+            if depth == 0:
+                trailing = text[index + 1:].strip()
+                if trailing and set(trailing) <= {"}"}:
+                    try:
+                        data = json.loads(text[:index + 1])
+                    except (json.JSONDecodeError, ValueError):
+                        return None
+                    if isinstance(data, dict):
+                        log.info("[narrator] repaired extra trailing state_update braces")
+                        return data
+                return None
+            if depth < 0:
+                return None
+    return None
+
+
 def _parse_inline_abc_choices(text: str) -> list[str]:
     """Parse explicit bare A/B/C lines without inventing choices from prose."""
     found: list[str] = []
@@ -245,9 +310,101 @@ def _parse_inline_abc_choices(text: str) -> list[str]:
         choice = match.group("text").strip()
         if choice:
             found.append(choice)
-        if len(found) == 3:
+        if len(found) == 4:
             break
     return normalize_choices(found) if len(found) >= 3 else []
+
+
+def _strip_markdown_json_fences(text: str) -> str:
+    """Remove Markdown fence wrappers while keeping their inner content parseable."""
+    return _FENCED_JSON_RE.sub(lambda match: match.group("body").strip(), str(text or "")).strip()
+
+
+def _find_embedded_json_object(text: str) -> tuple[int, int, dict[str, Any]] | None:
+    """Find the first balanced JSON object that matches the narrator contract."""
+    for start, char in enumerate(text):
+        if char != "{":
+            continue
+        depth = 0
+        in_string = False
+        escaped = False
+        for index in range(start, len(text)):
+            current = text[index]
+            if in_string:
+                if escaped:
+                    escaped = False
+                elif current == "\\":
+                    escaped = True
+                elif current == '"':
+                    in_string = False
+                continue
+            if current == '"':
+                in_string = True
+            elif current == "{":
+                depth += 1
+            elif current == "}":
+                depth -= 1
+                if depth == 0:
+                    raw_json = text[start:index + 1]
+                    try:
+                        data = json.loads(raw_json)
+                    except (json.JSONDecodeError, ValueError):
+                        log.warning("[narrator] embedded JSON parse failed: %s", raw_json[:200])
+                        break
+                    if isinstance(data, dict) and _is_structured_payload(data):
+                        return start, index + 1, data
+                    break
+    return None
+
+
+def _is_structured_payload(data: dict[str, Any]) -> bool:
+    """Return whether a bare JSON object is likely the narrator contract."""
+    if isinstance(data.get("state_delta"), dict) or isinstance(data.get("state_update"), dict):
+        return True
+    return isinstance(data.get("character"), dict) or isinstance(data.get("world"), dict)
+
+
+def _state_delta_from_payload(data: dict[str, Any]) -> dict[str, Any]:
+    """Accept either a raw state_delta or a wrapper object from fenced JSON."""
+    if isinstance(data.get("state_delta"), dict):
+        return data["state_delta"]
+    if isinstance(data.get("state_update"), dict):
+        return data["state_update"]
+    allowed = {key: data.get(key) for key in ("character", "world", "meta") if isinstance(data.get(key), dict)}
+    return allowed
+
+
+def _choices_from_payload(data: dict[str, Any]) -> list[str]:
+    raw = data.get("choices")
+    if isinstance(raw, dict):
+        ordered = [raw.get(key) for key in ("A", "B", "C", "D", "1", "2", "3", "4")]
+        raw = [item for item in ordered if item]
+    if not raw and isinstance(data.get("meta"), dict):
+        raw = data["meta"].get("choices")
+    return normalize_choices(raw)
+
+
+def _strip_inline_choice_lines(text: str) -> str:
+    """Remove parsed A/B/C/D option lines from the visible narrative."""
+    lines = [
+        line for line in str(text or "").splitlines()
+        if not _ABC_LINE_RE.match(line)
+    ]
+    return "\n".join(lines).strip()
+
+
+def _has_recoverable_state_delta(state_delta: Any) -> bool:
+    """Return whether a JSON-only model output has enough structure to repair."""
+    if not isinstance(state_delta, dict) or not state_delta:
+        return False
+    for value in state_delta.values():
+        if isinstance(value, dict) and value:
+            return True
+        if isinstance(value, list) and value:
+            return True
+        if value not in (None, "", False):
+            return True
+    return False
 
 
 async def _repair_incomplete_output(
@@ -256,7 +413,7 @@ async def _repair_incomplete_output(
     narrative: str,
     state_delta: dict[str, Any],
 ) -> str | None:
-    """Ask the same model once to reformat a pure narrative into the contract."""
+    """Ask the same model once to reformat partial output into the contract."""
     if not state.get("api_key_set"):
         return None
     game_state_json = state.get("game_state_json", "{}")
@@ -265,9 +422,9 @@ async def _repair_incomplete_output(
         "上一轮输出缺少结构化标签，不能继续游戏。请只根据下面内容补齐格式，不要重写剧情，"
         "不要输出解释或 Markdown 围栏。\n\n"
         "必须输出：\n"
-        "1. 原叙事正文。\n"
+        "1. 叙事正文；如果原叙事为空，请根据当前状态、玩家行动和已解析状态更新补一段简短编年史叙事。\n"
         "2. <state_update>...</state_update>，JSON 对象；没有状态变化时用 {\"character\": {}, \"world\": {}, \"meta\": {}}。\n"
-        "3. <choices>...</choices>，JSON 字符串数组，必须恰好 3 条，分别作为 A/B/C 行动选项。\n\n"
+        "3. <choices>...</choices>，JSON 字符串数组，必须恰好 4 条，分别作为 A/B/C/D 行动选项。\n\n"
         "一致性硬规则：\n"
         "- 如果原叙事已经写明玩家实际获得物品或奖励，必须在 character.inventory_add 中补齐最小状态变化。\n"
         "- 如果原叙事已经写明玩家实际习得功法、法术、心法或剑诀，必须在 character.techniques_add 中补齐。\n"

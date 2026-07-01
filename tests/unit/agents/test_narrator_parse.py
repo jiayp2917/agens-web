@@ -5,6 +5,7 @@ from __future__ import annotations
 import asyncio
 
 from agens_novel.agents.narrator.nodes import _parse_narrator_output
+from agens_novel.engine.model_result import ModelResultKind, classify_narrator_result
 
 
 class TestNarratorParse:
@@ -58,7 +59,7 @@ class TestNarratorParse:
         text = "你走在山间小路上，远处传来鸟鸣。"
         narrative, delta, choices = _parse_narrator_output(text)
         assert narrative == text
-        assert delta == {}
+        assert delta is None
         assert choices == []
 
     def test_bare_abc_lines_are_parsed_as_choices(self) -> None:
@@ -74,6 +75,127 @@ class TestNarratorParse:
         assert narrative == "山门前风声渐紧。"
         assert delta == {"character": {}, "world": {}, "meta": {}}
         assert choices == ["跟随弟子前往演武堂", "向守门弟子道谢", "留意石阶上的阵纹"]
+
+    def test_bare_chinese_abcd_lines_are_parsed_and_removed_from_narrative(self) -> None:
+        text = (
+            "药谷雨声渐密，你在石亭中听见外门弟子议论新开的任务。\n"
+            "<state_update>{\"character\": {}, \"world\": {}, \"meta\": {}}</state_update>\n"
+            "选项A：留在石亭整理见闻\n"
+            "选项B：去任务堂询问药谷差事\n"
+            "选项C：冒雨探查药圃边缘\n"
+            "选项D：随缘跟上一名陌生丹童"
+        )
+        narrative, delta, choices = _parse_narrator_output(text)
+
+        assert narrative == "药谷雨声渐密，你在石亭中听见外门弟子议论新开的任务。"
+        assert delta == {"character": {}, "world": {}, "meta": {}}
+        assert choices == [
+            "留在石亭整理见闻",
+            "去任务堂询问药谷差事",
+            "冒雨探查药圃边缘",
+            "随缘跟上一名陌生丹童",
+        ]
+
+    def test_fenced_json_payload_is_parsed_without_visible_fence(self) -> None:
+        text = (
+            "你在藏经阁门前停步，听见执事提起一卷残缺竹简。\n"
+            "```json\n"
+            "{\"state_delta\":{\"character\":{},\"world\":{\"lore_add\":[\"藏经阁近日清点残卷\"]},\"meta\":{}},"
+            "\"choices\":[\"登记借阅名册\",\"询问执事来历\",\"夜里潜去旧架\",\"随缘抽取一卷\"]}\n"
+            "```"
+        )
+        narrative, delta, choices = _parse_narrator_output(text)
+
+        assert narrative == "你在藏经阁门前停步，听见执事提起一卷残缺竹简。"
+        assert "```" not in narrative
+        assert delta["world"]["lore_add"] == ["藏经阁近日清点残卷"]
+        assert choices == ["登记借阅名册", "询问执事来历", "夜里潜去旧架", "随缘抽取一卷"]
+
+    def test_bare_json_payload_is_parsed_after_narrative(self) -> None:
+        text = (
+            "你沿溪行至山脚，远处灵雾里有钟声回应。\n"
+            "{\"character\":{},\"world\":{\"current_scene\":\"山脚溪桥\"},\"meta\":{},"
+            "\"choices\":[\"在溪桥吐纳\",\"拜访附近散修\",\"深入灵雾\",\"随钟声而行\"]}"
+        )
+        narrative, delta, choices = _parse_narrator_output(text)
+
+        assert narrative == "你沿溪行至山脚，远处灵雾里有钟声回应。"
+        assert delta["world"]["current_scene"] == "山脚溪桥"
+        assert choices == ["在溪桥吐纳", "拜访附近散修", "深入灵雾", "随钟声而行"]
+
+    def test_plain_json_like_prose_is_not_removed_from_narrative(self) -> None:
+        text = '你拾起一枚玉牌，上面刻着 {"rank":"outer","note":"药谷"}，像是旧年外门凭证。'
+        narrative, delta, choices = _parse_narrator_output(text)
+
+        assert narrative == text
+        assert delta is None
+        assert choices == []
+
+    def test_contract_like_words_inside_plain_json_prose_are_not_structured(self) -> None:
+        text = (
+            '榜文旁贴着一张旧签，写着 {"text":"外门旧录","choices":["勿动"]}；'
+            '另一枚木牌只记 {"meta":{"rank":"outer"}}。'
+        )
+        narrative, delta, choices = _parse_narrator_output(text)
+
+        assert narrative == text
+        assert delta is None
+        assert choices == []
+
+    def test_bare_payload_search_skips_plain_json_before_contract_payload(self) -> None:
+        text = (
+            '你先看见旧牌 {"text":"外门旧录"}，随后执事递来正式记录。\n'
+            '{"state_delta":{"character":{},"world":{"current_scene":"山门榜前"},"meta":{}},'
+            '"choices":["整理旧录","询问执事","揭榜试炼","随缘抽签"]}'
+        )
+        narrative, delta, choices = _parse_narrator_output(text)
+
+        assert '旧牌 {"text":"外门旧录"}' in narrative
+        assert delta["world"]["current_scene"] == "山门榜前"
+        assert choices == ["整理旧录", "询问执事", "揭榜试炼", "随缘抽签"]
+
+    def test_malformed_state_update_is_incomplete_even_with_choices(self) -> None:
+        text = (
+            "你在山门前停步。\n"
+            "<state_update>{bad json}</state_update>\n"
+            "<choices>[\"吐纳\", \"询问\", \"历练\", \"随缘\"]</choices>"
+        )
+        narrative, delta, choices = _parse_narrator_output(text)
+        status = classify_narrator_result({
+            "narrative": narrative,
+            "state_delta": delta,
+            "choices": choices,
+        })
+
+        assert narrative == "你在山门前停步。"
+        assert delta is None
+        assert choices == ["吐纳", "询问", "历练", "随缘"]
+        assert status.kind == ModelResultKind.INCOMPLETE_OUTPUT
+
+    def test_state_update_with_extra_trailing_brace_is_recovered(self) -> None:
+        text = (
+            "你在山门前静观灵机。\n"
+            "<state_update>{\"character\":{\"attributes\":{\"spirit\":1}},\"world\":{},\"meta\":{}}}</state_update>\n"
+            "<choices>[\"继续吐纳\", \"请教师兄\", \"下山历练\", \"随缘而行\"]</choices>"
+        )
+
+        narrative, delta, choices = _parse_narrator_output(text)
+
+        assert narrative == "你在山门前静观灵机。"
+        assert delta == {"character": {"attributes": {"spirit": 1}}, "world": {}, "meta": {}}
+        assert choices == ["继续吐纳", "请教师兄", "下山历练", "随缘而行"]
+
+    def test_json_only_payload_can_supply_narrative_field(self) -> None:
+        text = (
+            "{\"narrative\":\"你在山门榜前停步，看到新贴出的药谷告示。\","
+            "\"state_update\":{\"character\":{},\"world\":{},\"meta\":{}},"
+            "\"choices\":{\"A\":\"抄录告示\",\"B\":\"询问药谷弟子\",\"C\":\"直接接下差事\",\"D\":\"随缘抽签\"}}"
+        )
+        narrative, delta, choices = _parse_narrator_output(text)
+
+        assert narrative == "你在山门榜前停步，看到新贴出的药谷告示。"
+        assert delta == {"character": {}, "world": {}, "meta": {}}
+        assert choices == ["抄录告示", "询问药谷弟子", "直接接下差事", "随缘抽签"]
 
     def test_repair_incomplete_output_adds_choices(self, monkeypatch) -> None:
         from agens_novel.agents.narrator import nodes
@@ -92,7 +214,7 @@ class TestNarratorParse:
                 "text": (
                     "山门前风声渐紧。\n"
                     "<state_update>{\"character\": {}, \"world\": {}, \"meta\": {}}</state_update>\n"
-                    "<choices>[\"前往演武堂\", \"向弟子道谢\", \"观察阵纹\"]</choices>"
+                    "<choices>[\"前往演武堂\", \"向弟子道谢\", \"观察阵纹\", \"随缘看一眼山门\"]</choices>"
                 ),
                 "elapsed_ms": 12,
                 "usage": {},
@@ -114,7 +236,113 @@ class TestNarratorParse:
         assert result["repaired_output"] is True
         assert narrative == "山门前风声渐紧。"
         assert delta == {"character": {}, "world": {}, "meta": {}}
-        assert choices == ["前往演武堂", "向弟子道谢", "观察阵纹"]
+        assert choices == ["前往演武堂", "向弟子道谢", "观察阵纹", "随缘看一眼山门"]
+
+    def test_json_only_state_delta_triggers_repair_for_narrative_and_choices(self, monkeypatch) -> None:
+        from agens_novel.agents.narrator import nodes
+
+        calls = []
+
+        async def fake_call_llm(*_args, **_kwargs):
+            calls.append(_kwargs)
+            if len(calls) == 1:
+                return {
+                    "text": (
+                        "{\"character\":{\"inventory_add\":[{\"name\":\"庚金矿碎\",\"quantity\":1}]},"
+                        "\"world\":{\"current_scene\":\"洞穴外\"}}"
+                    ),
+                    "elapsed_ms": 10,
+                    "usage": {},
+                }
+            return {
+                "text": (
+                    "你在洞穴外细查石缝，拾得一片庚金矿碎。\n"
+                    "<state_update>{\"character\":{\"inventory_add\":[{\"name\":\"庚金矿碎\",\"quantity\":1}]},"
+                    "\"world\":{\"current_scene\":\"洞穴外\"},\"meta\":{}}</state_update>\n"
+                    "<choices>[\"收好矿碎返回营地\", \"继续搜寻洞穴边缘\", \"冒险进入洞穴\", \"随缘辨认矿气\"]</choices>"
+                ),
+                "elapsed_ms": 12,
+                "usage": {},
+            }
+
+        monkeypatch.setattr(nodes, "call_llm", fake_call_llm)
+        result = asyncio.run(nodes.call_agnes_llm({
+            "api_key_set": True,
+            "messages": [{"role": "user", "content": "test"}],
+            "model": "deepseek-chat",
+            "base_url": "https://api.deepseek.com/v1",
+            "repair_incomplete_output": True,
+        }))
+
+        narrative, delta, choices = _parse_narrator_output(result["output_text"])
+        assert len(calls) == 2
+        assert result["repaired_output"] is True
+        assert "庚金矿碎" in narrative
+        assert delta["character"]["inventory_add"][0]["name"] == "庚金矿碎"
+        assert choices == ["收好矿碎返回营地", "继续搜寻洞穴边缘", "冒险进入洞穴", "随缘辨认矿气"]
+
+    def test_empty_output_does_not_trigger_repair(self, monkeypatch) -> None:
+        from agens_novel.agents.narrator import nodes
+
+        calls = []
+
+        async def fake_call_llm(*_args, **_kwargs):
+            calls.append(_kwargs)
+            return {"text": "", "elapsed_ms": 10, "usage": {}}
+
+        monkeypatch.setattr(nodes, "call_llm", fake_call_llm)
+        result = asyncio.run(nodes.call_agnes_llm({
+            "api_key_set": True,
+            "messages": [{"role": "user", "content": "test"}],
+            "model": "deepseek-chat",
+            "base_url": "https://api.deepseek.com/v1",
+            "repair_incomplete_output": True,
+        }))
+
+        assert len(calls) == 1
+        assert result["output_text"] == ""
+        assert result["repaired_output"] is False
+
+    def test_repair_without_narrative_is_not_accepted(self, monkeypatch) -> None:
+        from agens_novel.agents.narrator import nodes
+
+        calls = []
+
+        async def fake_call_llm(*_args, **_kwargs):
+            calls.append(_kwargs)
+            if len(calls) == 1:
+                return {
+                    "text": (
+                        "{\"character\":{\"inventory_add\":[{\"name\":\"清灵丹\",\"quantity\":1}]},"
+                        "\"world\":{},\"meta\":{}}"
+                    ),
+                    "elapsed_ms": 10,
+                    "usage": {},
+                }
+            return {
+                "text": (
+                    "<state_update>{\"character\":{\"inventory_add\":[{\"name\":\"清灵丹\",\"quantity\":1}]},"
+                    "\"world\":{},\"meta\":{}}</state_update>\n"
+                    "<choices>[\"查看丹药\", \"请教师兄\", \"继续吐纳\", \"随缘而行\"]</choices>"
+                ),
+                "elapsed_ms": 12,
+                "usage": {},
+            }
+
+        monkeypatch.setattr(nodes, "call_llm", fake_call_llm)
+        result = asyncio.run(nodes.call_agnes_llm({
+            "api_key_set": True,
+            "messages": [{"role": "user", "content": "test"}],
+            "model": "deepseek-chat",
+            "base_url": "https://api.deepseek.com/v1",
+            "repair_incomplete_output": True,
+        }))
+
+        assert len(calls) == 2
+        assert result["repaired_output"] is False
+        assert "inventory_add" in result["output_text"]
+        narrative, _delta, _choices = _parse_narrator_output(result["output_text"])
+        assert narrative == ""
 
     def test_empty_delta_tag(self) -> None:
         text = "一些文字<state_update>\n{}\n</state_update>"
@@ -126,7 +354,7 @@ class TestNarratorParse:
         text = "叙事文本<state_update>\n{bad json}\n</state_update>"
         narrative, delta, choices = _parse_narrator_output(text)
         assert narrative == "叙事文本"
-        assert delta == {}  # Graceful fallback
+        assert delta is None
 
     def test_complex_delta(self) -> None:
         import json
@@ -192,14 +420,14 @@ class TestNarrativeViewStreamFilter:
         narrative, delta, choices = _parse_narrator_output(text)
 
         assert narrative == text
-        assert delta == {}
+        assert delta is None
 
     def test_malformed_json_in_tag(self):
-        """Malformed JSON should result in empty delta but clean narrative."""
+        """Malformed structure tags should stay incomplete, not silently succeed."""
         from agens_novel.agents.narrator.nodes import _parse_narrator_output
 
         text = "叙事内容\n\n<state_update>\n{invalid json}\n</state_update>"
         narrative, delta, choices = _parse_narrator_output(text)
 
         assert narrative == "叙事内容"
-        assert delta == {}  # Failed parse → empty delta
+        assert delta is None

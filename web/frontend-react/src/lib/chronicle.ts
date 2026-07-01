@@ -35,6 +35,8 @@ const recordTurn = (event: ChronicleEvent) => {
 
 export const cleanChronicleText = (text: string) =>
   text
+    .replace(/```(?:json)?/giu, "")
+    .replace(/<\/?(?:choices|state_update)\b[^>]*>/giu, "")
     .replace(/(^|\n)\s*(?:玄元历|玄历|玄历元年)\s*[元一二三四五六七八九十百千万\d]*\s*年?[，,、：:\s]*/gu, "$1")
     .trim();
 
