@@ -66,6 +66,14 @@ def test_result_diagnostics_are_non_secret_shape_facts() -> None:
         "choices": ["查看丹药", "继续前行", "请教师兄"],
         "elapsed_ms": 1234,
         "llm_error": "",
+        "usage": {"prompt_tokens": 10, "completion_tokens": 20, "total_tokens": 30},
+        "prompt_metrics": {
+            "prompt_chars": 100,
+            "message_count": 3,
+            "history_count": 2,
+            "game_state_chars": 50,
+            "user_input_chars": 6,
+        },
     }
 
     diagnostics = result_diagnostics(result)
@@ -78,6 +86,38 @@ def test_result_diagnostics_are_non_secret_shape_facts() -> None:
         "choices_count": 3,
         "generated_ok": False,
         "repaired_output": False,
+        "repair_elapsed_ms": 0,
         "judge_approved": None,
         "has_corrected_delta": False,
+        "prompt_chars": 100,
+        "message_count": 3,
+        "history_count": 2,
+        "game_state_chars": 50,
+        "user_input_chars": 6,
+        "prompt_tokens": 10,
+        "completion_tokens": 20,
+        "total_tokens": 30,
+        "repair_prompt_tokens": 0,
+        "repair_completion_tokens": 0,
     }
+
+
+def test_result_diagnostics_include_repair_metrics_without_text() -> None:
+    result = {
+        "narrative": "山门风紧。",
+        "state_delta": {},
+        "choices": ["吐纳", "询问", "历练", "随缘"],
+        "elapsed_ms": 1000,
+        "repaired_output": True,
+        "repair_elapsed_ms": 300,
+        "repair_usage": {"prompt_tokens": 40, "completion_tokens": 12},
+    }
+
+    diagnostics = result_diagnostics(result)
+
+    assert diagnostics["repaired_output"] is True
+    assert diagnostics["repair_elapsed_ms"] == 300
+    assert diagnostics["repair_prompt_tokens"] == 40
+    assert diagnostics["repair_completion_tokens"] == 12
+    assert "narrative" not in diagnostics
+    assert "api_key" not in diagnostics

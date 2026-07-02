@@ -86,6 +86,9 @@ def result_diagnostics(result: dict[str, Any]) -> dict[str, Any]:
     narrative = result.get("narrative") or result.get("opening_narrative") or result.get("world_description") or ""
     state_delta = result.get("state_delta")
     raw_choices = result.get("choices")
+    usage = result.get("usage") if isinstance(result.get("usage"), dict) else {}
+    repair_usage = result.get("repair_usage") if isinstance(result.get("repair_usage"), dict) else {}
+    prompt_metrics = result.get("prompt_metrics") if isinstance(result.get("prompt_metrics"), dict) else {}
     if isinstance(generated, dict):
         raw_choices = generated.get("choices", raw_choices)
         narrative = generated.get("opening_narrative") or narrative
@@ -97,6 +100,26 @@ def result_diagnostics(result: dict[str, Any]) -> dict[str, Any]:
         "choices_count": len(normalize_choices(raw_choices)),
         "generated_ok": isinstance(generated, dict) and bool(generated),
         "repaired_output": bool(result.get("repaired_output")),
+        "repair_elapsed_ms": int(result.get("repair_elapsed_ms") or 0),
         "judge_approved": result.get("approved") if "approved" in result else None,
         "has_corrected_delta": bool(result.get("corrected_delta")),
+        "prompt_chars": _int_metric(prompt_metrics.get("prompt_chars")),
+        "message_count": _int_metric(prompt_metrics.get("message_count")),
+        "history_count": _int_metric(prompt_metrics.get("history_count")),
+        "game_state_chars": _int_metric(prompt_metrics.get("game_state_chars")),
+        "user_input_chars": _int_metric(prompt_metrics.get("user_input_chars")),
+        "prompt_tokens": _int_metric(usage.get("prompt_tokens")),
+        "completion_tokens": _int_metric(usage.get("completion_tokens")),
+        "total_tokens": _int_metric(usage.get("total_tokens")),
+        "repair_prompt_tokens": _int_metric(repair_usage.get("prompt_tokens")),
+        "repair_completion_tokens": _int_metric(repair_usage.get("completion_tokens")),
     }
+
+
+def _int_metric(value: Any) -> int:
+    if isinstance(value, bool):
+        return 0
+    try:
+        return max(0, int(value or 0))
+    except (TypeError, ValueError):
+        return 0

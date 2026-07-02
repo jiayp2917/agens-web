@@ -91,6 +91,7 @@ class GameEngine:
         self.on_loading: Callback | None = None
         self.on_stream_chunk: Callback | None = None
         self.on_finale: Callback | None = None
+        self.on_model_result: Callback | None = None
         self.on_model_failure_choice: Callable[[str, str], str] | None = None
         self.model_config: dict[str, Any] = {}
         self._fallback_policy = ModelFallbackPolicy(
@@ -188,17 +189,29 @@ class GameEngine:
         model_config = self.model_config if isinstance(self.model_config, dict) else {}
         model = model_config.get("model") or os.environ.get("AGNES_MODEL", "agnes-2.0-flash")
         base_url = model_config.get("base_url") or os.environ.get("AGNES_BASE_URL", "https://apihub.agnes-ai.com/v1")
+        diagnostics = result_diagnostics(result)
         log.info(
-            "model_result agent=%s source=%s status=%s model=%s base_url=%s key_set=%s config_source=%s reason=%s diagnostics=%s",
+            "model_result agent=%s source=%s status=%s model_set=%s base_url_set=%s key_set=%s config_source=%s reason=%s diagnostics=%s",
             agent,
             source,
             getattr(status, "value", status),
-            model,
-            base_url,
+            bool(model),
+            bool(base_url),
             bool(model_config.get("api_key_set")),
             model_config.get("source") or "env",
             _safe_log_reason(reason),
-            result_diagnostics(result),
+            diagnostics,
+        )
+        self._emit(
+            "on_model_result",
+            agent,
+            source,
+            getattr(status, "value", status),
+            bool(model),
+            bool(base_url),
+            bool(model_config.get("api_key_set")),
+            model_config.get("source") or "env",
+            diagnostics,
         )
 
     def _confirm_local_fallback(self, source: str, reason: str = "") -> bool:

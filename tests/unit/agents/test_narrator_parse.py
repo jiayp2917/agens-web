@@ -4,11 +4,36 @@ from __future__ import annotations
 
 import asyncio
 
-from agens_novel.agents.narrator.nodes import _parse_narrator_output
+from agens_novel.agents.narrator.nodes import _parse_narrator_output, build_prompt
 from agens_novel.engine.model_result import ModelResultKind, classify_narrator_result
 
 
 class TestNarratorParse:
+    def test_build_prompt_records_size_metrics_without_prompt_text(self, tmp_path, monkeypatch) -> None:
+        monkeypatch.setattr(
+            "agens_novel.paths.system_prompt_path",
+            lambda _name: tmp_path / "narrator.md",
+        )
+        (tmp_path / "narrator.md").write_text("系统提示", encoding="utf-8")
+        state = {
+            "user_input": "闭关修炼",
+            "game_state_json": "{\"turn_count\":1}",
+            "chat_history": [
+                {"role": "assistant", "content": "开场"},
+                {"role": "user", "content": "A"},
+            ],
+        }
+
+        result = build_prompt(state)
+
+        metrics = result["prompt_metrics"]
+        assert metrics["history_count"] == 2
+        assert metrics["message_count"] == 4
+        assert metrics["game_state_chars"] == len("{\"turn_count\":1}")
+        assert metrics["user_input_chars"] == len("闭关修炼")
+        assert metrics["prompt_chars"] > metrics["game_state_chars"]
+        assert "闭关修炼" not in metrics.values()
+
     def test_basic_narrative_with_delta(self) -> None:
         text = (
             "你静坐吐纳，灵气缓缓涌入丹田。\n"

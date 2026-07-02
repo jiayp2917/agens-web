@@ -36,6 +36,7 @@
 
 - 本地真实可见 Chrome 跟进验收已通过：`local-visible-20turn-20260701-final2` 完成普通账号注册/登录、系统默认模型开局、角色创建、20/20 choice non-fallback、存档/读档。
 - 本地验收仍暴露 P1 质量风险：平均回合耗时约 48.2s、最大约 153.2s，且多回合依赖 narrator repair / mismatch suppression。
+- 本地代码已加入脱敏性能观测：下一次真实 Chrome 20 回合证据会记录 narrator/judge 耗时、repair 耗时、prompt 字符数、history 数量、game state 字符数和 provider token 计数，用于判断慢因；这不是性能已修复的结论。
 - 生产部署与迁移已完成：Alembic 已到 `20260622_0005`，`user_model_configs` 存在。
 - 生产账号注册、登录、存档、读档、跨会话恢复已通过。
 - production live model P0 已通过：服务器线程部署 `25ad3d15` 后，生产 start 和至少 1 次 choice 均为 non-fallback，choice 后 `turn_count=1`。历史 `model_config` 旧行遮蔽 env key 的失败保留为经验，后续每次生产部署或模型配置变更仍需复跑同一门禁。
@@ -68,6 +69,7 @@
 
 - 减少重复闭关/突破循环。
 - 增加 20 回合内阶段目标、奖励反馈和世界变化。
+- 先用脱敏指标定位模型慢因：区分 prompt/history 增长、repair 二次调用、judge 额外调用、provider 响应慢或混合因素；拿到数据后再决定压缩历史、缩小 judge 触发面或调整模型配置。
 - 收紧模型叙事与 `state_delta`：模型写获得道具、升层、受伤、结缘、称号或因果时，系统必须落账；否则要拒绝、改写或明确不落账原因。
 - 模型只负责润色叙事和选项文案，不决定权威数值。
 - 无效行动不能返回成功但不推进；要给明确反馈或转化为有效修炼结果。

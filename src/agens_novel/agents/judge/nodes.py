@@ -55,12 +55,24 @@ def build_prompt(state: dict[str, Any]) -> dict[str, Any]:
         Message(role="system", content=system_message),
         Message(role="user", content=user_content),
     ]
+    prompt_metrics = _prompt_metrics(
+        messages,
+        game_state_json=game_state_json,
+        user_input=user_input,
+        narrative=narrative,
+    )
 
-    log.info("[judge.build_prompt] narrative=%d delta_keys=%s", len(narrative), list(state_delta.keys()))
+    log.info(
+        "[judge.build_prompt] narrative=%d delta_keys=%s prompt_chars=%d",
+        len(narrative),
+        list(state_delta.keys()),
+        prompt_metrics["prompt_chars"],
+    )
     return {
         "system_message": system_message,
         "user_message": user_content,
         "messages": messages,
+        "prompt_metrics": prompt_metrics,
     }
 
 
@@ -91,6 +103,7 @@ async def call_agnes_llm(state: dict[str, Any]) -> dict[str, Any]:
             "usage": dict(resp.get("usage") or {}),
             "elapsed_ms": int(resp.get("elapsed_ms", 0)),
             "llm_error": "",
+            "prompt_metrics": state.get("prompt_metrics") or {},
         }
     except LLMError as e:
         log.error("[judge.call_agnes_llm] failed: %s", e)
@@ -124,6 +137,7 @@ def save_artifact(state: dict[str, Any]) -> dict[str, Any]:
         "elapsed_ms": state.get("elapsed_ms", 0), "llm_error": llm_error,
         "output_path": str(out_path),
         "approved": approved, "judgment_note": judgment_note, "score": score,
+        "prompt_metrics": state.get("prompt_metrics") or {},
     }
     audit_path = store.write_audit(AGENT_NAME, run_id, audit)
     store.append_global_log({
@@ -136,6 +150,7 @@ def save_artifact(state: dict[str, Any]) -> dict[str, Any]:
         "corrected_delta": corrected_delta,
         "judgment_note": judgment_note,
         "review_score": score,
+        "prompt_metrics": state.get("prompt_metrics") or {},
         "output_path": str(out_path),
         "audit_path": str(audit_path),
         "finished_at": audit["finished_at"],
@@ -198,3 +213,21 @@ def _parse_judge_output(text: str) -> tuple[bool, dict, str, int]:
     log.warning("[judge] could not parse JSON verdict: %s", text[:200])
     # Default: REJECT on parse failure — safe default prevents bad state updates.
     return False, {}, "Judge 输出无法解析，拒绝状态更新", 0
+
+
+def _prompt_metrics(
+    messages: list[Message],
+    *,
+    game_state_json: str = "",
+    user_input: str = "",
+    narrative: str = "",
+) -> dict[str, int]:
+    """Return non-secret prompt size facts for latency triage."""
+    return {
+        "prompt_chars": sum(len(str(message.get("content") or "")) for message in messages),
+        "message_count": len(messages),
+        "history_count": 0,
+        "game_state_chars": len(str(game_state_json or "")),
+        "user_input_chars": len(str(user_input or "")),
+        "narrative_chars": len(str(narrative or "")),
+    }

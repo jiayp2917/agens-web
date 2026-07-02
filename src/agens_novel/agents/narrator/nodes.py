@@ -63,11 +63,24 @@ def build_prompt(state: dict[str, Any]) -> dict[str, Any]:
         ))
     messages.append(Message(role="user", content=user_content))
 
-    log.info("[narrator.build_prompt] history=%d user=%d", len(history), len(user_input))
+    prompt_metrics = _prompt_metrics(
+        messages,
+        game_state_json=game_state_json,
+        history_count=len(history),
+        user_input=user_input,
+    )
+
+    log.info(
+        "[narrator.build_prompt] history=%d user=%d prompt_chars=%d",
+        len(history),
+        len(user_input),
+        prompt_metrics["prompt_chars"],
+    )
     return {
         "system_message": system_message,
         "user_message": user_content,
         "messages": messages,
+        "prompt_metrics": prompt_metrics,
     }
 
 
@@ -121,11 +134,15 @@ async def call_agnes_llm(state: dict[str, Any]) -> dict[str, Any]:
             )
         output_text = resp.get("text", "")
         repaired_output = False
+        repair_elapsed_ms = 0
+        repair_usage: dict[str, Any] = {}
         if state.get("repair_incomplete_output"):
             narrative, state_delta, choices = _parse_narrator_output(output_text)
             recoverable_content = bool(narrative) or _has_recoverable_state_delta(state_delta)
             if recoverable_content and (state_delta is None or not narrative or not choices):
-                repaired_text = await _repair_incomplete_output(state, output_text, narrative, state_delta)
+                repaired_text, repair_result = await _repair_incomplete_output(state, output_text, narrative, state_delta)
+                repair_elapsed_ms = int(repair_result.get("elapsed_ms") or 0)
+                repair_usage = dict(repair_result.get("usage") or {})
                 if repaired_text:
                     repaired_narrative, repaired_delta, repaired_choices = _parse_narrator_output(repaired_text)
                     if repaired_narrative and repaired_delta is not None and len(repaired_choices) == 4:
@@ -137,6 +154,9 @@ async def call_agnes_llm(state: dict[str, Any]) -> dict[str, Any]:
             "elapsed_ms": int(resp.get("elapsed_ms", 0)),
             "llm_error": "",
             "repaired_output": repaired_output,
+            "repair_elapsed_ms": repair_elapsed_ms,
+            "repair_usage": repair_usage,
+            "prompt_metrics": state.get("prompt_metrics") or {},
         }
     except LLMError as e:
         log.error("[narrator.call_agnes_llm] failed: %s", e)
@@ -166,6 +186,9 @@ def save_artifact(state: dict[str, Any]) -> dict[str, Any]:
         "elapsed_ms": state.get("elapsed_ms", 0), "llm_error": llm_error,
         "output_path": str(out_path),
         "narrative_chars": len(narrative),
+        "prompt_metrics": state.get("prompt_metrics") or {},
+        "repaired_output": bool(state.get("repaired_output")),
+        "repair_elapsed_ms": int(state.get("repair_elapsed_ms") or 0),
     }
     audit_path = store.write_audit(AGENT_NAME, run_id, audit)
     store.append_global_log({
@@ -178,6 +201,9 @@ def save_artifact(state: dict[str, Any]) -> dict[str, Any]:
         "state_delta": state_delta,
         "choices": choices,
         "repaired_output": bool(state.get("repaired_output")),
+        "repair_elapsed_ms": int(state.get("repair_elapsed_ms") or 0),
+        "repair_usage": dict(state.get("repair_usage") or {}),
+        "prompt_metrics": state.get("prompt_metrics") or {},
         "output_path": str(out_path),
         "audit_path": str(audit_path),
         "finished_at": audit["finished_at"],
@@ -412,10 +438,10 @@ async def _repair_incomplete_output(
     original_text: str,
     narrative: str,
     state_delta: dict[str, Any],
-) -> str | None:
+) -> tuple[str | None, dict[str, Any]]:
     """Ask the same model once to reformat partial output into the contract."""
     if not state.get("api_key_set"):
-        return None
+        return None, {}
     game_state_json = state.get("game_state_json", "{}")
     user_input = state.get("user_input", "")
     repair_prompt = (
@@ -456,9 +482,26 @@ async def _repair_incomplete_output(
         )
     except LLMError as exc:
         log.warning("[narrator.repair] failed: %s", exc)
-        return None
+        return None, {}
     repaired_text = str(resp.get("text") or "").strip()
     if not repaired_text:
-        return None
+        return None, dict(resp)
     log.info("[narrator.repair] repaired incomplete output")
-    return repaired_text
+    return repaired_text, dict(resp)
+
+
+def _prompt_metrics(
+    messages: list[Message],
+    *,
+    game_state_json: str = "",
+    history_count: int = 0,
+    user_input: str = "",
+) -> dict[str, int]:
+    """Return non-secret prompt size facts for latency triage."""
+    return {
+        "prompt_chars": sum(len(str(message.get("content") or "")) for message in messages),
+        "message_count": len(messages),
+        "history_count": int(history_count),
+        "game_state_chars": len(str(game_state_json or "")),
+        "user_input_chars": len(str(user_input or "")),
+    }

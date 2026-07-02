@@ -61,6 +61,16 @@ def _write_turn_csv(path: Path, turns: list[dict[str, Any]]) -> None:
         "turn_count",
         "elapsed_ms",
         "choices_count",
+        "narrator_elapsed_ms",
+        "judge_elapsed_ms",
+        "repair_elapsed_ms",
+        "repaired_output",
+        "prompt_chars",
+        "game_state_chars",
+        "history_count",
+        "prompt_tokens",
+        "completion_tokens",
+        "total_tokens",
         "note",
     ]
     with path.open("w", encoding="utf-8-sig", newline="") as fp:

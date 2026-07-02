@@ -70,6 +70,7 @@ class WebRunner:
         self.engine.on_finale = lambda text: self.record("finale", text=text)
         self.engine.on_loading = lambda text: self.record("loading", text=text)
         self.engine.on_stream_chunk = lambda text: None
+        self.engine.on_model_result = self._record_model_result
         self.engine.on_character_created = lambda session: self.record(
             "character_created", state=session.as_game_state()
         )
@@ -112,6 +113,29 @@ class WebRunner:
             source=source,
         )
         return MODEL_FAILURE_CONTINUE
+
+    def _record_model_result(
+        self,
+        agent: str,
+        source: str,
+        status: str,
+        model_set: bool,
+        base_url_set: bool,
+        key_set: bool,
+        config_source: str,
+        diagnostics: dict[str, Any],
+    ) -> None:
+        self.record(
+            "model_result",
+            agent=agent,
+            source=source,
+            status=status,
+            model_set=model_set,
+            base_url_set=base_url_set,
+            key_set=key_set,
+            config_source=config_source,
+            diagnostics=diagnostics,
+        )
 
     @classmethod
     def from_snapshot(
@@ -225,6 +249,8 @@ class WebRunner:
 
 def _sanitize_event_payload(event_type: str, payload: dict[str, Any]) -> dict[str, Any]:
     sanitized = dict(payload)
+    if event_type == "model_result":
+        return _sanitize_model_result_payload(sanitized)
     if event_type == "model_failure":
         sanitized.pop("reason", None)
         sanitized["text"] = PUBLIC_MODEL_FALLBACK_TEXT
@@ -234,6 +260,34 @@ def _sanitize_event_payload(event_type: str, payload: dict[str, Any]) -> dict[st
         if _looks_internal_model_error(text):
             sanitized["text"] = PUBLIC_MODEL_FALLBACK_TEXT
     return sanitized
+
+
+def _sanitize_model_result_payload(payload: dict[str, Any]) -> dict[str, Any]:
+    diagnostics = payload.get("diagnostics") if isinstance(payload.get("diagnostics"), dict) else {}
+    safe_diagnostics = {
+        str(key): _safe_int_or_bool(value)
+        for key, value in diagnostics.items()
+        if isinstance(value, (bool, int, float)) or value is None
+    }
+    return {
+        "agent": str(payload.get("agent") or ""),
+        "source": str(payload.get("source") or ""),
+        "status": str(payload.get("status") or ""),
+        "model_set": bool(payload.get("model_set")),
+        "base_url_set": bool(payload.get("base_url_set")),
+        "key_set": bool(payload.get("key_set")),
+        "config_source": str(payload.get("config_source") or ""),
+        "diagnostics": safe_diagnostics,
+    }
+
+
+def _safe_int_or_bool(value: Any) -> int | bool:
+    if isinstance(value, bool):
+        return value
+    try:
+        return max(0, int(value or 0))
+    except (TypeError, ValueError):
+        return 0
 
 
 def _looks_internal_model_error(text: str) -> bool:

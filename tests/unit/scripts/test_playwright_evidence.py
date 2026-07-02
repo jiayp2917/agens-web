@@ -21,6 +21,16 @@ def test_write_playwright_evidence_outputs_parseable_files(tmp_path) -> None:
                 "turn_count": 1,
                 "elapsed_ms": 1234,
                 "choices_count": 4,
+                "narrator_elapsed_ms": 900,
+                "judge_elapsed_ms": 200,
+                "repair_elapsed_ms": 100,
+                "repaired_output": True,
+                "prompt_chars": 1200,
+                "game_state_chars": 300,
+                "history_count": 6,
+                "prompt_tokens": 500,
+                "completion_tokens": 80,
+                "total_tokens": 580,
                 "note": "ok",
             }
         ],
@@ -39,6 +49,10 @@ def test_write_playwright_evidence_outputs_parseable_files(tmp_path) -> None:
     with open(paths["csv"], encoding="utf-8-sig", newline="") as fp:
         rows = list(csv.DictReader(fp))
     assert rows[0]["choice"] == "A"
+    assert rows[0]["narrator_elapsed_ms"] == "900"
+    assert rows[0]["repair_elapsed_ms"] == "100"
+    assert rows[0]["prompt_chars"] == "1200"
+    assert rows[0]["prompt_tokens"] == "500"
 
 
 def test_write_playwright_evidence_keeps_nested_objects_parseable(tmp_path) -> None:

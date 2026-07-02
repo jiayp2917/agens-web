@@ -179,6 +179,47 @@ function redactedUrl(url) {
   return String(url || "").replace(/sessions\/[^/]+/g, "sessions/<id>");
 }
 
+function latestModelDiagnostics(body, sinceMs = 0) {
+  const events = Array.isArray(body?.events)
+    ? body.events
+    : Array.isArray(body?.session?.events)
+      ? body.session.events
+      : [];
+  const modelEvents = events.filter((event) => {
+    if (event?.type !== "model_result") return false;
+    if (!sinceMs) return true;
+    const eventMs = Number(event.at || 0) * 1000;
+    return Number.isFinite(eventMs) && eventMs >= sinceMs;
+  });
+  const latestByAgent = {};
+  for (const event of modelEvents) {
+    const agent = event.agent || "";
+    if (!agent) continue;
+    latestByAgent[agent] = event;
+  }
+  const narrator = latestByAgent.narrator || {};
+  const judge = latestByAgent.judge || {};
+  const narratorDiag = narrator.diagnostics || {};
+  const judgeDiag = judge.diagnostics || {};
+  return {
+    narrator_elapsed_ms: numberMetric(narratorDiag.elapsed_ms),
+    judge_elapsed_ms: numberMetric(judgeDiag.elapsed_ms),
+    repair_elapsed_ms: numberMetric(narratorDiag.repair_elapsed_ms),
+    repaired_output: Boolean(narratorDiag.repaired_output),
+    prompt_chars: numberMetric(narratorDiag.prompt_chars),
+    game_state_chars: numberMetric(narratorDiag.game_state_chars),
+    history_count: numberMetric(narratorDiag.history_count),
+    prompt_tokens: numberMetric(narratorDiag.prompt_tokens),
+    completion_tokens: numberMetric(narratorDiag.completion_tokens),
+    total_tokens: numberMetric(narratorDiag.total_tokens),
+  };
+}
+
+function numberMetric(value) {
+  const number = Number(value || 0);
+  return Number.isFinite(number) && number > 0 ? Math.round(number) : 0;
+}
+
 (async () => {
   fs.mkdirSync(OUT_DIR, { recursive: true });
   const inviteCode = `local-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
@@ -338,6 +379,7 @@ function redactedUrl(url) {
         : Array.isArray(body?.session?.choices)
           ? body.session.choices
           : [];
+      const diagnostics = latestModelDiagnostics(body, started);
       turns.push({
         turn_index: turn,
         selected_index: selected.index,
@@ -348,6 +390,7 @@ function redactedUrl(url) {
         turn_count: turnCount,
         elapsed_ms: elapsed,
         choices_count: afterChoices.length,
+        ...diagnostics,
         note: response.ok() ? (fallback ? "fallback" : "non-fallback") : "http_failure",
       });
 
@@ -372,6 +415,15 @@ function redactedUrl(url) {
     summary.avg_elapsed_ms = turns.length
       ? Math.round(turns.reduce((total, turn) => total + (turn.elapsed_ms || 0), 0) / turns.length)
       : 0;
+    summary.repair_attempt_count = turns.filter((turn) => (turn.repair_elapsed_ms || 0) > 0).length;
+    summary.repaired_output_count = turns.filter((turn) => turn.repaired_output).length;
+    summary.judge_count = turns.filter((turn) => (turn.judge_elapsed_ms || 0) > 0).length;
+    summary.avg_narrator_elapsed_ms = avgMetric(turns, "narrator_elapsed_ms");
+    summary.avg_judge_elapsed_ms = avgMetric(turns, "judge_elapsed_ms");
+    summary.avg_repair_elapsed_ms = avgMetric(turns, "repair_elapsed_ms");
+    summary.avg_prompt_chars = avgMetric(turns, "prompt_chars");
+    summary.max_prompt_chars = Math.max(0, ...turns.map((turn) => turn.prompt_chars || 0));
+    summary.max_history_count = Math.max(0, ...turns.map((turn) => turn.history_count || 0));
     summary.last_turn_count = turns.length ? turns[turns.length - 1].turn_count : 0;
 
     if (summary.accepted_live_turns >= TARGET_TURNS && summary.fallback_count === 0 && !issues.some((item) => item.level === "P0")) {
@@ -408,3 +460,9 @@ function redactedUrl(url) {
     }
   }
 })();
+
+function avgMetric(rows, key) {
+  const values = rows.map((row) => Number(row[key] || 0)).filter((value) => value > 0);
+  if (!values.length) return 0;
+  return Math.round(values.reduce((total, value) => total + value, 0) / values.length);
+}

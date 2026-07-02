@@ -2,6 +2,18 @@
 
 ## 2026-07-02
 
+### Changed - sanitized model performance observability
+
+- Added non-secret model-performance diagnostics to engine/web session events:
+  narrator/judge elapsed time, repair usage, prompt size, history count, game
+  state size, and provider token counters when available.
+- Extended `scripts/local_visible_playtest.cjs` and
+  `scripts/playwright_evidence.py` so the next real Chrome 20-turn sample can
+  write the same metrics to strict JSON/NDJSON/CSV evidence.
+- This is observability only. It does not claim live latency is fixed; the next
+  step is to run a 20-turn Chrome sample and decide whether the main cause is
+  prompt/history growth, repair calls, judge calls, provider latency, or a mix.
+
 ### Changed - governance status and local PostgreSQL recovery
 
 - Updated authoritative docs after the server-thread production batch deployed

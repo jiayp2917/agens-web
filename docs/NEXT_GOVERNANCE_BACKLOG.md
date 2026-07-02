@@ -42,6 +42,10 @@ This is the active backlog for `agens-web`. It separates local code work, local 
   - Local semantic fallback choices now vary by play phase while preserving fixed D/气运 semantics, reducing repeated retreat/breakthrough loop pressure when narrator choices need recovery.
   - Initial narrative/state consistency guard coverage now treats explicit injury, lifespan, title, relationship, and karma claims as authoritative-state claims, with negative coverage for rumor/desire/condition/history framing.
   - Added focused unit and TurnFlow coverage in `tests/unit/engine/test_playable_quality_guards.py` instead of growing the already large `tests/web/test_web_api.py`.
+- 2026-07-02 P1 model-efficiency observability slice:
+  - Local code now emits sanitized `model_result` events with numeric/boolean diagnostics only: narrator/judge elapsed time, repair elapsed time, prompt size, history count, game-state size, and provider token counters when available.
+  - `scripts/local_visible_playtest.cjs` and `scripts/playwright_evidence.py` now carry those metrics into strict JSON/NDJSON/CSV evidence so the next 20-turn Chrome run can separate prompt growth, repair calls, judge calls, and provider latency.
+  - This is not a latency fix yet; it is the measurement gate before changing prompt history, repair policy, judge triggers, or provider configuration.
 - The active phase plan is `docs/PLAYABLE_GAMEPLAY_ROADMAP_20260629.md`: close P0 validation first, then improve gameplay content without broad architecture changes.
 
 ## 2026-06-30 Lessons
@@ -95,6 +99,7 @@ These items block claiming the project is a stable playable public build.
    - Initial local guard coverage: injury, lifespan, title, relationship, and karma claims require structured state/lore/status deltas, while rumor/desire/condition/history framing is allowed as chronicle text.
    - Add visible handling for key items, techniques, and attribute growth, or prevent the narrative from asserting them.
    - Improve live-model latency and structured-output stability; the latest accepted local Chrome run averaged about 48.2s per choice, maxed at about 153.2s, and relied heavily on narrator repair.
+   - Done locally: add sanitized per-turn performance diagnostics for narrator/judge elapsed time, repair elapsed time, prompt/game-state/history size, and token counters. Next action is a real Chrome 20-turn sampling run; do not treat the instrumentation itself as performance improvement.
    - Done locally: recover common narrator output drift (fenced/bare JSON, JSON-only payloads, Chinese option lines), avoid local-story fallback when the live narrator produced usable narrative but malformed choices, and fail closed on malformed state updates.
    - Done locally: classify missing narrative as incomplete even when choices/state exist, and require repaired narrator output to contain narrative before accepting it as repaired.
    - Done locally: strip stray markdown/JSON fence artifacts from chronicle text; final2 did not stop on visible fence/JSON pollution, but this should remain part of browser smoke checks.
