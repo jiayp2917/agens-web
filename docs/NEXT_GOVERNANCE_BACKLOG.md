@@ -20,7 +20,7 @@ This is the active backlog for `agens-web`. It separates local code work, local 
   - Runtime model calls resolve config by current session/user and do not mutate process-global `AGNES_API_KEY`.
   - Empty first-time stored model configs are rejected so an empty user row cannot shadow the effective system Agens default.
 - 2026-06-30 follow-up fixed the production fallback root cause locally: a legacy system `model_config` row without `api_key_encrypted` no longer shadows the environment system key.
-- Latest local automated validation after the narrator/visible-Chrome follow-up: `tests\web` 66 passed, full `pytest -q` with `TEST_DATABASE_URL` 457 passed, frontend build passed.
+- Latest local automated validation after the P1 gameplay-quality guard slice: `tests\web` 66 passed, full `pytest -q` with `TEST_DATABASE_URL` 465 passed / 1 xfailed, frontend build passed.
 - Main-flow fixes already landed locally: fixed-choice `/choice`, no HTTP 200 without turn progression for ineligible breakthrough choices, contiguous `game_turns` after mismatch/fallback paths.
 - Historical local visible Chrome follow-up passed account registration/login, system-default model start, character creation, save/load, duplicate-prefix cleanup, and internal-mismatch text hiding, but failed 20-turn live-model acceptance at visible turn 7 when narrator returned no usable choices and local story fallback activated.
 - Current local code now includes a follow-up fix for that turn-7 class: narrator parser recovery accepts fenced/bare JSON and Chinese A/B/C/D option lines, malformed-choice narrator turns keep the live narrative with local semantic choices instead of entering local story, and chronicle display strips stray Markdown/JSON fence markers.
@@ -38,6 +38,10 @@ This is the active backlog for `agens-web`. It separates local code work, local 
   - Container health, public/origin health, catalog, `user_model_configs`, and sensitive-marker log scan passed.
   - One-time real-account registration, login, start, choice, save, load, relogin, and cross-session restore passed without printing secrets.
   - Production live-model P0 is accepted for this batch: start and at least one choice were non-fallback, and choice advanced to `turn_count=1`.
+- 2026-07-02 P1 gameplay-quality guard slice:
+  - Local semantic fallback choices now vary by play phase while preserving fixed D/气运 semantics, reducing repeated retreat/breakthrough loop pressure when narrator choices need recovery.
+  - Initial narrative/state consistency guard coverage now treats explicit injury, lifespan, title, relationship, and karma claims as authoritative-state claims, with negative coverage for rumor/desire/condition/history framing.
+  - Added focused unit and TurnFlow coverage in `tests/unit/engine/test_playable_quality_guards.py` instead of growing the already large `tests/web/test_web_api.py`.
 - The active phase plan is `docs/PLAYABLE_GAMEPLAY_ROADMAP_20260629.md`: close P0 validation first, then improve gameplay content without broad architecture changes.
 
 ## 2026-06-30 Lessons
@@ -88,7 +92,8 @@ These items block claiming the project is a stable playable public build.
    - Keep state bar age, chronicle age, and `game_turns` age from one authoritative source.
    - Add clearer stage goals, meaningful rewards, and visible consequences.
    - Ensure system-level model narrative claims are backed by structured state changes or rejected cleanly; ordinary chronicle-style item descriptions do not automatically become inventory entries.
-   - Add visible handling for injuries, key items, techniques, and attribute growth, or prevent the narrative from asserting them.
+   - Initial local guard coverage: injury, lifespan, title, relationship, and karma claims require structured state/lore/status deltas, while rumor/desire/condition/history framing is allowed as chronicle text.
+   - Add visible handling for key items, techniques, and attribute growth, or prevent the narrative from asserting them.
    - Improve live-model latency and structured-output stability; the latest accepted local Chrome run averaged about 48.2s per choice, maxed at about 153.2s, and relied heavily on narrator repair.
    - Done locally: recover common narrator output drift (fenced/bare JSON, JSON-only payloads, Chinese option lines), avoid local-story fallback when the live narrator produced usable narrative but malformed choices, and fail closed on malformed state updates.
    - Done locally: classify missing narrative as incomplete even when choices/state exist, and require repaired narrator output to contain narrative before accepting it as repaired.
@@ -104,6 +109,7 @@ These items block claiming the project is a stable playable public build.
    - `WebGameService`: keep reducing duplicate runner/error/persistence orchestration.
    - `database_postgres.py`: extract row shaping and helper functions without schema changes.
    - `app.py`: router split is optional and lower priority than gameplay correctness.
+   - Current slice avoided growing `tests/web/test_web_api.py` by adding focused engine guard coverage in a separate test file; full web-test splitting remains a later governance item.
 4. Frontend maintenance.
    - Continue splitting `CharacterCreatePage` and style files around verified workflows.
    - Use Chrome smoke after visual changes.

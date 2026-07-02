@@ -19,6 +19,19 @@
   diagnostics so local PG recovery does not encourage deleting the data
   directory or starting a second server.
 
+### Changed - playable quality guards
+
+- Varied local semantic fallback choices by play phase while preserving fixed
+  D/气运 semantics, reducing repeated retreat/breakthrough pressure when the
+  narrator needs choice recovery.
+- Added initial narrative/state consistency guards so explicit injury, lifespan,
+  title, relationship, and karma claims require structured status/lore/state
+  deltas, while rumor/desire/condition/history framing remains valid chronicle
+  text.
+- Added focused engine guard coverage in
+  `tests/unit/engine/test_playable_quality_guards.py` instead of growing the
+  large web API test file.
+
 ## 2026-07-01
 
 ### Fixed - narrator incomplete-output recovery

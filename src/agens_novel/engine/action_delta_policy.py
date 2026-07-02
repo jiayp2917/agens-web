@@ -83,6 +83,40 @@ _CLAIM_RULES: tuple[tuple[tuple[re.Pattern[str], ...], tuple[tuple[str, str], ..
         ),
         (("world", "active_quests_add"), ("world", "active_quests")),
     ),
+    (
+        (
+            re.compile(r"(?:你|主角|自身|身上|体内|经脉|气海|丹田)[^，。；\n]{0,8}(?:受了?|负了?|留下|染上)[^，。；\n]{0,16}(?:伤|伤势|内伤|外伤|毒|寒毒|火毒|诅咒)"),
+            re.compile(r"(?:你|主角|自身|身上|体内|经脉|气海|丹田)[^，。；\n]{0,8}(?:身受|遭受|中了)[^，。；\n]{0,16}(?:重伤|内伤|外伤|毒|寒毒|火毒|诅咒)"),
+        ),
+        (("character", "status_effects_add"), ("character", "status_effects"), ("meta", "status_effect_add")),
+    ),
+    (
+        (
+            re.compile(r"(?:寿元|寿命|阳寿).{0,12}(?:增加|增长|延长|延寿|续命)"),
+            re.compile(r"(?:延寿|续命)[^，。；\n]{0,18}(?:丹|药|机缘|灵物|秘法)"),
+        ),
+        (("character", "lifespan"),),
+    ),
+    (
+        (
+            re.compile(r"(?:获封|得了|获得|被授予)[^，。；\n]{0,18}(?:称号|封号|名号|道号)"),
+            re.compile(r"(?:称号|封号|名号|道号)[^，。；\n]{0,8}(?:为|曰|叫)"),
+        ),
+        (("world", "lore_add"),),
+    ),
+    (
+        (
+            re.compile(r"(?:结为|拜入|收为|认作)[^，。；\n]{0,18}(?:道侣|师徒|师父|师尊|弟子|盟友|仇敌)"),
+            re.compile(r"(?:与|和)[^，。；\n]{1,18}(?:结缘|结仇|立誓|结盟|反目)"),
+        ),
+        (("world", "npcs_present_add"), ("world", "npcs_present"), ("world", "lore_add")),
+    ),
+    (
+        (
+            re.compile(r"(?:因果|业力|气运|天命).{0,12}(?:加身|缠身|反噬|增长|折损)"),
+        ),
+        (("character", "status_effects_add"), ("character", "status_effects"), ("world", "lore_add")),
+    ),
 )
 
 
@@ -146,7 +180,12 @@ def validate_narrative_delta_consistency(narrative: str, delta: dict[str, Any]) 
 
     text = re.sub(r"\s+", "", narrative)
     for patterns, required_paths in _CLAIM_RULES:
-        if not any(pattern.search(text) for pattern in patterns):
+        matches = [match for pattern in patterns for match in pattern.finditer(text)]
+        matches = [
+            match for match in matches
+            if not _is_non_authoritative_context(text, match.start(), match.end())
+        ]
+        if not matches:
             continue
         if any(_has_path(delta, section, key) for section, key in required_paths):
             continue
@@ -196,7 +235,96 @@ def merge_rule_delta(
 
 def _has_path(delta: dict[str, Any], section: str, key: str) -> bool:
     part = delta.get(section)
-    return isinstance(part, dict) and key in part
+    if not isinstance(part, dict) or key not in part:
+        return False
+    value = part[key]
+    if key == "inventory_add":
+        return isinstance(value, list) or (isinstance(value, str) and bool(value.strip()))
+    if key in {
+        "inventory",
+        "techniques_add",
+        "techniques",
+        "status_effects_add",
+        "status_effects",
+        "active_quests_add",
+        "active_quests",
+        "discovered_add",
+        "npcs_present_add",
+        "npcs_present",
+        "lore_add",
+    }:
+        return isinstance(value, list) and any(_is_meaningful_list_item(item) for item in value)
+    if key == "status_effect_add":
+        return bool(value) and isinstance(value, str)
+    if key in {"lifespan", "realm_stage", "age"}:
+        return (
+            isinstance(value, int)
+            and not isinstance(value, bool)
+        ) or (
+            isinstance(value, str)
+            and len(value) > 1
+            and value[0] in {"+", "-"}
+            and value[1:].isdigit()
+        )
+    if key in {"realm", "location", "current_scene", "breakthrough_result"}:
+        return isinstance(value, str) and bool(value.strip())
+    return True
+
+
+def _is_meaningful_list_item(item: Any) -> bool:
+    if isinstance(item, str):
+        return bool(item.strip())
+    return item is not None and item != {}
+
+
+def _is_non_authoritative_context(text: str, start: int, end: int) -> bool:
+    """Return True for rumor, desire, condition, or historical framing."""
+    prefix = text[max(0, start - 12):start]
+    prefix_markers = (
+        "传闻",
+        "听闻",
+        "据说",
+        "相传",
+        "记载",
+        "传说",
+        "可能",
+        "或许",
+        "也许",
+        "若能",
+        "如果",
+        "想",
+        "想要",
+        "希望",
+        "试图",
+        "准备",
+        "打算",
+        "曾经",
+        "昔日",
+        "旧闻",
+        "尚未",
+        "未曾",
+        "只是",
+        "仿佛",
+        "似乎",
+    )
+    if any(marker in prefix for marker in prefix_markers):
+        return True
+
+    suffix = text[end:end + 18]
+    suffix_markers = (
+        "只是旧闻",
+        "只是传闻",
+        "只是传说",
+        "只是读到",
+        "只是听闻",
+        "只是闲谈",
+        "并未",
+        "尚未",
+        "未曾",
+        "不曾",
+        "没有",
+    )
+    return any(marker in suffix for marker in suffix_markers)
 
 
 def _has_visible_outcome_delta(delta: dict[str, Any]) -> bool:

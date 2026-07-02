@@ -79,12 +79,26 @@ def complete_choices(raw_choices: Any, session: GameSession) -> list[str]:
 def fallback_choices(session: GameSession) -> list[str]:
     """Generate 4 grounded fallback choices (A/B/C/D semantics)."""
     location = session.location or "当前地点"
-    return [
-        f"【稳妥】在{location}稳住气息，观察灵气与地势变化",
-        f"【机遇】寻找附近修士交谈，打听当前机缘与风险",
-        "【风险】外出历练，寻找护持与关键线索",
-        "【气运】随缘而行，听天命、赌因果",
-    ]
+    phase = max(0, int(getattr(session, "turn_count", 0) or 0)) // 4
+    options = (
+        (
+            f"【稳妥】在{location}稳住气息，观察灵气与地势变化",
+            f"【机遇】寻找附近修士交谈，打听当前机缘与风险",
+            "【风险】外出历练，寻找护持与关键线索",
+        ),
+        (
+            f"【稳妥】整理在{location}的修行所得，稳固道心与根基",
+            "【机遇】拜访同门或坊市，寻找下一阶段的线索",
+            "【风险】接取外出委托，用历练换取破境准备",
+        ),
+        (
+            f"【稳妥】复盘近年因果，在{location}补足短板",
+            "【机遇】追查传闻中的遗迹、讲法或贵人",
+            "【风险】深入险地验证所学，承担伤势与失败代价",
+        ),
+    )
+    steady, opportunity, risk = options[min(phase, len(options) - 1)]
+    return [steady, opportunity, risk, "【气运】随缘而行，听天命、赌因果"]
 
 
 def dedupe_strings(values: list[Any]) -> list[str]:
