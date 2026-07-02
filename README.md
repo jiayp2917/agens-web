@@ -11,8 +11,9 @@ Web-only 文字修仙模拟器。当前 `master` 是浏览器版本主线：Reac
 - 角色创建六维属性池已按 `docs/GAME_MODE_SPEC.md` §4.1 收束：手动单项 2-8、总和 30；随机单项 0-10、总和 30。
 - 最新本地自动化基线：本地 PostgreSQL 可用；`tests\web` 66 passed；带 `TEST_DATABASE_URL` 的全量 `pytest -q` 457 passed；前端 build 通过。
 - 最新本地真实 Chrome 跟进验收：2026-07-01 `local-visible-20turn-20260701-final2` 通过，普通账号注册/登录、系统默认模型开局、角色创建、20/20 choice non-fallback、存档/读档均通过；平均回合耗时约 48.2s，最大约 153.2s。语义补齐 choices 只是不停流的降级恢复，不代表完整模型选项质量；live 响应慢、repair 依赖高、叙事/状态落账质量仍需继续收紧。
-- 最新生产批次：服务器线程已部署当前包并迁移到 Alembic `20260622_0005`，`user_model_configs` 存在，public/origin health、catalog、容器健康和日志敏感标记扫描通过；一次性真实账号注册、登录、存档、读档、跨会话恢复通过。
-- 尚未完成：production live model 非 fallback 复验。服务器线程已脱敏定位根因：生产旧 `model_config` 行存在但没有 encrypted key，遮蔽了容器 env 系统 key，导致 choice narrator `key_set=false` 并 fallback。本地已修兼容逻辑，仍需重新部署并证明 start+choice 均 non-fallback。
+- 最新生产批次：服务器线程已部署 `25ad3d15` 并迁移到 Alembic `20260622_0005`，`user_model_configs` 存在，public/origin health、catalog、容器健康和日志敏感标记扫描通过；一次性真实账号注册、登录、存档、读档、跨会话恢复通过。
+- production live model P0 已通过脱敏验收：生产 start 和至少 1 次 choice 均为 non-fallback，choice 后 `turn_count=1`。历史 `model_config` 旧行遮蔽 env key 的失败保留为经验，后续不再作为当前阻塞。
+- 尚未完成：P1 游玩质量和治理，包括 live 响应慢、narrator repair 依赖高、重复闭关/突破循环、叙事/权威状态落账和大文件复杂度治理。
 
 ## Local PostgreSQL
 
@@ -29,6 +30,15 @@ $env:TEST_DATABASE_URL = "postgresql+psycopg://agens_test@127.0.0.1:55432/agens_
 ```powershell
 .\scripts\start_local_pg.ps1
 ```
+
+如果脚本提示 stale `postmaster.pid`、日志权限或端口占用，不要直接删除数据目录。先确认端口和进程：
+
+```powershell
+F:\pg\bin\pg_ctl.exe status -D D:\chat\agens-web\.tmp\pg-test-20260626-55432
+Get-NetTCPConnection -LocalPort 55432 -ErrorAction SilentlyContinue
+```
+
+只有确认没有 PostgreSQL 进程仍在使用该数据目录后，才按脚本提示处理 stale pid 或日志文件。
 
 注意：`tests\web` 会在每个测试前清空 `TEST_DATABASE_URL` 指向的测试库。真实 Chrome 验收不要和 pytest 共用同一个库并发运行，否则会看到 users/sessions/game_turns 突然归零的假象。
 

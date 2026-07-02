@@ -25,8 +25,23 @@ This checklist gates the next `agens-web` production action. It records the
 build-only retry, Alembic success, entrypoint CRLF startup failure, and the
 approved entrypoint hotfix that restored service health.
 
-Do not treat v5 production behavior as fully accepted until every item below
-has evidence. Current status is restored but still partially accepted.
+Do not treat a new production batch as accepted until every required item below
+has evidence. Historical sections retain earlier partial-acceptance records; the
+current production P0 status is recorded in the 2026-07-02 addendum.
+
+## 2026-07-02 Production P0 Acceptance Addendum
+
+- Server thread `019ee2ee-823e-7441-bdaa-881782da7949` deployed `25ad3d15`
+  with a tracked production package and kept Alembic at `20260622_0005`.
+- Production `user_model_configs` exists; container health, public/origin
+  health, catalog, and sensitive-marker log scan passed.
+- One-time real-account registration, login, start, choice, save, load,
+  relogin, and cross-session restore passed with sanitized reporting only.
+- Production live-model acceptance passed for this batch: start and at least
+  one choice were non-fallback, and choice advanced to `turn_count=1`.
+- This closes the current P0 production blocker. Future production deploys,
+  model-config changes, or provider changes must rerun the same non-fallback
+  start+choice gate; HTTP 200 alone still does not count.
 
 ## 2026-06-27 Model Env Hotfix Addendum
 
@@ -64,7 +79,7 @@ has evidence. Current status is restored but still partially accepted.
   - `game_turns`
   - `user_model_configs`
   - `player_progress`
-- The latest `agens-web` container is healthy after the 2026-06-30 deploy.
+- The latest `agens-web` container is healthy after the 2026-07-02 deploy.
 - The 2026-06-30 production deploy generated/installed `MODEL_CONFIG_SECRET`
   without printing it, created app/PostgreSQL backups, rebuilt only
   `agens-web`, migrated to `20260622_0005`, and passed public/origin
@@ -74,15 +89,15 @@ has evidence. Current status is restored but still partially accepted.
   URL, or key values.
 - The entrypoint CRLF failure has been fixed by the approved hotfix package:
   `D:\chat\outputs\packages\agens-web\agens-web-entrypoint-crlf-hotfix-20260624-185815.zip`.
-- Production live-model success is still not accepted: the 2026-06-30 account
-  flow start was non-fallback, but one choice turn returned
-  `fallback_active=true` with `turn_count=0`.
+- Historical production live-model failure: the 2026-06-30 account flow start
+  was non-fallback, but one choice turn returned `fallback_active=true` with
+  `turn_count=0`.
 - Sanitized follow-up diagnosis found that the choice fallback happened before
   any provider request, timeout, or repair path: a legacy `model_config` row had
   no `api_key_encrypted` and shadowed the container environment system key, so
   narrator runtime saw `key_set=false`. Local code now falls back to the env
-  system key for that legacy-row shape; production still needs redeploy and
-  start+choice non-fallback revalidation.
+  system key for that legacy-row shape; the 2026-07-02 deploy revalidated
+  start+choice non-fallback.
 - The same local follow-up originally failed the 20-turn live browser gate at
   visible turn 7, then an early 2026-07-01 rerun failed at turn 4 fallback.
   Local code now has targeted recovery for that class: narrator parsing accepts
@@ -467,32 +482,32 @@ Completed evidence:
 - Guest start returned HTTP 200.
 - One guest turn returned HTTP 200 and still returned four options.
 
-Historical 2026-06-24 hotfix closeout residual gaps, superseded in part by the
-2026-06-30 production deploy/account-flow batch:
+Historical 2026-06-24 hotfix closeout residual gaps, later superseded by the
+2026-06-30 account-flow batch and the 2026-07-02 production P0 acceptance:
 
 - Production account flow was not accepted in this historical hotfix closeout
   because no safe non-secret test account path was available. The later
   2026-06-30 production batch accepted account registration/login/save/load and
   cross-session restore.
-- Production live-model success is not accepted because the guest smoke returned
-  `fallback_prompt_active=true`. The smoke proves the fallback gameplay path is
-  restored, not that the production live model is healthy.
+- Production live-model success was not accepted in that historical hotfix
+  closeout because the guest smoke returned `fallback_prompt_active=true`. The
+  smoke proved the fallback gameplay path was restored, not that the production
+  live model was healthy.
 - Rollback is not currently needed for service recovery. Any rollback drill
   remains a separate approved production action.
 
 ## Future Production Verification
 
-Before full production acceptance, keep the restored service evidence current
-and close the remaining smoke gaps.
+After each production deployment, model-config change, or provider change, keep
+the restored service evidence current and rerun these smoke gates.
 
-1. Deploy the local fallback-root-cause fix that prevents a legacy system
-   `model_config` row without encrypted key from shadowing the env system key.
-2. Confirm production revision remains `20260622_0005` and v5/user-model tables
+1. Confirm production revision remains `20260622_0005` or a later intended
+   head, and v5/user-model tables
    still exist.
 2. Confirm `agens-web` container remains healthy and public health/catalog still
    return expected results.
 3. Re-run production account registration/login/save/load as a regression smoke
-   only; the 2026-06-30 account flow already passed.
+   only; the 2026-07-02 account flow already passed.
 4. Verify production live-model start and at least one choice without printing
    secrets; do not count
    fallback as live-model success.
@@ -529,10 +544,10 @@ Rollback is a separate production change. Before any rollback:
 
 ## Handoff Note
 
-If full acceptance is deferred, record the blocker as:
+If a future production acceptance is deferred, record the blocker as:
 
-> Production v5 is partially accepted: the service is healthy, production
-> Alembic is `20260622_0005`, the v5/user-model tables exist, health/catalog
-> and production account registration/login/save/load passed, but production
-> live-model success is not accepted yet. The latest blocked production choice
-> returned `fallback_active=true` with `turn_count=0`; HTTP 200 is not enough.
+> Production v5 is partially accepted for the new batch: the service is healthy,
+> production Alembic is at the intended revision, and health/catalog/account
+> flow passed, but production live-model success is not accepted yet. Record
+> the latest fallback flag, turn_count, and sanitized error class; HTTP 200 is
+> not enough.

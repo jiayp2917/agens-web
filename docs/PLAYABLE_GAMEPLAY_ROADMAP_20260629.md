@@ -32,13 +32,13 @@
 
 目标：证明当前底座可以支撑后续玩法迭代。
 
-2026-07-01 状态更新：
+2026-07-02 状态更新：
 
 - 本地真实可见 Chrome 跟进验收已通过：`local-visible-20turn-20260701-final2` 完成普通账号注册/登录、系统默认模型开局、角色创建、20/20 choice non-fallback、存档/读档。
 - 本地验收仍暴露 P1 质量风险：平均回合耗时约 48.2s、最大约 153.2s，且多回合依赖 narrator repair / mismatch suppression。
 - 生产部署与迁移已完成：Alembic 已到 `20260622_0005`，`user_model_configs` 存在。
 - 生产账号注册、登录、存档、读档、跨会话恢复已通过。
-- production live model 仍未验收通过：生产 start 为 non-fallback，但一回合 choice 返回 `fallback_active=true` 且 `turn_count=0`；本地已修复旧 `model_config` 行遮蔽 env key 的兼容逻辑，生产需重新部署后复验。
+- production live model P0 已通过：服务器线程部署 `25ad3d15` 后，生产 start 和至少 1 次 choice 均为 non-fallback，choice 后 `turn_count=1`。历史 `model_config` 旧行遮蔽 env key 的失败保留为经验，后续每次生产部署或模型配置变更仍需复跑同一门禁。
 
 必须完成：
 
@@ -47,7 +47,7 @@
 - 验证用户模型配置：系统默认、个人 key、清除个人配置。
 - 验证账号注册、登录、存档、读档。
 - 检查 fallback、`game_turns` 连续性、叙事和状态一致性。
-- production live model 修复部署和复验交给服务器线程，不在本地代码线程混做。
+- 未来生产部署或模型配置变更后的 production live model 复验交给服务器线程，不在本地代码线程混做。
 
 验收标准：
 

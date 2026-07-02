@@ -21,7 +21,7 @@
 
 > **当前实现状态：v5 Alpha 本地可玩链路已落地。** React 主入口已经切到 A/B/C/D 四按钮固定语义：A 稳妥、B 机遇、C 风险、D 气运；无自由文本主入口，无 HP/MP 常驻 UI；模型设置为用户个人配置 + 系统默认 Agens 兜底。`docs/GAME_MODE_SPEC.md` 是当前游戏模式规格和验收来源。
 > 当前自动化基线：本地 PostgreSQL 可用；`tests\web` 66 passed；带 `TEST_DATABASE_URL` 的全量 `pytest -q` 457 passed；前端 build 通过。`tests/unit/engine/test_playable_gap_locks.py` 已从 strict xfail gap guard 转为通过型玩法 guard。2026-07-01 真实 Chrome `local-visible-20turn-20260701-final2` 已完成 20/20 non-fallback + 存读档，但响应耗时和 narrator repair 依赖仍是 P1 风险。
-> 生产当前只接受部署健康与账号链路；production live-model 仍需在修复包重新部署后证明 start 和 choice 均 non-fallback。HTTP 200 或本地 final2 不能替代生产 live-model 验收。
+> 2026-07-02 生产 P0 已通过：服务器线程部署 `25ad3d15` 后，账号流通过，production start 和至少 1 次 choice 均 non-fallback，choice 后 `turn_count=1`。未来生产部署或模型配置变更仍需复跑同一门禁；HTTP 200 或本地 final2 不能替代生产 live-model 验收。
 > 当前阶段计划见 `docs/PLAYABLE_GAMEPLAY_ROADMAP_20260629.md`：先完成 P0 遗留验收闭环，再在现有架构内做玩法内容改造。
 
 本文记录当前 Web-only 运行链路。产品入口是浏览器 UI + FastAPI 后端，不再包含移动端打包或设备验证路径。

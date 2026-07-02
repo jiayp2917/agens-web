@@ -44,14 +44,15 @@
 - 本轮本地修复已针对上述第 7 回合失败类补 parser/choice recovery：narrator 可恢复 fenced/bare JSON、JSON-only payload、中文 A/B/C/D 选项行；有 live 叙事但选项格式坏时不再直接进入 local story，而是保留规则回合并补齐语义选项；编年史渲染会清理 stray markdown/JSON fence。2026-07-01 早期复验曾停在第 4 个 choice fallback；`local-visible-20turn-20260701-rerun4` 曾通过 20/20 non-fallback。子智能体复核后又补强两点：缺 `<state_update>` 不再伪装成空 delta，叙事/状态 mismatch 被压制后会回退通用 choices。中间复验 `local-visible-20turn-20260701-final` 在第 1 回合因 repair 输出多余 `}` 进入 fallback；窄修复该 provider drift 后，`local-visible-20turn-20260701-final2` 通过 20/20 non-fallback，注册/登录、系统默认开局、角色创建、存档/读档均通过。证据位于 `output/playwright/local-visible-20turn-20260701-final2.{json,ndjson,csv}` 与 `output/playwright/local-visible-20turn-20260701-final2-source.json`，默认不提交。
 - 子智能体复核后补强的边界：有 choices/state 但无叙事正文仍判为 incomplete；repair 结果必须同时包含叙事、结构化状态和 choices 才接受；语义补齐 choices 只作为不断流的降级恢复，不等同完整模型输出质量；系统级物品获得类叙事必须有结构化 `inventory_add`，否则压制可见叙事并按基础规则结算。
 - 2026-06-30 本地 headed sanity 复核通过：访客新游戏、角色创建、start、一回合 choice 均通过，未见 fallback banner。证据位于 `output/playwright/agens-web-local-sanity-20260630-*`，默认不提交。
-- 2026-06-30 生产批次通过部署与账号流：Alembic 已到 `20260622_0005`，`user_model_configs` 存在，public/origin health、catalog、容器健康和日志敏感标记扫描通过；一次性真实账号注册、登录、存档、读档、跨会话恢复通过。production live model 未通过：start non-fallback，但一回合 choice 返回 `fallback_active=true` 且 `turn_count=0`。
-- 2026-06-30 生产 fallback 根因已脱敏定位并本地修复：旧 `model_config` 系统行没有 `api_key_encrypted` 时遮蔽了容器 env 系统 key，导致 narrator runtime `key_set=false`。本地兼容逻辑已改为此类旧行不遮蔽 env key；生产仍需部署后重验 start+choice non-fallback。
+- 2026-06-30 生产批次通过部署与账号流：Alembic 已到 `20260622_0005`，`user_model_configs` 存在，public/origin health、catalog、容器健康和日志敏感标记扫描通过；一次性真实账号注册、登录、存档、读档、跨会话恢复通过。production live model 当时未通过：start non-fallback，但一回合 choice 返回 `fallback_active=true` 且 `turn_count=0`。
+- 2026-06-30 生产 fallback 根因已脱敏定位并本地修复：旧 `model_config` 系统行没有 `api_key_encrypted` 时遮蔽了容器 env 系统 key，导致 narrator runtime `key_set=false`。本地兼容逻辑已改为此类旧行不遮蔽 env key。
+- 2026-07-02 服务器线程部署 `25ad3d15` 后完成生产 P0 脱敏验收：容器 healthy，Alembic `20260622_0005`，`user_model_configs` 存在，public/origin health 和 catalog 正常，日志敏感标记扫描为 0；一次性真实账号注册、登录、开局、选择、存档、读档、跨会话恢复均通过；生产 start 和至少 1 次 choice 均为 non-fallback，choice 后 `turn_count=1`。历史 choice fallback 不再是当前 P0 阻塞。
 
 ## 剩余 P0 风险
 
 | 问题 | 当前状态 | 下一步 |
 | --- | --- | --- |
-| production live model 未复验 | 2026-06-30 根因已定位为旧 `model_config` 行遮蔽 env 系统 key，本地已修兼容逻辑；生产仍停留在修复前代码。 | 重新部署本地修复后，由服务器线程证明 start 和 choice 均 non-fallback，且不输出 secrets。 |
+| 生产 P0 回归风险 | 2026-07-02 生产 start+choice non-fallback 已通过。P0 当前不阻塞玩法迭代。 | 后续每次生产部署仍需由服务器线程复跑 health/catalog/account flow/start+choice non-fallback，且不输出 secrets。 |
 | Chrome 验收与 pytest 共库并发 | `tests\web` 会逐测清空 `TEST_DATABASE_URL`，与可见 Chrome 共用库会造成 users/sessions/game_turns 突然归零的假象。 | Chrome 验收使用独立 DB，或确认无 pytest 并发后再跑。 |
 
 ## 剩余 P1 技术债
@@ -82,6 +83,7 @@
 - 生产变更前先做包 hash、敏感文件名扫描、app/PG 备份、`MODEL_CONFIG_SECRET` present/missing 检查，再部署和迁移。
 - 生产报告只输出状态、revision、表名、HTTP 状态、fallback 布尔和备份路径，不输出账号、cookie、邀请码、数据库 URL 或模型 key。
 - 账号注册/登录/存档/读档和 live model 是两条不同门禁，不能混成一个“生产通过”。
+- 2026-07-02 生产 P0 通过的关键是部署后同时验证账号流和 start/choice non-fallback；HTTP 200、容器 healthy 或账号流单独通过都不足以替代 live-model 验收。
 
 失败教训：
 - 服务健康和账号流通过不代表 live model 成功；`fallback_active=true` 且 `turn_count=0` 仍是阻断问题。

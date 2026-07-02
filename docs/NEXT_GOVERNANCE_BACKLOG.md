@@ -33,6 +33,11 @@ This is the active backlog for `agens-web`. It separates local code work, local 
   - Production `user_model_configs` exists; public/origin health, catalog, container health, and sensitive-marker log scan passed.
   - One-time real-account registration, login, save, load, and cross-session restore passed without printing account, cookie, invite, database URL, or key values.
   - Production live-model acceptance failed before the follow-up fix: start was non-fallback, but one choice turn returned `fallback_active=true` with `turn_count=0`. Sanitized diagnosis found narrator `key_set=false` because an old DB system row shadowed env key.
+- 2026-07-02 production/server follow-up:
+  - Server thread deployed `25ad3d15` and kept Alembic at `20260622_0005`.
+  - Container health, public/origin health, catalog, `user_model_configs`, and sensitive-marker log scan passed.
+  - One-time real-account registration, login, start, choice, save, load, relogin, and cross-session restore passed without printing secrets.
+  - Production live-model P0 is accepted for this batch: start and at least one choice were non-fallback, and choice advanced to `turn_count=1`.
 - The active phase plan is `docs/PLAYABLE_GAMEPLAY_ROADMAP_20260629.md`: close P0 validation first, then improve gameplay content without broad architecture changes.
 
 ## 2026-06-30 Lessons
@@ -61,12 +66,12 @@ Failure lessons and follow-up rules:
 These items block claiming the project is a stable playable public build.
 
 1. Production live model acceptance.
-   - Prove start and at least one choice turn are non-fallback.
+   - Accepted for the 2026-07-02 `25ad3d15` production batch: start and at least one choice turn were non-fallback, and choice advanced to `turn_count=1`.
    - HTTP 200 alone is not enough.
-   - Current blocker: local fix for the diagnosed `model_config` shadowing issue must be deployed, then production start+choice must be re-proven non-fallback.
+   - Re-run this gate after every production deployment or model-config change.
 2. Local visible Chrome 20-turn player validation.
    - Accepted locally by `local-visible-20turn-20260701-final2`: 20/20 choice turns were non-fallback and save/load passed.
-   - This does not replace production live-model acceptance and does not close P1 gameplay quality risks.
+   - This does not close P1 gameplay quality risks.
    - Re-run after fixes to option constraints, state/chronicle consistency, or major UI changes.
    - Do not run concurrently with pytest against the same database; Web tests truncate the shared test DB.
 
@@ -120,9 +125,10 @@ These items block claiming the project is a stable playable public build.
    - Check `pg_isready` before starting.
    - Initial helper is now `scripts/start_local_pg.ps1`.
    - Do not remove `.tmp\pg-test-20260626-55432` while PG is running.
-   - Document stale `postmaster.pid` recovery separately.
+   - Document stale `postmaster.pid`, port occupancy, and log-permission recovery in the helper and README before deleting any local PG state.
 3. Handle generated evidence deliberately.
    - Treat `output/playwright/`, screenshots, and JSON traces as generated artifacts unless explicitly promoted.
+   - `output/playwright/` remains ignored by `.gitignore`; keep evidence on disk for review, but do not stage it in normal code/docs commits.
    - Do not delete historical artifacts without inventory, backup, and quarantine.
    - Done locally: add a strict JSON/NDJSON/CSV evidence writer and CLI; 2026-07-01 Chrome evidence was normalized through it.
 

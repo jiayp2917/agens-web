@@ -9,8 +9,8 @@
 - 模型设置：注册用户可配置个人模型；访客不可配置；无个人配置时使用系统 Agens 默认。用户 key 只允许加密存储和脱敏展示。
 - 最新本地自动化基线：本轮补充 narrator incomplete-output recovery、parser schema gate、strict browser evidence CLI 和 visible Chrome playtest 脚本；`tests\web` 66 passed，全量 `pytest -q` 457 passed，前端 build 通过。
 - 最新本地真实 Chrome 跟进验收：2026-07-01 `scripts/local_visible_playtest.cjs` 产出的 `local-visible-20turn-20260701-final2` 通过；普通账号注册/登录、系统默认模型开局、角色创建、20/20 choice non-fallback、存档/读档均通过。证据位于 `output/playwright/local-visible-20turn-20260701-final2.{json,ndjson,csv}` 和 `output/playwright/local-visible-20turn-20260701-final2-source.json`，默认不提交。平均回合耗时约 48.2s，最大约 153.2s；语义补齐 choices 只是不断流的降级恢复，repair 依赖高和叙事/状态质量仍是 P1 风险。
-- 最新生产批次已完成部署与账号流：Alembic 已到 `20260622_0005`，`user_model_configs` 存在，public/origin health、catalog、容器健康、日志敏感标记扫描、一次性真实账号注册/登录/存档/读档/跨会话恢复均通过。
-- 尚未完成：production live model 非 fallback 验收。生产 start 为 non-fallback，但一回合 choice 返回 `fallback_active=true` 且 `turn_count=0`。
+- 最新生产批次已完成部署、账号流和 production live-model P0 验收：服务器线程部署 `25ad3d15` 后，Alembic 为 `20260622_0005`，`user_model_configs` 存在，public/origin health、catalog、容器健康、日志敏感标记扫描、一次性真实账号注册/登录/存档/读档/跨会话恢复均通过；生产 start 和至少 1 次 choice 均为 non-fallback，choice 后 `turn_count=1`。
+- 尚未完成：P1 游玩质量和治理，包括 live 响应慢、narrator repair 依赖高、重复闭关/突破循环、叙事/权威状态落账，以及 `tests/web/test_web_api.py`、`web/backend/service.py`、`web/backend/database_postgres.py`、`src/agens_novel/engine/game_engine.py` 的复杂度治理。
 
 ## 当前权威文档
 
@@ -45,7 +45,7 @@
 | 模块地图 / 接手项目 | `docs/ARCHITECTURE.md`、`docs/PROJECT_AUDIT.md` |
 | 代码复杂度治理 | `docs/PROJECT_AUDIT.md`、`docs/NEXT_GOVERNANCE_BACKLOG.md` |
 | 公网部署 / 密钥 / 安全 | `docs/security.md`、`docs/PRODUCTION_V5_MIGRATION_CHECKLIST.md` |
-| 生产账号流 / live model 验收 | `docs/PRODUCTION_V5_MIGRATION_CHECKLIST.md`、服务器线程 `019ee2ee-823e-7441-bdaa-881782da7949` |
+| 生产账号流 / live model 复核 | `docs/PRODUCTION_V5_MIGRATION_CHECKLIST.md`、服务器线程 `019ee2ee-823e-7441-bdaa-881782da7949` |
 | UI 后续细修 | `docs/PROJECT_AUDIT.md`、`web/frontend-react/src/`、历史原型归档 |
 | 历史核对 | `CHANGELOG.md`、`docs/archive/` |
 

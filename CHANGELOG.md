@@ -1,5 +1,24 @@
 # Changelog
 
+## 2026-07-02
+
+### Changed - governance status and local PostgreSQL recovery
+
+- Updated authoritative docs after the server-thread production batch deployed
+  `25ad3d15`: production health/catalog/container checks, account
+  registration/login/save/load/cross-session restore, and start+choice
+  non-fallback live-model validation passed with sanitized reporting.
+- Reclassified the old production `model_config` shadowing fallback as
+  historical failure evidence instead of a current P0 blocker. Future
+  production deployments or model-config changes still must re-run start and
+  choice non-fallback validation; HTTP 200 alone is not enough.
+- Clarified that current remaining work is P1/P2: live response latency,
+  narrator repair dependence, repeated retreat/breakthrough loops, authoritative
+  state accounting, large-file complexity, and generated evidence handling.
+- Hardened `scripts/start_local_pg.ps1` with port and stale `postmaster.pid`
+  diagnostics so local PG recovery does not encourage deleting the data
+  directory or starting a second server.
+
 ## 2026-07-01
 
 ### Fixed - narrator incomplete-output recovery

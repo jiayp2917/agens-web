@@ -14,6 +14,7 @@ if (-not $DataDir) {
 
 $PgIsReady = Join-Path $PgBin "pg_isready.exe"
 $PgCtl = Join-Path $PgBin "pg_ctl.exe"
+$PostmasterPid = Join-Path $DataDir "postmaster.pid"
 
 if (-not (Test-Path -LiteralPath $PgIsReady)) {
     throw "pg_isready.exe not found at $PgIsReady"
@@ -35,9 +36,35 @@ if (-not (Test-Path -LiteralPath $DataDir)) {
 
 & $PgCtl status -D $DataDir | Out-Host
 $LogFile = Join-Path $DataDir "postgresql-$Port.log"
-& $PgCtl start -D $DataDir -l $LogFile -o "-p $Port -h $HostName"
+try {
+    $portState = Get-NetTCPConnection -LocalPort $Port -ErrorAction SilentlyContinue |
+        Select-Object -First 5 LocalAddress,LocalPort,State,OwningProcess
+    if ($portState) {
+        Write-Host "Port $Port is already in use. Current listeners/connections:"
+        $portState | Format-Table | Out-Host
+        Write-Host "If this is PostgreSQL, use pg_isready/status instead of starting a second server."
+    }
+} catch {
+    Write-Host "Could not inspect TCP port ${Port}: $($_.Exception.Message)"
+}
+
+try {
+    & $PgCtl start -D $DataDir -l $LogFile -o "-p $Port -h $HostName"
+} catch {
+    Write-Host "pg_ctl start raised an exception: $($_.Exception.Message)"
+}
 if ($LASTEXITCODE -ne 0) {
-    throw "pg_ctl start failed. Check log: $LogFile"
+    Write-Host "pg_ctl start failed."
+    Write-Host "Check log: $LogFile"
+    if (Test-Path -LiteralPath $PostmasterPid) {
+        Write-Host "postmaster.pid exists: $PostmasterPid"
+        Write-Host "Before deleting it, confirm no postgres.exe process is using this data directory and port $Port is free."
+        Write-Host "Suggested checks:"
+        Write-Host "  & `"$PgCtl`" status -D `"$DataDir`""
+        Write-Host "  Get-NetTCPConnection -LocalPort $Port -ErrorAction SilentlyContinue"
+        Write-Host "  Get-Process postgres -ErrorAction SilentlyContinue"
+    }
+    throw "pg_ctl start failed. Do not remove the data directory; inspect the diagnostics above first."
 }
 
 & $PgIsReady -h $HostName -p $Port
