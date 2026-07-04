@@ -140,7 +140,7 @@ cd <repo>
 
 ## 文档索引
 
-后续智能体先读 `docs/INDEX.md`。当前运行链路见 `docs/RUNTIME_FLOW.md`，结构边界和技术债见 `docs/PROJECT_AUDIT.md`，下一批治理工作见 `docs/NEXT_GOVERNANCE_BACKLOG.md`。历史计划只看 `docs/archive/`。
+后续智能体先读 `docs/INDEX.md`。当前运行链路见 `docs/RUNTIME_FLOW.md`，结构边界和技术债见 `docs/PROJECT_AUDIT.md`，下一批治理工作见 `docs/NEXT_GOVERNANCE_BACKLOG.md`。历史变更只看 `CHANGELOG.md`；不要引用已删除的 `docs/archive/` 旧草案作为当前事实。
 
 ## 通用编码准则
 

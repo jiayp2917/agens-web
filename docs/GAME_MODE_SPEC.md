@@ -15,7 +15,7 @@
   20/20 non-fallback turns, but model latency and repair dependence remain P1
   gameplay-quality risks.
 
-> 状态：**v5 Alpha 本地可玩链路已落地，仍需 live-model 验收闭环**。游戏模式核心规则已切换到 A/B/C/D 四按钮、无 HP/MP、事件判定战斗、寿元寿命表、六维属性、动态流逝年数、PostgreSQL 回合记录和用户级模型配置。
+> 状态：**v5 Alpha 本地与当前生产 P0 验收已闭环，下一步进入 P1 游玩质量与模型效率优化**。游戏模式核心规则已切换到 A/B/C/D 四按钮、无 HP/MP、事件判定战斗、寿元寿命表、六维属性、动态流逝年数、PostgreSQL 回合记录和用户级模型配置。
 > 文档定位：游戏模式的产品 spec + 技术实现规格，是“游戏模式”的单一事实来源。
 >
 > ## 实现状态（当前状态见文档顶部说明）
@@ -30,7 +30,7 @@
 > | §11 稀有度解锁门 | 白/绿/蓝/紫/橙/红 六档 + runs/ascension 门径 | ✅ 已接线（`constants.rarity_unlocked_for`、`/api/catalog/rarities`，终局写入 `player_progress`） |
 > | §11 死亡分类 | finale > karma > event > lifespan > player | ✅ 已实现（`death_rewards.categorize_death`） |
 > | 验证 | compileall + pytest + React build + 密钥审计 | ⏳ 以当前分支最新测试结果为准，不在文档中固化旧计数 |
-> | 待办 | 生产 live-model 修复部署后复验、继续降低本地 live 响应耗时与 repair 依赖 | ⏳ 生产 start+choice 必须 non-fallback；本地 2026-07-01 `local-visible-20turn-20260701-final2` 已完成 20/20 non-fallback，但平均约 48.2s、最大约 153.2s |
+> | 待办 | 继续降低本地 live 响应耗时、repair/judge 依赖，并改善 20 回合内容体验 | ⏳ 当前生产批次 start+choice 已 non-fallback；后续生产部署或模型配置变更仍需复跑。当前本地 `local-visible-20turn-20260701-final2` 已完成 20/20 non-fallback，但平均约 48.2s、最大约 153.2s |
 
 ## 0. TL;DR
 
@@ -435,7 +435,7 @@ CREATE TABLE game_turns (
 | 5 | 实现一次关键抉择结算 | 低境界推进 1-3 年，高境界推进十年级以上 | ✅ |
 | 6 | 接入模型润色和本地模板兜底 | 模型失败仍可继续下一回合 | ✅ |
 | 7 | React UI 切到游戏模式入口 | 375px/768px/1440px 无横向滚动 | ⏳ 已切到 A/B/C/D 固定语义，三档断点待终验 |
-| 8 | 游客与账号存档验收 | 游客可玩无云存档，账号可存读档 | ✅ 本地 API 与 Chrome 覆盖；2026-06-30 生产账号注册/登录/存档/读档/跨会话恢复通过。production live model 仍需修复部署后 start+choice non-fallback 复验 |
+| 8 | 游客与账号存档验收 | 游客可玩无云存档，账号可存读档 | ✅ 本地 API 与 Chrome 覆盖；2026-07-02 当前生产批次账号流与 production start+choice non-fallback 已通过。后续生产部署或模型配置变更仍需复跑同一门禁 |
 
 ---
 

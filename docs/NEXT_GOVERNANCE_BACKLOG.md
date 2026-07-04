@@ -4,144 +4,85 @@ This is the active backlog for `agens-web`. It separates local code work, local 
 
 ## Current Evidence
 
-- 2026-06-30 local gameplay slice:
-  - The 2026-06-29 roadmap merge is committed in `d405d926` and remains the active plan.
-  - Local PostgreSQL at `127.0.0.1:55432` is accepting connections.
-  - `tests/unit/engine/test_playable_gap_locks.py` is now a passing gameplay guard: T1-T4 cover formerly xfailed P1 gaps, and T5-T7 lock lifespan death and attribute-pool behavior.
-  - The first P1 gameplay slice is implemented locally: character creation uses the six-attribute 30-point pool from `docs/GAME_MODE_SPEC.md` §4.1. Manual mode is 2-8 per stat / total 30; random mode is 0-10 per stat / total 30.
-  - Review follow-up fixed random attribute preview persistence: React now submits the shown random pool, backend validates it instead of re-rolling, and switching back to manual resets to a legal manual pool.
-  - Historical visible Chrome 20-turn local player validation completed after the model-settings and playable-gap fixes, but it is no longer the latest acceptance result after the production-fallback/UX follow-up.
-  - Local Chrome evidence is generated under `output/playwright/` and remains untracked by default.
-- User-scoped model settings are implemented locally in commit `44519d7`:
+- Current local code baseline is commit `6cdcfcc`.
+- Validation after the latest P1 observability slice passed:
+  - `python -m compileall -q src tests web scripts migrations`
+  - `python -m pytest -q tests\web` -> 66 passed
+  - `python -m pytest -q` with local PostgreSQL `TEST_DATABASE_URL` -> 469 passed
+  - `cd web\frontend-react; npm.cmd run build` -> passed
+  - `git diff --check` -> passed
+- User-scoped model settings are implemented:
   - `/api/settings/model` is a logged-in user endpoint for personal config.
-  - `/api/admin/settings/model` is the admin-only system default endpoint.
+  - `/api/admin/settings/model` is the admin-only system-default endpoint.
   - `user_model_configs` stores one encrypted config per `user_id`; system default remains in `model_config`.
-  - Stored model keys use application-layer encryption with `MODEL_CONFIG_SECRET` and fail closed if decryption cannot be performed.
   - Runtime model calls resolve config by current session/user and do not mutate process-global `AGNES_API_KEY`.
-  - Empty first-time stored model configs are rejected so an empty user row cannot shadow the effective system Agens default.
-- 2026-06-30 follow-up fixed the production fallback root cause locally: a legacy system `model_config` row without `api_key_encrypted` no longer shadows the environment system key.
-- Latest local automated validation after the P1 gameplay-quality guard slice: `tests\web` 66 passed, full `pytest -q` with `TEST_DATABASE_URL` 465 passed / 1 xfailed, frontend build passed.
-- Main-flow fixes already landed locally: fixed-choice `/choice`, no HTTP 200 without turn progression for ineligible breakthrough choices, contiguous `game_turns` after mismatch/fallback paths.
-- Historical local visible Chrome follow-up passed account registration/login, system-default model start, character creation, save/load, duplicate-prefix cleanup, and internal-mismatch text hiding, but failed 20-turn live-model acceptance at visible turn 7 when narrator returned no usable choices and local story fallback activated.
-- Current local code now includes a follow-up fix for that turn-7 class: narrator parser recovery accepts fenced/bare JSON and Chinese A/B/C/D option lines, malformed-choice narrator turns keep the live narrative with local semantic choices instead of entering local story, and chronicle display strips stray Markdown/JSON fence markers.
-- 2026-07-01 early visible Chrome rerun still failed at turn 4 fallback after narrator returned no narrative and no A/B/C/D choices; this is retained as historical failure evidence under `output/playwright/local-visible-20turn-followup-20260701.*`.
-- 2026-07-01 intermediate visible Chrome rerun `local-visible-20turn-20260701-final` failed at turn 1 because the model repair output included an extra trailing `}` in `<state_update>`; a narrow parser recovery was added for that exact provider drift.
-- 2026-07-01 latest visible Chrome rerun `local-visible-20turn-20260701-final2` passed local P0 browser acceptance: account registration/login, system-default start, character creation, 20/20 choice turns non-fallback, and save/load passed. Strict JSON/NDJSON/CSV evidence is under `output/playwright/local-visible-20turn-20260701-final2.{json,ndjson,csv}` plus `output/playwright/local-visible-20turn-20260701-final2-source.json`. The run still shows P1 quality risk: average choice wait about 48.2s, max about 153.2s, and multiple narrator repair/mismatch-suppression passes.
-- Latest code guard after subagent review: narrator output with choices/state but no narrative remains incomplete; repair output is only accepted if it restores narrative, state, and choices; authoritative item acquisition claims require structured inventory delta or the visible narrative is suppressed to the base rule settlement. Semantic choice recovery remains a continuity guard, not full model-output quality acceptance.
-- 2026-06-30 production/server batch:
-  - Deployed the current package, generated/installed `MODEL_CONFIG_SECRET` without printing it, backed up app/PostgreSQL, rebuilt only `agens-web`, and migrated Alembic to `20260622_0005`.
-  - Production `user_model_configs` exists; public/origin health, catalog, container health, and sensitive-marker log scan passed.
-  - One-time real-account registration, login, save, load, and cross-session restore passed without printing account, cookie, invite, database URL, or key values.
-  - Production live-model acceptance failed before the follow-up fix: start was non-fallback, but one choice turn returned `fallback_active=true` with `turn_count=0`. Sanitized diagnosis found narrator `key_set=false` because an old DB system row shadowed env key.
-- 2026-07-02 production/server follow-up:
-  - Server thread deployed `25ad3d15` and kept Alembic at `20260622_0005`.
-  - Container health, public/origin health, catalog, `user_model_configs`, and sensitive-marker log scan passed.
-  - One-time real-account registration, login, start, choice, save, load, relogin, and cross-session restore passed without printing secrets.
-  - Production live-model P0 is accepted for this batch: start and at least one choice were non-fallback, and choice advanced to `turn_count=1`.
-- 2026-07-02 P1 gameplay-quality guard slice:
-  - Local semantic fallback choices now vary by play phase while preserving fixed D/气运 semantics, reducing repeated retreat/breakthrough loop pressure when narrator choices need recovery.
-  - Initial narrative/state consistency guard coverage now treats explicit injury, lifespan, title, relationship, and karma claims as authoritative-state claims, with negative coverage for rumor/desire/condition/history framing.
-  - Added focused unit and TurnFlow coverage in `tests/unit/engine/test_playable_quality_guards.py` instead of growing the already large `tests/web/test_web_api.py`.
-- 2026-07-02 P1 model-efficiency observability slice:
-  - Local code now emits sanitized `model_result` events with numeric/boolean diagnostics only: narrator/judge elapsed time, repair elapsed time, prompt size, history count, game-state size, and provider token counters when available.
-  - `scripts/local_visible_playtest.cjs` and `scripts/playwright_evidence.py` now carry those metrics into strict JSON/NDJSON/CSV evidence so the next 20-turn Chrome run can separate prompt growth, repair calls, judge calls, and provider latency.
-  - This is not a latency fix yet; it is the measurement gate before changing prompt history, repair policy, judge triggers, or provider configuration.
-- The active phase plan is `docs/PLAYABLE_GAMEPLAY_ROADMAP_20260629.md`: close P0 validation first, then improve gameplay content without broad architecture changes.
+- Local visible Chrome P0 browser acceptance passed in `local-visible-20turn-20260701-final2`: account registration/login, system-default start, character creation, 20/20 choice turns non-fallback, and save/load passed. Evidence remains generated under `output/playwright/` and is ignored by default.
+- Production P0 is accepted for the latest deployed production batch: server thread deployed `25ad3d15`, kept Alembic at `20260622_0005`, verified `user_model_configs`, health/catalog/container state, sanitized log scan, real-account flow, and production start+choice non-fallback with `turn_count=1`.
+- Latest local code adds sanitized `model_result` diagnostics with numeric/boolean fields only: narrator/judge elapsed time, repair elapsed time, prompt size, history count, game-state size, and provider token counters when available. This is measurement, not a latency fix.
+- Active phase plan remains `docs/PLAYABLE_GAMEPLAY_ROADMAP_20260629.md`: P0 current batch is closed; next work is P1 gameplay quality and model-efficiency iteration without broad architecture changes.
 
-## 2026-06-30 Lessons
+## Lessons To Keep
 
-Successful patterns to keep:
-
-- Split local, production, and code-change work. Local 20-turn Chrome success did not hide the separate production live-model gate.
-- Generate deployment packages from tracked files only, scan them before upload, and keep generated Playwright evidence out of commits by default.
-- Treat `MODEL_CONFIG_SECRET` as a server-side runtime secret: generate or install it on the server, report only present/missing, and never paste values into chat or docs.
-- Require backups before production mutation. The successful production batch created app and PostgreSQL backups before source replacement, image build, migration, and service recreate.
-- Check real business semantics, not only transport success. Registration/login/save/load/cross-session restore were verified separately from health/catalog and from live-model non-fallback.
-- Use explicit stop gates. The production batch stopped at live-model fallback instead of claiming success from HTTP 200.
-
-Failure lessons and follow-up rules:
-
-- A deployment can be healthy while gameplay acceptance still fails. `fallback_active=true` with `turn_count=0` is a product/runtime failure even when health checks pass.
-- Test scripts must be simple and audited. The initial production invite creation probe failed because `docker exec` missed stdin wiring; script errors must not be mistaken for product failures.
-- Evidence artifacts must be machine-readable. The local 20-turn browser JSON had escaping/encoding damage, so future evidence writers must output strict JSON or a separate NDJSON/CSV summary.
-- UI sanity checks catch issues that API checks miss. The headed browser found duplicate option prefixes such as `A：A：...`.
-- Do not let internal arbitration text reach players. Mismatch diagnostics must become logs or natural in-world partial-success/failure text.
-- Legacy DB rows can shadow runtime env defaults. System model config must treat missing `api_key_encrypted` as no stored key and fall back to the environment system key until the admin endpoint writes an encrypted default.
-- Keep production diagnosis sanitized: collect fallback source/error class/provider status/timeout/repair-path evidence, not request payloads, model keys, cookies, account details, invite codes, or database URLs.
+- Do not count HTTP 200 as live-model success. Acceptance requires `fallback=false` and turn progression.
+- Keep local, production, and code-change validation separate. Local Chrome success does not replace production non-fallback proof.
+- Keep generated Playwright evidence out of normal commits unless explicitly promoted.
+- Production reports must be sanitized: booleans, counts, revisions, table names, HTTP status, and error classes only. Do not output keys, cookies, real accounts, invite codes, database URLs, raw prompts, raw responses, or secrets.
+- A healthy deploy can still fail gameplay acceptance; live-model fallback remains a product/runtime failure.
+- Browser evidence must be strict JSON/NDJSON/CSV so future audits can parse it.
+- Chrome playtests must not run concurrently with `tests\web` against the same database because Web tests truncate the shared test DB.
 
 ## P0: Acceptance And Deployment Gates
 
-These items block claiming the project is a stable playable public build.
+P0 is currently closed for the latest local and production batches. Re-run only when a gate is touched.
 
-1. Production live model acceptance.
-   - Accepted for the 2026-07-02 `25ad3d15` production batch: start and at least one choice turn were non-fallback, and choice advanced to `turn_count=1`.
-   - HTTP 200 alone is not enough.
-   - Re-run this gate after every production deployment or model-config change.
-2. Local visible Chrome 20-turn player validation.
-   - Accepted locally by `local-visible-20turn-20260701-final2`: 20/20 choice turns were non-fallback and save/load passed.
-   - This does not close P1 gameplay quality risks.
-   - Re-run after fixes to option constraints, state/chronicle consistency, or major UI changes.
-   - Do not run concurrently with pytest against the same database; Web tests truncate the shared test DB.
+1. Production live-model gate.
+   - Re-run after every production deployment, model-config change, provider change, or migration affecting runtime model calls.
+   - Required proof: production start and at least one choice are non-fallback, and choice advances `turn_count`.
+   - Server thread owns this gate.
+2. Local visible Chrome 20-turn gate.
+   - Re-run after gameplay pacing, state/chronicle consistency, option constraints, model-efficiency, or major UI-flow changes.
+   - Required proof: 20/20 choices non-fallback, save/load works, `game_turns` stays continuous, and evidence is strict JSON/NDJSON/CSV.
+   - Do not run concurrently with pytest against the same database.
 
-## P1: Gameplay Quality And Main-Flow Governance
+## P1: Gameplay Quality And Model Efficiency
 
-1. Improve playable content before broad architecture work.
-   - Done in current local slice: 30-point six-attribute creation pool.
-   - Done in current local slice: silent visible rewards without narration are rejected, invalid local-story input no longer consumes a turn, local-story self-loops vary their result text, and eligible breakthroughs append a settled turn.
-   - Done locally: diagnosed production choice fallback with sanitized evidence and fixed the legacy system-config/env fallback path.
+Next work should be data-led and gameplay-facing.
+
+1. Run a real visible Chrome 20-turn sampling pass with the new diagnostics.
+   - Capture average/max choice latency, narrator elapsed time, judge elapsed time, repair attempt count, repaired output count, prompt chars, game-state chars, history count, token usage, fallback count, and `game_turns` continuity.
+   - Do not treat observability itself as performance improvement.
+2. Choose the next latency fix from evidence.
+   - If prompt/history grows: compress `chat_history` into summary + recent turns.
+   - If repair dominates: tighten narrator output contract/parser without accepting incomplete narrative.
+   - If judge dominates: narrow judge trigger conditions to authoritative/risky state changes.
+   - If provider dominates: document model performance differences and rely on user-configurable providers.
+3. Improve 20-turn playable content.
+   - Add the 0-16 岁 opening chronicle per `docs/GAME_MODE_SPEC.md` §3.5.
+   - Add 3-5 turn stage feedback.
+   - Build event pools for steady, opportunity, risk, and luck routes.
    - Reduce repeated retreat/breakthrough loops.
-   - Done locally: remove duplicate option prefixes such as `A：A：...` from backend normalized choices and player UI display.
-   - Done locally: filter or rewrite breakthrough/realm options from structured state when current realm rules reject breakthrough.
-   - Done locally: remove player-visible internal mismatch warnings; convert them into natural in-world rule-settlement text plus debug logs.
-   - Keep state bar age, chronicle age, and `game_turns` age from one authoritative source.
-   - Add clearer stage goals, meaningful rewards, and visible consequences.
-   - Ensure system-level model narrative claims are backed by structured state changes or rejected cleanly; ordinary chronicle-style item descriptions do not automatically become inventory entries.
-   - Initial local guard coverage: injury, lifespan, title, relationship, and karma claims require structured state/lore/status deltas, while rumor/desire/condition/history framing is allowed as chronicle text.
-   - Add visible handling for key items, techniques, and attribute growth, or prevent the narrative from asserting them.
-   - Improve live-model latency and structured-output stability; the latest accepted local Chrome run averaged about 48.2s per choice, maxed at about 153.2s, and relied heavily on narrator repair.
-   - Done locally: add sanitized per-turn performance diagnostics for narrator/judge elapsed time, repair elapsed time, prompt/game-state/history size, and token counters. Next action is a real Chrome 20-turn sampling run; do not treat the instrumentation itself as performance improvement.
-   - Done locally: recover common narrator output drift (fenced/bare JSON, JSON-only payloads, Chinese option lines), avoid local-story fallback when the live narrator produced usable narrative but malformed choices, and fail closed on malformed state updates.
-   - Done locally: classify missing narrative as incomplete even when choices/state exist, and require repaired narrator output to contain narrative before accepting it as repaired.
-   - Done locally: strip stray markdown/JSON fence artifacts from chronicle text; final2 did not stop on visible fence/JSON pollution, but this should remain part of browser smoke checks.
-   - Treat the first playable slice and full-run pacing as gameplay acceptance targets per `docs/GAME_MODE_SPEC.md` §3.5.
-   - Use an abstract xianxia trope library only. Do not copy real novel characters, sects, plot text, or proprietary settings.
-2. Tighten model failure paths.
-   - Cover StartFlow, TurnFlow, BreakthroughFlow fallback and `llm_error` paths.
-   - API responses should distinguish provider failure, incomplete output, validation rejection, and local fallback.
-   - Keep `tests/unit/engine/test_playable_gap_locks.py` passing as the guard for previously identified playable-gap regressions.
-3. Continue small complexity slices only when they support main-flow stability.
-   - `GameEngine`: split model failure, local story, breakthrough helpers one responsibility at a time.
-   - `WebGameService`: keep reducing duplicate runner/error/persistence orchestration.
-   - `database_postgres.py`: extract row shaping and helper functions without schema changes.
-   - `app.py`: router split is optional and lower priority than gameplay correctness.
-   - Current slice avoided growing `tests/web/test_web_api.py` by adding focused engine guard coverage in a separate test file; full web-test splitting remains a later governance item.
-4. Frontend maintenance.
-   - Continue splitting `CharacterCreatePage` and style files around verified workflows.
-   - Use Chrome smoke after visual changes.
-5. Gameplay system iteration.
-   - Done: move character creation to a six-attribute point pool per `docs/GAME_MODE_SPEC.md` §4.1.
-   - Add an opening chronicle before the first player choice per `docs/GAME_MODE_SPEC.md` §3.5.
-   - Build event pools by steady, opportunity, risk, and luck routes.
-   - Keep small-realm progress mostly implicit; reserve major-realm breakthroughs for stage events.
+   - Keep small-realm progress mostly implicit; reserve major breakthroughs for stage events.
+4. Tighten authoritative state accounting.
+   - Key items, techniques, attribute growth, titles, relationships, injuries, lifespan, realm changes, and karma must be structured state or rewritten/suppressed.
+   - Ordinary chronicle rumors, intentions, or non-authoritative color text do not automatically become inventory.
+   - Model text can polish narrative and choices, but cannot decide authoritative numbers.
+
+## P1: Complexity Governance
+
+Only do complexity work that supports the main flow.
+
+- `tests/web/test_web_api.py`: split by account/model settings/session/save-load/turn persistence when touched.
+- `web/backend/service.py`: extract session progression, model config resolution, persistence, and error mapping helpers without changing API behavior.
+- `web/backend/database_postgres.py`: extract row shaping and repeated SQL helpers without schema changes.
+- `src/agens_novel/engine/game_engine.py`: make small slices around fallback, breakthrough, local story, and model failure.
+- Avoid broad router rewrites or architecture restructuring unless a blocking bug proves it necessary.
 
 ## P2: Documentation And Cleanup
 
-1. Keep current docs short and authoritative.
-   - `docs/INDEX.md` routes current reading.
-   - `docs/PLAYABLE_GAMEPLAY_ROADMAP_20260629.md` contains the current phase plan.
-   - `docs/PROJECT_AUDIT.md` contains current structure and risk only.
-   - This file contains active backlog only.
-   - `CHANGELOG.md` and `docs/archive/` retain history.
-2. Formalize local PostgreSQL startup/recovery.
-   - Check `pg_isready` before starting.
-   - Initial helper is now `scripts/start_local_pg.ps1`.
-   - Do not remove `.tmp\pg-test-20260626-55432` while PG is running.
-   - Document stale `postmaster.pid`, port occupancy, and log-permission recovery in the helper and README before deleting any local PG state.
-3. Handle generated evidence deliberately.
-   - Treat `output/playwright/`, screenshots, and JSON traces as generated artifacts unless explicitly promoted.
-   - `output/playwright/` remains ignored by `.gitignore`; keep evidence on disk for review, but do not stage it in normal code/docs commits.
-   - Do not delete historical artifacts without inventory, backup, and quarantine.
-   - Done locally: add a strict JSON/NDJSON/CSV evidence writer and CLI; 2026-07-01 Chrome evidence was normalized through it.
+- Keep `docs/INDEX.md`, `docs/PLAYABLE_GAMEPLAY_ROADMAP_20260629.md`, `docs/GAME_MODE_SPEC.md`, `docs/RUNTIME_FLOW.md`, and this file aligned.
+- Historical planning drafts and UI prototypes have been removed from `docs/archive/`; current state belongs in current docs, and history belongs in `CHANGELOG.md` or concise lessons sections.
+- Keep `scripts/start_local_pg.ps1` as the PG startup/recovery helper. Do not delete `.tmp\pg-test-20260626-55432` while PG is running.
+- `output/playwright/` remains ignored generated evidence. Do not stage it in ordinary code/docs commits.
 
 ## Validation Rules
 
@@ -152,7 +93,6 @@ These items block claiming the project is a stable playable public build.
   - full `python -m pytest -q` when touching shared gameplay/service code
 - Frontend/UI changes:
   - `npm.cmd run build`
-  - relevant frontend contract tests
   - visible Chrome smoke for changed viewport/workflow
 - Production:
   - follow `docs/PRODUCTION_V5_MIGRATION_CHECKLIST.md`

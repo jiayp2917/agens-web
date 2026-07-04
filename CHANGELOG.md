@@ -1,5 +1,13 @@
 # Changelog
 
+## 2026-07-04
+
+### Changed - documentation status and archive cleanup
+
+- Updated current project docs to reflect the latest local baseline at `6cdcfcc`: `compileall` passed, `tests\web` 66 passed, full `pytest -q` 469 passed, frontend build passed, and `git diff --check` passed.
+- Reframed the current state: local Chrome P0 and the latest production P0 batch are closed; remaining work is P1 gameplay quality, model-efficiency measurement, authoritative state accounting, and small complexity slices.
+- Removed historical `docs/archive/` drafts, old Alpha review notes, and old UI prototype assets after consolidating the useful lessons into `docs/PROJECT_AUDIT.md`, `docs/NEXT_GOVERNANCE_BACKLOG.md`, and `docs/PLAYABLE_GAMEPLAY_ROADMAP_20260629.md`.
+- Updated `AGENTS.md`, `CLAUDE.md`, `docs/INDEX.md`, `docs/RUNTIME_FLOW.md`, `docs/GAME_MODE_SPEC.md`, and production docs so future agents do not cite deleted archive files or old production fallback status as current facts.
 ## 2026-07-02
 
 ### Changed - sanitized model performance observability

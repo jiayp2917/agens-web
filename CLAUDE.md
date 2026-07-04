@@ -119,4 +119,4 @@ Do not add custom layers before checking whether existing FastAPI, SQLAlchemy/Al
 
 ## 文档入口
 
-先读 docs/INDEX.md。当前运行链路见 docs/RUNTIME_FLOW.md，结构边界见 docs/PROJECT_AUDIT.md，生产迁移见 docs/PRODUCTION_V5_MIGRATION_CHECKLIST.md。历史 UI 原型和 Alpha 复盘只作为归档背景读取。
+先读 docs/INDEX.md。当前运行链路见 docs/RUNTIME_FLOW.md，结构边界见 docs/PROJECT_AUDIT.md，生产复验门禁见 docs/PRODUCTION_V5_MIGRATION_CHECKLIST.md。历史变更只看 CHANGELOG.md；不要引用已删除的 docs/archive 旧草案作为当前事实。
