@@ -115,6 +115,7 @@ class TestSupportingConstants:
     def test_six_attributes(self):
         assert ATTRIBUTE_KEYS == ["root_bone", "comprehension", "luck", "willpower", "physique", "soul"]
         assert set(DEFAULT_ATTRIBUTES) == set(ATTRIBUTE_KEYS)
+        assert all(value == 5 for value in DEFAULT_ATTRIBUTES.values())
         assert ATTRIBUTE_LABELS["root_bone"] == "根骨"
         assert ATTRIBUTE_LABELS["soul"] == "神魂"
 

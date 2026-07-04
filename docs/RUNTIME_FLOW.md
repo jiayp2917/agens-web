@@ -5,10 +5,11 @@
 - 产品入口是 React/Vite 浏览器 UI + FastAPI 后端 + PostgreSQL；旧移动端、旧 CLI/REPL、旧 `web/frontend` 不在当前维护范围。
 - 当前玩法是游戏模式 v5 Alpha：A/B/C/D 四按钮固定语义，A 稳妥、B 机遇、C 风险、D 气运；无自由文本主入口，无 HP/MP 常驻 UI。
 - 模型设置为注册用户个人配置 + 系统 Agens 默认兜底；用户 key 加密存储，不写入前端、日志、文档、存档或 session snapshot。
-- 当前本地自动化基线：本地 PostgreSQL 可用；`compileall` 通过；`tests\web` 66 passed；带 `TEST_DATABASE_URL` 的全量 `pytest -q` 469 passed；前端 build 通过；`git diff --check` 通过。
+- 当前本地自动化基线：本地 PostgreSQL 可用；`compileall` 通过；`tests\web` 68 passed；带 `TEST_DATABASE_URL` 的全量 `pytest -q` 480 passed；前端 build 通过；`git diff --check` 通过。
 - 当前本地真实 Chrome 验收：`local-visible-20turn-20260701-final2` 已完成 20/20 non-fallback + 存读档，但响应耗时和 narrator repair 依赖仍是 P1 风险。
 - 当前生产 P0：服务器线程部署 `25ad3d15` 后，账号流通过，production start 和至少 1 次 choice 均 non-fallback，choice 后 `turn_count=1`。未来生产部署或模型配置变更仍需复跑同一门禁；HTTP 200 或本地 final2 不能替代生产 live-model 验收。
-- 最新本地代码 `6cdcfcc` 只加入脱敏模型性能观测，不代表性能已修复；下一步应跑真实 Chrome 20 回合采样，分辨 prompt/history、repair、judge 和 provider 慢因。
+- 当前本地代码已加入脱敏模型性能观测；这不代表性能已修复，下一步应跑真实 Chrome 20 回合采样，分辨 prompt/history、repair、judge 和 provider 慢因。
+- 当前 P1 工作批次修复模型不可用提示、练气小境界节奏、第三方编年史叙事约束和侧栏外界情报；本地自动化门禁已通过，真实 Chrome 20 回合尚未针对该批次复跑。
 - 当前阶段计划见 `docs/PLAYABLE_GAMEPLAY_ROADMAP_20260629.md`；当前待办见 `docs/NEXT_GOVERNANCE_BACKLOG.md`。
 本文记录当前 Web-only 运行链路。产品入口是浏览器 UI + FastAPI 后端，不再包含移动端打包或设备验证路径。
 
@@ -63,6 +64,7 @@ http://127.0.0.1:8000/
 4. 角色创建
    - 前端角色页提交角色名、天赋、灵根、家世、难度和六维属性；不再提交游戏名称或隐藏开局码。
    - 六维属性遵循 `docs/GAME_MODE_SPEC.md` §4.1：手动模式单项 2-8 且总和必须为 30；随机模式单项 0-10 且总和固定为 30。后端会重新校验角色创建入参。
+   - 运行时六维属性统一按 0-10 解析，5 为中性默认值；旧 0-100 存档、World Builder 输出或 catalog 元数据只作为兼容输入迁移，不再作为新逻辑尺度。
    - 随机模式提交前端展示的随机属性池；后端只在随机模式未带属性时兜底生成新池，避免“看到的随机值”和实际入局值不一致。
    - `POST /api/sessions/{id}/start` 调用 `GameEngine.start_from_profile()`。
    - World Builder 负责开场叙事和 A/B/C/D；无 key 或模型失败时进入本地故事兜底，并在前端提供继续或结束本局。
@@ -114,6 +116,7 @@ Browser UI
 - 生产模式关闭 `/docs`、`/redoc`、`/openapi.json`，并启用 Host 白名单。
 - 当前 React 主入口已切到游戏模式 v5 Alpha：A/B/C/D 四按钮固定语义，支持访客新局、邀请码账号存档，以及注册用户个人模型配置。
 - 境界顺序固定为：练气、筑基、金丹、元婴、化神、合体、大乘、渡劫、飞升。
+- 侧栏“外界情报”只展示现有世界摘要和 lore，不写入状态；权威状态仍由 `GameEngine` 和 `GameSession.apply_delta()` 结算。
 
 ## 验证
 

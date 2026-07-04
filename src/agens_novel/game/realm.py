@@ -12,9 +12,20 @@ import logging
 from dataclasses import dataclass, field
 from typing import Any
 
-from .constants import REALM_ORDER, REALM_CONFIGS, REALM_LIFESPANS, SPIRIT_ROOT_MAP
+from .constants import (
+    ATTRIBUTE_DEFAULT,
+    REALM_ORDER,
+    REALM_CONFIGS,
+    REALM_LIFESPANS,
+    SPIRIT_ROOT_MAP,
+    normalize_attribute_value,
+)
 
 log = logging.getLogger(__name__)
+
+_QI_REFINING_BASE_AGE = 16
+_QI_REFINING_YEARS_PER_STAGE = 2
+_QI_REFINING_TURNS_PER_STAGE = 3
 
 
 @dataclass
@@ -232,16 +243,45 @@ class RealmSystem:
         if stage >= cfg.stages:
             return None  # at max layer — need breakthrough, not stage advance
 
+        min_stage = self._minimum_stage_for_chronicle_pace(session, cfg)
+        if min_stage > stage:
+            return self._stage_delta(min_stage, cfg.stages, paced=True)
+
         attrs = getattr(session, "attributes", {}) if hasattr(session, "attributes") else {}
-        comprehension = int(attrs.get("comprehension", 50)) if isinstance(attrs, dict) else 50
-        root_bone = int(attrs.get("root_bone", 50)) if isinstance(attrs, dict) else 50
-        rate = 0.18 + max(0, comprehension - 50) * 0.002 + max(0, root_bone - 50) * 0.002
+        comprehension = (
+            normalize_attribute_value(attrs.get("comprehension", ATTRIBUTE_DEFAULT))
+            if isinstance(attrs, dict) else ATTRIBUTE_DEFAULT
+        )
+        root_bone = (
+            normalize_attribute_value(attrs.get("root_bone", ATTRIBUTE_DEFAULT))
+            if isinstance(attrs, dict) else ATTRIBUTE_DEFAULT
+        )
+        rate = (
+            0.22
+            + max(0, comprehension - ATTRIBUTE_DEFAULT) * 0.03
+            + max(0, root_bone - ATTRIBUTE_DEFAULT) * 0.03
+        )
         if random.random() > min(0.55, rate):
             return None
 
         # Advance to next layer within the same realm.
         next_stage = stage + 1
 
+        return self._stage_delta(next_stage, cfg.stages, paced=False)
+
+    def _minimum_stage_for_chronicle_pace(self, session: Any, cfg: RealmConfig) -> int:
+        """Keep early Qi Refining from lagging behind a multi-year chronicle."""
+        if getattr(session, "realm", "练气") != "练气":
+            return int(getattr(session, "realm_stage", 1) or 1)
+        age = int(getattr(session, "age", _QI_REFINING_BASE_AGE) or _QI_REFINING_BASE_AGE)
+        turn_count = int(getattr(session, "turn_count", 0) or 0)
+        years_elapsed = max(0, age - _QI_REFINING_BASE_AGE)
+        stage_from_years = 1 + years_elapsed // _QI_REFINING_YEARS_PER_STAGE
+        stage_from_turns = 1 + turn_count // _QI_REFINING_TURNS_PER_STAGE
+        return max(1, min(cfg.stages, stage_from_years, stage_from_turns))
+
+    @staticmethod
+    def _stage_delta(next_stage: int, max_stage: int, *, paced: bool) -> dict[str, Any]:
         delta: dict[str, Any] = {
             "character": {
                 "realm_stage": next_stage,
@@ -249,9 +289,11 @@ class RealmSystem:
             "meta": {
                 "stage_advanced": True,
                 "new_stage": next_stage,
-                "max_stage": cfg.stages,
+                "max_stage": max_stage,
             },
         }
+        if paced:
+            delta["meta"]["stage_advance_reason"] = "chronicle_pace"
         return delta
 
     # ─────────────────────────────────────────────────────────────────────

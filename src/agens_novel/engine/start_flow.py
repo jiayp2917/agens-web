@@ -7,11 +7,15 @@ import os
 from typing import Any
 
 from ..game.constants import (
+    ATTRIBUTE_MAX,
     ATTRIBUTE_KEYS,
+    ATTRIBUTE_MIN,
+    ATTRIBUTE_TOTAL,
     DIFFICULTY_OPTIONS,
     FAMILY_BACKGROUNDS,
     SPIRIT_ROOTS,
     TALENT_OPTIONS,
+    normalize_attribute_value,
 )
 from ..session.game_session import GameSession
 from .choices import complete_choices, fallback_choices
@@ -28,11 +32,12 @@ log = logging.getLogger(__name__)
 
 START_MODEL_WORLD_ENV = "AGENS_START_MODEL_WORLD"
 START_MODEL_OPENING_ENV = "AGENS_START_MODEL_OPENING"
-PROFILE_ATTRIBUTE_TOTAL = 30
+PROFILE_ATTRIBUTE_TOTAL = ATTRIBUTE_TOTAL
 PROFILE_MANUAL_ATTRIBUTE_MIN = 2
 PROFILE_MANUAL_ATTRIBUTE_MAX = 8
-PROFILE_RANDOM_ATTRIBUTE_MIN = 0
-PROFILE_RANDOM_ATTRIBUTE_MAX = 10
+PROFILE_RANDOM_ATTRIBUTE_MIN = ATTRIBUTE_MIN
+PROFILE_RANDOM_ATTRIBUTE_MAX = ATTRIBUTE_MAX
+PROFILE_REWARDED_ATTRIBUTE_MAX = ATTRIBUTE_MAX
 _PROFILE_ATTRIBUTE_DEFAULT = PROFILE_ATTRIBUTE_TOTAL // len(ATTRIBUTE_KEYS)
 _ALLOW_LEGACY_BONUS_ATTRIBUTES = "_allow_legacy_bonus_attributes"
 
@@ -282,8 +287,8 @@ def apply_world_builder_generated_session(
         if isinstance(attrs, dict):
             merged_attrs = dict(session.attributes)
             for key, value in attrs.items():
-                if isinstance(key, str) and isinstance(value, int) and not isinstance(value, bool):
-                    merged_attrs[key] = max(0, min(100, value))
+                if key in merged_attrs and isinstance(value, int) and not isinstance(value, bool):
+                    merged_attrs[key] = normalize_attribute_value(value)
             session.attributes = merged_attrs
         session.techniques = char_data.get("techniques", [])
         session.inventory = char_data.get("inventory", [])
@@ -352,7 +357,7 @@ def normalize_profile_attributes(
     creation is normalized before this function is called and may use 0-10,
     still totaling 30. Account legacy bonuses are applied after the public
     input is validated, so service code may opt into a post-bonus total above
-    30.
+    30 while each attribute remains on the 0-10 gameplay scale.
     """
     if not incoming_attrs:
         return {key: _PROFILE_ATTRIBUTE_DEFAULT for key in ATTRIBUTE_KEYS}
@@ -376,8 +381,8 @@ def normalize_profile_attributes(
         if total < PROFILE_ATTRIBUTE_TOTAL:
             raise ValueError("attributes must not drop below the 30 point pool")
         for value in attrs.values():
-            if value < PROFILE_RANDOM_ATTRIBUTE_MIN or value > 99:
-                raise ValueError("legacy-bonus attributes must stay between 0 and 99")
+            if value < PROFILE_RANDOM_ATTRIBUTE_MIN or value > PROFILE_REWARDED_ATTRIBUTE_MAX:
+                raise ValueError("legacy-bonus attributes must stay between 0 and 10")
         return attrs
 
     if total != PROFILE_ATTRIBUTE_TOTAL:

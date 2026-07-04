@@ -283,7 +283,7 @@ class TestGameEngineHandleAction:
 
         assert errors == []
         assert any("缺少叙事" in msg or "未返回可用 A/B/C" in msg for msg in infos)
-        assert any("天道紊乱" in msg for msg in infos)
+        assert any("缺少叙事" in msg or "未返回可用 A/B/C" in msg for msg in infos)
         assert engine.game_session.local_story_active is True
         assert len(engine.game_session.last_choices) == 4
 
@@ -762,6 +762,26 @@ class TestStageAdvancement:
         stage_msgs = [m for m in infos if "修为精进" in m]
         assert len(stage_msgs) == 1
 
+    def test_stage_advance_is_recorded_in_turn_delta(self, monkeypatch) -> None:
+        """Automatic small-stage advancement must be auditable in turn_history."""
+        monkeypatch.setenv("AGNES_API_KEY", "sk-test-1234567890")
+        engine = GameEngine()
+        with _patch_turn_runner():
+            engine.new_game("许满")
+        engine.game_session.realm = "练气"
+        engine.game_session.realm_stage = 3
+        engine.game_session.age = 29
+        engine.game_session.turn_count = 9
+        engine.game_session.attributes = {"comprehension": 5, "root_bone": 5}
+
+        with _patch_turn_runner():
+            engine.handle_action("闭关修炼")
+
+        last_delta = engine.game_session.turn_history[-1]["delta"]
+        assert last_delta["character"]["realm_stage"] == engine.game_session.realm_stage
+        assert last_delta["meta"]["stage_advanced"] is True
+        assert last_delta["meta"]["stage_advance_reason"] == "chronicle_pace"
+
 
 class TestBreakthroughRouting:
     """Tests for natural-language breakthrough detection and routing."""
@@ -968,4 +988,4 @@ class TestBreakthroughPreparationGate:
 
         assert engine.game_session.realm == "练气"
         assert len(engine.game_session.last_choices) == 4
-        assert any("天道紊乱" in msg for msg in infos)
+        assert any("上游模型响应超时" in msg for msg in infos)

@@ -2,9 +2,18 @@
 
 ## 2026-07-04
 
+### Changed - P1 gameplay feedback and attribute-scale repair batch
+
+- Added secret-safe, actionable model-unavailable notices for common upstream failures such as HTTP 404, auth failure, timeout, or missing/unavailable model key. The UI still switches to local story fallback, but the prompt now distinguishes likely model-config/provider issues from generic narrative incompleteness.
+- Added Qi Refining small-stage pacing guards so a multi-year chronicle cannot remain stuck in early small layers only because random advancement missed repeatedly; major breakthrough gates remain governed by `RealmSystem.can_attempt_breakthrough()`.
+- Tightened narrator guidance toward third-person chronicle summaries with external-world context, intended to discourage overly detailed second-person action prose.
+- Added a read-only "external intelligence" sidebar projection from existing world summaries/lore. This is not a new resource system and does not let the frontend write authoritative state.
+- Completed the attribute-scale audit: runtime attributes are v5 0-10 values with 5 as the neutral default. `DEFAULT_ATTRIBUTES`, `GameSession` delta/save loading, World Builder profile application, realm small-stage pacing, legacy rewards, and catalog seed metadata no longer use 50/100 as normal gameplay values.
+- Added compatibility migration paths for old 0-100 saves or generated profile values, and Alembic `20260704_0006` normalizes existing catalog talent modifiers and difficulty luck modifiers to the v5 scale.
+
 ### Changed - documentation status and archive cleanup
 
-- Updated current project docs to reflect the latest local baseline at `6cdcfcc`: `compileall` passed, `tests\web` 66 passed, full `pytest -q` 469 passed, frontend build passed, and `git diff --check` passed.
+- Updated current project docs to reflect the latest local baseline: `compileall` passed, `tests\web` 68 passed, full `pytest -q` 480 passed, frontend build passed, and `git diff --check` passed.
 - Reframed the current state: local Chrome P0 and the latest production P0 batch are closed; remaining work is P1 gameplay quality, model-efficiency measurement, authoritative state accounting, and small complexity slices.
 - Removed historical `docs/archive/` drafts, old Alpha review notes, and old UI prototype assets after consolidating the useful lessons into `docs/PROJECT_AUDIT.md`, `docs/NEXT_GOVERNANCE_BACKLOG.md`, and `docs/PLAYABLE_GAMEPLAY_ROADMAP_20260629.md`.
 - Updated `AGENTS.md`, `CLAUDE.md`, `docs/INDEX.md`, `docs/RUNTIME_FLOW.md`, `docs/GAME_MODE_SPEC.md`, and production docs so future agents do not cite deleted archive files or old production fallback status as current facts.

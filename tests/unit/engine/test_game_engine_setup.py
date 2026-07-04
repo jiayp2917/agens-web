@@ -22,6 +22,14 @@ def _canned_world_builder() -> dict[str, Any]:
             "character": {
                 "name": "许满", "realm": "练气", "realm_stage": 1,
                 "spirit_root": "火木双灵根", "spirit_root_grade": "地",
+                "attributes": {
+                    "root_bone": 50,
+                    "comprehension": 50,
+                    "luck": 50,
+                    "willpower": 50,
+                    "physique": 50,
+                    "soul": 50,
+                },
                 "breakthrough_flags": [],
                 "techniques": [{"name": "基础吐纳术", "level": 1, "type": "内功"}],
                 "inventory": [{"name": "粗布道袍", "quantity": 1, "type": "防具"}],
@@ -93,6 +101,7 @@ class TestGameEngineNewGame:
         assert engine.game_session.game_started is True
         assert engine.game_session.char_name == "许满"
         assert engine.game_session.realm == "练气"
+        assert engine.game_session.attributes["root_bone"] == 5
         assert not hasattr(engine.game_session, "hp")
         assert not hasattr(engine.game_session, "mp")
         assert engine.game_session.last_choices == ["留在山门吐纳", "询问接引弟子", "观察灵气流向", "【气运】随缘而行，听天命、赌因果"]
@@ -156,7 +165,7 @@ class TestGameEngineNewGame:
             engine.handle_action("观察")
 
         assert len(engine.game_session.last_choices) == 4
-        assert any("天道紊乱" in msg for msg in infos)
+        assert any("上游模型响应超时" in msg for msg in infos)
 
     def test_successful_narrative_without_choices_shows_recovery_notice(self, monkeypatch) -> None:
         monkeypatch.setenv("AGNES_API_KEY", "sk-test-1234567890")

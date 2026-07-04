@@ -47,3 +47,16 @@ def test_catalog_seed_sources_cover_all_catalog_tables() -> None:
         "catalog_story_seeds",
     ]
     assert all(rows for _, rows in catalog_seed_sources())
+
+
+def test_catalog_seed_attribute_metadata_uses_v5_scale() -> None:
+    for table, rows in catalog_seed_sources():
+        if table == "catalog_talents":
+            for row in rows:
+                mods = row.get("attribute_mods", {})
+                assert isinstance(mods, dict)
+                assert all(isinstance(value, int) and -3 <= value <= 3 for value in mods.values())
+        if table == "catalog_difficulties":
+            for row in rows:
+                assert isinstance(row.get("luck_modifier"), int)
+                assert -1 <= row["luck_modifier"] <= 1

@@ -9,8 +9,9 @@ Web-only 文字修仙模拟器。当前 `master` 是浏览器版本主线：Reac
 - 用户级模型设置已本地落地：注册用户可保存个人 provider/base URL/model/API key，访客不可配置，无个人配置时使用系统 Agens 默认。
 - 模型 API key 只允许后端加密存储和脱敏展示，不得出现在响应、日志、存档、session snapshot、前端包或文档中。
 - 角色创建六维属性池已按 `docs/GAME_MODE_SPEC.md` §4.1 收束：手动单项 2-8、总和 30；随机单项 0-10、总和 30。
-- 最新本地自动化基线：本地 PostgreSQL 可用；`compileall` 通过；`tests\web` 66 passed；带 `TEST_DATABASE_URL` 的全量 `pytest -q` 469 passed；前端 build 通过；`git diff --check` 通过。
-- 最新本地真实 Chrome 跟进验收：2026-07-01 `local-visible-20turn-20260701-final2` 通过，普通账号注册/登录、系统默认模型开局、角色创建、20/20 choice non-fallback、存档/读档均通过；平均回合耗时约 48.2s，最大约 153.2s。语义补齐 choices 只是不停流的降级恢复，不代表完整模型选项质量；live 响应慢、repair 依赖高、叙事/状态落账质量仍需继续收紧。当前最新代码 `6cdcfcc` 已加入脱敏模型性能观测，下一步应跑真实 Chrome 20 回合采样来定位慢因。
+- 运行时六维属性统一为 0-10 尺度，5 为中性默认值；旧 0-100 存档或模型输出只在加载/入局时兼容迁移，不能再作为新逻辑的默认尺度。
+- 最新本地自动化基线：本地 PostgreSQL 可用；`compileall` 通过；`tests\web` 68 passed；带 `TEST_DATABASE_URL` 的全量 `pytest -q` 480 passed；前端 build 通过；`git diff --check` 通过。
+- 最新本地真实 Chrome 跟进验收：2026-07-01 `local-visible-20turn-20260701-final2` 通过，普通账号注册/登录、系统默认模型开局、角色创建、20/20 choice non-fallback、存档/读档均通过；平均回合耗时约 48.2s，最大约 153.2s。语义补齐 choices 只是不停流的降级恢复，不代表完整模型选项质量；live 响应慢、repair 依赖高、叙事/状态落账质量仍需继续收紧。当前代码已加入脱敏模型性能观测，下一步应跑真实 Chrome 20 回合采样来定位慢因。
 - 最新生产批次：服务器线程已部署 `25ad3d15` 并迁移到 Alembic `20260622_0005`，`user_model_configs` 存在，public/origin health、catalog、容器健康和日志敏感标记扫描通过；一次性真实账号注册、登录、存档、读档、跨会话恢复通过。
 - production live model P0 已通过脱敏验收：生产 start 和至少 1 次 choice 均为 non-fallback，choice 后 `turn_count=1`。历史 `model_config` 旧行遮蔽 env key 的失败保留为经验，后续不再作为当前阻塞。
 - 尚未完成：P1 游玩质量和治理，包括 live 响应慢、narrator repair 依赖高、重复闭关/突破循环、叙事/权威状态落账和大文件复杂度治理。

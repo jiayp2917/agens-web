@@ -16,7 +16,12 @@ from __future__ import annotations
 import logging
 from typing import Any
 
-from ..game.constants import REALM_ORDER
+from ..game.constants import (
+    ATTRIBUTE_MAX,
+    REALM_ORDER,
+    clamp_attribute_value,
+    normalize_attribute_value,
+)
 
 log = logging.getLogger(__name__)
 
@@ -258,7 +263,7 @@ def apply_legacy_bonuses(
     """Apply active legacy bonuses to a freshly-built character profile.
 
     Mutates a copy of profile in place and returns it.
-    - attribute_points: added to the user's attribute pool (max single stat = 99)
+    - attribute_points: added to the user's attribute pool (max single stat = 10)
     - extra_lifespan: added to the starting lifespan
     - legacy_talent: added to a `legacy_talents` list in the profile
     - opening_title: added to an `opening_titles` list in the profile
@@ -267,7 +272,10 @@ def apply_legacy_bonuses(
     if not bonuses:
         return out
 
-    attrs = dict(out.get("attributes", {}) or {})
+    attrs = {
+        str(key): normalize_attribute_value(value)
+        for key, value in dict(out.get("attributes", {}) or {}).items()
+    }
     legacy_talents = list(out.get("legacy_talents", []) or [])
     opening_titles = list(out.get("opening_titles", []) or [])
     extra_lifespan = int(out.get("extra_lifespan", 0) or 0)
@@ -281,9 +289,9 @@ def apply_legacy_bonuses(
             distributed = 0
             while distributed < pool and attrs:
                 lowest_key = min(attrs, key=lambda k: attrs.get(k, 0))
-                if attrs[lowest_key] >= 99:
+                if attrs[lowest_key] >= ATTRIBUTE_MAX:
                     break
-                attrs[lowest_key] = min(99, attrs[lowest_key] + 1)
+                attrs[lowest_key] = clamp_attribute_value(attrs[lowest_key] + 1)
                 distributed += 1
         elif btype == "extra_lifespan":
             extra_lifespan += int(bvalue or 0)

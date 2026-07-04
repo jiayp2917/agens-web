@@ -24,7 +24,7 @@ class TestGameSessionInit:
         for legacy in ("game_mode", "hp", "hp_max", "mp", "mp_max", "combat", "experience", "experience_to_next", "insight", "gold"):
             assert not hasattr(s, legacy)
         assert s.attributes == DEFAULT_ATTRIBUTES
-        assert s.attributes["luck"] == 50
+        assert s.attributes["luck"] == 5
         assert s.last_choices == []
         assert s.breakthrough_flags == []
         assert s.techniques == []
@@ -54,7 +54,7 @@ class TestGameSessionApplyDelta:
                 "family_background": "寒门",
                 "difficulty": "困难",
                 "game_mode": "mid",
-                "attributes": {"root_bone": 25, "luck": "+51", "bad": True},
+                "attributes": {"root_bone": 2, "luck": "+51", "bad": True},
             }
         })
         assert s.age == 18
@@ -62,8 +62,8 @@ class TestGameSessionApplyDelta:
         assert s.family_background == "寒门"
         assert s.difficulty == "困难"
         assert not hasattr(s, "game_mode")
-        assert s.attributes["root_bone"] == 75
-        assert s.attributes["luck"] == 100
+        assert s.attributes["root_bone"] == 7
+        assert s.attributes["luck"] == 10
         assert "bad" not in s.attributes
 
     def test_apply_combat_start_is_ignored(self):
@@ -186,7 +186,7 @@ class TestGameSessionSerialization:
         s.talent = "剑心微明"
         s.family_background = "寒门"
         s.difficulty = "困难"
-        s.attributes = {key: 66 for key in DEFAULT_ATTRIBUTES}
+        s.attributes = {key: 7 for key in DEFAULT_ATTRIBUTES}
         s.last_choices = ["探查异动", "通知同门"]
         s.breakthrough_flags = ["foundation_aid"]
         s.techniques = [{"name": "火球术", "type": "术法"}]
@@ -219,7 +219,7 @@ class TestGameSessionSerialization:
         assert s2.family_background == "寒门"
         assert s2.difficulty == "困难"
         assert not hasattr(s2, "game_mode")
-        assert s2.attributes == {key: 66 for key in DEFAULT_ATTRIBUTES}
+        assert s2.attributes == {key: 7 for key in DEFAULT_ATTRIBUTES}
         assert s2.last_choices == ["探查异动", "通知同门"]
         assert s2.breakthrough_flags == ["foundation_aid"]
         assert s2.techniques == [{"name": "火球术", "type": "术法"}]
@@ -272,11 +272,38 @@ class TestGameSessionSerialization:
         s = GameSession.from_save_dict(data)
         assert s.char_name == "旧角色"
         assert s.age == 16
-        assert s.attributes["luck"] == 50
+        assert s.attributes["luck"] == 5
         for legacy in ("game_mode", "hp", "hp_max", "mp", "mp_max", "combat"):
             assert not hasattr(s, legacy)
         assert s.attributes == DEFAULT_ATTRIBUTES
         assert s.chat_history == []
+
+    def test_old_0_100_scale_save_attributes_are_migrated_to_0_10(self):
+        data = {
+            "turn_count": 1,
+            "game_started": True,
+            "character": {
+                "name": "旧尺度角色",
+                "attributes": {
+                    "root_bone": 66,
+                    "comprehension": 50,
+                    "luck": 99,
+                    "willpower": 0,
+                    "physique": 11,
+                    "soul": True,
+                },
+            },
+            "world": {},
+        }
+        s = GameSession.from_save_dict(data)
+        assert s.attributes == {
+            "root_bone": 7,
+            "comprehension": 5,
+            "luck": 10,
+            "willpower": 0,
+            "physique": 1,
+            "soul": 5,
+        }
 
     def test_remaining_lifespan_is_cap_minus_age(self):
         s = GameSession()

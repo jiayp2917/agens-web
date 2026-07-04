@@ -44,6 +44,7 @@ export function GamePage({
   const currentTurn = Math.max(0, Number(session.turn_count) || 0);
   const realm = `${character.realm || "练气"}${character.realm_stage || 1}层`;
   const luck = character.attributes?.luck ?? character.luck ?? "平稳";
+  const worldIntel = useMemo(() => buildWorldIntel(world), [world]);
   const cleanChoiceText = (choice: string) => {
     let text = String(choice || "").replace(/^【(?:稳妥|机遇|风险|气运)】\s*/, "").trim();
     for (let i = 0; i < 3; i += 1) {
@@ -97,6 +98,12 @@ export function GamePage({
             <dt>家世</dt><dd>{character.family_background || "凡俗"}</dd>
             <dt>气运</dt><dd>{luck}</dd>
           </dl>
+          <section className="world-intel" aria-label="外界信息情报">
+            <h3>外界情报</h3>
+            <ul>
+              {worldIntel.map((item) => <li key={item}>{item}</li>)}
+            </ul>
+          </section>
         </aside>
         <section className="story-panel">
           <header className="chronicle-heading">
@@ -130,4 +137,19 @@ export function GamePage({
       </div>
     </section>
   );
+}
+
+function buildWorldIntel(world: Record<string, any>) {
+  const profile = typeof world.world_profile === "object" && world.world_profile ? world.world_profile : {};
+  const rawItems = [
+    world.current_scene,
+    ...(Array.isArray(profile.current_conflicts) ? profile.current_conflicts : []),
+    ...(Array.isArray(world.lore_facts) ? world.lore_facts.slice(-3) : []),
+  ];
+  const seen = new Set<string>();
+  const items = rawItems
+    .map((item) => String(item || "").trim())
+    .filter((item) => item && !seen.has(item) && seen.add(item))
+    .slice(0, 4);
+  return items.length ? items : ["外界暂无新的可靠消息。"];
 }

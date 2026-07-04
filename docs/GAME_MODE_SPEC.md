@@ -110,11 +110,11 @@ D 不是“高风险高收益”的普通选项，而是“气运判定”：
 ```python
 def apply_luck_bias(base_risk: float, base_reward: int, luck: int) -> tuple[float, int]:
     """
-    luck: 0-100。
+    luck: 0-10. Runtime attributes use the v5 public scale; 5 is neutral.
     返回: (调整后风险, 调整后收益)。
     只用于 D 气运路线或带有 luck_tag 的事件。
     """
-    luck_factor = (luck - 50) / 50.0
+    luck_factor = (luck - 5) / 5.0
     adjusted_risk = base_risk * (1 - luck_factor * 0.8)
     adjusted_reward = int(base_reward * (1 + luck_factor * 0.6))
     return max(0.0, min(adjusted_risk, 0.6)), adjusted_reward
@@ -200,8 +200,9 @@ def apply_luck_bias(base_risk: float, base_reward: int, luck: int) -> tuple[floa
 - **20 回合垂直切片**是可玩性验收目标，不等于完整局长度。20 回合默认达到练气后期或筑基门槛；强天赋、高悟性、高风险路线可提前筑基，稳妥路线可延后。
 - **开场编年史**：角色创建后先生成 **0-16 岁短编年史**，说明出身、早年异象、家族/宗门关系和第一次接触修仙的契机，再从 16 岁开始第一次抉择。
 - **阶段反馈节奏**：每 **3-5 回合**出现阶段性反馈，包括年龄变化、修为推进、外界大事、关系变化、风险伏笔或奖励。
-- **境界节奏**：小境界进展多为隐式，不频繁作为选项；大境界突破作为阶段事件呈现，尤其筑基、金丹、元婴、化神和飞升。
+- **境界节奏**：小境界进展多为隐式，不频繁作为选项；大境界突破作为阶段事件呈现，尤其筑基、金丹、元婴、化神和飞升。练气期不得长期滞留早期小层；规则引擎需要用年龄/回合推进提供小境界下限，避免 13 年仍停留练气三层这类编年史失真。
 - 第一版不做显式资源栏，只保留状态型记录，例如境界、年龄、寿元、称号、关系、关键机缘、伤势、因果和传承。
+- UI 侧栏可展示“外界情报”，来源限于 `world.current_scene`、`world.lore_facts` 和 `world_profile.current_conflicts` 等只读世界摘要；它不是玩家资源栏，也不授权前端修改权威状态。
 
 ---
 
@@ -228,6 +229,8 @@ def apply_luck_bias(base_risk: float, base_reward: int, luck: int) -> tuple[floa
 | 随机 | 0-10 | 30 |
 
 手动分配用于稳定构筑；随机模式允许极端开局，但总和仍固定为 30。前端和后端校验必须以本节为准。
+
+Runtime contract: attributes are stored and resolved as 0-10 values. `DEFAULT_ATTRIBUTES` is 5 for every attribute. Character creation enforces the 30-point pool, while later rewards may push the total above 30 but must still clamp each single attribute to 0-10. `GameSession.apply_delta()` clamps deltas, `GameSession.from_save_dict()` migrates old 0-100 saves, World Builder output is normalized before entering the session, and 50/100 must not be used as the normal midpoint/maximum in new logic.
 
 ### 4.2 删除 HP/MP
 
@@ -277,6 +280,7 @@ class GameModeCharacter:
 - 将后端结算结果润色成不超过 200 字的叙述。
 - 生成 A/B/C/D 的短按钮文案，每个建议不超过 30 字。
 - 生成外界大事摘要，例如宗门变动、魔修入侵、秘境开启。
+- 外界大事、传闻和榜文优先作为 `world.lore_add` 进入侧栏情报；只有明确到账的物品、功法、关系、伤势、寿元、境界等才进入权威状态。
 - 生成结局墓志铭或飞升总结。
 
 ### 5.3 模型不得负责

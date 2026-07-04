@@ -27,7 +27,7 @@
 当前状态：已闭环。
 
 - 本地真实可见 Chrome 跟进验收已通过：`local-visible-20turn-20260701-final2` 完成普通账号注册/登录、系统默认模型开局、角色创建、20/20 choice non-fallback、存档/读档。
-- 本地自动化基线已通过：`compileall`、`tests\web` 66 passed、全量 `pytest -q` 469 passed、前端 build、`git diff --check`。
+- 本地自动化基线已通过：`compileall`、`tests\web` 68 passed、全量 `pytest -q` 480 passed、前端 build、`git diff --check`。
 - 生产部署与迁移已完成：Alembic 已到 `20260622_0005`，`user_model_configs` 存在。
 - 生产账号注册、登录、存档、读档、跨会话恢复已通过。
 - production live model P0 已通过：服务器线程部署 `25ad3d15` 后，生产 start 和至少 1 次 choice 均为 non-fallback，choice 后 `turn_count=1`。
@@ -44,7 +44,7 @@
 
 下一步：
 
-- 用最新 `6cdcfcc` 脱敏诊断跑一次真实 Chrome 20 回合采样。
+- 用当前脱敏诊断跑一次真实 Chrome 20 回合采样。
 - 采集平均/最大 choice 耗时、narrator 耗时、judge 耗时、repair attempt、repaired output、prompt 字符数、history 数量、game-state 字符数、token usage、fallback、`game_turns` 连续性。
 - 如果慢因是 prompt/history 增长，压缩历史为摘要 + 最近少量原文。
 - 如果慢因是 repair，收紧 narrator 输出契约和 parser。

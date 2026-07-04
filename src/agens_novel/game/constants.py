@@ -43,7 +43,37 @@ ATTRIBUTE_LABELS: dict[str, str] = {
     "soul": "神魂",
 }
 
-DEFAULT_ATTRIBUTES: dict[str, int] = {key: 50 for key in ATTRIBUTE_KEYS}
+ATTRIBUTE_MIN: int = 0
+ATTRIBUTE_MAX: int = 10
+ATTRIBUTE_DEFAULT: int = 5
+ATTRIBUTE_TOTAL: int = 30
+
+DEFAULT_ATTRIBUTES: dict[str, int] = {key: ATTRIBUTE_DEFAULT for key in ATTRIBUTE_KEYS}
+
+
+def clamp_attribute_value(value: Any, *, default: int = ATTRIBUTE_DEFAULT) -> int:
+    """Clamp a v5 gameplay attribute to the public 0-10 scale."""
+    if isinstance(value, bool):
+        return default
+    try:
+        number = int(value)
+    except (TypeError, ValueError):
+        return default
+    return max(ATTRIBUTE_MIN, min(ATTRIBUTE_MAX, number))
+
+
+def normalize_attribute_value(value: Any, *, default: int = ATTRIBUTE_DEFAULT) -> int:
+    """Normalize new 0-10 values and legacy 0-100 values to the v5 scale."""
+    if isinstance(value, bool):
+        return default
+    try:
+        number = int(value)
+    except (TypeError, ValueError):
+        return default
+    if number <= ATTRIBUTE_MAX:
+        return clamp_attribute_value(number, default=default)
+    legacy = max(0, min(100, number))
+    return clamp_attribute_value((legacy + 5) // 10, default=default)
 
 # ─────────────────────────────────────────────────────────────────────────────
 # Realm system

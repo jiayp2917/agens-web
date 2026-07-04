@@ -48,10 +48,18 @@ class TurnFlow:
 
         if result.delta:
             session.apply_delta(result.delta)
-            self._try_emit_stage_advance()
+            stage_delta = self._try_emit_stage_advance()
+            if stage_delta is not None:
+                result_delta = self._merge_state_delta(result.delta, stage_delta)
+            else:
+                result_delta = result.delta
+        else:
+            result_delta = result.delta
 
         if result.breakthrough:
-            engine._attempt_local_story_breakthrough()
+            breakthrough_delta = engine._attempt_local_story_breakthrough()
+            if breakthrough_delta:
+                result_delta = self._merge_state_delta(result_delta, breakthrough_delta)
 
         if result.narrative:
             engine._emit("on_narrative", result.narrative, session.turn_count)
@@ -60,7 +68,7 @@ class TurnFlow:
             "turn": session.turn_count,
             "input": text,
             "narrative": result.narrative,
-            "delta": result.delta,
+            "delta": result_delta,
             "choices": session.last_choices,
             "local_story": {
                 "story_id": session.local_story_id,
@@ -305,7 +313,9 @@ class TurnFlow:
 
         state_delta = merge_rule_delta(state_delta, rule_delta)
         session.apply_delta(state_delta)
-        self._try_emit_stage_advance()
+        stage_delta = self._try_emit_stage_advance()
+        if stage_delta is not None:
+            state_delta = self._merge_state_delta(state_delta, stage_delta)
 
         if engine._check_game_over():
             return None
@@ -374,7 +384,7 @@ class TurnFlow:
 
         engine._emit("on_status_bar", format_status_bar(session))
 
-    def _try_emit_stage_advance(self) -> None:
+    def _try_emit_stage_advance(self) -> dict[str, Any] | None:
         engine = self.engine
         session = engine.game_session
         stage_delta = engine.realm_system.try_advance_stage(session)
@@ -383,6 +393,20 @@ class TurnFlow:
             new_stage = stage_delta.get("meta", {}).get("new_stage", 0)
             max_stage = stage_delta.get("meta", {}).get("max_stage", 0)
             engine._emit("on_info", f"修为精进！{session.realm}第{new_stage}层（{new_stage}/{max_stage}）")
+            return stage_delta
+        return None
+
+    @staticmethod
+    def _merge_state_delta(base: dict[str, Any], extra: dict[str, Any]) -> dict[str, Any]:
+        merged = dict(base) if isinstance(base, dict) else {}
+        for section, value in extra.items():
+            if isinstance(value, dict) and isinstance(merged.get(section), dict):
+                section_delta = dict(merged[section])
+                section_delta.update(value)
+                merged[section] = section_delta
+            else:
+                merged[section] = value
+        return merged
 
     def _recover_incomplete_narrator_choices(self, narrative: str, choices: Any) -> list[str]:
         """Use semantic local choices only when the live narrator produced narrative."""

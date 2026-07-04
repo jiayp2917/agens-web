@@ -518,6 +518,98 @@ def test_malformed_state_update_records_local_story_fallback(
     assert "状态更新格式不完整" in row["state_delta"]["meta"]["fallback_reason"]
 
 
+def test_model_failure_prompt_exposes_sanitized_http_404_cause(
+    tmp_path: Path,
+    monkeypatch,
+) -> None:
+    monkeypatch.setenv("AGNES_API_KEY", "sk-test-web-api")
+    monkeypatch.setenv("SESSION_COOKIE_SECURE", "0")
+    app = create_app()
+    client = TestClient(app)
+
+    _create_invite(app)
+    _register(client)
+    session_id = client.post("/api/sessions", json={}).json()["session_id"]
+    client.post(f"/api/sessions/{session_id}/start", json={"char_name": "model-404-flow"})
+
+    def narrator_404(agent_name: str, *_args, **_kwargs):
+        if agent_name == "narrator":
+            return {
+                "narrative": "",
+                "state_delta": {},
+                "choices": [],
+                "llm_error": 'HTTP 404: {"error":{"message":"Not Found","code":"404"}}',
+            }
+        return _runner(agent_name)
+
+    with patch("agens_novel.engine.game_engine.run_turn_sync", side_effect=narrator_404):
+        chosen = client.post(
+            f"/api/sessions/{session_id}/choice",
+            json={"choice": "A"},
+        )
+
+    assert chosen.status_code == 200
+    body = chosen.json()
+    assert body["fallback_prompt"]["active"] is True
+    text_value = body["fallback_prompt"]["text"]
+    assert "HTTP 404" in text_value
+    assert "模型名/Base URL" in text_value
+    assert "sk-" not in text_value
+    assert "https://" not in text_value
+
+
+def test_model_failure_prompt_and_event_redact_secret_bearing_format_reason(
+    tmp_path: Path,
+    monkeypatch,
+) -> None:
+    monkeypatch.setenv("AGNES_API_KEY", "sk-test-web-api")
+    monkeypatch.setenv("SESSION_COOKIE_SECURE", "0")
+    app = create_app()
+    client = TestClient(app)
+
+    _create_invite(app)
+    _register(client)
+    session_id = client.post("/api/sessions", json={}).json()["session_id"]
+    client.post(f"/api/sessions/{session_id}/start", json={"char_name": "model-redact-flow"})
+
+    secret_bearing_reason = (
+        "状态更新格式不完整: https://provider.example/v1 "
+        "x-api-key sk-secret Authorization: Bearer token"
+    )
+
+    def narrator_secret_error(agent_name: str, *_args, **_kwargs):
+        if agent_name == "narrator":
+            return {
+                "narrative": "",
+                "state_delta": {},
+                "choices": [],
+                "llm_error": secret_bearing_reason,
+            }
+        return _runner(agent_name)
+
+    with patch("agens_novel.engine.game_engine.run_turn_sync", side_effect=narrator_secret_error):
+        chosen = client.post(
+            f"/api/sessions/{session_id}/choice",
+            json={"choice": "A"},
+        )
+
+    assert chosen.status_code == 200
+    body = chosen.json()
+    visible_texts = [body["fallback_prompt"]["text"]]
+    visible_texts.extend(
+        event.get("text", "")
+        for event in body["events"]
+        if event.get("type") in {"model_failure", "error", "info"}
+    )
+    assert any("天道紊乱" in text for text in visible_texts)
+    for text_value in visible_texts:
+        assert "sk-" not in text_value
+        assert "Authorization" not in text_value
+        assert "x-api-key" not in text_value
+        assert "provider.example" not in text_value
+        assert "https://" not in text_value
+
+
 def test_web_save_load_restores_snapshot_and_chat_history(tmp_path: Path, monkeypatch) -> None:
     monkeypatch.setenv("AGNES_API_KEY", "sk-test-web-api")
     monkeypatch.setenv("SESSION_COOKIE_SECURE", "0")

@@ -225,6 +225,10 @@ def test_react_game_page_has_escape_route_and_stable_meters() -> None:
     assert "chronicle-age" in source
     assert "buildChronicleRecords" in source
     assert "getCurrentChronicleYear" in source
+    assert "buildWorldIntel" in source
+    assert "外界情报" in source
+    assert "world.lore_facts.slice(-3)" in source
+    assert "profile.current_conflicts" in source
     assert "cleanChronicleText" in source
     assert "Math.max(...yearCandidates)" in source
     assert "玄历" in source

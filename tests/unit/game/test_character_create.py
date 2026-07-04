@@ -101,7 +101,7 @@ def test_start_from_profile_model_failure_uses_tiandao_fallback(tmp_path, monkey
 
     assert engine.game_session.local_story_active is True
     assert len(engine.game_session.last_choices) == 4
-    assert any("天道紊乱" in msg for msg in infos)
+    assert any("上游模型响应超时" in msg for msg in infos)
 
 
 def test_start_from_profile_model_failure_can_end_run(tmp_path, monkeypatch):
@@ -147,7 +147,7 @@ def test_start_from_profile_model_failure_enters_local_story_not_profile_choices
     assert engine.game_session.local_story_active is True
     assert engine.game_session.last_choices != ["退回山门", "询问执事"]
     assert len(engine.game_session.last_choices) == 4
-    assert any("天道紊乱" in msg for msg in infos)
+    assert any("上游模型响应超时" in msg for msg in infos)
 
 
 def test_unknown_profile_seed_is_not_sent_to_world_builder_prompt(tmp_path, monkeypatch):

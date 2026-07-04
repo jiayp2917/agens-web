@@ -31,7 +31,7 @@ def test_profile_model_failure_enters_local_story(monkeypatch, tmp_path) -> None
     assert engine.game_session.local_story_active is True
     assert engine.game_session.local_story_id == DEFAULT_STORY_ID
     assert len(engine.game_session.last_choices) == 4
-    assert any("天道紊乱" in msg for msg in infos)
+    assert any("上游模型响应超时" in msg for msg in infos)
     assert narratives and "因果残影" in narratives[0]
 
 
@@ -165,3 +165,6 @@ def test_local_story_can_reach_first_major_breakthrough(monkeypatch, tmp_path) -
     assert engine.game_session.realm == "筑基"
     assert engine.game_session.local_story_active is True
     assert len(engine.game_session.last_choices) == 4
+    last_delta = engine.game_session.turn_history[-1]["delta"]
+    assert last_delta["character"]["realm"] == "筑基"
+    assert last_delta["meta"]["breakthrough_result"] == "success"

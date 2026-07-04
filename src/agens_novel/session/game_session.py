@@ -11,10 +11,13 @@ from dataclasses import dataclass, field
 from typing import Any
 
 from ..game.constants import (
+    ATTRIBUTE_DEFAULT,
     DEFAULT_ATTRIBUTES,
     DEFAULT_EQUIPMENT_SLOTS,
     REALM_LIFESPANS,
     REALM_ORDER,
+    clamp_attribute_value,
+    normalize_attribute_value,
 )
 
 log = logging.getLogger(__name__)
@@ -221,13 +224,21 @@ class GameSession:
         if "difficulty" in char_delta and isinstance(char_delta["difficulty"], str):
             self.difficulty = char_delta["difficulty"]
         if "attributes" in char_delta and isinstance(char_delta["attributes"], dict):
-            merged = dict(self.attributes)
+            merged = {
+                key: normalize_attribute_value(self.attributes.get(key, default))
+                for key, default in DEFAULT_ATTRIBUTES.items()
+            }
             for key, value in char_delta["attributes"].items():
+                if key not in DEFAULT_ATTRIBUTES:
+                    log.warning("apply_delta: ignored unknown attribute %r", key)
+                    continue
                 if isinstance(key, str) and isinstance(value, int) and not isinstance(value, bool):
-                    merged[key] = max(0, min(100, int(merged.get(key, 0)) + value))
+                    current = normalize_attribute_value(merged.get(key, ATTRIBUTE_DEFAULT))
+                    merged[key] = clamp_attribute_value(current + value)
                 elif isinstance(key, str) and isinstance(value, str) and value[:1] in {"+", "-"}:
                     try:
-                        merged[key] = max(0, min(100, int(merged.get(key, 0)) + int(value)))
+                        current = normalize_attribute_value(merged.get(key, ATTRIBUTE_DEFAULT))
+                        merged[key] = clamp_attribute_value(current + int(value))
                     except ValueError:
                         log.warning("apply_delta: cannot parse attribute delta %r, ignoring", value)
             self.attributes = merged
@@ -437,8 +448,8 @@ class GameSession:
         if isinstance(attrs, dict):
             merged_attrs = dict(DEFAULT_ATTRIBUTES)
             for key, value in attrs.items():
-                if isinstance(key, str) and isinstance(value, int) and not isinstance(value, bool):
-                    merged_attrs[key] = max(0, min(100, value))
+                if key in DEFAULT_ATTRIBUTES and isinstance(value, int) and not isinstance(value, bool):
+                    merged_attrs[key] = normalize_attribute_value(value)
             session.attributes = merged_attrs
         flags = char.get("breakthrough_flags", [])
         session.breakthrough_flags = _dedupe_strings(flags) if isinstance(flags, list) else []

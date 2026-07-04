@@ -13,7 +13,7 @@ from .database_common import decode_json_fields
 
 # ── catalog_talents ──────────────────────────────────────────────────────────
 # rarity: 白 / 绿 / 蓝 / 紫 / 橙 / 红 (6-tier per GAME_MODE_SPEC §11)
-# attribute_mods: flat adjustments to character attributes at creation
+# attribute_mods: small flat adjustments on the v5 0-10 attribute scale
 # tags: labels for story/event matching
 
 SEED_TALENTS: list[dict[str, Any]] = [
@@ -30,7 +30,7 @@ SEED_TALENTS: list[dict[str, Any]] = [
         "name": "草木亲和",
         "rarity": "白",
         "description": "天生与草木灵气亲近，炼丹采药事半功倍。",
-        "attribute_mods": {"soul": 5, "comprehension": 3},
+        "attribute_mods": {"soul": 1, "comprehension": 1},
         "tags": ["炼丹", "灵植", "治愈"],
     },
     {
@@ -38,7 +38,7 @@ SEED_TALENTS: list[dict[str, Any]] = [
         "name": "剑心微明",
         "rarity": "蓝",
         "description": "心中自有一缕剑意，修炼剑道功法更快，斗法时剑招更利。",
-        "attribute_mods": {"physique": 5, "willpower": 5},
+        "attribute_mods": {"physique": 1, "willpower": 1},
         "tags": ["剑道", "杀伐", "斗法"],
     },
     {
@@ -46,7 +46,7 @@ SEED_TALENTS: list[dict[str, Any]] = [
         "name": "惊雷骨",
         "rarity": "蓝",
         "description": "骨骼天生蕴藏雷属性，引雷淬体事半功倍，突破瓶颈时有额外助力。",
-        "attribute_mods": {"physique": 8, "root_bone": 5},
+        "attribute_mods": {"physique": 2, "root_bone": 1},
         "tags": ["雷法", "淬体", "突破"],
     },
     {
@@ -54,7 +54,7 @@ SEED_TALENTS: list[dict[str, Any]] = [
         "name": "天命道胎",
         "rarity": "橙",
         "description": "传说中天生近道的体质，悟性远超常人，修炼一日千里。但天道忌满，气运起伏极大。",
-        "attribute_mods": {"comprehension": 15, "soul": 10, "luck": -10},
+        "attribute_mods": {"comprehension": 3, "soul": 2, "luck": -2},
         "tags": ["悟道", "机缘", "天妒"],
     },
     {
@@ -62,7 +62,7 @@ SEED_TALENTS: list[dict[str, Any]] = [
         "name": "丹心不灭",
         "rarity": "蓝",
         "description": "心脉坚韧异于常人，重伤恢复更快，心魔劫中更易守住本心。",
-        "attribute_mods": {"willpower": 8, "physique": 5},
+        "attribute_mods": {"willpower": 2, "physique": 1},
         "tags": ["心性", "恢复", "渡劫"],
     },
     {
@@ -70,7 +70,7 @@ SEED_TALENTS: list[dict[str, Any]] = [
         "name": "阵法通明",
         "rarity": "蓝",
         "description": "对阵法禁制有天然直觉，破解遗迹禁制、布置洞府阵法均占优势。",
-        "attribute_mods": {"comprehension": 8, "soul": 3},
+        "attribute_mods": {"comprehension": 2, "soul": 1},
         "tags": ["阵法", "禁制", "探索"],
     },
     {
@@ -78,7 +78,7 @@ SEED_TALENTS: list[dict[str, Any]] = [
         "name": "魔心潜伏",
         "rarity": "蓝",
         "description": "体内潜藏一丝魔性，战力提升时心魔亦随之壮大。修炼魔道功法无副作用，但正道功法事倍功半。",
-        "attribute_mods": {"physique": 8, "willpower": -3, "luck": -3},
+        "attribute_mods": {"physique": 2, "willpower": -1, "luck": -1},
         "tags": ["魔道", "杀伐", "心魔"],
     },
     {
@@ -86,7 +86,7 @@ SEED_TALENTS: list[dict[str, Any]] = [
         "name": "福缘深厚",
         "rarity": "蓝",
         "description": "天生福缘加身，行走在外更容易遇到贵人机缘，但因果纠缠亦多。",
-        "attribute_mods": {"luck": 12},
+        "attribute_mods": {"luck": 2},
         "tags": ["机缘", "因果", "贵人"],
     },
     {
@@ -94,7 +94,7 @@ SEED_TALENTS: list[dict[str, Any]] = [
         "name": "万法归宗",
         "rarity": "橙",
         "description": "万法皆可通，不受灵根属性限制，任何属性功法均可修炼至大成。",
-        "attribute_mods": {"comprehension": 10, "root_bone": 10},
+        "attribute_mods": {"comprehension": 2, "root_bone": 2},
         "tags": ["万法", "无属性", "悟道"],
     },
 ]
@@ -287,7 +287,7 @@ SEED_DIFFICULTIES: list[dict[str, Any]] = [
         "risk_multiplier": 0.6,
         "reward_multiplier": 1.0,
         "lifespan_modifier": 1.3,
-        "luck_modifier": 5,
+        "luck_modifier": 1,
         "description": "适合体验剧情。风险事件概率降低，寿元更充裕。",
     },
     {
@@ -305,7 +305,7 @@ SEED_DIFFICULTIES: list[dict[str, Any]] = [
         "risk_multiplier": 1.5,
         "reward_multiplier": 1.3,
         "lifespan_modifier": 0.8,
-        "luck_modifier": -5,
+        "luck_modifier": -1,
         "description": "天道无情。风险事件更多更凶险，但渡过劫难后的收益也更丰厚。",
     },
 ]

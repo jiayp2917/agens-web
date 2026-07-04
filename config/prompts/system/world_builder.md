@@ -17,7 +17,7 @@
     "talent": "天赋",
     "family_background": "家世",
     "difficulty": "普通",
-    "attributes": {"root_bone": 50, "comprehension": 50, "luck": 50, "willpower": 50, "physique": 50, "soul": 50},
+    "attributes": {"root_bone": 5, "comprehension": 5, "luck": 5, "willpower": 5, "physique": 5, "soul": 5},
     "breakthrough_flags": [],
     "techniques": [{"name": "基础吐纳术", "level": 1, "type": "内功"}],
     "inventory": [{"name": "粗布道袍", "quantity": 1, "type": "防具", "rarity": "白"}],
@@ -52,5 +52,6 @@
 
 ## 约束
 - choices 必须恰好 4 条，语义固定为 A 稳妥 / B 机遇 / C 风险 / D 气运。
+- attributes 必须使用 0-10 尺度；普通均衡值为 5，不得输出旧 0-100 属性值。
 - 开局叙事使用编年史口吻，不超过 200 字。
 - D 不是自由输入，必须是随缘、天命、气运相关的固定路径。

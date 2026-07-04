@@ -4,11 +4,11 @@ This is the active backlog for `agens-web`. It separates local code work, local 
 
 ## Current Evidence
 
-- Current local code baseline is commit `6cdcfcc`.
+- Current local code baseline includes sanitized model diagnostics and the 2026-07-04 attribute-scale cleanup.
 - Validation after the latest P1 observability slice passed:
   - `python -m compileall -q src tests web scripts migrations`
-  - `python -m pytest -q tests\web` -> 66 passed
-  - `python -m pytest -q` with local PostgreSQL `TEST_DATABASE_URL` -> 469 passed
+  - `python -m pytest -q tests\web` -> 68 passed
+  - `python -m pytest -q` with local PostgreSQL `TEST_DATABASE_URL` -> 480 passed
   - `cd web\frontend-react; npm.cmd run build` -> passed
   - `git diff --check` -> passed
 - User-scoped model settings are implemented:
@@ -19,6 +19,8 @@ This is the active backlog for `agens-web`. It separates local code work, local 
 - Local visible Chrome P0 browser acceptance passed in `local-visible-20turn-20260701-final2`: account registration/login, system-default start, character creation, 20/20 choice turns non-fallback, and save/load passed. Evidence remains generated under `output/playwright/` and is ignored by default.
 - Production P0 is accepted for the latest deployed production batch: server thread deployed `25ad3d15`, kept Alembic at `20260622_0005`, verified `user_model_configs`, health/catalog/container state, sanitized log scan, real-account flow, and production start+choice non-fallback with `turn_count=1`.
 - Latest local code adds sanitized `model_result` diagnostics with numeric/boolean fields only: narrator/judge elapsed time, repair elapsed time, prompt size, history count, game-state size, and provider token counters when available. This is measurement, not a latency fix.
+- Current local working batch addresses four P1 complaints before the next Chrome pass: actionable secret-safe model-unavailable prompts for upstream 404/auth/timeout/key issues, Qi Refining small-stage pacing guards, stricter third-person chronicle narrator guidance, and a read-only sidebar "外界情报" projection.
+- Current local working batch also closes the attribute-scale audit: runtime attributes are 0-10 with 5 as neutral, and old 0-100 values are compatibility inputs only. New realm, reward, catalog, or model-prompt logic must not use 50 as the neutral midpoint or 100 as the normal cap.
 - Active phase plan remains `docs/PLAYABLE_GAMEPLAY_ROADMAP_20260629.md`: P0 current batch is closed; next work is P1 gameplay quality and model-efficiency iteration without broad architecture changes.
 
 ## Lessons To Keep
@@ -62,6 +64,8 @@ Next work should be data-led and gameplay-facing.
    - Build event pools for steady, opportunity, risk, and luck routes.
    - Reduce repeated retreat/breakthrough loops.
    - Keep small-realm progress mostly implicit; reserve major breakthroughs for stage events.
+   - Keep Qi Refining pacing credible: age and turn count should prevent a 20-turn slice from lingering in early small layers.
+   - Keep the sidebar "外界情报" read-only and fed by existing world summaries; do not turn it into a new resource system until the gameplay design explicitly calls for one.
 4. Tighten authoritative state accounting.
    - Key items, techniques, attribute growth, titles, relationships, injuries, lifespan, realm changes, and karma must be structured state or rewritten/suppressed.
    - Ordinary chronicle rumors, intentions, or non-authoritative color text do not automatically become inventory.

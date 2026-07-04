@@ -15,6 +15,7 @@ from agens_novel.engine.death_rewards import (
     bonuses_to_legacy,
 )
 from agens_novel.engine.game_engine import GameEngine, MODEL_FAILURE_CONTINUE
+from agens_novel.engine.model_fallback_policy import public_model_failure_notice
 from agens_novel.engine.render import format_status_bar
 from agens_novel.engine.start_flow import normalize_profile_attributes
 from agens_novel.game.constants import (
@@ -46,7 +47,7 @@ _MODEL_FAILURE_PREFIXES = (
     "突破叙事失败:",
     "突破审判失败:",
 )
-_SECRET_MARKERS = ("sk-", "api_key", "apikey", "authorization", "database_url", "postgresql://")
+_SECRET_MARKERS = ("sk-", "api_key", "api-key", "x-api-key", "apikey", "authorization", "bearer ", "database_url", "postgresql://")
 GUEST_USER_PREFIX = "guest:"
 
 
@@ -60,6 +61,7 @@ class WebRunner:
     events: list[dict[str, Any]] = field(default_factory=list)
     guest_token: str = ""
     db: Any = field(default=None, repr=False, compare=False)
+    fallback_prompt_text: str = PUBLIC_MODEL_FALLBACK_TEXT
 
     def __post_init__(self) -> None:
         self.engine.on_narrative = lambda text, turn: self.record("narrative", text=text, turn=turn)
@@ -107,9 +109,10 @@ class WebRunner:
                 log.exception("death rewards persistence failed")
 
     def _choose_model_failure(self, source: str, reason: str) -> str:
+        self.fallback_prompt_text = public_model_failure_notice(reason)
         self.record(
             "model_failure",
-            text=PUBLIC_MODEL_FALLBACK_TEXT,
+            text=self.fallback_prompt_text,
             source=source,
         )
         return MODEL_FAILURE_CONTINUE
@@ -178,7 +181,7 @@ class WebRunner:
             },
             "fallback_prompt": {
                 "active": session.local_story_active and not session.game_over,
-                "text": PUBLIC_MODEL_FALLBACK_TEXT,
+                "text": self.fallback_prompt_text or PUBLIC_MODEL_FALLBACK_TEXT,
             },
             "character": state["character"],
             "world": state["world"],
@@ -253,7 +256,13 @@ def _sanitize_event_payload(event_type: str, payload: dict[str, Any]) -> dict[st
         return _sanitize_model_result_payload(sanitized)
     if event_type == "model_failure":
         sanitized.pop("reason", None)
-        sanitized["text"] = PUBLIC_MODEL_FALLBACK_TEXT
+        text = str(sanitized.get("text") or PUBLIC_MODEL_FALLBACK_TEXT)
+        sanitized["text"] = text if _is_public_model_notice(text) else PUBLIC_MODEL_FALLBACK_TEXT
+        return sanitized
+    if event_type == "info":
+        text = str(sanitized.get("text") or "")
+        if _looks_internal_model_error(text):
+            sanitized["text"] = PUBLIC_MODEL_FALLBACK_TEXT
         return sanitized
     if event_type == "error":
         text = str(sanitized.get("text") or "")
@@ -297,6 +306,19 @@ def _looks_internal_model_error(text: str) -> bool:
     if any(text.startswith(prefix) for prefix in _MODEL_FAILURE_PREFIXES):
         return True
     return bool(re.search(r"https?://\S+", text))
+
+
+def _is_public_model_notice(text: str) -> bool:
+    if _looks_internal_model_error(text):
+        return False
+    return text in {
+        PUBLIC_MODEL_FALLBACK_TEXT,
+        public_model_failure_notice("HTTP 404"),
+        public_model_failure_notice("HTTP 401"),
+        public_model_failure_notice("HTTP 403"),
+        public_model_failure_notice("timeout"),
+        public_model_failure_notice("AGNES_API_KEY unavailable"),
+    }
 
 
 class WebGameService:

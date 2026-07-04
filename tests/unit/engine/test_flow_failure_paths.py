@@ -5,6 +5,7 @@ from __future__ import annotations
 from unittest.mock import patch
 
 from agens_novel.engine.game_engine import GameEngine
+from agens_novel.engine.model_fallback_policy import public_model_failure_notice
 
 
 def test_start_flow_world_builder_exception_can_end_run(monkeypatch) -> None:
@@ -118,6 +119,37 @@ def test_turn_flow_enables_narrator_repair(monkeypatch) -> None:
         engine.handle_action("A")
 
     assert captured.get("repair_incomplete_output") is True
+
+
+def test_http_404_model_failure_notice_is_actionable_and_secret_safe() -> None:
+    notice = public_model_failure_notice(
+        '叙述失败: HTTP 404: {"error":{"message":"Not Found","code":"404"}}'
+    )
+
+    assert "HTTP 404" in notice
+    assert "模型名/Base URL" in notice
+    assert "sk-" not in notice
+    assert "http://" not in notice
+    assert "https://" not in notice
+
+
+def test_model_failure_notice_matrix_is_actionable_and_secret_safe() -> None:
+    cases = [
+        ("叙述失败: HTTP 401 Unauthorized", "鉴权失败"),
+        ("叙述失败: request timed out after 60s", "响应超时"),
+        ("AGNES_API_KEY unavailable", "Key 未配置"),
+        (
+            "模型已返回叙事，但状态更新格式不完整: https://provider.example/v1 x-api-key sk-secret",
+            "天道紊乱",
+        ),
+    ]
+
+    for reason, expected in cases:
+        notice = public_model_failure_notice(reason)
+        assert expected in notice
+        assert "sk-" not in notice
+        assert "provider.example" not in notice
+        assert "https://" not in notice
 
 
 def test_breakthrough_flow_enables_narrator_repair(monkeypatch) -> None:

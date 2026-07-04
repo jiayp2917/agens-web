@@ -56,7 +56,9 @@ def _safe_log_reason(reason: str, limit: int = 220) -> str:
     """Trim and redact failure text before it reaches logcat."""
     text = (reason or "").replace("\n", " ").strip()
     lowered = text.lower()
-    if any(marker in lowered for marker in ("sk-", "api_key", "apikey", "authorization")):
+    if any(marker in lowered for marker in ("sk-", "api_key", "api-key", "x-api-key", "apikey", "authorization", "bearer ")):
+        return "redacted model configuration error"
+    if "http://" in lowered or "https://" in lowered:
         return "redacted model configuration error"
     return text[:limit]
 
@@ -286,12 +288,12 @@ class GameEngine:
 
         self._turn_flow.handle_action(text)
 
-    def _attempt_local_story_breakthrough(self) -> None:
+    def _attempt_local_story_breakthrough(self) -> dict[str, Any]:
         """Use the existing realm rules for a local-story breakthrough."""
         can, reason = self.realm_system.can_attempt_breakthrough(self.game_session)
         if not can:
             self._emit("on_info", reason)
-            return
+            return {}
         delta = self.realm_system.attempt_breakthrough(self.game_session)
         self.game_session.apply_delta(delta)
         result = delta.get("meta", {}).get("breakthrough_result", "")
@@ -302,6 +304,7 @@ class GameEngine:
                 self._emit("on_info", format_realm(self.game_session))
         elif result == "failure":
             self._emit("on_info", "突破失败，受到反噬。")
+        return delta
 
     def _parse_breakthrough_action(self, text: str) -> bool:
         """Detect natural-language breakthrough intent.

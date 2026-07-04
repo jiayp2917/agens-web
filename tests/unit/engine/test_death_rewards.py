@@ -154,11 +154,10 @@ class TestComputeRewards:
 
 class TestLegacyBonusApplication:
     def test_attribute_points_distributed_to_lowest(self) -> None:
-        profile = {"attributes": {"root_bone": 50, "luck": 30, "willpower": 70}}
+        profile = {"attributes": {"root_bone": 5, "luck": 3, "willpower": 7}}
         bonuses = [{"bonus_type": "attribute_points", "bonus_value": 3, "label": "+3"}]
         updated = apply_legacy_bonuses(profile, bonuses)
-        # 3 points should land on luck (lowest), bringing it to 33.
-        assert updated["attributes"]["luck"] == 33
+        assert updated["attributes"] == {"root_bone": 6, "luck": 5, "willpower": 7}
 
     def test_extra_lifespan_added(self) -> None:
         profile = {"attributes": {}}
@@ -185,18 +184,24 @@ class TestLegacyBonusApplication:
         assert "飞升者" in updated["opening_titles"]
 
     def test_empty_bonuses_returns_copy(self) -> None:
-        profile = {"attributes": {"root_bone": 50}}
+        profile = {"attributes": {"root_bone": 5}}
         updated = apply_legacy_bonuses(profile, [])
         assert updated == profile
         assert updated is not profile
 
-    def test_attribute_points_cap_at_99(self) -> None:
-        profile = {"attributes": {"root_bone": 99, "luck": 98}}
+    def test_attribute_points_cap_at_10(self) -> None:
+        profile = {"attributes": {"root_bone": 10, "luck": 9}}
         bonuses = [{"bonus_type": "attribute_points", "bonus_value": 50, "label": "+50"}]
         updated = apply_legacy_bonuses(profile, bonuses)
-        # Only 1 point fits (98 → 99), rest is silently dropped.
-        assert updated["attributes"]["luck"] == 99
-        assert updated["attributes"]["root_bone"] == 99
+        # Only 1 point fits (9 -> 10), rest is silently dropped.
+        assert updated["attributes"]["luck"] == 10
+        assert updated["attributes"]["root_bone"] == 10
+
+    def test_legacy_percent_profile_attributes_are_migrated_before_bonus(self) -> None:
+        profile = {"attributes": {"root_bone": 50, "luck": 30, "willpower": 70}}
+        bonuses = [{"bonus_type": "attribute_points", "bonus_value": 2, "label": "+2"}]
+        updated = apply_legacy_bonuses(profile, bonuses)
+        assert updated["attributes"] == {"root_bone": 5, "luck": 5, "willpower": 7}
 
 
 class TestBonusesToLegacy:

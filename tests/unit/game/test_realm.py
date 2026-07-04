@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 import pytest
-from unittest.mock import MagicMock
+from unittest.mock import MagicMock, patch
 
 from agens_novel.game.realm import RealmSystem, RealmConfig
 from agens_novel.game.constants import REALM_ORDER, REALM_CONFIGS, SPIRIT_ROOTS
@@ -240,6 +240,58 @@ class TestCalculateBreakthroughRate:
         session = _make_session(realm="练气", spirit_root="冰灵根", spirit_root_grade="")
         rate = rs.calculate_breakthrough_rate(session)
         assert rate == 0.80  # no bonus since grade is empty
+
+
+class TestStageAdvancePacing:
+    """Chronicle pacing guards for small-realm advancement."""
+
+    def test_qi_refining_does_not_lag_after_many_years(self):
+        rs = RealmSystem()
+        session = _make_session(
+            realm="练气",
+            realm_stage=3,
+            age=29,
+            turn_count=10,
+            attributes={"comprehension": 5, "root_bone": 5},
+        )
+
+        delta = rs.try_advance_stage(session)
+
+        assert delta is not None
+        assert delta["character"]["realm_stage"] >= 4
+        assert delta["meta"]["stage_advance_reason"] == "chronicle_pace"
+
+    def test_attribute_scale_accepts_character_creation_points(self):
+        rs = RealmSystem()
+        session = _make_session(
+            realm="练气",
+            realm_stage=1,
+            age=16,
+            turn_count=0,
+            attributes={"comprehension": 8, "root_bone": 8},
+        )
+
+        with patch("agens_novel.game.realm.random.random", return_value=0.39):
+            delta = rs.try_advance_stage(session)
+
+        assert delta is not None
+        assert delta["character"]["realm_stage"] == 2
+
+    def test_stage_advance_migrates_legacy_percent_attributes(self):
+        rs = RealmSystem()
+        session = _make_session(
+            realm="练气",
+            realm_stage=1,
+            age=16,
+            turn_count=0,
+            attributes={"comprehension": 80, "root_bone": 80},
+        )
+
+        with patch("agens_novel.game.realm.random.random", return_value=0.39):
+            delta = rs.try_advance_stage(session)
+
+        assert delta is not None
+        assert delta["character"]["realm_stage"] == 2
 
 
 class TestAttemptBreakthrough:
