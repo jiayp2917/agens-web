@@ -26,8 +26,8 @@
 
 当前状态：已闭环。
 
-- 本地真实可见 Chrome 跟进验收已通过：`local-visible-20turn-20260701-final2` 完成普通账号注册/登录、系统默认模型开局、角色创建、20/20 choice non-fallback、存档/读档。
-- 本地自动化基线已通过：`compileall`、`tests\web` 68 passed、全量 `pytest -q` 480 passed、前端 build、`git diff --check`。
+- 本地真实可见 Chrome 跟进验收已通过：`local-visible-dynamic-opening-20260706-strict-live5` 完成普通账号注册/登录、动态开局 live start gate、角色创建、20/20 choice non-fallback、存档/读档。
+- 本地自动化基线已通过：`compileall`、`tests\web` 73 passed、全量 `pytest -q` 495 passed、前端 build、`git diff --check`。
 - 生产部署与迁移已完成：Alembic 已到 `20260622_0005`，`user_model_configs` 存在。
 - 生产账号注册、登录、存档、读档、跨会话恢复已通过。
 - production live model P0 已通过：服务器线程部署 `25ad3d15` 后，生产 start 和至少 1 次 choice 均为 non-fallback，choice 后 `turn_count=1`。

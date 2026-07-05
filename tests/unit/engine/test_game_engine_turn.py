@@ -107,6 +107,7 @@ class TestGameEngineHandleAction:
             engine.start_from_profile({
                 "char_name": "许满",
                 "choices": ["留在山门吐纳", "询问接引弟子", "观察灵气流向"],
+                "_allow_choice_override": True,
             })
 
         def runner(agent_name, user_input, session, **kw):
@@ -287,10 +288,12 @@ class TestGameEngineHandleAction:
         assert engine.game_session.local_story_active is True
         assert len(engine.game_session.last_choices) == 4
 
-    def test_malformed_state_update_does_not_recover_as_live_success(self, monkeypatch) -> None:
+    def test_malformed_state_update_with_narrative_recovers_as_rule_settled_turn(self, monkeypatch) -> None:
         monkeypatch.setenv("AGNES_API_KEY", "sk-test-1234567890")
         engine = GameEngine()
         engine.game_session.game_started = True
+        infos: list[str] = []
+        engine.on_info = lambda msg: infos.append(msg)
         engine.on_model_failure_choice = lambda source, reason: "fallback"
 
         def runner(agent_name, user_input, session, **kw):
@@ -307,9 +310,11 @@ class TestGameEngineHandleAction:
             engine.handle_action("A")
 
         assert engine.game_session.turn_count == 1
-        assert engine.game_session.local_story_active is True
-        assert engine.game_session.turn_history[-1]["delta"]["meta"]["local_story_fallback"] is True
-        assert "状态更新格式不完整" in engine.game_session.turn_history[-1]["delta"]["meta"]["fallback_reason"]
+        assert engine.game_session.local_story_active is False
+        assert engine.game_session.turn_history[-1]["delta"]["meta"]["choice_category"] in {"稳妥", "机遇", "风险", "气运"}
+        assert "local_story_fallback" not in engine.game_session.turn_history[-1]["delta"]["meta"]
+        assert len(engine.game_session.last_choices) == 4
+        assert any("补齐下一步选择" in msg for msg in infos)
 
     def test_narrative_claim_without_structured_delta_settles_rule_turn(self, monkeypatch) -> None:
         monkeypatch.setenv("AGNES_API_KEY", "sk-test-1234567890")
@@ -989,3 +994,47 @@ class TestBreakthroughPreparationGate:
         assert engine.game_session.realm == "练气"
         assert len(engine.game_session.last_choices) == 4
         assert any("上游模型响应超时" in msg for msg in infos)
+
+    def test_narrator_retry_recovers_transient_404_without_fallback(self, monkeypatch) -> None:
+        monkeypatch.setenv("AGNES_API_KEY", "sk-test-1234567890")
+        engine = GameEngine()
+        infos: list[str] = []
+        narratives: list[tuple[str, int]] = []
+        engine.on_info = lambda msg: infos.append(msg)
+        engine.on_narrative = lambda text, turn: narratives.append((text, turn))
+        engine.on_model_failure_choice = lambda source, reason: "fallback"
+
+        with _patch_turn_runner():
+            engine.new_game("许满")
+
+        calls = {"narrator": 0}
+
+        def runner(agent_name, user_input, session, **kw):
+            if agent_name == "narrator":
+                calls["narrator"] += 1
+                if calls["narrator"] == 1:
+                    return {
+                        "narrative": "",
+                        "state_delta": {},
+                        "choices": [],
+                        "llm_error": 'HTTP 404: {"error":{"type":"upstream_error","code":"404"}}',
+                    }
+                return {
+                    "narrative": "你将地图副本交入执事堂，换得一段清静修行时日。",
+                    "state_delta": {"character": {"attributes": {"willpower": 1}}},
+                    "choices": ["回院吐纳", "打听赏格", "追查地图", "随缘等候"],
+                    "llm_error": "",
+                }
+            if agent_name == "judge":
+                return _canned_judge()
+            return {}
+
+        with patch("agens_novel.engine.game_engine.run_turn_sync", side_effect=runner):
+            engine.handle_action("将地图副本上交执事堂")
+
+        assert calls["narrator"] == 2
+        assert engine.game_session.turn_count == 1
+        assert engine.game_session.local_story_active is False
+        assert len(engine.game_session.last_choices) == 4
+        assert narratives and "地图副本" in narratives[-1][0]
+        assert not any("上游模型" in msg for msg in infos)

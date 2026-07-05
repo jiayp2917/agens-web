@@ -1,5 +1,38 @@
 # Changelog
 
+## 2026-07-06
+
+### Changed - character-driven dynamic opening generation
+
+- Reworked profile starts around one coherent opening payload so world profile,
+  0-16 chronicle, age-16 situation, external intelligence, opening narrative,
+  and initial A/B/C/D choices are applied together instead of world/opening
+  phases overwriting each other.
+- Added profile-aware fate tendency derivation from difficulty, talent, spirit
+  root, family background, six attributes, and random/manual mode. The local
+  fallback now varies by those inputs instead of returning a fixed Qingxuan
+  Sect / East Wasteland template.
+- Kept model-generated profile starts env-gated. If model opening generation is
+  unavailable, the run can continue through the same differentiated fallback
+  while still surfacing fallback status; fallback remains invalid as live-model
+  success.
+- Hardened World Builder parsing for dynamic opening fields, JSON fences,
+  internal/debug fields, and duplicate A/B/C/D prefixes.
+- Added unit and PostgreSQL-backed Web/API coverage for dynamic opening prompt
+  inputs, fallback variation, parser behavior, session snapshot persistence,
+  and fallback visibility.
+- Updated the headed Chrome validator so dynamic-opening acceptance checks
+  `/start` as well as `/choice`: live success now requires a successful
+  `world_builder`/`profile_opening` model event, `fallback=false`, 4 initial
+  choices, and dynamic world fields before the 20-turn loop can pass.
+- Verified with `local-visible-dynamic-opening-20260706-strict-live5`: dynamic
+  opening live start, 20/20 non-fallback choice turns, and save/load passed.
+  Average choice latency was about 26.7s, max about 46.2s, and repair remained
+  high at 18/20 turns.
+- Added a narrow narrator retry for transient provider request failures. It
+  retries once for timeout/rate-limit/upstream-style failures, keeps missing
+  key/401/403 fail-closed, and still treats persistent failures as fallback.
+
 ## 2026-07-05
 
 ### Changed - PostgreSQL schema comments and structure review

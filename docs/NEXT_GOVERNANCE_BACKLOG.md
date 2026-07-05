@@ -7,19 +7,19 @@ This is the active backlog for `agens-web`. It separates local code work, local 
 - Current local code baseline includes sanitized model diagnostics and the 2026-07-04 attribute-scale cleanup.
 - Validation after the latest P1 observability slice passed:
   - `python -m compileall -q src tests web scripts migrations`
-  - `python -m pytest -q tests\web` -> 68 passed
-  - `python -m pytest -q` with local PostgreSQL `TEST_DATABASE_URL` -> 480 passed
+  - `python -m pytest -q tests\web` -> 72 passed after dynamic-opening batch
+  - full `python -m pytest -q` with local PostgreSQL `TEST_DATABASE_URL` -> 493 passed
   - `cd web\frontend-react; npm.cmd run build` -> passed
-  - `git diff --check` -> passed
+  - `git diff --check` -> passed with LF/CRLF warnings only
 - User-scoped model settings are implemented:
   - `/api/settings/model` is a logged-in user endpoint for personal config.
   - `/api/admin/settings/model` is the admin-only system-default endpoint.
   - `user_model_configs` stores one encrypted config per `user_id`; system default remains in `model_config`.
   - Runtime model calls resolve config by current session/user and do not mutate process-global `AGNES_API_KEY`.
-- Local visible Chrome P0 browser acceptance passed in `local-visible-20turn-20260701-final2`: account registration/login, system-default start, character creation, 20/20 choice turns non-fallback, and save/load passed. Evidence remains generated under `output/playwright/` and is ignored by default.
+- Local visible Chrome acceptance passed in `local-visible-dynamic-opening-20260706-20turn-live`: dynamic opening live start gate (`start_model_ok=true`, `start_fallback=false`, 4 initial choices and dynamic world fields), account registration/login, character creation, 20/20 choice turns non-fallback, and save/load passed. Evidence remains generated under `output/playwright/` and is ignored by default.
 - Production P0 is accepted for the latest deployed production batch: server thread deployed `25ad3d15`, kept Alembic at `20260622_0005`, verified `user_model_configs`, health/catalog/container state, sanitized log scan, real-account flow, and production start+choice non-fallback with `turn_count=1`.
 - Latest local code adds sanitized `model_result` diagnostics with numeric/boolean fields only: narrator/judge elapsed time, repair elapsed time, prompt size, history count, game-state size, and provider token counters when available. This is measurement, not a latency fix.
-- Current local working batch addresses four P1 complaints before the next Chrome pass: actionable secret-safe model-unavailable prompts for upstream 404/auth/timeout/key issues, Qi Refining small-stage pacing guards, stricter third-person chronicle narrator guidance, and a read-only sidebar "外界情报" projection.
+- Current local working batch adds dynamic character-driven opening generation: difficulty, talent, spirit root, family background, six attributes, and random/manual mode now feed a unified opening payload for world profile, 0-16 chronicle, age-16 situation, external intelligence, and initial A/B/C/D choices. Model-unavailable starts use profile-aware fallback and still surface fallback status; fallback remains invalid as live-model success. The latest Chrome run passed, but repair remained high at 18/20 turns.
 - Current local working batch also closes the attribute-scale audit: runtime attributes are 0-10 with 5 as neutral, and old 0-100 values are compatibility inputs only. New realm, reward, catalog, or model-prompt logic must not use 50 as the neutral midpoint or 100 as the normal cap.
 - Active phase plan remains `docs/PLAYABLE_GAMEPLAY_ROADMAP_20260629.md`: P0 current batch is closed; next work is P1 gameplay quality and model-efficiency iteration without broad architecture changes.
 
@@ -43,7 +43,7 @@ P0 is currently closed for the latest local and production batches. Re-run only 
    - Server thread owns this gate.
 2. Local visible Chrome 20-turn gate.
    - Re-run after gameplay pacing, state/chronicle consistency, option constraints, model-efficiency, or major UI-flow changes.
-   - Required proof: 20/20 choices non-fallback, save/load works, `game_turns` stays continuous, and evidence is strict JSON/NDJSON/CSV.
+   - Required proof: start has a successful `world_builder`/`profile_opening` model event (`start_model_ok=true`), is non-fallback with 4 initial choices plus dynamic `world_profile` fields (`world_name`, `chronicle_0_16`, `initial_situation_16`), 20/20 choices are non-fallback, save/load works, `game_turns` stays continuous, and evidence is strict JSON/NDJSON/CSV.
    - Do not run concurrently with pytest against the same database.
 
 ## P1: Gameplay Quality And Model Efficiency

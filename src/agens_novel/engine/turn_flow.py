@@ -130,10 +130,13 @@ class TurnFlow:
             meta_delta.get("game_over") or meta_delta.get("finale")
         )
         if narrator_status.kind == ModelResultKind.INCOMPLETE_OUTPUT:
-            recovered_choices = [] if malformed_state_delta else self._recover_incomplete_narrator_choices(narrative, choices)
+            recovered_choices = self._recover_incomplete_narrator_choices(narrative, choices)
             if recovered_choices:
                 choices = recovered_choices
                 engine._emit("on_info", "叙事模型选项格式不完整，已按本回合局面补齐下一步选择。")
+                if malformed_state_delta:
+                    state_delta = {"character": {}, "world": {}, "meta": {}}
+                    malformed_state_delta = False
             else:
                 choices = []
                 engine._emit("on_info", narrator_status.reason)
@@ -188,13 +191,26 @@ class TurnFlow:
         # focused repair pass recovers the tags on a second call (repaired_output
         # is recorded in diagnostics), turning fallback into genuine model success.
         try:
-            return engine._run_agent(
+            result = engine._run_agent(
                 "narrator",
                 narrator_input,
                 session,
                 stream_callback=engine._stream_callback if engine.on_stream_chunk else None,
                 repair_incomplete_output=True,
             )
+            if _should_retry_narrator_result(result):
+                log.info("narrator request failed with retryable provider error; retrying once")
+                retry_result = engine._run_agent(
+                    "narrator",
+                    narrator_input,
+                    session,
+                    stream_callback=engine._stream_callback if engine.on_stream_chunk else None,
+                    repair_incomplete_output=True,
+                )
+                if not retry_result.get("llm_error"):
+                    retry_result["retried_after_request_failed"] = True
+                return retry_result
+            return result
         except Exception:
             log.exception("narrator error")
             reason = "叙述失败（详见日志）"
@@ -420,3 +436,30 @@ class TurnFlow:
                 recovered.append(fallbacks[len(recovered)])
             return recovered[:len(fallbacks)]
         return fallback_choices(session)
+
+
+def _should_retry_narrator_result(result: dict[str, Any]) -> bool:
+    """Retry one live narrator request for transient provider failures only."""
+    if not isinstance(result, dict):
+        return False
+    error = str(result.get("llm_error") or "").lower()
+    if not error:
+        return False
+    if any(marker in error for marker in ("api_key", "missing key", "401", "403")):
+        return False
+    retry_markers = (
+        "timeout",
+        "timed out",
+        "temporarily",
+        "connection",
+        "http 408",
+        "http 425",
+        "http 429",
+        "http 500",
+        "http 502",
+        "http 503",
+        "http 504",
+        "upstream_error",
+        "notfounderror",
+    )
+    return any(marker in error for marker in retry_markers)

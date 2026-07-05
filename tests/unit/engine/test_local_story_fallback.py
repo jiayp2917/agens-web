@@ -9,7 +9,7 @@ from agens_novel.engine.local_story import DEFAULT_STORY_ID, NO_MATCH_NOTICE, va
 from agens_novel.session.game_session import GameSession
 
 
-def test_profile_model_failure_enters_local_story(monkeypatch, tmp_path) -> None:
+def test_profile_model_failure_uses_dynamic_fallback_not_local_story(monkeypatch, tmp_path) -> None:
     from agens_novel import paths
 
     monkeypatch.setattr(paths, "SAVE_DIR", tmp_path)
@@ -28,11 +28,11 @@ def test_profile_model_failure_enters_local_story(monkeypatch, tmp_path) -> None
     with patch("agens_novel.engine.game_engine.run_turn_sync", side_effect=runner):
         engine.start_from_profile({"char_name": "许满"})
 
-    assert engine.game_session.local_story_active is True
-    assert engine.game_session.local_story_id == DEFAULT_STORY_ID
+    assert engine.game_session.local_story_active is False
+    assert engine.game_session.local_story_id == ""
     assert len(engine.game_session.last_choices) == 4
     assert any("上游模型响应超时" in msg for msg in infos)
-    assert narratives and "因果残影" in narratives[0]
+    assert narratives and "因果残影" not in narratives[0]
 
 
 def test_local_story_choice_advances_node_and_delta(monkeypatch, tmp_path) -> None:
@@ -48,6 +48,7 @@ def test_local_story_choice_advances_node_and_delta(monkeypatch, tmp_path) -> No
         return_value={"generated_data": {}, "llm_error": "timeout"},
     ):
         engine.start_from_profile({"char_name": "许满"})
+    engine._enter_local_story("unit-test", emit_narrative=False)
 
     before_willpower = engine.game_session.attributes["willpower"]
     first_choice = engine.game_session.last_choices[0]
@@ -78,6 +79,7 @@ def test_local_story_d_keyword_match_and_no_match_keep_choices(monkeypatch, tmp_
         return_value={"generated_data": {}, "llm_error": "timeout"},
     ):
         engine.start_from_profile({"char_name": "许满"})
+    engine._enter_local_story("unit-test", emit_narrative=False)
 
     engine.handle_action(engine.game_session.last_choices[3])
     assert engine.game_session.local_story_node_id == "herb_path"
@@ -156,6 +158,7 @@ def test_local_story_can_reach_first_major_breakthrough(monkeypatch, tmp_path) -
         return_value={"generated_data": {}, "llm_error": "timeout"},
     ):
         engine.start_from_profile({"char_name": "许满"})
+    engine._enter_local_story("unit-test", emit_narrative=False)
     engine.game_session.realm_stage = 9
 
     engine.handle_action(engine.game_session.last_choices[3])

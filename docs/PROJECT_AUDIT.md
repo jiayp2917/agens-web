@@ -35,11 +35,12 @@
 
 - 当前本地代码基线：已包含脱敏模型诊断、P1 可见反馈修复和 2026-07-04 属性尺度清理。
 - 本地 PostgreSQL 测试库目标：`127.0.0.1:55432/agens_web_test`。
-- 最新自动化门禁已通过：`compileall`、`tests\web` 68 passed、全量 `pytest -q` 480 passed、前端 build、`git diff --check`。
+- 最新自动化门禁：动态开局批次 `compileall` passed，`tests\web` 73 passed，全量 `pytest -q` 495 passed，前端 build passed，`git diff --check` 仅 LF/CRLF warning。
 - 用户级模型设置已落地：个人配置按 `user_id` 加密隔离，系统默认保留在 `model_config`，运行时按当前 session/user 解析模型配置，不再通过进程级 `AGNES_API_KEY` 注入用户 key。
 - 角色创建属性池已按 `GAME_MODE_SPEC.md` §4.1 落地：手动 2-8/总和 30，随机 0-10/总和 30。
 - 运行时属性尺度已审计并收敛为 0-10：`DEFAULT_ATTRIBUTES` 为 5，境界小层推进、`GameSession` delta/save、World Builder 入局、跨局奖励和 catalog 种子不再以 50/100 作为正常尺度；旧 0-100 仅作兼容迁移输入。
-- 本地真实 Chrome P0 验收已通过：`local-visible-20turn-20260701-final2` 完成注册/登录、系统默认开局、角色创建、20/20 choice non-fallback、存档/读档。证据位于 `output/playwright/`，默认不提交。
+- 动态开局链路已改为 profile-aware opening payload：难度、天赋、灵根、家世、六维属性和随机/手选模式生成本局世界观、0-16 岁编年史、16 岁初始局势、外界情报和首次 A/B/C/D；模型未启用或失败时使用差异化本地 fallback，不再固定青玄宗/东荒云界模板。
+- 本地真实 Chrome 验收已通过：`local-visible-dynamic-opening-20260706-strict-live5` 完成动态开局 live start gate（`start_model_ok=true`、`start_fallback=false`、4 个初始 choices、动态世界字段存在）、注册/登录、角色创建、20/20 choice non-fallback、存档/读档。证据位于 `output/playwright/`，默认不提交。
 - 生产 P0 已通过：服务器线程部署 `25ad3d15` 后，容器 healthy，Alembic `20260622_0005`，`user_model_configs` 存在，public/origin health 和 catalog 正常，日志敏感标记扫描为 0；一次性真实账号注册、登录、开局、选择、存档、读档、跨会话恢复均通过；生产 start 和至少 1 次 choice 均为 non-fallback，choice 后 `turn_count=1`。
 - 最新本地代码已加入脱敏模型性能观测：`model_result` 只暴露布尔/数值诊断，不输出 raw model/base_url/key；下一步需要 Chrome 20 回合采样定位慢因。
 
@@ -54,9 +55,9 @@
 
 | 问题 | 风险 | 处理方向 |
 | --- | --- | --- |
-| live model 响应慢 | 最新已验收 Chrome run 平均回合耗时约 48.2s、最大约 153.2s。 | 用当前脱敏诊断跑 20 回合采样，再决定压缩 history、收窄 judge、减少 repair 或调整 provider。 |
-| narrator repair / judge 依赖 | 多回合依赖修复和 mismatch suppression，说明结构化输出质量仍不稳。 | 收紧 narrator 输出契约和 parser；只在权威状态变更场景触发 judge。 |
-| 20 回合内容体验不足 | 目标感、阶段奖励、世界变化和路线差异仍弱。 | 加 0-16 岁开场编年史、3-5 回合反馈、四类事件池，减少重复闭关/突破循环。 |
+| live model 响应慢 | 最新动态开局 Chrome run 平均回合耗时约 26.7s、最大约 46.2s。 | 继续用脱敏诊断定位慢因，再决定压缩 history、收窄 judge、减少 repair 或调整 provider。 |
+| narrator repair / judge 依赖 | 最新动态开局 Chrome run repair 18/20，说明结构化输出质量仍不稳；judge 触发 4 次。 | 收紧 narrator 输出契约和 parser；只在权威状态变更场景触发 judge。 |
+| 20 回合内容体验不足 | 动态开局已补 0-16 岁编年史和本局世界摘要，但 20 回合中段目标感、阶段奖励、世界变化和路线差异仍弱。 | 下一步继续做 3-5 回合反馈、四类事件池，减少重复闭关/突破循环，并用 Chrome 证据确认。 |
 | 叙事与权威状态落账 | 关键道具、功法、属性、称号、关系、伤势、寿元、境界变化仍可能文字有而系统无。 | 结构化落账、自然改写或压制可见叙事；模型不得决定权威数值。 |
 | `GameEngine` 偏大 | 回合、突破、兜底、模型失败等职责集中。 | 只按主流程需要拆模型失败、本地故事、突破 helper，避免大拆。 |
 | `WebGameService` 边界需收束 | API 编排、持久化和错误映射仍集中。 | 抽私有 helper，不优先大拆 router。 |

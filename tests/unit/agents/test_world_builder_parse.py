@@ -40,3 +40,32 @@ def test_parse_world_output_does_not_pad_short_choices() -> None:
     data, _world_description, _opening = _parse_world_output(text)
 
     assert data["choices"] == ["请教陈师兄"]
+
+
+def test_parse_world_output_accepts_dynamic_opening_fields_and_strips_internal_data() -> None:
+    payload = {
+        "world_name": "归墟潮界",
+        "regions": [{"name": "潮生海市"}],
+        "sects": [{"name": "潮音阁"}],
+        "current_conflicts": ["灵潮提前"],
+        "fate_hooks": ["天命奇遇"],
+        "chronicle_0_16": ["零至六岁，许满常听潮声。"],
+        "initial_situation_16": "十六岁这年，许满抵达潮音渡口。",
+        "opening_narrative": "归墟潮界灵潮提前，许满在十六岁抵达潮音渡口。",
+        "choices": ["A：稳住渡口差事", "B：打听灵潮", "C：夜探沉星礁", "D：随潮而行"],
+        "raw_prompt": "must-not-leak",
+        "api_key": "sk-must-not-leak",
+        "state_delta": {"character": {"inventory_add": ["bad"]}},
+    }
+    text = f"前言\n<world_data>\n```json\n{json.dumps(payload, ensure_ascii=False)}\n```\n</world_data>"
+
+    data, _world_description, opening = _parse_world_output(text)
+
+    assert opening == payload["opening_narrative"]
+    assert data["world_name"] == "归墟潮界"
+    assert data["chronicle_0_16"] == ["零至六岁，许满常听潮声。"]
+    assert len(data["choices"]) == 4
+    assert all(not choice.startswith(("A", "B", "C", "D")) for choice in data["choices"])
+    assert "raw_prompt" not in data
+    assert "api_key" not in data
+    assert "state_delta" not in data

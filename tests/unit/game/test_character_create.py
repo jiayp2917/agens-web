@@ -32,7 +32,8 @@ def test_start_from_profile_initializes_session(tmp_path, monkeypatch):
     assert s.family_background == "寒门"
     assert not hasattr(s, "game_mode")
     assert len(s.last_choices) == 4
-    assert s.last_choices[-1] == "【气运】随缘而行，听天命、赌因果"
+    assert any(word in s.last_choices[-1] for word in ("气运", "天命", "随缘", "命数"))
+    assert s.world_profile.get("chronicle_0_16")
     assert narratives and narratives[0][1] == 0
 
 
@@ -71,9 +72,21 @@ def test_start_from_profile_generates_opening_choices_from_model(tmp_path, monke
         assert agent_name == "world_builder"
         return {
             "generated_data": {
-                "world": {"location": "青玄宗山门", "current_scene": "接引台"},
+                "world_name": "星河试界",
+                "regions": [{"name": "星河山门"}],
+                "sects": [{"name": "星河剑宗"}],
+                "current_conflicts": ["外门名额缩减"],
+                "fate_hooks": ["平稳入道"],
+                "initial_situation": "许满在接引台前候名。",
+                "initial_situation_16": "十六岁这年，许满在接引台前候名。",
+                "chronicle_0_16": ["零至六岁，许满在寒门读旧经。"],
                 "opening_narrative": "接引钟声响起。",
-                "choices": ["拜见接引弟子", "观察灵气", "整理行囊"],
+                "world": {
+                    "location": "青玄宗山门",
+                    "current_scene": "接引台",
+                    "lore_facts": ["星河试界外门名额缩减。"],
+                },
+                "choices": ["拜见接引弟子", "观察灵气", "整理行囊", "随缘等候"],
             },
             "llm_error": "",
         }
@@ -81,10 +94,11 @@ def test_start_from_profile_generates_opening_choices_from_model(tmp_path, monke
     with patch("agens_novel.engine.game_engine.run_turn_sync", side_effect=runner):
         engine.start_from_profile({"char_name": "许满"})
 
-    assert engine.game_session.last_choices == ["拜见接引弟子", "观察灵气", "整理行囊", "【气运】随缘而行，听天命、赌因果"]
+    assert engine.game_session.last_choices == ["拜见接引弟子", "观察灵气", "整理行囊", "随缘等候"]
+    assert engine.game_session.world_profile["world_name"] == "星河试界"
 
 
-def test_start_from_profile_model_failure_uses_tiandao_fallback(tmp_path, monkeypatch):
+def test_start_from_profile_model_failure_uses_profile_aware_fallback(tmp_path, monkeypatch):
     from agens_novel import paths
     monkeypatch.setattr(paths, "SAVE_DIR", tmp_path)
     monkeypatch.setenv("AGENS_START_MODEL_OPENING", "1")
@@ -97,10 +111,22 @@ def test_start_from_profile_model_failure_uses_tiandao_fallback(tmp_path, monkey
         return {"generated_data": {}, "llm_error": "timeout"}
 
     with patch("agens_novel.engine.game_engine.run_turn_sync", side_effect=runner):
-        engine.start_from_profile({"char_name": "许满"})
+        engine.start_from_profile({
+            "char_name": "许满",
+            "difficulty": "困难",
+            "attributes": {
+                "root_bone": 2,
+                "comprehension": 4,
+                "luck": 2,
+                "willpower": 8,
+                "physique": 8,
+                "soul": 6,
+            },
+        })
 
-    assert engine.game_session.local_story_active is True
+    assert engine.game_session.local_story_active is False
     assert len(engine.game_session.last_choices) == 4
+    assert engine.game_session.world_profile["world_name"] == "西陲裂土"
     assert any("上游模型响应超时" in msg for msg in infos)
 
 
@@ -125,7 +151,7 @@ def test_start_from_profile_model_failure_can_end_run(tmp_path, monkeypatch):
     assert engine.game_session.last_choices == []
 
 
-def test_start_from_profile_model_failure_enters_local_story_not_profile_choices(tmp_path, monkeypatch):
+def test_start_from_profile_model_failure_ignores_profile_choice_override_by_default(tmp_path, monkeypatch):
     from agens_novel import paths
     monkeypatch.setattr(paths, "SAVE_DIR", tmp_path)
     monkeypatch.setenv("AGENS_START_MODEL_OPENING", "1")
@@ -144,7 +170,7 @@ def test_start_from_profile_model_failure_enters_local_story_not_profile_choices
             "choices": ["退回山门", "询问执事"],
         })
 
-    assert engine.game_session.local_story_active is True
+    assert engine.game_session.local_story_active is False
     assert engine.game_session.last_choices != ["退回山门", "询问执事"]
     assert len(engine.game_session.last_choices) == 4
     assert any("上游模型响应超时" in msg for msg in infos)
@@ -163,9 +189,21 @@ def test_unknown_profile_seed_is_not_sent_to_world_builder_prompt(tmp_path, monk
         seen_inputs.append(user_input)
         return {
             "generated_data": {
-                "world": {"location": "星河剑宗山门", "current_scene": "星河接引台"},
+                "world_name": "星河试界",
+                "regions": [{"name": "星河山门"}],
+                "sects": [{"name": "星河剑宗"}],
+                "current_conflicts": ["外门名额缩减"],
+                "fate_hooks": ["平稳入道"],
+                "initial_situation": "许满在星河接引台前候名。",
+                "initial_situation_16": "十六岁这年，许满在星河接引台前候名。",
+                "chronicle_0_16": ["零至六岁，许满在寒门读旧经。"],
                 "opening_narrative": "星河剑宗钟声响起。",
-                "choices": ["拜见接引弟子", "观察星河灵脉", "整理行囊"],
+                "world": {
+                    "location": "星河剑宗山门",
+                    "current_scene": "星河接引台",
+                    "lore_facts": ["星河试界外门名额缩减。"],
+                },
+                "choices": ["拜见接引弟子", "观察星河灵脉", "整理行囊", "随缘等候"],
             },
             "llm_error": "",
         }
@@ -190,3 +228,71 @@ def test_unknown_profile_seed_does_not_change_local_fallback_opening(tmp_path, m
     assert first.game_session.location == second.game_session.location
     assert "云海纪" not in first.game_session.location
     assert "赤霄录" not in second.game_session.location
+
+
+def test_profile_concept_includes_attributes_and_fate_without_unknown_seed() -> None:
+    from agens_novel.engine.profile_opening import profile_concept
+
+    concept = profile_concept({
+        "unknown_seed": "星河剑宗",
+        "char_name": "许满",
+        "talent": "天命道胎",
+        "spirit_root": "雷灵根",
+        "family_background": "寒门",
+        "difficulty": "困难",
+        "randomize_attributes": True,
+        "attributes": {
+            "root_bone": 8,
+            "comprehension": 7,
+            "luck": 8,
+            "willpower": 4,
+            "physique": 2,
+            "soul": 1,
+        },
+    })
+
+    assert "六维属性" in concept
+    assert "根骨=8" in concept
+    assert "命数倾向" in concept
+    assert "天命奇遇" in concept
+    assert "星河剑宗" not in concept
+
+
+def test_different_profiles_get_different_fallback_worlds(tmp_path, monkeypatch):
+    from agens_novel import paths
+    monkeypatch.setattr(paths, "SAVE_DIR", tmp_path)
+    monkeypatch.delenv("AGENS_START_MODEL_OPENING", raising=False)
+    monkeypatch.delenv("AGENS_START_MODEL_WORLD", raising=False)
+
+    high_luck = GameEngine()
+    high_luck.start_from_profile({
+        "char_name": "许满",
+        "family_background": "寒门",
+        "randomize_attributes": True,
+        "attributes": {
+            "root_bone": 3,
+            "comprehension": 5,
+            "luck": 9,
+            "willpower": 5,
+            "physique": 4,
+            "soul": 4,
+        },
+    })
+    hard = GameEngine()
+    hard.start_from_profile({
+        "char_name": "许满",
+        "difficulty": "困难",
+        "randomize_attributes": True,
+        "attributes": {
+            "root_bone": 2,
+            "comprehension": 4,
+            "luck": 2,
+            "willpower": 8,
+            "physique": 8,
+            "soul": 6,
+        },
+    })
+
+    assert high_luck.game_session.world_profile["world_name"] == "沧澜群岛"
+    assert hard.game_session.world_profile["world_name"] == "西陲裂土"
+    assert high_luck.game_session.current_scene != hard.game_session.current_scene

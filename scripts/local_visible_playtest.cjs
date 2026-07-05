@@ -8,6 +8,7 @@ const { spawnSync } = require("child_process");
 const ROOT = path.resolve(__dirname, "..");
 const OUT_DIR = path.join(ROOT, "output", "playwright");
 const BASE_URL = process.env.AGENS_PLAYTEST_URL || "http://127.0.0.1:5173/static/";
+const API_BASE_URL = process.env.AGENS_PLAYTEST_API_BASE || "";
 const TARGET_TURNS = Number(process.env.AGENS_PLAYTEST_TURNS || "20");
 const REQUEST_TIMEOUT_MS = Number(process.env.AGENS_PLAYTEST_TIMEOUT_MS || "300000");
 const STAMP = process.env.AGENS_PLAYTEST_NAME || `local-visible-20turn-${stamp()}`;
@@ -179,6 +180,20 @@ function redactedUrl(url) {
   return String(url || "").replace(/sessions\/[^/]+/g, "sessions/<id>");
 }
 
+async function routeApiBase(page) {
+  if (!API_BASE_URL) return;
+  const apiBase = API_BASE_URL.replace(/\/+$/, "");
+  await page.route("**/*", (route) => {
+    const requestUrl = new URL(route.request().url());
+    if (!requestUrl.pathname.startsWith("/api/")) {
+      route.continue();
+      return;
+    }
+    const redirected = `${apiBase}${requestUrl.pathname}${requestUrl.search}`;
+    route.continue({ url: redirected });
+  });
+}
+
 function latestModelDiagnostics(body, sinceMs = 0) {
   const events = Array.isArray(body?.events)
     ? body.events
@@ -212,6 +227,47 @@ function latestModelDiagnostics(body, sinceMs = 0) {
     prompt_tokens: numberMetric(narratorDiag.prompt_tokens),
     completion_tokens: numberMetric(narratorDiag.completion_tokens),
     total_tokens: numberMetric(narratorDiag.total_tokens),
+  };
+}
+
+function startAcceptance(body, httpStatus) {
+  const world = body?.world || body?.session?.world || {};
+  const worldProfile = world?.world_profile || body?.world_profile || body?.session?.world_profile || {};
+  const choices = Array.isArray(body?.choices)
+    ? body.choices
+    : Array.isArray(body?.session?.choices)
+      ? body.session.choices
+      : [];
+  const chronicle = Array.isArray(worldProfile?.chronicle_0_16) ? worldProfile.chronicle_0_16 : [];
+  const currentConflicts = Array.isArray(worldProfile?.current_conflicts) ? worldProfile.current_conflicts : [];
+  const fateHooks = Array.isArray(worldProfile?.fate_hooks) ? worldProfile.fate_hooks : [];
+  const initialSituation = worldProfile?.initial_situation_16 || worldProfile?.initial_situation || "";
+  const fallback = Boolean(body?.fallback_prompt?.active || body?.session?.fallback_prompt?.active);
+  const events = Array.isArray(body?.events)
+    ? body.events
+    : Array.isArray(body?.session?.events)
+      ? body.session.events
+      : [];
+  const startModelOk = events.some((event) =>
+    event?.type === "model_result"
+    && event?.agent === "world_builder"
+    && event?.source === "profile_opening"
+    && event?.status === "ok",
+  );
+  const modelDiagnostics = latestModelDiagnostics(body);
+  return {
+    start_http_status: httpStatus,
+    start_fallback: fallback,
+    start_model_ok: startModelOk,
+    start_choices_count: choices.length,
+    start_world_name_set: Boolean(cleanText(worldProfile?.world_name)),
+    start_world_name: cleanText(worldProfile?.world_name),
+    start_chronicle_count: chronicle.length,
+    start_initial_situation_set: Boolean(cleanText(initialSituation)),
+    start_current_conflicts_count: currentConflicts.length,
+    start_fate_hooks_count: fateHooks.length,
+    start_narrator_elapsed_ms: modelDiagnostics.narrator_elapsed_ms,
+    start_prompt_chars: modelDiagnostics.prompt_chars,
   };
 }
 
@@ -274,6 +330,7 @@ function numberMetric(value) {
       args: ["--window-size=1440,1000"],
     });
     const page = await browser.newPage({ viewport: { width: 1440, height: 1000 } });
+    await routeApiBase(page);
 
     page.on("console", (msg) => {
       consoleMessages.push({ type: msg.type(), text: msg.text().slice(0, 500) });
@@ -289,6 +346,11 @@ function numberMetric(value) {
       requests.push(rec);
     });
 
+    await page.goto(BASE_URL, { waitUntil: "domcontentloaded", timeout: 30000 });
+    await page.evaluate(() => {
+      localStorage.clear();
+      sessionStorage.clear();
+    });
     await page.goto(BASE_URL, { waitUntil: "domcontentloaded", timeout: 30000 });
     await page.screenshot({ path: `${screenshotBase}-home.png`, fullPage: true });
 
@@ -308,17 +370,46 @@ function numberMetric(value) {
     await clickFirstVisible(page, [".home-actions button:nth-child(1)", "text=新游戏"], 30000);
     await page.waitForSelector('input[name="char_name"]', { timeout: 30000 });
     await page.locator('input[name="char_name"]').fill("验真者");
-    await Promise.all([
+    const [startResponse] = await Promise.all([
       page.waitForResponse((resp) => resp.url().includes("/api/sessions/") && resp.url().includes("/start"), {
         timeout: REQUEST_TIMEOUT_MS,
       }),
       page.locator(".start-btn").click(),
     ]);
+    let startBody = null;
+    try {
+      startBody = await startResponse.json();
+    } catch {
+      // Keep null; status will still be recorded.
+    }
+    Object.assign(summary, startAcceptance(startBody, startResponse.status()));
     await page.waitForSelector(".choice-button", { timeout: REQUEST_TIMEOUT_MS });
     await page.screenshot({ path: `${screenshotBase}-start.png`, fullPage: true });
     summary.start_passed = true;
 
-    for (let turn = 1; turn <= TARGET_TURNS; turn += 1) {
+    if (
+      !startResponse.ok()
+      || summary.start_fallback
+      || !summary.start_model_ok
+      || summary.start_choices_count !== 4
+      || !summary.start_world_name_set
+      || summary.start_chronicle_count < 1
+      || !summary.start_initial_situation_set
+    ) {
+      issue("P0", "start did not satisfy dynamic live-model opening acceptance", {
+        http_status: summary.start_http_status,
+        fallback: summary.start_fallback,
+        model_ok: summary.start_model_ok,
+        choices_count: summary.start_choices_count,
+        world_name_set: summary.start_world_name_set,
+        chronicle_count: summary.start_chronicle_count,
+        initial_situation_set: summary.start_initial_situation_set,
+      });
+      summary.result = "failed_or_partial";
+      await page.screenshot({ path: `${screenshotBase}-start-rejected.png`, fullPage: true });
+    }
+
+    for (let turn = 1; summary.result === "running" && turn <= TARGET_TURNS; turn += 1) {
       const beforeChoices = await choiceSnapshots(page);
       const enabled = beforeChoices.filter((choice) => !choice.disabled);
       const selected = enabled[(turn - 1) % Math.max(1, enabled.length)];
@@ -394,12 +485,17 @@ function numberMetric(value) {
         note: response.ok() ? (fallback ? "fallback" : "non-fallback") : "http_failure",
       });
 
-      if (!response.ok() || fallback) {
+      const turnAdvanced = turnCount === turn;
+      const hasFourChoices = afterChoices.length === 4;
+      if (!response.ok() || fallback || !turnAdvanced || !hasFourChoices) {
         issue("P0", "choice did not satisfy live-model acceptance", {
           turn_index: turn,
           http_status: response.status(),
           fallback,
           turn_count: turnCount,
+          expected_turn_count: turn,
+          turn_advanced: turnAdvanced,
+          choices_count: afterChoices.length,
         });
         summary.result = "failed_or_partial";
         await page.screenshot({ path: `${screenshotBase}-stopped-turn${turn}.png`, fullPage: true });
@@ -457,6 +553,9 @@ function numberMetric(value) {
     console.log(JSON.stringify({ summary, issues, paths, source: rawPath }, null, 2));
     if (browser) {
       await browser.close();
+    }
+    if (summary.result !== "passed" || issues.some((item) => item.level === "P0")) {
+      process.exitCode = 1;
     }
   }
 })();

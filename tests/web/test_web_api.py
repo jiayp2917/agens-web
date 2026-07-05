@@ -466,7 +466,7 @@ def test_incomplete_narrator_choices_recover_without_local_story_fallback(
     assert "local_story_fallback" not in row["state_delta"]["meta"]
 
 
-def test_malformed_state_update_records_local_story_fallback(
+def test_malformed_state_update_with_narrative_settles_rule_turn(
     tmp_path: Path,
     monkeypatch,
 ) -> None:
@@ -499,7 +499,7 @@ def test_malformed_state_update_records_local_story_fallback(
     assert chosen.status_code == 200
     body = chosen.json()
     assert body["turn_count"] == 1
-    assert body["fallback_prompt"]["active"] is True
+    assert body["fallback_prompt"]["active"] is False
     with app.state.service.db.engine.connect() as conn:
         row = conn.execute(
             text(
@@ -512,10 +512,10 @@ def test_malformed_state_update_records_local_story_fallback(
             {"run_id": session_id},
         ).mappings().one()
     assert row["turn_no"] == 1
-    assert row["elapsed_years"] == 0
-    assert row["event_kind"] == "fallback"
-    assert row["state_delta"]["meta"]["local_story_fallback"] is True
-    assert "状态更新格式不完整" in row["state_delta"]["meta"]["fallback_reason"]
+    assert row["elapsed_years"] > 0
+    assert row["event_kind"] != "fallback"
+    assert row["state_delta"]["meta"]["choice_category"] in {"稳妥", "机遇", "风险", "气运"}
+    assert "local_story_fallback" not in row["state_delta"]["meta"]
 
 
 def test_model_failure_prompt_exposes_sanitized_http_404_cause(
@@ -556,6 +556,54 @@ def test_model_failure_prompt_exposes_sanitized_http_404_cause(
     assert "模型名/Base URL" in text_value
     assert "sk-" not in text_value
     assert "https://" not in text_value
+
+
+def test_transient_narrator_404_retries_without_fallback(
+    tmp_path: Path,
+    monkeypatch,
+) -> None:
+    monkeypatch.setenv("AGNES_API_KEY", "sk-test-web-api")
+    monkeypatch.setenv("SESSION_COOKIE_SECURE", "0")
+    app = create_app()
+    client = TestClient(app)
+
+    _create_invite(app)
+    _register(client)
+    session_id = client.post("/api/sessions", json={}).json()["session_id"]
+    client.post(f"/api/sessions/{session_id}/start", json={"char_name": "retry-404-flow"})
+
+    calls = {"narrator": 0}
+
+    def transient_narrator_404(agent_name: str, *_args, **_kwargs):
+        if agent_name == "narrator":
+            calls["narrator"] += 1
+            if calls["narrator"] == 1:
+                return {
+                    "narrative": "",
+                    "state_delta": {},
+                    "choices": [],
+                    "llm_error": 'HTTP 404: {"error":{"type":"upstream_error","code":"404"}}',
+                }
+            return {
+                "narrative": "你将地图副本交入执事堂，换得一段清静修行时日。",
+                "state_delta": {"character": {"attributes": {"willpower": 1}}},
+                "choices": ["回院吐纳", "打听赏格", "追查地图", "随缘等候"],
+                "llm_error": "",
+            }
+        return _runner(agent_name)
+
+    with patch("agens_novel.engine.game_engine.run_turn_sync", side_effect=transient_narrator_404):
+        chosen = client.post(
+            f"/api/sessions/{session_id}/choice",
+            json={"choice": "A"},
+        )
+
+    assert chosen.status_code == 200
+    body = chosen.json()
+    assert calls["narrator"] == 2
+    assert body["turn_count"] == 1
+    assert body["fallback_prompt"]["active"] is False
+    assert len(body["choices"]) == 4
 
 
 def test_model_failure_prompt_and_event_redact_secret_bearing_format_reason(
@@ -661,8 +709,10 @@ def test_web_model_failure_exposes_fallback_and_can_end(tmp_path: Path, monkeypa
     started = client.post(f"/api/sessions/{session_id}/start", json={"char_name": "许满"}).json()
 
     assert started["game_over"] is False
-    assert started["local_story"]["active"] is True
+    assert started["local_story"]["active"] is False
     assert started["fallback_prompt"]["active"] is True
+    assert any(event.get("type") == "model_failure" for event in started["events"])
+    assert started["world"]["world_profile"].get("chronicle_0_16")
     assert started["choices"]
 
     ended = client.post(
@@ -1393,6 +1443,184 @@ def test_randomized_start_uses_30_point_attribute_pool(tmp_path: Path, monkeypat
     assert attrs == preview_attrs
     assert sum(attrs.values()) == 30
     assert all(0 <= value <= 10 for value in attrs.values())
+
+
+def test_start_persists_dynamic_opening_world_profile(tmp_path: Path, monkeypatch) -> None:
+    monkeypatch.setenv("AGNES_API_KEY", "sk-test-web-api")
+    monkeypatch.setenv("SESSION_COOKIE_SECURE", "0")
+    monkeypatch.setenv("AGENS_START_MODEL_OPENING", "1")
+    app = create_app()
+    client = TestClient(app)
+    _create_invite(app)
+    _register(client)
+    session_id = client.post("/api/sessions", json={}).json()["session_id"]
+
+    def dynamic_world_builder(agent_name: str, user_input: str, *_args, **_kwargs):
+        if agent_name == "world_builder":
+            assert "六维属性" in user_input
+            assert "命数倾向" in user_input
+            return {
+                "generated_data": {
+                    "world_name": "归墟潮界",
+                    "regions": [{"name": "潮生海市"}],
+                    "sects": [{"name": "潮音阁"}],
+                    "current_conflicts": ["灵潮提前"],
+                    "fate_hooks": ["天命奇遇"],
+                    "chronicle_0_16": [
+                        "零至六岁，许满常听潮声。",
+                        "七至十二岁，他在寒门旧屋读残卷。",
+                        "十六岁，灵潮把他带到渡口。",
+                    ],
+                    "initial_situation": "许满抵达潮音渡口。",
+                    "initial_situation_16": "十六岁这年，许满抵达潮音渡口。",
+                    "opening_narrative": "归墟潮界灵潮提前，许满在十六岁抵达潮音渡口。",
+                    "world": {
+                        "location": "潮音渡口",
+                        "region": "归墟潮界",
+                        "current_scene": "潮音渡口正在登记听潮弟子",
+                        "lore_facts": ["归墟潮界灵潮提前。"],
+                    },
+                    "choices": ["稳住渡口差事", "打听灵潮", "夜探沉星礁", "随潮而行"],
+                },
+                "llm_error": "",
+            }
+        return _runner(agent_name)
+
+    with patch("agens_novel.engine.game_engine.run_turn_sync", side_effect=dynamic_world_builder):
+        started = client.post(
+            f"/api/sessions/{session_id}/start",
+            json={
+                "char_name": "许满",
+                "talent": "天命道胎",
+                "spirit_root": "雷灵根",
+                "family_background": "寒门",
+                "difficulty": "普通",
+                "randomize_attributes": True,
+                "attributes": {
+                    "root_bone": 3,
+                    "comprehension": 5,
+                    "luck": 9,
+                    "willpower": 5,
+                    "physique": 4,
+                    "soul": 4,
+                },
+            },
+        ).json()
+
+    assert started["fallback_prompt"]["active"] is False
+    assert any(
+        event.get("type") == "model_result"
+        and event.get("agent") == "world_builder"
+        and event.get("source") == "profile_opening"
+        and event.get("status") == "ok"
+        for event in started["events"]
+    )
+    assert started["world"]["world_profile"]["world_name"] == "归墟潮界"
+    assert started["world"]["current_scene"] == "潮音渡口正在登记听潮弟子"
+    assert started["choices"] == ["稳住渡口差事", "打听灵潮", "夜探沉星礁", "随潮而行"]
+    with app.state.service.db.engine.connect() as conn:
+        snapshot_text = conn.execute(
+            text("SELECT snapshot::text FROM sessions WHERE id = :session_id"),
+            {"session_id": session_id},
+        ).scalar_one()
+    assert "归墟潮界" in snapshot_text
+    assert "chronicle_0_16" in snapshot_text
+
+
+def test_start_model_failure_reports_fallback_but_uses_dynamic_profile_opening(
+    tmp_path: Path,
+    monkeypatch,
+) -> None:
+    monkeypatch.setenv("AGNES_API_KEY", "sk-test-web-api")
+    monkeypatch.setenv("SESSION_COOKIE_SECURE", "0")
+    monkeypatch.setenv("AGENS_START_MODEL_OPENING", "1")
+    app = create_app()
+    client = TestClient(app)
+    _create_invite(app)
+    _register(client)
+    session_id = client.post("/api/sessions", json={}).json()["session_id"]
+
+    def failing_world_builder(agent_name: str, *_args, **_kwargs):
+        if agent_name == "world_builder":
+            return {"generated_data": {}, "llm_error": "timeout"}
+        return _runner(agent_name)
+
+    with patch("agens_novel.engine.game_engine.run_turn_sync", side_effect=failing_world_builder):
+        started = client.post(
+            f"/api/sessions/{session_id}/start",
+            json={
+                "char_name": "许满",
+                "difficulty": "困难",
+                "randomize_attributes": True,
+                "attributes": {
+                    "root_bone": 2,
+                    "comprehension": 4,
+                    "luck": 2,
+                    "willpower": 8,
+                    "physique": 8,
+                    "soul": 6,
+                },
+            },
+        ).json()
+
+    assert started["fallback_prompt"]["active"] is True
+    assert started["local_story"]["active"] is False
+    assert started["world"]["world_profile"]["world_name"] == "西陲裂土"
+    assert len(started["choices"]) == 4
+    assert any(event.get("type") == "model_failure" for event in started["events"])
+
+
+def test_incomplete_start_model_output_is_not_live_success(
+    tmp_path: Path,
+    monkeypatch,
+) -> None:
+    monkeypatch.setenv("AGNES_API_KEY", "sk-test-web-api")
+    monkeypatch.setenv("SESSION_COOKIE_SECURE", "0")
+    monkeypatch.setenv("AGENS_START_MODEL_OPENING", "1")
+    app = create_app()
+    client = TestClient(app)
+    _create_invite(app)
+    _register(client)
+    session_id = client.post("/api/sessions", json={}).json()["session_id"]
+
+    def incomplete_world_builder(agent_name: str, *_args, **_kwargs):
+        if agent_name == "world_builder":
+            return {
+                "generated_data": {
+                    "opening_narrative": "模型只给出一段残缺开场。",
+                    "choices": ["稳住渡口差事"],
+                },
+                "llm_error": "",
+            }
+        return _runner(agent_name)
+
+    with patch("agens_novel.engine.game_engine.run_turn_sync", side_effect=incomplete_world_builder):
+        started = client.post(
+            f"/api/sessions/{session_id}/start",
+            json={
+                "char_name": "许满",
+                "difficulty": "普通",
+                "attributes": {
+                    "root_bone": 5,
+                    "comprehension": 5,
+                    "luck": 5,
+                    "willpower": 5,
+                    "physique": 5,
+                    "soul": 5,
+                },
+            },
+        ).json()
+
+    assert started["fallback_prompt"]["active"] is True
+    assert started["world"]["world_profile"].get("chronicle_0_16")
+    assert len(started["choices"]) == 4
+    assert not any(
+        event.get("type") == "model_result"
+        and event.get("agent") == "world_builder"
+        and event.get("source") == "profile_opening"
+        and event.get("status") == "ok"
+        for event in started["events"]
+    )
 
 
 @pytest.mark.skipif(not os.environ.get("TEST_DATABASE_URL"), reason="TEST_DATABASE_URL not configured")

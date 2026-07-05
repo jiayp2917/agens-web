@@ -86,6 +86,7 @@ def test_result_diagnostics_are_non_secret_shape_facts() -> None:
         "choices_count": 3,
         "generated_ok": False,
         "repaired_output": False,
+        "retried_after_request_failed": False,
         "repair_elapsed_ms": 0,
         "judge_approved": None,
         "has_corrected_delta": False,

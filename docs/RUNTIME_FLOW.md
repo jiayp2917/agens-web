@@ -5,11 +5,11 @@
 - 产品入口是 React/Vite 浏览器 UI + FastAPI 后端 + PostgreSQL；旧移动端、旧 CLI/REPL、旧 `web/frontend` 不在当前维护范围。
 - 当前玩法是游戏模式 v5 Alpha：A/B/C/D 四按钮固定语义，A 稳妥、B 机遇、C 风险、D 气运；无自由文本主入口，无 HP/MP 常驻 UI。
 - 模型设置为注册用户个人配置 + 系统 Agens 默认兜底；用户 key 加密存储，不写入前端、日志、文档、存档或 session snapshot。
-- 当前本地自动化基线：本地 PostgreSQL 可用；`compileall` 通过；`tests\web` 68 passed；带 `TEST_DATABASE_URL` 的全量 `pytest -q` 480 passed；前端 build 通过；`git diff --check` 通过。
-- 当前本地真实 Chrome 验收：`local-visible-20turn-20260701-final2` 已完成 20/20 non-fallback + 存读档，但响应耗时和 narrator repair 依赖仍是 P1 风险。
+- 当前本地自动化基线：本地 PostgreSQL 可用；动态开局批次 `compileall` passed，`tests\web` 73 passed，全量 `pytest -q` 495 passed，前端 build passed，`git diff --check` 仅 LF/CRLF warning。新增 profile-aware opening 相关单测与 Web/API 覆盖。
+- 当前本地真实 Chrome 验收：`local-visible-dynamic-opening-20260706-strict-live5` 已完成动态开局 live start gate（`start_model_ok=true`、`start_fallback=false`、4 个初始 choices、动态世界字段存在）、20/20 choice non-fallback 和存读档；平均回合耗时约 26.7s，最大约 46.2s，narrator repair 18/20 仍是 P1 风险。
 - 当前生产 P0：服务器线程部署 `25ad3d15` 后，账号流通过，production start 和至少 1 次 choice 均 non-fallback，choice 后 `turn_count=1`。未来生产部署或模型配置变更仍需复跑同一门禁；HTTP 200 或本地 final2 不能替代生产 live-model 验收。
-- 当前本地代码已加入脱敏模型性能观测；这不代表性能已修复，下一步应跑真实 Chrome 20 回合采样，分辨 prompt/history、repair、judge 和 provider 慢因。
-- 当前 P1 工作批次修复模型不可用提示、练气小境界节奏、第三方编年史叙事约束和侧栏外界情报；本地自动化门禁已通过，真实 Chrome 20 回合尚未针对该批次复跑。
+- 当前本地代码已加入脱敏模型性能观测；这不代表性能已修复，最新 Chrome 采样显示 repair 依赖仍高，下一步应继续分辨 prompt/history、repair、judge 和 provider 慢因。
+- 当前动态开局批次把角色创建后的开局生成改为 profile-aware opening payload：难度、天赋、灵根、家世、六维属性和随机/手选模式共同影响本局世界观、0-16 岁编年史、16 岁初始局势、外界情报和首次 A/B/C/D choices。模型未启用或失败时使用差异化本地 fallback；该 fallback 可玩但不算 live-model 成功。
 - 当前阶段计划见 `docs/PLAYABLE_GAMEPLAY_ROADMAP_20260629.md`；当前待办见 `docs/NEXT_GOVERNANCE_BACKLOG.md`。
 本文记录当前 Web-only 运行链路。产品入口是浏览器 UI + FastAPI 后端，不再包含移动端打包或设备验证路径。
 
@@ -67,7 +67,7 @@ http://127.0.0.1:8000/
    - 运行时六维属性统一按 0-10 解析，5 为中性默认值；旧 0-100 存档、World Builder 输出或 catalog 元数据只作为兼容输入迁移，不再作为新逻辑尺度。
    - 随机模式提交前端展示的随机属性池；后端只在随机模式未带属性时兜底生成新池，避免“看到的随机值”和实际入局值不一致。
    - `POST /api/sessions/{id}/start` 调用 `GameEngine.start_from_profile()`。
-   - World Builder 负责开场叙事和 A/B/C/D；无 key 或模型失败时进入本地故事兜底，并在前端提供继续或结束本局。
+   - World Builder 负责开场世界观、0-16 岁编年史、16 岁初始局势和 A/B/C/D；无 key 或模型失败时先走用户 fallback 决策，继续后使用同一 profile 输入生成差异化本地开局，不再默认退回固定 `misty_gate` 本地故事。fallback 仍通过 `fallback_prompt.active=true` 暴露，不能算 live-model 成功。
    - 特殊开局只由后端识别，前端不明示隐藏规则。
 
 5. 回合推进

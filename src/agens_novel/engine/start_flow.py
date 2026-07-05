@@ -18,13 +18,14 @@ from ..game.constants import (
     normalize_attribute_value,
 )
 from ..session.game_session import GameSession
-from .choices import complete_choices, fallback_choices
-from .model_result import ModelResultKind, classify_world_builder_result
-from .profile_opening import profile_concept, profile_default_world, profile_opening
+from .choices import complete_choices
+from .model_result import ModelResultKind, ModelResultStatus, classify_world_builder_result
+from .profile_opening import profile_default_world, profile_opening
 from .render import format_status_bar
 from .world_generator import (
     build_world_fallback,
     build_world_prompt,
+    is_complete_opening_payload,
     parse_world_response,
 )
 
@@ -129,21 +130,15 @@ class StartFlow:
         apply_profile_session(engine.game_session, profile)
 
         engine._emit("on_loading", "开局生成中...")
-        world_profile = self.generate_world_profile(profile)
-        apply_profile_world_profile(engine.game_session, world_profile)
-
-        profile_choices = complete_choices(profile.get("choices"), engine.game_session)
-        engine._emit("on_loading", "准备开局中...")
-        generated_opening, generated_choices = self.generate_profile_opening(profile)
+        payload = self.generate_opening_payload(profile)
         if engine.game_session.game_over:
             return
-        opening = str(
-            profile.get("opening_narrative")
-            or generated_opening
-            or profile_opening(engine.game_session)
-        )
+        apply_profile_opening_payload(engine.game_session, payload)
+
+        debug_choices = complete_choices(profile.get("choices"), engine.game_session) if profile.get("_allow_choice_override") else []
+        opening = str(profile.get("opening_narrative") or payload.get("opening_narrative") or profile_opening(engine.game_session))
         if engine._set_choices(
-            profile_choices or generated_choices,
+            debug_choices or payload.get("choices"),
             source="profile_opening",
             fallback_notice=True,
             require_choice=True,
@@ -151,6 +146,76 @@ class StartFlow:
         ) is False and engine.game_session.game_over:
             return
         self._emit_opening(opening)
+
+    def generate_opening_payload(self, profile: dict[str, Any]) -> dict[str, Any]:
+        """Generate one coherent profile opening payload, model or fallback."""
+        engine = self.engine
+        fallback = build_world_fallback(profile)
+
+        use_model = (
+            os.environ.get(START_MODEL_WORLD_ENV) == "1"
+            or os.environ.get(START_MODEL_OPENING_ENV) == "1"
+        )
+        if not use_model:
+            return fallback
+
+        if not _engine_has_api_key(engine):
+            reason = "AGNES_API_KEY 未设置。"
+            if engine._confirm_local_fallback("profile_opening_missing_key", reason):
+                engine._emit("on_info", engine._fallback_notice_for(reason))
+                return fallback
+            engine._end_model_failure_run(reason)
+            return {}
+
+        prompt = build_world_prompt(profile)
+        try:
+            result = engine._run_agent(
+                "world_builder",
+                prompt,
+                engine.game_session,
+                generation_type="profile_opening",
+            )
+        except Exception:
+            log.exception("profile opening world_builder error")
+            reason = "开场推演失败（详见日志）。"
+            if engine._confirm_local_fallback("profile_opening_exception", reason):
+                engine._emit("on_info", engine._fallback_notice_for(reason))
+                return fallback
+            engine._end_model_failure_run(reason)
+            return {}
+
+        world_status = classify_world_builder_result(result)
+        parsed = parse_world_response(result) if world_status.kind != ModelResultKind.REQUEST_FAILED else {}
+        if world_status.kind == ModelResultKind.OK and not is_complete_opening_payload(parsed):
+            world_status = ModelResultStatus(
+                ModelResultKind.INCOMPLETE_OUTPUT,
+                "开场推演缺少动态世界、编年史、初始局势或四个选项。",
+            )
+            parsed = {}
+        engine._log_model_result(
+            agent="world_builder",
+            source="profile_opening",
+            status=world_status.kind,
+            reason=world_status.reason,
+            result=result,
+        )
+        if world_status.kind == ModelResultKind.REQUEST_FAILED:
+            reason = world_status.reason.replace("世界生成失败", "开场推演失败", 1)
+            if engine._confirm_local_fallback("profile_opening_error", reason):
+                engine._emit("on_info", engine._fallback_notice_for(reason))
+                return fallback
+            engine._end_model_failure_run(reason)
+            return {}
+
+        if world_status.kind == ModelResultKind.INCOMPLETE_OUTPUT or not parsed:
+            reason = getattr(world_status, "reason", "") or "开场推演数据不可用。"
+            if engine._confirm_local_fallback("profile_opening_empty", reason):
+                engine._emit("on_info", engine._fallback_notice_for(reason))
+                return fallback
+            engine._end_model_failure_run(reason)
+            return {}
+
+        return merge_opening_payload(fallback, parsed)
 
     def generate_world_profile(self, profile: dict[str, Any]) -> dict[str, Any]:
         """Generate a structured world profile for the character session."""
@@ -186,78 +251,11 @@ class StartFlow:
 
     def generate_profile_opening(self, profile: dict[str, Any]) -> tuple[str, list[str]]:
         """Ask World Builder for the first scene after form creation."""
-        engine = self.engine
-        if os.environ.get(START_MODEL_OPENING_ENV) != "1":
-            return "", fallback_choices(engine.game_session)
-
-        if not _engine_has_api_key(engine):
-            reason = "AGNES_API_KEY 未设置。"
-            if engine._confirm_local_fallback("profile_opening_missing_key", reason):
-                engine._emit("on_info", engine._fallback_notice_for(reason))
-                return engine._enter_local_story(reason, emit_narrative=False)
-            engine._end_model_failure_run(reason)
-            return "", []
-
-        concept = profile_concept(profile)
-        try:
-            result = engine._run_agent(
-                "world_builder",
-                concept,
-                engine.game_session,
-                generation_type="new_game",
-            )
-        except Exception:
-            log.exception("profile opening world_builder error")
-            reason = "开场推演失败（详见日志）。"
-            if engine._confirm_local_fallback("profile_opening_exception", reason):
-                engine._emit("on_info", engine._fallback_notice_for(reason))
-                return engine._enter_local_story(reason, emit_narrative=False)
-            engine._end_model_failure_run(reason)
-            return "", []
-
-        world_status = classify_world_builder_result(result)
-        engine._log_model_result(
-            agent="world_builder",
-            source="profile_opening",
-            status=world_status.kind,
-            reason=world_status.reason,
-            result=result,
+        payload = self.generate_opening_payload(profile)
+        return str(payload.get("opening_narrative") or ""), complete_choices(
+            payload.get("choices"),
+            self.engine.game_session,
         )
-        if world_status.kind == ModelResultKind.REQUEST_FAILED:
-            log.warning("profile opening world_builder failed: %s", result["llm_error"])
-            reason = world_status.reason.replace("世界生成失败", "开场推演失败", 1)
-            if engine._confirm_local_fallback("profile_opening_error", reason):
-                engine._emit("on_info", engine._fallback_notice_for(reason))
-                return engine._enter_local_story(reason, emit_narrative=False)
-            engine._end_model_failure_run(reason)
-            return "", []
-
-        generated = result.get("generated_data", {})
-        if world_status.kind == ModelResultKind.INCOMPLETE_OUTPUT or not isinstance(generated, dict):
-            reason = world_status.reason or "开场推演数据不可用。"
-            if engine._confirm_local_fallback("profile_opening_empty", reason):
-                engine._emit("on_info", engine._fallback_notice_for(reason))
-                return engine._enter_local_story(reason, emit_narrative=False)
-            engine._end_model_failure_run(reason)
-            return "", []
-
-        world = generated.get("world", {})
-        if isinstance(world, dict):
-            session = engine.game_session
-            session.current_scene = world.get("current_scene", session.current_scene)
-            session.location = world.get("location", session.location)
-            session.region = world.get("region", session.region)
-            session.npcs_present = world.get("npcs_present", session.npcs_present)
-            session.active_quests = world.get("active_quests", session.active_quests)
-            session.discovered_locations = world.get(
-                "discovered_locations",
-                session.discovered_locations,
-            )
-            session.lore_facts = world.get("lore_facts", session.lore_facts)
-            session.day_count = world.get("day_count", session.day_count)
-
-        opening = str(generated.get("opening_narrative") or result.get("opening_narrative") or "")
-        return opening, complete_choices(generated.get("choices"), engine.game_session)
 
     def _emit_opening(self, opening: str) -> None:
         engine = self.engine
@@ -413,6 +411,74 @@ def apply_profile_world_profile(session: GameSession, world_profile: dict[str, A
         session.region = world_profile["world_name"]
     if world_profile.get("initial_situation"):
         session.lore_facts.insert(0, world_profile["initial_situation"])
+
+
+def apply_profile_opening_payload(session: GameSession, payload: dict[str, Any]) -> None:
+    """Apply one coherent dynamic-opening payload to an initialized session."""
+    if not isinstance(payload, dict):
+        return
+
+    world = payload.get("world") if isinstance(payload.get("world"), dict) else {}
+    world_profile = {
+        key: value
+        for key, value in payload.items()
+        if key not in {"world", "choices", "opening_narrative"}
+    }
+    if world_profile:
+        session.world_profile = world_profile
+
+    session.current_scene = str(
+        world.get("current_scene")
+        or payload.get("initial_situation_16")
+        or payload.get("initial_situation")
+        or session.current_scene
+    )
+    session.location = str(world.get("location") or session.location)
+    session.region = str(world.get("region") or payload.get("world_name") or session.region)
+    session.npcs_present = _list_or_existing(world.get("npcs_present"), session.npcs_present)
+    session.active_quests = _list_or_existing(world.get("active_quests"), session.active_quests)
+    session.discovered_locations = _list_or_existing(
+        world.get("discovered_locations"),
+        session.discovered_locations or ([session.location] if session.location else []),
+    )
+    session.day_count = int(world.get("day_count") or session.day_count or 1)
+
+    lore_facts = _list_or_existing(world.get("lore_facts"), session.lore_facts)
+    for item in [
+        payload.get("initial_situation"),
+        *(payload.get("chronicle_0_16") if isinstance(payload.get("chronicle_0_16"), list) else []),
+    ]:
+        text = str(item or "").strip()
+        if text and text not in lore_facts:
+            lore_facts.append(text)
+    session.lore_facts = lore_facts
+
+
+def merge_opening_payload(fallback: dict[str, Any], parsed: dict[str, Any]) -> dict[str, Any]:
+    """Merge model opening output over local fallback without losing required fields."""
+    merged = dict(fallback)
+    for key, value in parsed.items():
+        if value:
+            merged[key] = value
+
+    fallback_world = fallback.get("world") if isinstance(fallback.get("world"), dict) else {}
+    parsed_world = parsed.get("world") if isinstance(parsed.get("world"), dict) else {}
+    world = dict(fallback_world)
+    for key, value in parsed_world.items():
+        if value:
+            world[key] = value
+    merged["world"] = world
+
+    if not merged.get("opening_narrative"):
+        chronicle = merged.get("chronicle_0_16") if isinstance(merged.get("chronicle_0_16"), list) else []
+        opening = "\n".join(str(item) for item in chronicle if str(item).strip())
+        initial = str(merged.get("initial_situation_16") or merged.get("initial_situation") or "")
+        merged["opening_narrative"] = (opening + "\n\n" + initial).strip()
+    return merged
+
+
+def _list_or_existing(value: Any, existing: list[Any]) -> list[Any]:
+    return list(value) if isinstance(value, list) else list(existing or [])
 
 
 

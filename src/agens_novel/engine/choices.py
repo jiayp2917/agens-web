@@ -13,7 +13,7 @@ CHOICE_FALLBACK_NOTICE = "天道紊乱，暂以因果残影指引。"
 
 _LETTER_PREFIX_RE = re.compile(
     r"^\s*(?:[（(]?\s*[A-Da-d1-4]\s*[）)]?|选项\s*[A-Da-d])"
-    r"(?:\s*[\.:：、)）．。-]|\s+(?=(?:稳妥|机遇|风险|气运)\s*[：:]))\s*"
+    r"(?:\s*[\.:：、)）．。\-－—︰﹕：]|\s+(?=(?:稳妥|机遇|风险|气运)\s*[：:]))\s*"
 )
 _SEMANTIC_PREFIX_RE = re.compile(r"^\s*【(?:稳妥|机遇|风险|气运)】\s*")
 _SEMANTIC_WORD_PREFIX_RE = re.compile(r"^\s*(?:稳妥|机遇|风险|气运)\s*[：:]\s*")

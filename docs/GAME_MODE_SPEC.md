@@ -25,12 +25,13 @@
 > | §2 输入契约 | A/B/C/D 四按钮固定语义，无自由文本 | ✅ 已实现（`engine/choices.py`、`game_engine._resolve_choice_input`） |
 > | §3 寿元寿命表 | 各境界寿元，UI 显示剩余寿元 | ✅ 已实现（`game/constants.py` REALM_CONFIGS、`render.format_status_bar`） |
 > | §4 六维属性 | 体魄/神魂/气运/悟性/心性/根骨，无 HP/MP；角色创建 30 点池 | ✅ 已实现（运行时默认属性保留在 `constants.DEFAULT_ATTRIBUTES`；角色创建由 `start_flow.normalize_profile_attributes()` 和 React 表单执行 2-8/30、0-10/30 校验；`GameSession` 已移除 hp/mp/luck/combat 字段） |
+> | §3.5 动态开局 | 难度、天赋、灵根、家世、六维和随机/手选模式驱动本局世界观、0-16 岁编年史、16 岁初始局势、外界情报和首次 A/B/C/D | ✅ 后端开局链路已改为统一 opening payload；模型未启用或失败时使用 profile-aware fallback，不再固定青玄宗/东荒云界模板；fallback 不算 live-model 成功 |
 > | §4 战斗事件化 | 斗法/禁地/心魔/天劫以事件判定表达 | ✅ 已实现（`handle_combat_action` 为安全 no-op；`apply_delta` 丢弃结构化 combat delta） |
 > | §8.3 `game_turns` 表 | JSONB 回合日志 + `game_runs` + `player_progress` | ✅ 已接线（PostgreSQL 单后端（Option C 已移除 SQLite），Alembic `20260622_0003`，Web 回合/终局写入） |
 > | §11 稀有度解锁门 | 白/绿/蓝/紫/橙/红 六档 + runs/ascension 门径 | ✅ 已接线（`constants.rarity_unlocked_for`、`/api/catalog/rarities`，终局写入 `player_progress`） |
 > | §11 死亡分类 | finale > karma > event > lifespan > player | ✅ 已实现（`death_rewards.categorize_death`） |
 > | 验证 | compileall + pytest + React build + 密钥审计 | ⏳ 以当前分支最新测试结果为准，不在文档中固化旧计数 |
-> | 待办 | 继续降低本地 live 响应耗时、repair/judge 依赖，并改善 20 回合内容体验 | ⏳ 当前生产批次 start+choice 已 non-fallback；后续生产部署或模型配置变更仍需复跑。当前本地 `local-visible-20turn-20260701-final2` 已完成 20/20 non-fallback，但平均约 48.2s、最大约 153.2s |
+> | 待办 | 继续降低本地 live 响应耗时、repair/judge 依赖，并改善 20 回合内容体验 | ⏳ 当前生产批次 start+choice 已 non-fallback；后续生产部署或模型配置变更仍需复跑。当前本地 `local-visible-dynamic-opening-20260706-20turn-live` 已完成动态开局 live start gate、20/20 choice non-fallback 和存读档，但平均约 25.5s、最大约 69.8s，repair 18/20 仍需治理 |
 
 ## 0. TL;DR
 
@@ -200,6 +201,8 @@ def apply_luck_bias(base_risk: float, base_reward: int, luck: int) -> tuple[floa
 - **20 回合垂直切片**是可玩性验收目标，不等于完整局长度。20 回合默认达到练气后期或筑基门槛；强天赋、高悟性、高风险路线可提前筑基，稳妥路线可延后。
 - **开场编年史**：角色创建后先生成 **0-16 岁短编年史**，说明出身、早年异象、家族/宗门关系和第一次接触修仙的契机，再从 16 岁开始第一次抉择。
 - **阶段反馈节奏**：每 **3-5 回合**出现阶段性反馈，包括年龄变化、修为推进、外界大事、关系变化、风险伏笔或奖励。
+- **动态开局输入**：开局生成必须使用难度、天赋、灵根、家世、六维属性和随机/手选模式推导命数倾向；模型输出与本地 fallback 都必须体现这些输入，不能只替换角色名。
+- **动态开局输出**：后端写入 `world_profile`、`world.lore_facts`、`world.current_scene` 和首次 choices；`world_profile` 至少应包含 `world_name`、`current_conflicts`、`fate_hooks`、`chronicle_0_16` 和 `initial_situation_16`。
 - **境界节奏**：小境界进展多为隐式，不频繁作为选项；大境界突破作为阶段事件呈现，尤其筑基、金丹、元婴、化神和飞升。练气期不得长期滞留早期小层；规则引擎需要用年龄/回合推进提供小境界下限，避免 13 年仍停留练气三层这类编年史失真。
 - 第一版不做显式资源栏，只保留状态型记录，例如境界、年龄、寿元、称号、关系、关键机缘、伤势、因果和传承。
 - UI 侧栏可展示“外界情报”，来源限于 `world.current_scene`、`world.lore_facts` 和 `world_profile.current_conflicts` 等只读世界摘要；它不是玩家资源栏，也不授权前端修改权威状态。

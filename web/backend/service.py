@@ -180,7 +180,13 @@ class WebRunner:
                 "node_id": session.local_story_node_id,
             },
             "fallback_prompt": {
-                "active": session.local_story_active and not session.game_over,
+                "active": (
+                    not session.game_over
+                    and (
+                        session.local_story_active
+                        or any(event.get("type") == "model_failure" for event in self.events[-20:])
+                    )
+                ),
                 "text": self.fallback_prompt_text or PUBLIC_MODEL_FALLBACK_TEXT,
             },
             "character": state["character"],

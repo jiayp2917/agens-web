@@ -63,9 +63,9 @@
 | `action_delta_policy.py` | `apply_breakthrough_flag_rule`, `validate_narrative_delta_consistency` | 纯函数规则引擎；渡劫境界追加 `tribulation_elixir` / `ascension_protection` 标志；narrative vs delta 一致性校验 |
 | `choices.py` | `complete_choices()`, `fallback_choices()`, `normalize_choices()` | A/B/C/D 归一化；模型输出不足 4 个时用 `fallback_choices(session)` 按当前 `location` 兜底；D 固定为气运/天命路线 |
 | `render.py` | `format_status_bar`, `format_log` 以及历史/测试用文本格式化函数 | 状态 → 文本字符串；Web 响应当前只暴露 `panels.status_bar`，旧状态/背包/功法/地图/任务/境界工具面板不再作为产品入口 |
-| `local_story.py` | `start_local_story()`, `advance_local_story()`, `validate_local_story_graph()` | 模型不可用兜底；`misty_gate` 默认 6 节点图；测试用图完整性校验 |
-| `profile_opening.py` | `profile_default_world`, `profile_opening`, `profile_concept` | 开场编年史模板；按角色名、天赋、灵根、家世、难度和六维属性生成本地开局 |
-| `world_generator.py` | `build_world_prompt`, `build_world_fallback`, `parse_world_response` | World Builder prompt + 本地兜底模板 |
+| `local_story.py` | `start_local_story()`, `advance_local_story()`, `validate_local_story_graph()` | 回合期模型失败的固定本地故事图；角色创建开局模型失败优先走 profile-aware fallback，不再默认进入 `misty_gate` |
+| `profile_opening.py` | `profile_default_world`, `profile_opening`, `profile_concept`, `profile_summary`, `fate_tendency` | 开局输入归一化；按角色名、天赋、灵根、家世、难度、六维属性和随机/手选模式推导命数倾向 |
+| `world_generator.py` | `build_world_prompt`, `build_world_fallback`, `parse_world_response` | World Builder prompt + profile-aware 本地兜底；输出本局世界观、0-16 岁编年史、16 岁初始局势、外界情报和 A/B/C/D choices |
 | `death_rewards.py` | `categorize_death`, `evaluate_achievements`, `compute_rewards`, `bonuses_to_legacy`, `apply_legacy_bonuses`, `build_run_summary` | 终局分类（飞升 > 因果反噬 > 事件 > 寿元 > 手动）+ 成就评估 + 奖励计算 + 跨局传承奖励 |
 | `model_result.py` | `ModelResultKind`, `classify_narrator_result`, `classify_world_builder_result`, `classify_judge_result`, `result_diagnostics` | 模型输出分类（OK / REQUEST_FAILED / INCOMPLETE_OUTPUT / JUDGE_FAILED / LOCAL_FALLBACK）；用于遥测与 UI 兜底判定 |
 
@@ -77,9 +77,9 @@
 | --- | --- | --- | --- |
 | **Narrator** | `agents/narrator/` | 默认 | 加载 `prompts/system/narrator.md`；拼接 `<当前状态>` + 最近 20 轮 `chat_history` + `<玩家行动>`；有可恢复内容但缺叙事/`<state_update>`/`<choices>` 时 1 次 repair；解析叙事正文 + `<state_update>` + `<choices>`，并兼容 fenced/bare JSON 与中文 A/B/C/D 行 |
 | **Judge** | `agents/judge/` | `temperature=0.2`, `max_tokens=512` | 审核 Narrator 提议的 `state_delta`；返回 `approved` / `corrected_delta` / `judgment_note` / `review_score`；LLMError 默认 `approved=False`（安全失败） |
-| **World Builder** | `agents/world_builder/` | `temperature=0.6`, `max_tokens=4096` | 新游戏开局生成世界 + 角色；解析 `<world_data>` JSON 标签；`normalize_choices` 归一化开场选项（上限 4，见共享 helper） |
+| **World Builder** | `agents/world_builder/` | `temperature=0.6`, `max_tokens=4096` | 新游戏和角色创建开局生成世界 + 角色；解析 `<world_data>` JSON 标签；保留 `chronicle_0_16`、`initial_situation_16`、`fate_hooks` 等动态开局字段；清理内部错误/调试字段 |
 | **Sequential 包装** | `agents/sequential.py` | — | `SequentialAgentGraph` 通用 4 节点编排；3 个 Agent 共享同一编排 |
-| **共享 helper** | `agents/common.py` | — | `load_agent_settings()`（narrator / judge / world_builder 的 `load_settings` 均委托至此）+ `normalize_choices()`（选项归一化，上限 4） |
+| **共享 helper** | `agents/common.py` | — | `load_agent_settings()`（narrator / judge / world_builder 的 `load_settings` 均委托至此）+ `normalize_choices()`（复用 engine choice 清理，上限 4） |
 
 验收边界：`fallback_choices()` 或 TurnFlow 的语义补齐只保证玩家不断流；
 它不是完整模型选项质量证明。live-model 成功仍要求非 fallback 且叙事、结构化
@@ -238,9 +238,10 @@ CharacterCreatePage
      ① 账号：consume legacy_bonuses（如有）
      ② engine.start_from_profile(profile)
         ├─ GameSession.reset() + 写入 character/world
-        ├─ profile_default_world() 生成默认场景
-        ├─ profile_opening() 生成开场叙事
-        └─ complete_choices() 凑齐 4 个 A/B/C/D
+        ├─ build_world_prompt() / World Builder（env-gated）
+        ├─ build_world_fallback() 在未开模型或模型失败时生成差异化本地开局
+        ├─ apply_profile_opening_payload() 一次性写入 world_profile / lore_facts / current_scene
+        └─ complete_choices() 保持 4 个 A/B/C/D
      ③ 触发回调 on_narrative / on_status_bar / on_character_created
   → WebRunner 记录事件 → 返回 Session（含 choices）
   → 前端 setView("game")

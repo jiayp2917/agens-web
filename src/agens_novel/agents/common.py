@@ -14,6 +14,7 @@ import os
 from typing import Any
 
 from ..artifacts import store
+from ..engine.choices import clean_choice_text
 from ..utils.timing import utcnow_iso
 
 log = logging.getLogger(__name__)
@@ -62,7 +63,7 @@ def normalize_choices(value: Any) -> list[str]:
             text = str(raw) if raw is not None else ""
         else:
             text = ""
-        text = text.strip()
+        text = clean_choice_text(text)
         if text:
             choices.append(text)
         if len(choices) == 4:

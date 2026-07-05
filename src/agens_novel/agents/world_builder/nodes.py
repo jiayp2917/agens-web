@@ -154,12 +154,47 @@ def _parse_world_output(text: str) -> tuple[dict, str, str]:
         world_description = text[: m.start()].strip()
         raw_json = m.group(1).strip()
         try:
-            data = json.loads(raw_json)
+            data = json.loads(_strip_json_fence(raw_json))
             if isinstance(data, dict):
-                generated_data = data
+                generated_data = _sanitize_world_data(data)
                 opening_narrative = data.get("opening_narrative", "")
-                data["choices"] = normalize_choices(data.get("choices"))
+                generated_data["choices"] = normalize_choices(generated_data.get("choices"))
         except (json.JSONDecodeError, ValueError):
             log.warning("[world_builder] world_data JSON parse failed: %s", raw_json[:200])
 
     return generated_data, world_description, opening_narrative
+
+
+def _strip_json_fence(text: str) -> str:
+    cleaned = text.strip()
+    if cleaned.startswith("```"):
+        cleaned = re.sub(r"^```(?:json)?\s*", "", cleaned)
+        cleaned = re.sub(r"\s*```$", "", cleaned)
+    return cleaned.strip()
+
+
+def _sanitize_world_data(data: dict[str, Any]) -> dict[str, Any]:
+    blocked = {
+        "llm_error",
+        "_error",
+        "error",
+        "traceback",
+        "raw_prompt",
+        "state_delta",
+        "api_key",
+        "authorization",
+    }
+    sanitized: dict[str, Any] = {}
+    for key, value in data.items():
+        if str(key).lower() in blocked:
+            continue
+        if isinstance(value, dict):
+            sanitized[key] = _sanitize_world_data(value)
+        elif isinstance(value, list):
+            sanitized[key] = [
+                _sanitize_world_data(item) if isinstance(item, dict) else item
+                for item in value
+            ]
+        else:
+            sanitized[key] = value
+    return sanitized

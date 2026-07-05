@@ -11,7 +11,16 @@ def test_write_playwright_evidence_outputs_parseable_files(tmp_path) -> None:
     paths = write_playwright_evidence(
         tmp_path,
         "local 20 turn",
-        {"total_turns": 1, "fallback_count": 0},
+        {
+            "total_turns": 1,
+            "fallback_count": 0,
+            "start_fallback": False,
+            "start_model_ok": True,
+            "start_choices_count": 4,
+            "start_world_name_set": True,
+            "start_chronicle_count": 3,
+            "start_initial_situation_set": True,
+        },
         [
             {
                 "turn_index": 1,
@@ -38,6 +47,12 @@ def test_write_playwright_evidence_outputs_parseable_files(tmp_path) -> None:
 
     payload = json.loads(open(paths["json"], encoding="utf-8").read())
     assert payload["summary"]["total_turns"] == 1
+    assert payload["summary"]["start_fallback"] is False
+    assert payload["summary"]["start_model_ok"] is True
+    assert payload["summary"]["start_choices_count"] == 4
+    assert payload["summary"]["start_world_name_set"] is True
+    assert payload["summary"]["start_chronicle_count"] == 3
+    assert payload["summary"]["start_initial_situation_set"] is True
     assert payload["turns"][0]["fallback"] is False
 
     ndjson_rows = [
