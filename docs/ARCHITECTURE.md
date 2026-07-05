@@ -10,8 +10,9 @@
 - `WebGameService._record_settled_turn()` continues to persist only settled
   registered-user turns, relying on `turn_history[-1]["turn"] ==
   session.turn_count` to avoid logging partial or stale turns.
-- These changes preserve the existing API shape, PostgreSQL schema, and
-  Alembic revisions.
+- These changes preserve the existing API shape and business schema. A later
+  documentation-only Alembic revision adds PostgreSQL comments without changing
+  runtime tables or write behavior.
 
 > **状态：v5 已实现 / 阶段 7/8 联调收尾中**
 > **阅读对象**：新加入开发者、技术复核者、想了解全局的玩家
@@ -154,15 +155,19 @@
 
 ## 6. 数据库 Schema 总览
 
-共 **13 张表**，分 4 类：
+共 **17 张应用表**（不含 Alembic 自身的 `alembic_version`），分 5 类。当前字段类型以 PostgreSQL `text` / `jsonb` / `double precision` / `timestamptz` 为主：大量 `text` 字段不是性能瓶颈，`varchar(n)` 只在需要业务长度约束时才有治理价值。
 
-### 身份 / 会话（5 张）
+### 身份 / 会话（4 张）
 
 - `users(id PK, username UNIQUE, password_hash, is_admin, created_at, updated_at)`
 - `invite_codes(id PK, code_hash UNIQUE, role, max_uses, uses, expires_at, disabled, created_at, created_by)`
-- `sessions(id PK, user_id, title, snapshot JSONB, events JSONB, created_at, updated_at)` — 当前 WebRunner 状态（仅账号局）
-- `saves(id PK, user_id, name, snapshot JSONB, events JSONB, created_at, updated_at, UNIQUE(user_id, name))` — 手动存档
-- `model_config(id PK CHECK id=1, provider, base_url, model, api_key_masked, api_key_set, updated_at)` — 单例
+- `sessions(id PK, user_id FK, title, snapshot JSONB, events JSONB, created_at, updated_at)` — 当前 WebRunner 状态（仅账号局）
+- `saves(id PK, user_id FK, name, snapshot JSONB, events JSONB, created_at, updated_at, UNIQUE(user_id, name))` — 手动存档
+
+### 模型配置（2 张）
+
+- `model_config(id PK CHECK id=1, provider, base_url, model, api_key_masked, api_key_set, api_key_encrypted, updated_at)` — 系统默认模型配置单例
+- `user_model_configs(user_id PK/FK ON DELETE CASCADE, provider, base_url, model, api_key_masked, api_key_set, api_key_encrypted, updated_at)` — 注册用户个人模型配置
 
 ### 目录（5 张）
 
@@ -182,6 +187,14 @@ JSONB 列：`attribute_mods` / `tags` / `initial_resources` / `initial_risks` / 
 - `game_turns(id PK, run_id, turn_no, start_age, elapsed_years, end_age, lifespan, remaining_lifespan, choice_taken, choices JSONB, state_delta JSONB, state_after JSONB, calendar_summary, narrative, event_kind, end_reason, created_at, UNIQUE(run_id, turn_no))`
 - `player_progress(user_id PK, runs_completed, ascension_count, updated_at)`
 
+结构判断：
+
+- `users` → `sessions` / `saves` / `user_model_configs` / reward / progress 的用户隔离关系合理；个人模型配置用 `ON DELETE CASCADE`，符合“用户删除后清除个人密文配置”的语义。
+- `model_config` 保持 `id = 1` 单例，作为系统默认 Agens 兜底；用户接口不共用该行。
+- `game_turns.run_id` 当前是“回合分组 ID”，运行时等于 `session_id`，用于局中连续回合遥测；`game_runs` 是终局汇总/进度表，不是活跃 run 主表，所以当前不应把 `game_turns.run_id` 直接加外键到 `game_runs(id)`，否则可能阻断局中回合写入。后续若要强关系，应先把字段重命名为 `session_id`，或新增活跃 run 主表后再迁移。
+- 后续性能治理优先看真实慢查询和 `EXPLAIN ANALYZE`；比起把 `text` 改成 `varchar`，更值得评估的是 `saves(user_id, updated_at DESC)`、`sessions(user_id, updated_at DESC)`、`run_achievements(user_id, session_id)`、`account_rewards(user_id, granted_at DESC)`、`legacy_bonuses(user_id, runs_remaining, granted_at)` 等查询索引。
+- `created_at` / `updated_at` 多数仍是 Unix epoch `double precision`，这是历史兼容选择；若以后统一为 `timestamptz`，应单独规划迁移，不和玩法改动混做。
+
 ### Alembic 迁移（`migrations/versions/`）
 
 | 版本 | 作用 |
@@ -190,6 +203,9 @@ JSONB 列：`attribute_mods` / `tags` / `initial_resources` / `initial_risks` / 
 | `20260621_0002_catalog_rewards_bridge.py` | 桥接老 DB；CREATE TABLE IF NOT EXISTS；downgrade 是 no-op |
 | `20260622_0003_game_mode_v5_runs_turns_progress.py` | 新增 `game_runs` / `game_turns` / `player_progress` |
 | `20260622_0004_ddl_disallow_production.py` | **no-op 策略迁移**；标记生产 schema 由 Alembic 拥有；`down_revision = "20260622_0003"` |
+| `20260622_0005_user_model_configs.py` | 新增用户级加密模型配置表；系统默认配置增加 `api_key_encrypted` |
+| `20260704_0006_attribute_scale_cleanup.py` | 归一化 catalog 属性修正到 0-10 属性尺度 |
+| `20260705_0007_schema_comments.py` | 为表和字段补 PostgreSQL 中文注释，不改变业务结构 |
 
 ### DDL 治理
 

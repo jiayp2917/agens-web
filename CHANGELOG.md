@@ -1,5 +1,14 @@
 # Changelog
 
+## 2026-07-05
+
+### Changed - PostgreSQL schema comments and structure review
+
+- Added Alembic `20260705_0007_schema_comments.py` to write Chinese `COMMENT ON TABLE` / `COMMENT ON COLUMN` metadata for the current PostgreSQL schema.
+- Extended the local/test auto-DDL path so newly initialized local databases receive the same schema comments as Alembic-managed databases.
+- Documented the current database structure in `docs/ARCHITECTURE.md`: 17 application tables, user-scoped model config isolation, why broad `text` -> `varchar` migration is not a performance fix, and why `game_turns.run_id` should not be directly foreign-keyed to terminal `game_runs(id)` under the current runtime semantics.
+- Added regression coverage confirming Alembic-created PostgreSQL databases persist the comments and that auto-DDL exposes the same comment statements.
+
 ## 2026-07-04
 
 ### Changed - P1 gameplay feedback and attribute-scale repair batch

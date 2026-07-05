@@ -1265,6 +1265,16 @@ def test_alembic_user_model_configs_migration_covers_runtime_tables() -> None:
     assert "api_key_encrypted" in migration
 
 
+def test_auto_ddl_schema_includes_database_comments() -> None:
+    from web.backend.database_postgres_schema import schema_comment_statements
+
+    comments = "\n".join(schema_comment_statements())
+    assert "COMMENT ON TABLE user_model_configs" in comments
+    assert "用户个人模型配置表" in comments
+    assert "COMMENT ON COLUMN game_turns.run_id" in comments
+    assert "当前等于 session_id" in comments
+
+
 def test_model_failure_events_are_public_safe(tmp_path: Path, monkeypatch) -> None:
     monkeypatch.setenv("SESSION_COOKIE_SECURE", "0")
     app = create_app()
@@ -1417,7 +1427,27 @@ def test_postgres_database_url_smoke(monkeypatch) -> None:
         columns = conn.execute(
             text("SELECT column_name FROM information_schema.columns WHERE table_name = 'model_config'")
         ).scalars().all()
+        table_comment = conn.execute(
+            text(
+                """
+                SELECT obj_description('public.user_model_configs'::regclass)
+                """
+            )
+        ).scalar()
+        run_id_comment = conn.execute(
+            text(
+                """
+                SELECT col_description('public.game_turns'::regclass, ordinal_position)
+                FROM information_schema.columns
+                WHERE table_schema = 'public'
+                  AND table_name = 'game_turns'
+                  AND column_name = 'run_id'
+                """
+            )
+        ).scalar()
     assert "api_key_encrypted" in columns
+    assert table_comment == "用户个人模型配置表。每个注册用户最多一条，加密保存个人 API Key。"
+    assert "当前等于 session_id" in run_id_comment
 
     app = create_app()
     client = TestClient(app, base_url="https://game.example.test")

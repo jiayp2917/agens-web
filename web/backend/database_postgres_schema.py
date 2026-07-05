@@ -1,5 +1,7 @@
 """PostgreSQL schema used by the test-only auto-DDL path."""
 
+from importlib import import_module
+
 POSTGRES_SCHEMA_STATEMENTS = (
     """
     CREATE TABLE IF NOT EXISTS users (
@@ -212,3 +214,8 @@ POSTGRES_SCHEMA_STATEMENTS = (
     )
     """,
 )
+
+def schema_comment_statements() -> tuple[str, ...]:
+    return import_module(
+        "migrations.versions.20260705_0007_schema_comments"
+    ).comment_sql_statements()

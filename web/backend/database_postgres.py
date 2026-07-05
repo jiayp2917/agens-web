@@ -22,7 +22,7 @@ from .database_common import (
     save_summary,
 )
 from .catalog_seed import seed_catalogs
-from .database_postgres_schema import POSTGRES_SCHEMA_STATEMENTS
+from .database_postgres_schema import POSTGRES_SCHEMA_STATEMENTS, schema_comment_statements
 
 
 class PostgresWebDatabase:
@@ -58,6 +58,8 @@ class PostgresWebDatabase:
     def initialize(self) -> None:
         with self.engine.begin() as conn:
             for statement in POSTGRES_SCHEMA_STATEMENTS:
+                conn.execute(text(statement))
+            for statement in schema_comment_statements():
                 conn.execute(text(statement))
         # Seed AFTER the DDL transaction commits. seed_catalogs() opens its own
         # connection via list_catalog(); running it inside the ``begin()`` block
