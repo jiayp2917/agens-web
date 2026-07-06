@@ -5,10 +5,10 @@
 - 产品入口是 React/Vite 浏览器 UI + FastAPI 后端 + PostgreSQL；旧移动端、旧 CLI/REPL、旧 `web/frontend` 不在当前维护范围。
 - 当前玩法是游戏模式 v5 Alpha：A/B/C/D 四按钮固定语义，A 稳妥、B 机遇、C 风险、D 气运；无自由文本主入口，无 HP/MP 常驻 UI。
 - 模型设置为注册用户个人配置 + 系统 Agens 默认兜底；用户 key 加密存储，不写入前端、日志、文档、存档或 session snapshot。
-- 当前本地自动化基线：本地 PostgreSQL 可用；境界/突破/寿元一致性批次 `compileall` passed，`tests\web` 73 passed，全量 `pytest -q` 507 passed / 1 xfailed，前端 build passed，`git diff --check` 仅 LF/CRLF warning。
-- 当前本地真实 Chrome 验收：`local-visible-dynamic-opening-20260706-strict-live5` 已完成动态开局 live start gate（`start_model_ok=true`、`start_fallback=false`、4 个初始 choices、动态世界字段存在）、20/20 choice non-fallback 和存读档；平均回合耗时约 26.7s，最大约 46.2s，narrator repair 18/20 仍是 P1 风险。
+- 当前本地自动化基线：本地 PostgreSQL 可用；P1 模型效率切片 `compileall` passed，`tests\web` 73 passed，全量 `pytest -q` 516 passed，前端 build passed，`git diff --check` 仅 LF/CRLF warning。
+- 当前本地真实 Chrome 验收：`local-visible-p1-final-20260706` 已完成动态开局 live start gate（`start_model_ok=true`、`start_fallback=false`、4 个初始 choices、动态世界字段存在）、20/20 choice non-fallback 和存读档；repair 0/20、judge 3 次、fallback 0。平均回合耗时约 25.9s，最大约 57.1s，live 响应慢仍是 P1 风险。
 - 当前生产 P0：服务器线程部署 `25ad3d15` 后，账号流通过，production start 和至少 1 次 choice 均 non-fallback，choice 后 `turn_count=1`。未来生产部署或模型配置变更仍需复跑同一门禁；HTTP 200 或本地 final2 不能替代生产 live-model 验收。
-- 当前本地代码已加入脱敏模型性能观测；这不代表性能已修复，最新 Chrome 采样显示 repair 依赖仍高，下一步应继续分辨 prompt/history、repair、judge 和 provider 慢因。
+- 当前本地代码已加入脱敏模型性能观测，并已减少普通回合二次 repair；这不代表性能已修复，最新 Chrome 采样显示 repair 已为 0，但 narrator 首次响应和少数 judge 调用仍慢，下一步应继续分辨 provider、narrator 输出契约和 judge 成本。
 - 当前动态开局批次把角色创建后的开局生成改为 profile-aware opening payload：难度、天赋、灵根、家世、六维属性和随机/手选模式共同影响本局世界观、0-16 岁编年史、16 岁初始局势、外界情报和首次 A/B/C/D choices。模型未启用或失败时使用差异化本地 fallback；该 fallback 可玩但不算 live-model 成功。
 - 当前境界/突破批次把突破改为规则先结算、模型后叙事：练气显示 1-9 层，筑基及以上显示初期/中期/后期/圆满；玩家可见文本会清理 JSON、结构化标签、英文状态词和内部 mismatch 文案。
 - 当前阶段计划见 `docs/PLAYABLE_GAMEPLAY_ROADMAP_20260629.md`；当前待办见 `docs/NEXT_GOVERNANCE_BACKLOG.md`。

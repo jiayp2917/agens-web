@@ -37,8 +37,8 @@ def test_turn_flow_judge_llm_error_can_end_run(monkeypatch) -> None:
     def runner(agent_name, user_input, session, **kwargs):
         if agent_name == "narrator":
             return {
-                "narrative": "你得了一笔不该存在的秘宝。",
-                "state_delta": {"character": {"gold": "+77"}},
+                "narrative": "你得了一件不该存在的秘宝。",
+                "state_delta": {"character": {"inventory_add": [{"name": "越权秘宝", "rarity": "橙"}]}},
                 "choices": ["继续吐纳", "请教师兄", "观察灵气流向"],
                 "llm_error": "",
             }
@@ -90,14 +90,8 @@ def test_breakthrough_flow_judge_exception_can_end_run(monkeypatch) -> None:
     assert game_overs == ["模型不可用导致本局结束。"]
 
 
-def test_turn_flow_enables_narrator_repair(monkeypatch) -> None:
-    """Ordinary turns ask the narrator to repair incomplete structured output.
-
-    The model frequently emits narrative without <state_update>/<choices> tags,
-    which would otherwise force a local-story fallback. The narrator's repair
-    pass recovers the tags on a second focused call (repaired_output is recorded
-    in diagnostics). Regression guard: the turn path must keep repair enabled.
-    """
+def test_turn_flow_disables_narrator_repair_for_ordinary_turns(monkeypatch) -> None:
+    """Ordinary turns avoid a second model call and use rule-delta fallback."""
     monkeypatch.setenv("AGNES_API_KEY", "sk-test-1234567890")
     engine = GameEngine()
     engine.game_session.game_started = True
@@ -118,7 +112,33 @@ def test_turn_flow_enables_narrator_repair(monkeypatch) -> None:
     with patch("agens_novel.engine.game_engine.run_turn_sync", side_effect=runner):
         engine.handle_action("A")
 
-    assert captured.get("repair_incomplete_output") is True
+    assert captured.get("repair_incomplete_output") is False
+
+
+def test_turn_flow_uses_rule_delta_when_state_update_missing(monkeypatch) -> None:
+    monkeypatch.setenv("AGNES_API_KEY", "sk-test-1234567890")
+    engine = GameEngine()
+    engine.game_session.game_started = True
+    engine.game_session.last_choices = ["留在山门吐纳", "询问接引弟子", "外出历练", "随缘听天命"]
+    engine.game_session.age = 16
+
+    def runner(agent_name, user_input, session, **kwargs):
+        if agent_name == "narrator":
+            return {
+                "narrative": "三年山中岁月过去，他的吐纳越发沉稳。",
+                "state_delta": None,
+                "choices": ["继续稳固根基", "请教师兄", "外出历练", "随缘而行"],
+                "llm_error": "",
+            }
+        return {}
+
+    with patch("agens_novel.engine.game_engine.run_turn_sync", side_effect=runner):
+        engine.handle_action("A")
+
+    assert engine.game_session.turn_count == 1
+    assert engine.game_session.age > 16
+    assert engine.game_session.turn_history[-1]["delta"]["meta"]["elapsed_years"] >= 1
+    assert engine.game_session.turn_history[-1]["narrative"]
 
 
 def test_http_404_model_failure_notice_is_actionable_and_secret_safe() -> None:

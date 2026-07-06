@@ -14,6 +14,7 @@ from .action_delta_policy import (
 )
 from .choices import fallback_choices, normalize_choices
 from .choices import clean_visible_text
+from .history import compact_chat_history
 from .model_result import (
     ModelResultKind,
     classify_judge_result,
@@ -138,7 +139,7 @@ class TurnFlow:
                 choices = recovered_choices
                 engine._emit("on_info", "本回合已按当前局面补齐下一步选择。")
                 if malformed_state_delta:
-                    state_delta = {"character": {}, "world": {}, "meta": {}}
+                    state_delta = self._empty_delta_from_rule(rule_delta)
                     malformed_state_delta = False
             else:
                 choices = []
@@ -189,17 +190,16 @@ class TurnFlow:
         if turn_summary:
             narrator_input = f"{text}\n\n[本回合规则结算结果（以此为权威数值）：{turn_summary}]"
 
-        # The model chronically emits narrative without <state_update>/<choices>
-        # tags; without repair that forces a local-story fallback. The narrator's
-        # focused repair pass recovers the tags on a second call (repaired_output
-        # is recorded in diagnostics), turning fallback into genuine model success.
+        # Ordinary turns avoid a second model call for repair. If the live
+        # narrator gives narrative and usable choices but misses state_update,
+        # TurnFlow can keep the turn moving with the rule-engine delta below.
         try:
             result = engine._run_agent(
                 "narrator",
                 narrator_input,
                 session,
                 stream_callback=engine._stream_callback if engine.on_stream_chunk else None,
-                repair_incomplete_output=True,
+                repair_incomplete_output=False,
             )
             if _should_retry_narrator_result(result):
                 log.info("narrator request failed with retryable provider error; retrying once")
@@ -208,7 +208,7 @@ class TurnFlow:
                     narrator_input,
                     session,
                     stream_callback=engine._stream_callback if engine.on_stream_chunk else None,
-                    repair_incomplete_output=True,
+                    repair_incomplete_output=False,
                 )
                 if not retry_result.get("llm_error"):
                     retry_result["retried_after_request_failed"] = True
@@ -376,7 +376,7 @@ class TurnFlow:
         session.chat_history.append({"role": "user", "content": text})
         session.chat_history.append({"role": "assistant", "content": narrative})
         if len(session.chat_history) > 20:
-            session.chat_history = session.chat_history[-20:]
+            session.chat_history = compact_chat_history(session.chat_history, max_entries=20)
 
     def _record_and_emit_turn(
         self,
@@ -396,7 +396,7 @@ class TurnFlow:
         session.chat_history.append({"role": "user", "content": text})
         session.chat_history.append({"role": "assistant", "content": narrative})
         if len(session.chat_history) > 20:
-            session.chat_history = session.chat_history[-20:]
+            session.chat_history = compact_chat_history(session.chat_history, max_entries=20)
 
         if narrative:
             engine._emit("on_narrative", narrative, session.turn_count)
@@ -455,6 +455,16 @@ class TurnFlow:
                 recovered.append(fallbacks[len(recovered)])
             return recovered[:len(fallbacks)]
         return fallback_choices(session)
+
+    @staticmethod
+    def _empty_delta_from_rule(rule_delta: dict[str, Any]) -> dict[str, Any]:
+        """Supply a model-empty delta while preserving rule-owned turn facts."""
+        meta: dict[str, Any] = {}
+        if isinstance(rule_delta, dict) and isinstance(rule_delta.get("meta"), dict):
+            for key in ("game_over", "game_over_reason", "elapsed_years", "choice_category"):
+                if key in rule_delta["meta"]:
+                    meta[key] = rule_delta["meta"][key]
+        return {"character": {}, "world": {}, "meta": meta}
 
 
 def _should_retry_narrator_result(result: dict[str, Any]) -> bool:

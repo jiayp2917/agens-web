@@ -34,6 +34,30 @@ class TestNarratorParse:
         assert metrics["prompt_chars"] > metrics["game_state_chars"]
         assert "闭关修炼" not in metrics.values()
 
+    def test_build_prompt_compacts_long_history_but_keeps_opening(self, tmp_path, monkeypatch) -> None:
+        monkeypatch.setattr(
+            "agens_novel.paths.system_prompt_path",
+            lambda _name: tmp_path / "narrator.md",
+        )
+        (tmp_path / "narrator.md").write_text("系统提示", encoding="utf-8")
+        history = [{"role": "assistant", "content": "开局设定：" + "青岚界" * 500}]
+        history.extend({"role": "user", "content": f"行动{i}"} for i in range(30))
+        state = {
+            "user_input": "继续修行",
+            "game_state_json": "{\"turn_count\":7}",
+            "chat_history": history,
+        }
+
+        result = build_prompt(state)
+        contents = [message["content"] for message in result["messages"]]
+
+        assert result["prompt_metrics"]["history_count"] == len(history)
+        assert any("开局设定" in content for content in contents)
+        assert any("前情摘要" in content for content in contents)
+        assert any("行动29" in content for content in contents)
+        assert not any("行动0" == content for content in contents)
+        assert len(result["messages"]) < len(history) + 2
+
     def test_basic_narrative_with_delta(self) -> None:
         text = (
             "你静坐吐纳，灵气缓缓涌入丹田。\n"

@@ -91,7 +91,20 @@ class TestGameEngineHandleAction:
             engine.new_game("许满")
         engine.game_session.last_choices = ["留在山门吐纳", "询问接引弟子", "强闯禁地", "随缘听天命"]
 
-        with _patch_turn_runner(call_log):
+        def runner(agent_name, user_input, session, **kw):
+            call_log.append(agent_name)
+            if agent_name == "narrator":
+                return {
+                    "narrative": "你强闯禁地边缘，被阴风擦过经脉。",
+                    "state_delta": {"character": {"status_effects_add": ["阴风侵体"]}},
+                    "choices": ["返回山门", "请教师兄", "继续观察", "随缘听天命"],
+                    "output_path": "", "audit_path": "", "finished_at": "", "llm_error": "",
+                }
+            if agent_name == "judge":
+                return _canned_judge()
+            return {}
+
+        with patch("agens_novel.engine.game_engine.run_turn_sync", side_effect=runner):
             engine.handle_action("C")
 
         assert call_log == ["narrator", "judge"]
@@ -497,7 +510,12 @@ class TestGameEngineHandleAction:
 
         def selective_runner(agent_name, user_input, session, **kw):
             if agent_name == "narrator":
-                return _canned_narrator()
+                return {
+                    "narrative": "你强闯禁地边缘，被阴风擦过经脉。",
+                    "state_delta": {"character": {"status_effects_add": ["阴风侵体"]}},
+                    "choices": ["返回山门", "请教师兄", "继续观察", "随缘听天命"],
+                    "output_path": "", "audit_path": "", "finished_at": "", "llm_error": "",
+                }
             if agent_name == "judge":
                 return {
                     "approved": False,

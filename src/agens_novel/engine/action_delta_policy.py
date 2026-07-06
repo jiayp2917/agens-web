@@ -221,6 +221,17 @@ def merge_rule_delta(
             merged_char["attributes"] = rule_char["attributes"]
         merged["character"] = merged_char
 
+    # ── World: rule engine may add lightweight chronicle/lore facts.
+    rule_world = rule_delta.get("world", {})
+    if isinstance(rule_world, dict) and rule_world:
+        merged_world = dict(merged.get("world", {}))
+        for key, value in rule_world.items():
+            if key not in merged_world:
+                merged_world[key] = value
+            elif key.endswith("_add") and isinstance(merged_world.get(key), list) and isinstance(value, list):
+                merged_world[key] = [*merged_world[key], *value]
+        merged["world"] = merged_world
+
     # ── Meta: rule engine authoritative for game-over and turn info ──
     rule_meta = rule_delta.get("meta", {})
     if isinstance(rule_meta, dict) and rule_meta:

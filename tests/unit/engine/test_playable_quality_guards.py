@@ -5,8 +5,9 @@ from __future__ import annotations
 from unittest.mock import patch
 
 from agens_novel.engine.game_engine import GameEngine
-from agens_novel.engine.action_delta_policy import validate_narrative_delta_consistency
+from agens_novel.engine.action_delta_policy import merge_rule_delta, validate_narrative_delta_consistency
 from agens_novel.engine.choices import fallback_choices
+from agens_novel.engine.turn_rules import settle_turn
 from agens_novel.session.game_session import GameSession
 
 
@@ -164,6 +165,133 @@ def test_harmless_chronicle_claim_is_not_suppressed_in_turn_flow(monkeypatch) ->
     assert narratives and narratives[-1][0] == narrative
     assert not any("基础规则结算" in msg for msg in infos)
     assert engine.game_session.turn_history[-1]["narrative"] == narrative
+
+
+def test_judge_not_triggered_for_plain_risk_word_without_authoritative_delta(monkeypatch) -> None:
+    monkeypatch.setenv("AGNES_API_KEY", "test-model-key")
+    engine = GameEngine()
+    engine.game_session.game_started = True
+    engine.game_session.last_choices = ["稳妥修行", "拜访同门", "探查禁地边缘", "随缘而行"]
+    calls: list[str] = []
+
+    def runner(agent_name, user_input, session, **kw):
+        calls.append(agent_name)
+        if agent_name == "narrator":
+            return {
+                "narrative": "他只在禁地边缘听闻旧事，并未真正涉险。",
+                "state_delta": {"character": {}, "world": {"lore_add": ["禁地边缘近日有人巡查"]}, "meta": {}},
+                "choices": ["返回山门", "询问同门", "继续观察", "随缘而行"],
+                "llm_error": "",
+            }
+        raise AssertionError("judge should not run for non-authoritative risk color text")
+
+    with patch("agens_novel.engine.game_engine.run_turn_sync", side_effect=runner):
+        engine.handle_action("探查禁地边缘")
+
+    assert calls == ["narrator"]
+
+
+def test_judge_triggers_for_authoritative_world_delta(monkeypatch) -> None:
+    monkeypatch.setenv("AGNES_API_KEY", "test-model-key")
+    engine = GameEngine()
+
+    assert engine._should_run_judge(
+        "拜访同门",
+        {"world": {"npcs_present_add": [{"name": "陈师兄", "relation": "盟友"}]}},
+        {"meta": {"choice_category": "机遇"}},
+    )
+    assert engine._should_run_judge(
+        "接下任务",
+        {"world": {"active_quests_add": [{"name": "采药任务"}]}},
+        {"meta": {"choice_category": "机遇"}},
+    )
+    assert engine._should_run_judge(
+        "深入山径",
+        {"world": {"discovered_add": ["后山药谷"]}},
+        {"meta": {"choice_category": "机遇"}},
+    )
+    assert not engine._should_run_judge(
+        "听闻传说",
+        {"world": {"lore_add": ["坊间只是传闻，并未入册"]}},
+        {"meta": {"choice_category": "机遇"}},
+    )
+
+
+def test_stage_feedback_adds_world_lore_every_four_turns() -> None:
+    session = GameSession(location="青岚山门", turn_count=4, realm="筑基", realm_stage=2)
+
+    delta = settle_turn("A", session)
+
+    assert delta["world"]["lore_add"]
+    assert "青岚山门" in delta["world"]["lore_add"][0]
+    assert "筑基中期" in delta["world"]["lore_add"][0]
+    assert "筑基2层" not in delta["world"]["lore_add"][0]
+
+
+def test_rule_world_delta_survives_model_merge() -> None:
+    merged = merge_rule_delta(
+        {"character": {}, "world": {"lore_add": ["模型见闻"]}, "meta": {}},
+        {"world": {"lore_add": ["规则阶段反馈"]}, "meta": {"elapsed_years": 2}},
+    )
+
+    assert merged["world"]["lore_add"] == ["模型见闻", "规则阶段反馈"]
+    assert merged["meta"]["elapsed_years"] == 2
+
+
+def test_stage_feedback_is_applied_through_turn_flow(monkeypatch) -> None:
+    monkeypatch.setenv("AGNES_API_KEY", "test-model-key")
+    engine = GameEngine()
+    engine.game_session.game_started = True
+    engine.game_session.location = "青岚山门"
+    engine.game_session.realm = "筑基"
+    engine.game_session.realm_stage = 2
+    engine.game_session.turn_count = 3
+    engine.game_session.last_choices = ["闭关稳固", "拜访同道", "探查禁地", "随缘而行"]
+
+    def runner(agent_name, user_input, session, **kw):
+        if agent_name == "narrator":
+            return {
+                "narrative": "数年之间，他在山门中稳住根基。",
+                "state_delta": {"character": {}, "world": {}, "meta": {}},
+                "choices": ["继续闭关", "拜访同道", "探查禁地", "随缘而行"],
+                "llm_error": "",
+            }
+        return {"approved": True, "corrected_delta": {}, "judgment_note": "", "llm_error": ""}
+
+    with patch("agens_novel.engine.game_engine.run_turn_sync", side_effect=runner):
+        engine.handle_action("A")
+
+    lore = engine.game_session.turn_history[-1]["delta"]["world"]["lore_add"]
+    assert lore
+    assert lore[-1] in engine.game_session.lore_facts
+    assert "筑基2层" not in lore[-1]
+
+
+def test_turn_history_compaction_keeps_opening_chat_context(monkeypatch) -> None:
+    monkeypatch.setenv("AGNES_API_KEY", "test-model-key")
+    engine = GameEngine()
+    engine.game_session.game_started = True
+    engine.game_session.chat_history = [{"role": "assistant", "content": "开局设定：青岚界山门初开。"}]
+    engine.game_session.last_choices = ["闭关稳固", "拜访同道", "探查禁地", "随缘而行"]
+
+    def runner(agent_name, user_input, session, **kw):
+        if agent_name == "narrator":
+            return {
+                "narrative": f"第{session.turn_count}回合，他按部就班修行。",
+                "state_delta": {"character": {}, "world": {}, "meta": {}},
+                "choices": ["继续闭关", "拜访同道", "探查禁地", "随缘而行"],
+                "llm_error": "",
+            }
+        return {"approved": True, "corrected_delta": {}, "judgment_note": "", "llm_error": ""}
+
+    with patch("agens_novel.engine.game_engine.run_turn_sync", side_effect=runner):
+        for _ in range(12):
+            engine.handle_action("A")
+
+    assert len(engine.game_session.chat_history) == 20
+    assert engine.game_session.chat_history[0]["content"].startswith("开局设定")
+    assert any("第12回合" in entry["content"] for entry in engine.game_session.chat_history)
+    assert not any(entry["content"] == "第1回合，他按部就班修行。" for entry in engine.game_session.chat_history[1:])
 
 
 def test_authoritative_mismatch_is_suppressed_in_turn_flow(monkeypatch) -> None:

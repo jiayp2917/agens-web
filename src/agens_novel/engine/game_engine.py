@@ -458,10 +458,8 @@ class GameEngine:
         rule_meta = rule_delta.get("meta") if isinstance(rule_delta.get("meta"), dict) else {}
         if meta.get("game_over") or meta.get("finale") or meta.get("breakthrough_result"):
             return True
-        if rule_meta.get("choice_category") == "风险":
-            return True
         compact = "".join(text.strip().lower().split())
-        if any(word in compact for word in ("突破", "破境", "渡劫", "飞升", "斗法", "禁地", "豪赌")):
+        if any(word in compact for word in ("突破", "破境", "渡劫", "飞升")):
             return True
 
         char_delta = state_delta.get("character")
@@ -478,6 +476,9 @@ class GameEngine:
                 "inventory",
                 "techniques",
                 "breakthrough_flags",
+                "lifespan",
+                "status_effects",
+                "status_effects_add",
             }
             if any(key in char_delta for key in sensitive):
                 return True
@@ -489,6 +490,16 @@ class GameEngine:
 
         world_delta = state_delta.get("world")
         if isinstance(world_delta, dict):
+            authoritative_world_keys = {
+                "active_quests",
+                "active_quests_add",
+                "discovered_add",
+                "discovered_locations",
+                "npcs_present",
+                "npcs_present_add",
+            }
+            if any(key in world_delta for key in authoritative_world_keys):
+                return True
             for key in ("location", "region", "current_scene"):
                 if key in world_delta and self._looks_like_world_reset(world_delta.get(key)):
                     return True

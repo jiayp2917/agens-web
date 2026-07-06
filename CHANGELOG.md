@@ -2,6 +2,17 @@
 
 ## 2026-07-06
 
+### Changed - P1 model-efficiency sampling and ordinary-turn repair reduction
+
+- Ran the new real visible Chrome 20-turn sampling baseline against an isolated local PostgreSQL acceptance DB before code changes: 20/20 choice turns were non-fallback, average choice latency was about 49.5s, max about 107.6s, repair was 18/20 turns, judge was 6 turns, and fallback was 0.
+- Reduced ordinary-turn second-call repair by letting TurnFlow accept narrator outputs that have narrative plus recoverable choices while filling missing/malformed `state_delta` from the rule-engine delta. Empty output, missing narrative, or missing usable choices still do not count as successful narrator output.
+- Compacted narrator prompt history to keep the opening context and recent turns instead of feeding the whole long history into every ordinary turn; runtime chat-history pruning now also preserves the opening context instead of dropping it after 20 entries. Metrics still record the original history length for diagnostics.
+- Narrowed judge triggers to breakthrough/terminal/sensitive authoritative state changes, instead of running judge only because an option or prose uses ordinary risk words such as禁地/斗法.
+- Added lightweight stage/world feedback every fourth rule-settled turn through `world.lore_add`, keeping the external-intelligence surface read-only and avoiding a new resource system. Reviewer follow-up fixed rule-world delta merging so this feedback actually persists through normal TurnFlow.
+- Verified final state with `local-visible-p1-final-20260706`: dynamic live start passed, 20/20 choice turns were non-fallback, save/load passed, fallback was 0, repair fell to 0/20, judge fell to 3 turns, strict JSON/NDJSON/CSV evidence was written under `output/playwright/` and remains ignored.
+- Remaining risk: latency is improved but not fully fixed. The final Chrome run averaged about 25.9s per choice, max about 57.1s, with average narrator time about 22.5s and average judge time about 21.8s. The next latency work should focus on provider responsiveness, narrator contract quality, and judge timeout/trigger cost rather than repair calls.
+- Validation note: a mistaken parallel run of `tests\web` and full `pytest` against the same `agens_web_test` database produced FK/table/invite-code noise. Sequential reruns passed, confirming the known shared-test-DB contamination rule. After reviewer fixes for rule-world delta merging and runtime chat-history pruning, the full suite passed with 516 tests.
+
 ### Fixed - realm, breakthrough, lifespan, and visible text consistency
 
 - Standardized realm display: Qi Refining keeps numbered layers, while

@@ -12,7 +12,7 @@ from __future__ import annotations
 import random
 from typing import Any
 
-from ..game.constants import REALM_LIFESPANS
+from ..game.constants import REALM_LIFESPANS, format_realm_name
 
 # ── Realm → base years per turn ─────────────────────────────────────────────
 # Higher realms mean longer time spans for each pivotal decision.
@@ -177,7 +177,7 @@ def settle_turn(
     # ── Build state_delta ──
     state_delta: dict[str, Any] = {
         "character": char_delta,
-        "world": {},
+        "world": _stage_feedback_delta(session, category, new_age),
         "meta": {
             "elapsed_years": elapsed_years,
             "choice_category": category,
@@ -195,6 +195,26 @@ def settle_turn(
 def get_realm_lifespan(realm: str) -> int:
     """Return the base lifespan for a given realm."""
     return REALM_LIFESPANS.get(realm, 100)
+
+
+def _stage_feedback_delta(session: Any, category: str, new_age: int) -> dict[str, Any]:
+    """Emit lightweight chronicle/world feedback every few turns."""
+    next_turn = int(getattr(session, "turn_count", 0) or 0)
+    if next_turn <= 0 or next_turn % 4 != 0:
+        return {}
+    realm = getattr(session, "realm", "练气") or "练气"
+    stage = int(getattr(session, "realm_stage", 1) or 1)
+    realm_label = format_realm_name(realm, stage)
+    location = getattr(session, "location", "") or getattr(session, "current_scene", "") or "本地"
+    if category == "稳妥":
+        text = f"{location}近年灵气渐稳，{realm_label}的根基有了可见积累。"
+    elif category == "机遇":
+        text = f"{location}外传来新机缘，坊市与同门议论下一段修行去处。"
+    elif category == "风险":
+        text = f"{location}周边风波加重，斗法与禁地传闻让修行代价更清晰。"
+    else:
+        text = f"{new_age}岁这一年，天命暗流转向，外界对他的命数多了新的传闻。"
+    return {"lore_add": [text]}
 
 
 def _low_realm_age_pressure(session: Any, new_age: int) -> dict[str, Any]:

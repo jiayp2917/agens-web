@@ -5,10 +5,10 @@ This is the active backlog for `agens-web`. It separates local code work, local 
 ## Current Evidence
 
 - Current local code baseline includes sanitized model diagnostics and the 2026-07-04 attribute-scale cleanup.
-- Validation after the latest realm/breakthrough/lifespan consistency slice passed:
+- Validation after the latest P1 model-efficiency slice passed:
   - `python -m compileall -q src tests web scripts migrations`
   - `python -m pytest -q tests\web` -> 73 passed with local PostgreSQL `TEST_DATABASE_URL`
-  - full `python -m pytest -q` with local PostgreSQL `TEST_DATABASE_URL` -> 507 passed, 1 xfailed
+  - full `python -m pytest -q` with local PostgreSQL `TEST_DATABASE_URL` -> 516 passed
   - `cd web\frontend-react; npm.cmd run build` -> passed
   - `git diff --check` -> passed with LF/CRLF warnings only
 - User-scoped model settings are implemented:
@@ -16,13 +16,13 @@ This is the active backlog for `agens-web`. It separates local code work, local 
   - `/api/admin/settings/model` is the admin-only system-default endpoint.
   - `user_model_configs` stores one encrypted config per `user_id`; system default remains in `model_config`.
   - Runtime model calls resolve config by current session/user and do not mutate process-global `AGNES_API_KEY`.
-- Local visible Chrome acceptance passed in `local-visible-dynamic-opening-20260706-strict-live5`: dynamic opening live start gate (`start_model_ok=true`, `start_fallback=false`, 4 initial choices and dynamic world fields), account registration/login, character creation, 20/20 choice turns non-fallback, and save/load passed. Evidence remains generated under `output/playwright/` and is ignored by default.
+- Previous dynamic-opening Chrome acceptance `local-visible-dynamic-opening-20260706-strict-live5` remains historical comparison evidence. The current local visible Chrome acceptance is `local-visible-p1-final-20260706`; generated evidence remains under `output/playwright/` and is ignored by default.
 - Production P0 is accepted for the latest deployed production batch: server thread deployed `25ad3d15`, kept Alembic at `20260622_0005`, verified `user_model_configs`, health/catalog/container state, sanitized log scan, real-account flow, and production start+choice non-fallback with `turn_count=1`.
 - Latest local code adds sanitized `model_result` diagnostics with numeric/boolean fields only: narrator/judge elapsed time, repair elapsed time, prompt size, history count, game-state size, and provider token counters when available. This is measurement, not a latency fix.
-- Current local working batch adds dynamic character-driven opening generation: difficulty, talent, spirit root, family background, six attributes, and random/manual mode now feed a unified opening payload for world profile, 0-16 chronicle, age-16 situation, external intelligence, and initial A/B/C/D choices. Model-unavailable starts use profile-aware fallback and still surface fallback status; fallback remains invalid as live-model success. The latest Chrome run passed, but repair remained high at 18/20 turns.
+- Dynamic character-driven opening generation is implemented: difficulty, talent, spirit root, family background, six attributes, and random/manual mode feed a unified opening payload for world profile, 0-16 chronicle, age-16 situation, external intelligence, and initial A/B/C/D choices. Model-unavailable starts use profile-aware fallback and still surface fallback status; fallback remains invalid as live-model success.
 - Current local working batch also closes the attribute-scale audit: runtime attributes are 0-10 with 5 as neutral, and old 0-100 values are compatibility inputs only. New realm, reward, catalog, or model-prompt logic must not use 50 as the neutral midpoint or 100 as the normal cap.
 - Active phase plan remains `docs/PLAYABLE_GAMEPLAY_ROADMAP_20260629.md`: P0 current batch is closed; next work is P1 gameplay quality and model-efficiency iteration without broad architecture changes.
-- Current local working batch fixes realm/breakthrough/lifespan visible consistency: Qi Refining displays 1-9 layers, higher realms display four stages, breakthrough is rule-settled before model narration, lifespan uses realm ranges with old-age pressure, and player-visible text is cleaned of JSON/English/internal mismatch debris.
+- Current local P1 model-efficiency slice is verified by `local-visible-p1-final-20260706`: dynamic live start passed, 20/20 choice turns were non-fallback, save/load passed, fallback was 0, repair fell from 18/20 to 0/20, and judge fell from 6 to 3 turns. Reviewer follow-up fixed stage-feedback persistence and runtime opening-context pruning with automated coverage. Latency is improved from the earlier sampling run but remains a P1 tuning target: average choice latency was about 25.9s and max about 57.1s, with the remaining slow path in provider/narrator/judge latency, not repair calls.
 
 ## Lessons To Keep
 
@@ -52,17 +52,17 @@ P0 is currently closed for the latest local and production batches. Re-run only 
 
 Next work should be data-led and gameplay-facing.
 
-1. Run a real visible Chrome 20-turn sampling pass with the new diagnostics.
-   - Capture average/max choice latency, narrator elapsed time, judge elapsed time, repair attempt count, repaired output count, prompt chars, game-state chars, history count, token usage, fallback count, and `game_turns` continuity.
-   - Do not treat observability itself as performance improvement.
+1. Continue latency work from the post-fix evidence.
+   - `local-visible-p1-final-20260706` shows repair is no longer the dominant cost: repair 0/20, judge 3 turns, average narrator about 22.5s, average judge about 21.8s.
+   - Do not treat the repair reduction as a full performance fix; total choice latency is still too high.
 2. Choose the next latency fix from evidence.
    - If prompt/history grows: compress `chat_history` into summary + recent turns.
-   - If repair dominates: tighten narrator output contract/parser without accepting incomplete narrative.
+   - If narrator still emits narrative-only outputs: tighten the narrator output contract/parser without accepting missing narrative or missing usable choices as success.
    - If judge dominates: narrow judge trigger conditions to authoritative/risky state changes.
    - If provider dominates: document model performance differences and rely on user-configurable providers.
 3. Improve 20-turn playable content.
    - Add the 0-16 岁 opening chronicle per `docs/GAME_MODE_SPEC.md` §3.5.
-   - Add 3-5 turn stage feedback.
+   - Continue improving 3-5 turn stage feedback; the first lightweight every-fourth-turn `world.lore_add` feedback is implemented but not enough for full content quality.
    - Build event pools for steady, opportunity, risk, and luck routes.
    - Reduce repeated retreat/breakthrough loops.
    - Keep small-realm progress mostly implicit; reserve major breakthroughs for stage events.

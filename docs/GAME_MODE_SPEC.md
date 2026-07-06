@@ -11,9 +11,9 @@
 - Model narrative is not authoritative. When narrative claims gains or realm
   changes without matching structured `state_delta`, the narrative/state is
   rejected but the base rule settlement still records a complete turn.
-- The latest visible-Chrome local validation after parser/choice recovery passed
-  20/20 non-fallback turns, but model latency and repair dependence remain P1
-  gameplay-quality risks.
+- The latest visible-Chrome local validation after ordinary-turn repair reduction
+  passed 20/20 non-fallback turns. Repair fell to 0/20, but live latency
+  remains a P1 gameplay-quality risk.
 
 > 状态：**v5 Alpha 本地与当前生产 P0 验收已闭环，下一步进入 P1 游玩质量与模型效率优化**。游戏模式核心规则已切换到 A/B/C/D 四按钮、无 HP/MP、事件判定战斗、寿元寿命表、六维属性、动态流逝年数、PostgreSQL 回合记录和用户级模型配置。
 > 文档定位：游戏模式的产品 spec + 技术实现规格，是“游戏模式”的单一事实来源。
@@ -31,7 +31,7 @@
 > | §11 稀有度解锁门 | 白/绿/蓝/紫/橙/红 六档 + runs/ascension 门径 | ✅ 已接线（`constants.rarity_unlocked_for`、`/api/catalog/rarities`，终局写入 `player_progress`） |
 > | §11 死亡分类 | finale > karma > event > lifespan > player | ✅ 已实现（`death_rewards.categorize_death`） |
 > | 验证 | compileall + pytest + React build + 密钥审计 | ⏳ 以当前分支最新测试结果为准，不在文档中固化旧计数 |
-> | 待办 | 继续降低本地 live 响应耗时、repair/judge 依赖，并改善 20 回合内容体验 | ⏳ 当前生产批次 start+choice 已 non-fallback；后续生产部署或模型配置变更仍需复跑。当前本地 `local-visible-dynamic-opening-20260706-strict-live5` 已完成动态开局 live start gate、20/20 choice non-fallback 和存读档，但平均约 26.7s、最大约 46.2s，repair 18/20 仍需治理 |
+> | 待办 | 继续降低本地 live 响应耗时、repair/judge 依赖，并改善 20 回合内容体验 | ⏳ 当前生产批次 start+choice 已 non-fallback；后续生产部署或模型配置变更仍需复跑。当前本地 `local-visible-p1-final-20260706` 已完成动态开局 live start gate、20/20 choice non-fallback 和存读档；repair 0/20、judge 3 次，但平均约 25.9s、最大约 57.1s，live 响应慢仍需治理 |
 
 ## 0. TL;DR
 

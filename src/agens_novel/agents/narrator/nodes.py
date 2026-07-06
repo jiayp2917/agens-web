@@ -28,6 +28,7 @@ log = logging.getLogger(__name__)
 
 AGENT_NAME = "narrator"
 _MAX_HISTORY_TURNS = 20
+_RECENT_HISTORY_MESSAGES = 6
 
 
 def load_settings(state: dict[str, Any]) -> dict[str, Any]:
@@ -46,10 +47,9 @@ def build_prompt(state: dict[str, Any]) -> dict[str, Any]:
 
     game_state_json = state.get("game_state_json", "{}")
 
-    # Build messages: system + chat history + current turn.
+    # Build messages: system + compact chat history + current turn.
     history: list[dict] = list(state.get("chat_history") or [])
-    if len(history) > _MAX_HISTORY_TURNS:
-        history = history[-_MAX_HISTORY_TURNS:]
+    prompt_history = _compact_history_for_prompt(history)
 
     user_content = (
         f"<当前状态>\n{game_state_json}\n</当前状态>\n\n"
@@ -57,7 +57,7 @@ def build_prompt(state: dict[str, Any]) -> dict[str, Any]:
     )
 
     messages: list[Message] = [Message(role="system", content=system_message)]
-    for entry in history:
+    for entry in prompt_history:
         messages.append(Message(
             role=entry.get("role", "user"),
             content=entry.get("content", ""),
@@ -437,6 +437,32 @@ def _has_recoverable_state_delta(state_delta: Any) -> bool:
         if value not in (None, "", False):
             return True
     return False
+
+
+def _compact_history_for_prompt(history: list[dict]) -> list[dict]:
+    """Keep long playthrough context bounded without losing the opening facts."""
+    if len(history) <= _MAX_HISTORY_TURNS:
+        return history
+
+    first = history[0]
+    recent = history[-_RECENT_HISTORY_MESSAGES:]
+    omitted = max(0, len(history) - len(recent) - 1)
+    compacted = [
+        {
+            "role": "assistant",
+            "content": (
+                "前情摘要：本局开场和角色设定仍以当前状态 JSON 为准；"
+                f"中间已有 {omitted} 条历史对话省略。"
+            ),
+        }
+    ]
+    if isinstance(first, dict) and first.get("content"):
+        compacted.insert(0, {
+            "role": first.get("role", "assistant"),
+            "content": str(first.get("content", ""))[:1200],
+        })
+    compacted.extend(recent)
+    return compacted
 
 
 async def _repair_incomplete_output(
