@@ -8,7 +8,7 @@ This is the active backlog for `agens-web`. It separates local code work, local 
 - Validation after the latest P1 model-efficiency slice passed:
   - `python -m compileall -q src tests web scripts migrations`
   - `python -m pytest -q tests\web` -> 73 passed with local PostgreSQL `TEST_DATABASE_URL`
-  - full `python -m pytest -q` with local PostgreSQL `TEST_DATABASE_URL` -> 516 passed
+  - full `python -m pytest -q` with local PostgreSQL `TEST_DATABASE_URL` -> 503 passed
   - `cd web\frontend-react; npm.cmd run build` -> passed
   - `git diff --check` -> passed with LF/CRLF warnings only
 - User-scoped model settings are implemented:
@@ -137,6 +137,35 @@ Sourced from the read-only subagent audit (see `docs/PROJECT_AUDIT.md` same-date
 
 - "Keep the sidebar 外界情报 read-only" is already a stable invariant; demote from active P1 to a governance note.
 - The repair/judge P1 sub-bullets ("tighten narrator output contract/parser", "narrow judge triggers") should be narrowed: repair is already 0/20 and judge is 3, so the lever is largely exhausted; remaining latency work should focus on provider/narrator first response and history compression.
+
+### 留后续项（2026-07-06 审计未处理）
+
+下述条目在本次审计中已核实，但未在 `cd57215..026cd69` 执行批次处理；按主流程需要或单独批次推进。Complexity Governance 段中 `service.py` 的 model-config/persistence 抽取与 `game_engine` 的 flow 耦合收敛已完成，其余方向仍适用该段指引。
+
+**已评估、有意不做**：
+
+- `call_agnes_llm` 头部 guard 在 narrator/judge/world_builder 三处复制：verifier 判定 classify 是 logging-only，flow 层 inline check 驱动不同控制流，强行合并损失可读性。
+- `save_artifact` audit dict 抽取：verifier 发现 agent-specific parse/return 逻辑占主导，抽取增间接层、收益 modest。
+
+**待办（按主流程需要推进）**：
+
+- `narrator/nodes.py` 539 行解析器堆积（7+ 私有 JSON 容错 helper，含手写括号深度状态机，`nodes.py:226-525`）：refactor 候选，需谨慎不改 parse 语义。
+- bare-except：catalog 2 处已收窄为 `SQLAlchemyError`；`web/backend/service.py:101,638` 仍剩 2 处，全仓库其余分散处待逐处评估收窄 + `log.warning`。
+- `validate_local_story_graph`：production 零调用但有 `tests/unit/engine/test_local_story_fallback.py` 覆盖；删除须同步删测试，待确认无 production 价值。
+- `start_flow` confirm→fallback-or-end 模式重复 6 次（`start_flow.py:76-95,165-217`）：低优先，可抽 helper。
+- 三套 state-delta merge helper（两套浅合并可合一，`merge_rule_delta` 保留）：`turn_flow.py:434-444`、`breakthrough_flow.py:108-123`。
+- `import logging` 位于 `service.py` 文件尾（`# noqa: E402`）：移到文件头，低优先。
+- A/B/C/D 映射在 3 处各自定义、world-reset 关键词硬编码（`choices.py:12`、`service.py:904`、`game_engine.py:354,558-566`）：可统一，低优先。
+- CHANGELOG 旧条目称普通回合 `repair=True`（`CHANGELOG.md:438-440`，已被当日顶部条目反转）：可选标注 superseded。
+
+**跨文件协同（单独一次处理）**：
+
+- `AGENTS.md` 与 `CLAUDE.md`（含 `D:\chat\CLAUDE.md`）的"通用编码准则"块近乎逐字重复：涉及多个治理根文件协同修改，2026-07-06 审计明确留作单独一次处理。
+
+**待固化的 retire/demote 决策**：
+
+- "Keep the sidebar 外界情报 read-only" 已是稳定不变量，建议从 P1 §3 活动 demote 为 governance note（现仍在 P1 第 70 行）。
+- repair/judge P1 sub-bullets：repair 已 0/20、judge 3 次，lever 基本耗尽；剩余延迟工作应聚焦 provider/narrator 首次响应与 history 压缩（现仍在 P1 §1-2）。
 
 ## Validation Rules
 

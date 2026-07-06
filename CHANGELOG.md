@@ -2,6 +2,12 @@
 
 ## 2026-07-06
 
+### Changed - post-audit documentation sync
+
+- Synced stale validation counts in `docs/INDEX.md`, `docs/PROJECT_AUDIT.md`, `docs/PLAYABLE_GAMEPLAY_ROADMAP_20260629.md`, and `docs/NEXT_GOVERNANCE_BACKLOG.md` from `516 passed` to `503 passed` (13 dead tests dropped in the audit execution batch; full `pytest -q` is 503 passed with `TEST_DATABASE_URL` configured — 426 passed + 77 skipped when the web-DB URL is unset, code unchanged since the 503 verification).
+- Rewrote the `docs/PROJECT_AUDIT.md` 2026-07-06 audit preamble from "registered, not fixed this pass" to "executed in `cd57215..026cd69`", listing which findings were resolved (god class split, flow coupling, literals, secret markers, turn-record unification, dead code, doc structure) and which remain (narrator parser pile-up, remaining bare-excepts, `save_artifact`).
+- Added a "留后续项（2026-07-06 审计未处理）" subsection to `docs/NEXT_GOVERNANCE_BACKLOG.md` consolidating every deferred audit item with file/line pointers, separated into "已评估有意不做", "待办", "跨文件协同", and "待固化 retire/demote". No code changed in this sync.
+
 ### Changed - read-only subagent audit and status-doc sync
 
 - Ran a read-only 6-dimension governance audit via parallel subagents (code quality, redundancy, deprecated content, dead code, governance, follow-up plan); every finding was adversarially cross-verified by a second agent. No code changed.

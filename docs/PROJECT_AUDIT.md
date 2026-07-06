@@ -35,7 +35,7 @@
 
 - 当前本地代码基线：已包含脱敏模型诊断、P1 可见反馈修复和 2026-07-04 属性尺度清理。
 - 本地 PostgreSQL 测试库目标：`127.0.0.1:55432/agens_web_test`。
-- 最新自动化门禁：P1 模型效率切片 `compileall` passed，`tests\web` 73 passed，全量 `pytest -q` 516 passed，前端 build passed，`git diff --check` 仅 LF/CRLF warning。
+- 最新自动化门禁：P1 模型效率切片 `compileall` passed，`tests\web` 73 passed，全量 `pytest -q` 503 passed，前端 build passed，`git diff --check` 仅 LF/CRLF warning。
 - 用户级模型设置已落地：个人配置按 `user_id` 加密隔离，系统默认保留在 `model_config`，运行时按当前 session/user 解析模型配置，不再通过进程级 `AGNES_API_KEY` 注入用户 key。
 - 角色创建属性池已按 `GAME_MODE_SPEC.md` §4.1 落地：手动 2-8/总和 30，随机 0-10/总和 30。
 - 运行时属性尺度已审计并收敛为 0-10：`DEFAULT_ATTRIBUTES` 为 5，境界小层推进、`GameSession` delta/save、World Builder 入局、跨局奖励和 catalog 种子不再以 50/100 作为正常尺度；旧 0-100 仅作兼容迁移输入。
@@ -47,7 +47,7 @@
 
 ## 2026-07-06 子智能体只读审计
 
-本次为只读审计：5 个 find→verify 维度（代码质量 / 冗余 / 废弃内容 / 死代码 / 治理）+ backlog 读取 + 计划与评审，共 13 个子智能体；每条发现都经独立 verifier 复核（均为 confirmed/partial，无被推翻的误报）。**代码层面发现只登记，本批不改代码**；事实性文档漂移（495→516、基线名）已在本次同步。精炼后续计划见 `docs/NEXT_GOVERNANCE_BACKLOG.md` 同日小节。
+本次为只读审计：5 个 find→verify 维度（代码质量 / 冗余 / 废弃内容 / 死代码 / 治理）+ backlog 读取 + 计划与评审，共 13 个子智能体；每条发现都经独立 verifier 复核（均为 confirmed/partial，无被推翻的误报）。下方登记的代码层面发现已于同日执行（commits `cd57215..026cd69`）：god class 拆分、flow 耦合收敛、默认字面量与密钥 marker 统一、turn-record 冗余与 `_prompt_metrics` 收敛、死代码与孤儿资产清理、AGENTS 准则块与文档结构修复均已完成；`narrator/nodes.py` 解析器堆积、全仓库其余 bare-except、`save_artifact` 抽取等有意留作后续（见 `docs/NEXT_GOVERNANCE_BACKLOG.md` 同日"留后续项"小节）。完整执行摘要见 `CHANGELOG.md` 同日 "governance audit execution" 条目。
 
 ### ① 代码质量
 
