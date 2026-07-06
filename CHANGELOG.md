@@ -2,6 +2,28 @@
 
 ## 2026-07-06
 
+### Changed - narrator 20 回合延迟采样（chrome-devtools，数据驱动重塑优先级）
+
+- Ran a 20-turn narrator latency sample via chrome-devtools (real browser, env
+  AGENS_API_KEY, guest session, local-fallback start, narrator live on choice
+  turns). Full strict-JSON evidence at `output/playwright/narrator-sample-20260706.json`;
+  table + verdict in `docs/PROJECT_AUDIT.md` "2026-07-06 narrator 20 回合延迟采样".
+- Findings overturn `local-visible-p1-final-20260706`'s "repair 0/20, lever
+  exhausted": repair rate is 70% (14/20), repair = 56% of total latency, and
+  repair rate climbs to ~100% once history_count caps at 20. Avg turn ~30.4s,
+  max 65.6s.
+- Levers (data-led): (1) history compression (highest — narrator degrades at
+  hc>=19); (2) narrator output contract/parser refactor (539-line pile-up,
+  high-risk, independent batch — this sample confirms it IS a root cause);
+  repair is a symptom, not a lever. judge elapsed 0 (not a source); provider
+  first-call ~13.4s avg (acceptable).
+- Updated NEXT_GOVERNANCE_BACKLOG P1 §1-2 from "repair exhausted" to the
+  sample-driven ranking.
+
+No code change. Evidence under output/playwright/ stays gitignored.
+
+Co-Authored-By: Claude <noreply@anthropic.com>
+
 ### Changed - start_flow helper + retire/demote 固化（commits 59dc483 + 本批）
 
 - start_flow dedup (commit `59dc483`): extracted a local `decline_or_continue(source, reason)` closure in `generate_opening_payload`, collapsing 4 line-identical confirm→fallback sites (missing_key / exception / REQUEST_FAILED / INCOMPLETE) to one-liners. The 2 `new_game` sites use a different shape (set_choices fallback) and stay as-is. No behavior change; tests/unit/game+engine 262 passed.

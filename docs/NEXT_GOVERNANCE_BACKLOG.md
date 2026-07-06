@@ -52,14 +52,14 @@ P0 is currently closed for the latest local and production batches. Re-run only 
 
 Next work should be data-led and gameplay-facing.
 
-1. Continue latency work from the post-fix evidence.
-   - `local-visible-p1-final-20260706`: repair 0/20 (lever exhausted), judge 3 turns (narrowed from 6), average narrator ~22.5s, average judge ~21.8s. Remaining latency is in **provider/narrator first response + history size**, not repair.
-   - Do not treat repair/judge reduction as a performance fix; total choice latency (~25.9s avg) is still too high.
-2. Choose the next latency fix from evidence (provider/narrator/history, not repair/judge).
-   - If prompt/history grows: compress `chat_history` into summary + recent turns.
-   - If narrator still emits narrative-only outputs: tighten the narrator output contract/parser without accepting missing narrative or missing usable choices as success. (Parser refactor is high-risk — see the `narrator/nodes.py` deferred batch; sample first.)
-   - Judge triggers already narrowed (6→3); further narrowing has diminishing returns.
-   - If provider dominates: document model performance differences and rely on user-configurable providers.
+1. Continue latency work — **2026-07-06 narrator 采样重塑优先级**。
+   - `narrator-sample-20260706`（20 回合 chrome-devtools 采样，见 `docs/PROJECT_AUDIT.md` 同日采样段）：平均回合 ~30.4s、max 65.6s；**repair 率 70%（14/20），repair 占总延迟 56%**；history cap 20 后 repair 率 ~100%。
+   - **这推翻 `local-visible-p1-final-20260706` 的 "repair 0/20，lever exhausted"** —— 当前 narrator 契约在 history 增长后频繁失效（p1-final 与本采样 repair 率差异大，可能因模型 key/版本/配置不同）。
+2. 杠杆排序（采样驱动）：
+   - **history 压缩**（最高杠杆）：hc cap 20 后 narrator 上下文质量下降 → repair 频发。压缩 `chat_history` 为摘要 + 最近 N 回合。
+   - **narrator 输出契约/解析器重构**（次高，高风险）：`nodes.py` 539 行解析器堆积，独立批次 + 充分测试。本采样已证明它是根因，不再是"先采样再决定"。
+   - repair 是契约失效的后果，不是独立杠杆。
+   - judge elapsed 全 0（非源）；provider narrator 首次 ~13.4s（可接受）。
 3. Improve 20-turn playable content.
    - Add the 0-16 岁 opening chronicle per `docs/GAME_MODE_SPEC.md` §3.5.
    - Continue improving 3-5 turn stage feedback; the first lightweight every-fourth-turn `world.lore_add` feedback is implemented but not enough for full content quality.
