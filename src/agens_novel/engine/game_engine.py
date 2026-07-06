@@ -107,7 +107,7 @@ class GameEngine:
 
     # ─── Helper to emit callbacks safely ───────────────────────────────
 
-    def _emit(self, attr: str, *args: Any) -> None:
+    def emit(self, attr: str, *args: Any) -> None:
         cb = getattr(self, attr, None)
         if cb is not None:
             cb(*args)
@@ -115,11 +115,11 @@ class GameEngine:
 
     # ─── Stream callback wrapper ──────────────────────────────────────
 
-    def _stream_callback(self, text: str) -> None:
+    def stream_callback(self, text: str) -> None:
         """Forward stream chunks to the UI layer."""
-        self._emit("on_stream_chunk", text)
+        self.emit("on_stream_chunk", text)
 
-    def _run_agent(self, agent_name: str, user_input: str, session: GameSession, **kwargs: Any) -> dict[str, Any]:
+    def run_agent(self, agent_name: str, user_input: str, session: GameSession, **kwargs: Any) -> dict[str, Any]:
         """Call the agent runner through the GameEngine module patch seam."""
         model_config = self.model_config if isinstance(self.model_config, dict) else {}
         for key in ("model", "base_url", "api_key", "api_key_set", "source", "key_error"):
@@ -127,7 +127,7 @@ class GameEngine:
                 kwargs.setdefault(key, model_config.get(key))
         return run_turn_sync(agent_name, user_input, session, **kwargs)
 
-    def _set_choices(
+    def set_choices(
         self,
         raw_choices: Any,
         *,
@@ -144,8 +144,8 @@ class GameEngine:
             self.game_session.last_choices = choices
             return False
 
-        if require_choice and not self._confirm_local_fallback(source, reason):
-            self._end_model_failure_run(reason or "模型未返回可用选项。")
+        if require_choice and not self.confirm_local_fallback(source, reason):
+            self.end_model_failure_run(reason or "模型未返回可用选项。")
             return False
 
         if require_choice:
@@ -159,7 +159,7 @@ class GameEngine:
             self.game_session.local_story_active,
         )
         if fallback_notice:
-            self._emit("on_info", self._fallback_notice_for(reason))
+            self.emit("on_info", self.fallback_notice_for(reason))
         return True
 
     def _enter_local_story(self, reason: str = "", *, emit_narrative: bool = True) -> tuple[str, list[str]]:
@@ -170,16 +170,16 @@ class GameEngine:
         result = start_local_story(self.game_session)
         self.game_session.last_choices = result.choices
         if emit_narrative and result.narrative:
-            self._emit("on_narrative", result.narrative, self.game_session.turn_count)
+            self.emit("on_narrative", result.narrative, self.game_session.turn_count)
         if reason:
             log.info("entered local story fallback: reason=%s story=%s node=%s", _safe_log_reason(reason), self.game_session.local_story_id, self.game_session.local_story_node_id)
         return result.narrative, result.choices
 
-    def _fallback_notice_for(self, reason: str = "") -> str:
+    def fallback_notice_for(self, reason: str = "") -> str:
         """Return a player-visible fallback message without exposing secrets."""
         return self._fallback_policy.notice_for(reason)
 
-    def _log_model_result(
+    def log_model_result(
         self,
         *,
         agent: str,
@@ -205,7 +205,7 @@ class GameEngine:
             _safe_log_reason(reason),
             diagnostics,
         )
-        self._emit(
+        self.emit(
             "on_model_result",
             agent,
             source,
@@ -217,17 +217,17 @@ class GameEngine:
             diagnostics,
         )
 
-    def _confirm_local_fallback(self, source: str, reason: str = "") -> bool:
+    def confirm_local_fallback(self, source: str, reason: str = "") -> bool:
         """Ask the UI whether model failure should continue with local fallback."""
         return self._fallback_policy.should_continue(source, reason)
 
-    def _end_model_failure_run(self, reason: str) -> None:
+    def end_model_failure_run(self, reason: str) -> None:
         """End the current run after the user declines local model fallback."""
         self.game_session.game_over = True
         self.game_session.finale = False
         self.game_session.error = "模型不可用导致本局结束。"
         log.warning("model failure ended run: %s", reason)
-        self._emit("on_game_over", self.game_session.error)
+        self.emit("on_game_over", self.game_session.error)
 
     # ─── Game commands ─────────────────────────────────────────────────
 
@@ -252,11 +252,11 @@ class GameEngine:
         """
 
         if not self.game_session.game_started:
-            self._emit("on_info", "尚未开始游戏。请返回主页选择新游戏。")
+            self.emit("on_info", "尚未开始游戏。请返回主页选择新游戏。")
             return
 
         if self.game_session.game_over:
-            self._emit("on_info", f"游戏已结束: {self.game_session.error}\n请使用重新开始或读取存档继续。")
+            self.emit("on_info", f"游戏已结束: {self.game_session.error}\n请使用重新开始或读取存档继续。")
             return
 
         selected_choice = self._resolve_choice_input(text)
@@ -276,11 +276,11 @@ class GameEngine:
 
         self._turn_flow.handle_action(text)
 
-    def _attempt_local_story_breakthrough(self) -> dict[str, Any]:
+    def attempt_local_story_breakthrough(self) -> dict[str, Any]:
         """Use the existing realm rules for a local-story breakthrough."""
         can, reason = self.realm_system.can_attempt_breakthrough(self.game_session)
         if not can:
-            self._emit("on_info", reason)
+            self.emit("on_info", reason)
             return {}
         delta = self.realm_system.attempt_breakthrough(self.game_session)
         return delta
@@ -308,7 +308,7 @@ class GameEngine:
         if can:
             return True
         if reason:
-            self._emit("on_info", f"{reason} 本次行动按修炼/探索继续推进。")
+            self.emit("on_info", f"{reason} 本次行动按修炼/探索继续推进。")
         return False
 
     def _filter_unavailable_breakthrough_choices(self, choices: list[str]) -> list[str]:
@@ -355,16 +355,16 @@ class GameEngine:
 
     # ─── Game over check ─────────────────────────────────────────────
 
-    def _check_game_over(self) -> bool:
+    def check_game_over(self) -> bool:
         """Check for game-over conditions (lifespan depletion, finale flag).
 
         Returns True if game is over.
         """
         if self.game_session.game_over:
             if self.game_session.finale:
-                self._emit("on_finale", self.game_session.error or "飞升成仙，修真之路圆满。")
+                self.emit("on_finale", self.game_session.error or "飞升成仙，修真之路圆满。")
                 return True
-            self._emit("on_game_over", self.game_session.error or "游戏结束。")
+            self.emit("on_game_over", self.game_session.error or "游戏结束。")
             return True
 
         return False
@@ -372,20 +372,20 @@ class GameEngine:
     def reset(self) -> None:
         """Reset the game session."""
         self.game_session.reset()
-        self._emit("on_info", "游戏已重置。请返回角色创建重新开始。")
+        self.emit("on_info", "游戏已重置。请返回角色创建重新开始。")
 
     # ─── World expansion ─────────────────────────────────────────────
 
     def expand(self, gen_type: str = "new_region") -> None:
         """Request world expansion from the World Builder."""
         if not self.game_session.game_started:
-            self._emit("on_info", "请先从主页创建角色并开始游戏。")
+            self.emit("on_info", "请先从主页创建角色并开始游戏。")
             return
 
         if gen_type not in ("new_region", "new_encounter", "new_technique"):
             gen_type = "new_region"
 
-        self._emit("on_loading", "世界扩展中...")
+        self.emit("on_loading", "世界扩展中...")
 
         try:
             result = run_turn_sync(
@@ -394,16 +394,16 @@ class GameEngine:
             )
         except Exception:
             log.exception("expand error")
-            self._emit("on_error", "世界扩展失败（详见日志）")
+            self.emit("on_error", "世界扩展失败（详见日志）")
             return
 
         if result.get("llm_error"):
-            self._emit("on_error", f"扩展失败: {result['llm_error']}")
+            self.emit("on_error", f"扩展失败: {result['llm_error']}")
             return
 
         desc = result.get("world_description", "")
         if desc:
-            self._emit("on_narrative", desc, 0)
+            self.emit("on_narrative", desc, 0)
 
         generated = result.get("generated_data", {})
         if generated:
@@ -420,7 +420,7 @@ class GameEngine:
 
     # ─── Internal helpers ──────────────────────────────────────────────
 
-    def _record_opening_context(self, opening: str) -> None:
+    def record_opening_context(self, opening: str) -> None:
         """Seed chat history so the first player action cannot look like a blank world."""
         if not opening:
             return
@@ -434,7 +434,7 @@ class GameEngine:
             }
         ]
 
-    def _should_run_judge(
+    def should_run_judge(
         self,
         text: str,
         state_delta: dict[str, Any],
@@ -494,7 +494,7 @@ class GameEngine:
                     return True
         return False
 
-    def _sanitize_action_delta(self, delta: dict[str, Any]) -> dict[str, Any]:
+    def sanitize_action_delta(self, delta: dict[str, Any]) -> dict[str, Any]:
         """Drop ordinary-turn updates that reset character identity or continuity.
 
         LLM output is intentionally high variance, but web free actions must

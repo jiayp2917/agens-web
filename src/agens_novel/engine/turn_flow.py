@@ -3,7 +3,10 @@
 from __future__ import annotations
 
 import logging
-from typing import Any
+from typing import TYPE_CHECKING, Any
+
+if TYPE_CHECKING:
+    from .game_engine import GameEngine
 
 from .action_delta_policy import (
     PLAYER_NARRATIVE_MISMATCH_NOTICE,
@@ -28,7 +31,7 @@ log = logging.getLogger(__name__)
 class TurnFlow:
     """Owns ordinary and local-story turn progression for ``GameEngine``."""
 
-    def __init__(self, engine: Any) -> None:
+    def __init__(self, engine: GameEngine) -> None:
         self.engine = engine
 
     def handle_local_story_action(self, text: str) -> None:
@@ -41,8 +44,8 @@ class TurnFlow:
         session.last_choices = result.choices
 
         if not result.matched:
-            engine._emit("on_info", result.narrative)
-            engine._emit("on_status_bar", format_status_bar(session))
+            engine.emit("on_info", result.narrative)
+            engine.emit("on_status_bar", format_status_bar(session))
             return
 
         session.turn_count += 1
@@ -58,14 +61,14 @@ class TurnFlow:
             result_delta = result.delta
 
         if result.breakthrough:
-            breakthrough_delta = engine._attempt_local_story_breakthrough()
+            breakthrough_delta = engine.attempt_local_story_breakthrough()
             if breakthrough_delta:
                 session.apply_delta(breakthrough_delta)
                 self._emit_local_story_breakthrough_result(breakthrough_delta)
                 result_delta = self._merge_state_delta(result_delta, breakthrough_delta)
 
         if result.narrative:
-            engine._emit("on_narrative", result.narrative, session.turn_count)
+            engine.emit("on_narrative", result.narrative, session.turn_count)
 
         session.record_turn(
             text,
@@ -76,9 +79,9 @@ class TurnFlow:
                 "node_id": session.local_story_node_id,
             },
         )
-        engine._emit("on_status_bar", format_status_bar(session))
+        engine.emit("on_status_bar", format_status_bar(session))
 
-        if engine._check_game_over():
+        if engine.check_game_over():
             return
 
     def handle_action(self, text: str) -> None:
@@ -87,7 +90,7 @@ class TurnFlow:
         session = engine.game_session
         session.turn_count += 1
 
-        engine._emit("on_loading", "天道运转中...")
+        engine.emit("on_loading", "天道运转中...")
 
         rule_delta = settle_turn(text, session)
         turn_summary = (
@@ -101,7 +104,7 @@ class TurnFlow:
             return
 
         narrator_status = classify_narrator_result(narrator_result)
-        engine._log_model_result(
+        engine.log_model_result(
             agent="narrator",
             source="turn",
             status=narrator_status.kind,
@@ -110,8 +113,8 @@ class TurnFlow:
         )
         if narrator_status.kind == ModelResultKind.REQUEST_FAILED:
             reason = narrator_status.reason
-            engine._emit("on_error", reason)
-            engine._set_choices(
+            engine.emit("on_error", reason)
+            engine.set_choices(
                 None,
                 source="narrator_error",
                 fallback_notice=True,
@@ -134,17 +137,17 @@ class TurnFlow:
             recovered_choices = self._recover_incomplete_narrator_choices(narrative, choices)
             if recovered_choices:
                 choices = recovered_choices
-                engine._emit("on_info", "本回合已按当前局面补齐下一步选择。")
+                engine.emit("on_info", "本回合已按当前局面补齐下一步选择。")
                 if malformed_state_delta:
                     state_delta = self._empty_delta_from_rule(rule_delta)
                     malformed_state_delta = False
             else:
                 choices = []
-                engine._emit("on_info", narrator_status.reason)
+                engine.emit("on_info", narrator_status.reason)
         if is_terminal_delta:
             session.last_choices = []
         else:
-            fallback_used = engine._set_choices(
+            fallback_used = engine.set_choices(
                 choices,
                 source="narrator",
                 fallback_notice=True,
@@ -158,7 +161,7 @@ class TurnFlow:
                     rule_delta,
                     reason=narrator_status.reason,
                 )
-                engine._emit("on_status_bar", format_status_bar(session))
+                engine.emit("on_status_bar", format_status_bar(session))
                 return
             if session.game_over:
                 session.turn_count -= 1
@@ -178,7 +181,7 @@ class TurnFlow:
         self._record_and_emit_turn(text, narrative, applied_delta)
 
         if session.game_over:
-            engine._emit("on_game_over", session.error or "游戏结束。")
+            engine.emit("on_game_over", session.error or "游戏结束。")
 
     def _run_narrator(self, text: str, turn_summary: str) -> dict[str, Any] | None:
         engine = self.engine
@@ -191,20 +194,20 @@ class TurnFlow:
         # narrator gives narrative and usable choices but misses state_update,
         # TurnFlow can keep the turn moving with the rule-engine delta below.
         try:
-            result = engine._run_agent(
+            result = engine.run_agent(
                 "narrator",
                 narrator_input,
                 session,
-                stream_callback=engine._stream_callback if engine.on_stream_chunk else None,
+                stream_callback=engine.stream_callback if engine.on_stream_chunk else None,
                 repair_incomplete_output=False,
             )
             if _should_retry_narrator_result(result):
                 log.info("narrator request failed with retryable provider error; retrying once")
-                retry_result = engine._run_agent(
+                retry_result = engine.run_agent(
                     "narrator",
                     narrator_input,
                     session,
-                    stream_callback=engine._stream_callback if engine.on_stream_chunk else None,
+                    stream_callback=engine.stream_callback if engine.on_stream_chunk else None,
                     repair_incomplete_output=False,
                 )
                 if not retry_result.get("llm_error"):
@@ -214,8 +217,8 @@ class TurnFlow:
         except Exception:
             log.exception("narrator error")
             reason = "叙述失败（详见日志）"
-            engine._emit("on_error", reason)
-            engine._set_choices(
+            engine.emit("on_error", reason)
+            engine.set_choices(
                 None,
                 source="narrator_exception",
                 fallback_notice=True,
@@ -233,12 +236,12 @@ class TurnFlow:
     ) -> tuple[str, dict[str, Any]] | None:
         engine = self.engine
         session = engine.game_session
-        if not state_delta or not engine._should_run_judge(text, state_delta, rule_delta):
+        if not state_delta or not engine.should_run_judge(text, state_delta, rule_delta):
             return {}
 
-        engine._emit("on_loading", "天道审判中...")
+        engine.emit("on_loading", "天道审判中...")
         try:
-            judge_result = engine._run_agent(
+            judge_result = engine.run_agent(
                 "judge",
                 text,
                 session,
@@ -248,14 +251,14 @@ class TurnFlow:
         except Exception:
             log.exception("judge error")
             reason = "天道审判失败（详见日志）"
-            if not engine._confirm_local_fallback("judge_exception", reason):
+            if not engine.confirm_local_fallback("judge_exception", reason):
                 session.turn_count -= 1
-                engine._end_model_failure_run(reason)
+                engine.end_model_failure_run(reason)
                 return None
             judge_result = {"approved": False, "corrected_delta": {}, "judgment_note": reason}
 
         judge_status = classify_judge_result(judge_result)
-        engine._log_model_result(
+        engine.log_model_result(
             agent="judge",
             source="turn",
             status=judge_status.kind,
@@ -264,9 +267,9 @@ class TurnFlow:
         )
         if judge_status.kind == ModelResultKind.JUDGE_FAILED:
             reason = judge_status.reason
-            if not engine._confirm_local_fallback("judge_error", reason):
+            if not engine.confirm_local_fallback("judge_error", reason):
                 session.turn_count -= 1
-                engine._end_model_failure_run(reason)
+                engine.end_model_failure_run(reason)
                 return None
             judge_result = {"approved": False, "corrected_delta": {}, "judgment_note": reason}
 
@@ -286,7 +289,7 @@ class TurnFlow:
             else:
                 note = judge_result.get("judgment_note", "")
                 log.info("Judge rejected (no corrected delta): %s", note)
-                engine._emit("on_info", PLAYER_NARRATIVE_MISMATCH_NOTICE)
+                engine.emit("on_info", PLAYER_NARRATIVE_MISMATCH_NOTICE)
                 narrative = ""
                 state_delta = {"character": {}, "world": {}, "meta": {}}
             note = judge_result.get("judgment_note", "")
@@ -309,12 +312,12 @@ class TurnFlow:
         )
         if not consistent:
             log.info("Narrative/state mismatch rejected: %s", consistency_reason)
-            engine._emit("on_info", PLAYER_NARRATIVE_MISMATCH_NOTICE)
+            engine.emit("on_info", PLAYER_NARRATIVE_MISMATCH_NOTICE)
             narrative = ""
             state_delta = {"character": {}, "world": {}, "meta": {}}
             session.last_choices = fallback_choices(session)
 
-        state_delta = engine._sanitize_action_delta(state_delta)
+        state_delta = engine.sanitize_action_delta(state_delta)
 
         is_cultivation = is_pure_cultivation(text)
         state_delta = apply_breakthrough_flag_rule(
@@ -333,7 +336,7 @@ class TurnFlow:
         if stage_delta is not None:
             state_delta = self._merge_state_delta(state_delta, stage_delta)
 
-        if engine._check_game_over():
+        if engine.check_game_over():
             return None
 
         return narrative, state_delta
@@ -380,9 +383,9 @@ class TurnFlow:
         session.record_turn(text, narrative, state_delta)
 
         if narrative:
-            engine._emit("on_narrative", narrative, session.turn_count)
+            engine.emit("on_narrative", narrative, session.turn_count)
 
-        engine._emit("on_status_bar", format_status_bar(session))
+        engine.emit("on_status_bar", format_status_bar(session))
 
     def _try_emit_stage_advance(self) -> dict[str, Any] | None:
         engine = self.engine
@@ -396,7 +399,7 @@ class TurnFlow:
                 label = f"{session.realm}第{new_stage}层"
             else:
                 label = format_realm(session)
-            engine._emit("on_info", f"修为精进！{label}（{new_stage}/{max_stage}）")
+            engine.emit("on_info", f"修为精进！{label}（{new_stage}/{max_stage}）")
             return stage_delta
         return None
 
@@ -406,11 +409,11 @@ class TurnFlow:
         result = breakthrough_delta.get("meta", {}).get("breakthrough_result", "")
         if result == "success":
             if session.finale:
-                engine._emit("on_finale", session.error or "飞升成仙，修真之路圆满。")
+                engine.emit("on_finale", session.error or "飞升成仙，修真之路圆满。")
             else:
-                engine._emit("on_info", format_realm(session))
+                engine.emit("on_info", format_realm(session))
         elif result == "failure":
-            engine._emit("on_info", "突破失败，受到反噬。")
+            engine.emit("on_info", "突破失败，受到反噬。")
 
     @staticmethod
     def _merge_state_delta(base: dict[str, Any], extra: dict[str, Any]) -> dict[str, Any]:

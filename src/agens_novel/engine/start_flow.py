@@ -4,7 +4,10 @@ from __future__ import annotations
 
 import logging
 import os
-from typing import Any
+from typing import TYPE_CHECKING, Any
+
+if TYPE_CHECKING:
+    from .game_engine import GameEngine
 
 from ..game.constants import (
     ATTRIBUTE_MAX,
@@ -47,7 +50,7 @@ _ALLOW_LEGACY_BONUS_ATTRIBUTES = "_allow_legacy_bonus_attributes"
 class StartFlow:
     """Owns model and local-template start paths for ``GameEngine``."""
 
-    def __init__(self, engine: Any) -> None:
+    def __init__(self, engine: GameEngine) -> None:
         self.engine = engine
 
     def new_game(self, concept: str) -> None:
@@ -56,14 +59,14 @@ class StartFlow:
         session = engine.game_session
         concept = concept.strip()
         if not concept:
-            engine._emit("on_info", "已取消。")
+            engine.emit("on_info", "已取消。")
             return
 
         session.reset()
-        engine._emit("on_loading", "天道初开，世界生成中...")
+        engine.emit("on_loading", "天道初开，世界生成中...")
 
         try:
-            result = engine._run_agent(
+            result = engine.run_agent(
                 "world_builder",
                 concept,
                 session,
@@ -72,32 +75,32 @@ class StartFlow:
         except Exception:
             log.exception("world_builder error")
             reason = "世界生成失败（详见日志）"
-            engine._emit("on_error", reason)
-            if engine._confirm_local_fallback("world_builder_exception", reason):
-                engine._set_choices(None, source="world_builder_exception", fallback_notice=True)
+            engine.emit("on_error", reason)
+            if engine.confirm_local_fallback("world_builder_exception", reason):
+                engine.set_choices(None, source="world_builder_exception", fallback_notice=True)
             else:
-                engine._end_model_failure_run(reason)
+                engine.end_model_failure_run(reason)
             return
 
         if result.get("llm_error"):
             reason = f"世界生成失败: {result['llm_error']}"
-            engine._log_model_result(
+            engine.log_model_result(
                 agent="world_builder",
                 source="new_game_error",
                 status=ModelResultKind.REQUEST_FAILED,
                 reason=reason,
                 result=result,
             )
-            engine._emit("on_error", reason)
-            if engine._confirm_local_fallback("world_builder_error", reason):
-                engine._set_choices(None, source="world_builder_error", fallback_notice=True)
+            engine.emit("on_error", reason)
+            if engine.confirm_local_fallback("world_builder_error", reason):
+                engine.set_choices(None, source="world_builder_error", fallback_notice=True)
             else:
-                engine._end_model_failure_run(reason)
+                engine.end_model_failure_run(reason)
             return
 
         generated = result.get("generated_data", {})
         world_status = classify_world_builder_result(result)
-        engine._log_model_result(
+        engine.log_model_result(
             agent="world_builder",
             source="new_game",
             status=world_status.kind,
@@ -105,7 +108,7 @@ class StartFlow:
             result=result,
         )
         if not generated:
-            engine._emit("on_info", "世界数据为空，请重试。")
+            engine.emit("on_info", "世界数据为空，请重试。")
             return
 
         apply_world_builder_generated_session(session, generated)
@@ -115,7 +118,7 @@ class StartFlow:
             desc = result.get("world_description", "")
             opening = desc or "世界已生成。"
 
-        if engine._set_choices(
+        if engine.set_choices(
             generated.get("choices"),
             source="world_builder",
             fallback_notice=True,
@@ -130,7 +133,7 @@ class StartFlow:
         engine = self.engine
         apply_profile_session(engine.game_session, profile)
 
-        engine._emit("on_loading", "开局生成中...")
+        engine.emit("on_loading", "开局生成中...")
         payload = self.generate_opening_payload(profile)
         if engine.game_session.game_over:
             return
@@ -138,7 +141,7 @@ class StartFlow:
 
         debug_choices = complete_choices(profile.get("choices"), engine.game_session) if profile.get("_allow_choice_override") else []
         opening = str(profile.get("opening_narrative") or payload.get("opening_narrative") or profile_opening(engine.game_session))
-        if engine._set_choices(
+        if engine.set_choices(
             debug_choices or payload.get("choices"),
             source="profile_opening",
             fallback_notice=True,
@@ -162,15 +165,15 @@ class StartFlow:
 
         if not _engine_has_api_key(engine):
             reason = "AGNES_API_KEY 未设置。"
-            if engine._confirm_local_fallback("profile_opening_missing_key", reason):
-                engine._emit("on_info", engine._fallback_notice_for(reason))
+            if engine.confirm_local_fallback("profile_opening_missing_key", reason):
+                engine.emit("on_info", engine.fallback_notice_for(reason))
                 return fallback
-            engine._end_model_failure_run(reason)
+            engine.end_model_failure_run(reason)
             return {}
 
         prompt = build_world_prompt(profile)
         try:
-            result = engine._run_agent(
+            result = engine.run_agent(
                 "world_builder",
                 prompt,
                 engine.game_session,
@@ -179,10 +182,10 @@ class StartFlow:
         except Exception:
             log.exception("profile opening world_builder error")
             reason = "开场推演失败（详见日志）。"
-            if engine._confirm_local_fallback("profile_opening_exception", reason):
-                engine._emit("on_info", engine._fallback_notice_for(reason))
+            if engine.confirm_local_fallback("profile_opening_exception", reason):
+                engine.emit("on_info", engine.fallback_notice_for(reason))
                 return fallback
-            engine._end_model_failure_run(reason)
+            engine.end_model_failure_run(reason)
             return {}
 
         world_status = classify_world_builder_result(result)
@@ -193,7 +196,7 @@ class StartFlow:
                 "开场推演缺少动态世界、编年史、初始局势或四个选项。",
             )
             parsed = {}
-        engine._log_model_result(
+        engine.log_model_result(
             agent="world_builder",
             source="profile_opening",
             status=world_status.kind,
@@ -202,28 +205,28 @@ class StartFlow:
         )
         if world_status.kind == ModelResultKind.REQUEST_FAILED:
             reason = world_status.reason.replace("世界生成失败", "开场推演失败", 1)
-            if engine._confirm_local_fallback("profile_opening_error", reason):
-                engine._emit("on_info", engine._fallback_notice_for(reason))
+            if engine.confirm_local_fallback("profile_opening_error", reason):
+                engine.emit("on_info", engine.fallback_notice_for(reason))
                 return fallback
-            engine._end_model_failure_run(reason)
+            engine.end_model_failure_run(reason)
             return {}
 
         if world_status.kind == ModelResultKind.INCOMPLETE_OUTPUT or not parsed:
             reason = getattr(world_status, "reason", "") or "开场推演数据不可用。"
-            if engine._confirm_local_fallback("profile_opening_empty", reason):
-                engine._emit("on_info", engine._fallback_notice_for(reason))
+            if engine.confirm_local_fallback("profile_opening_empty", reason):
+                engine.emit("on_info", engine.fallback_notice_for(reason))
                 return fallback
-            engine._end_model_failure_run(reason)
+            engine.end_model_failure_run(reason)
             return {}
 
         return merge_opening_payload(fallback, parsed)
 
     def _emit_opening(self, opening: str) -> None:
         engine = self.engine
-        engine._emit("on_narrative", opening, 0)
-        engine._emit("on_character_created", engine.game_session)
-        engine._emit("on_status_bar", format_status_bar(engine.game_session))
-        engine._record_opening_context(opening)
+        engine.emit("on_narrative", opening, 0)
+        engine.emit("on_character_created", engine.game_session)
+        engine.emit("on_status_bar", format_status_bar(engine.game_session))
+        engine.record_opening_context(opening)
 
 
 def apply_world_builder_generated_session(

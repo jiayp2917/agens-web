@@ -195,22 +195,22 @@ def test_judge_triggers_for_authoritative_world_delta(monkeypatch) -> None:
     monkeypatch.setenv("AGNES_API_KEY", "test-model-key")
     engine = GameEngine()
 
-    assert engine._should_run_judge(
+    assert engine.should_run_judge(
         "拜访同门",
         {"world": {"npcs_present_add": [{"name": "陈师兄", "relation": "盟友"}]}},
         {"meta": {"choice_category": "机遇"}},
     )
-    assert engine._should_run_judge(
+    assert engine.should_run_judge(
         "接下任务",
         {"world": {"active_quests_add": [{"name": "采药任务"}]}},
         {"meta": {"choice_category": "机遇"}},
     )
-    assert engine._should_run_judge(
+    assert engine.should_run_judge(
         "深入山径",
         {"world": {"discovered_add": ["后山药谷"]}},
         {"meta": {"choice_category": "机遇"}},
     )
-    assert not engine._should_run_judge(
+    assert not engine.should_run_judge(
         "听闻传说",
         {"world": {"lore_add": ["坊间只是传闻，并未入册"]}},
         {"meta": {"choice_category": "机遇"}},

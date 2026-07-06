@@ -4,7 +4,10 @@ from __future__ import annotations
 
 import logging
 import re
-from typing import Any
+from typing import TYPE_CHECKING, Any
+
+if TYPE_CHECKING:
+    from .game_engine import GameEngine
 
 from .render import format_realm, format_status_bar
 
@@ -16,7 +19,7 @@ _BREAKTHROUGH_SUCCESS_WORDS = ("突破成功", "功成", "踏入", "晋入", "�
 class BreakthroughFlow:
     """Owns realm breakthrough progression for ``GameEngine``."""
 
-    def __init__(self, engine: Any) -> None:
+    def __init__(self, engine: GameEngine) -> None:
         self.engine = engine
 
     def attempt_breakthrough(self) -> None:
@@ -25,22 +28,22 @@ class BreakthroughFlow:
         session = engine.game_session
 
         if not session.game_started:
-            engine._emit("on_info", "尚未开始游戏。")
+            engine.emit("on_info", "尚未开始游戏。")
             return
 
         if session.game_over:
-            engine._emit("on_info", "游戏已结束。")
+            engine.emit("on_info", "游戏已结束。")
             return
 
         can, reason = engine.realm_system.can_attempt_breakthrough(session)
         if not can:
-            engine._emit("on_info", reason)
+            engine.emit("on_info", reason)
             return
 
         rate = engine.realm_system.calculate_breakthrough_rate(session)
-        engine._emit("on_info", f"突破概率: {rate:.0%}，开始突破...")
+        engine.emit("on_info", f"突破概率: {rate:.0%}，开始突破...")
 
-        engine._emit("on_loading", "突破中...")
+        engine.emit("on_loading", "突破中...")
 
         breakthrough_delta = engine.realm_system.attempt_breakthrough(session)
         bt_result = breakthrough_delta.get("meta", {}).get("breakthrough_result", "")
@@ -69,7 +72,7 @@ class BreakthroughFlow:
         self._ensure_breakthrough_meta(state_delta, bt_result)
         session.apply_delta(state_delta)
         narrative = self._coerce_breakthrough_narrative(narrative, bt_result)
-        if engine._set_choices(
+        if engine.set_choices(
             choices,
             source="breakthrough_narrator",
             fallback_notice=False,
@@ -82,22 +85,22 @@ class BreakthroughFlow:
         self._record_breakthrough_turn(action_text, narrative, state_delta)
         self._emit_breakthrough_result(bt_result, narrative, is_finale)
 
-        engine._emit("on_status_bar", format_status_bar(session))
+        engine.emit("on_status_bar", format_status_bar(session))
 
         if is_finale:
             return
 
-        if engine._check_game_over():
+        if engine.check_game_over():
             return
 
     def _run_breakthrough_narrator(self, action_text: str) -> dict[str, Any] | None:
         engine = self.engine
         try:
-            return engine._run_agent(
+            return engine.run_agent(
                 "narrator",
                 action_text,
                 engine.game_session,
-                stream_callback=engine._stream_callback if engine.on_stream_chunk else None,
+                stream_callback=engine.stream_callback if engine.on_stream_chunk else None,
                 repair_incomplete_output=True,
             )
         except Exception:
@@ -179,7 +182,7 @@ class BreakthroughFlow:
             return state_delta
 
         try:
-            judge_result = engine._run_agent(
+            judge_result = engine.run_agent(
                 "judge",
                 action_text,
                 engine.game_session,
@@ -188,8 +191,8 @@ class BreakthroughFlow:
             )
             if judge_result.get("llm_error"):
                 reason = f"突破审判失败: {judge_result['llm_error']}"
-                if not engine._confirm_local_fallback("breakthrough_judge_error", reason):
-                    engine._end_model_failure_run(reason)
+                if not engine.confirm_local_fallback("breakthrough_judge_error", reason):
+                    engine.end_model_failure_run(reason)
                     return None
                 judge_result = {"approved": False, "corrected_delta": {}}
             if judge_result.get("approved") is False:
@@ -199,8 +202,8 @@ class BreakthroughFlow:
         except Exception:
             log.exception("breakthrough judge error")
             reason = "突破审判失败（详见日志）"
-            if not engine._confirm_local_fallback("breakthrough_judge_exception", reason):
-                engine._end_model_failure_run(reason)
+            if not engine.confirm_local_fallback("breakthrough_judge_exception", reason):
+                engine.end_model_failure_run(reason)
                 return None
 
         return state_delta
@@ -215,24 +218,24 @@ class BreakthroughFlow:
         session = engine.game_session
         if bt_result == "success":
             if is_finale:
-                engine._emit(
+                engine.emit(
                     "on_narrative",
                     narrative or "天地轰鸣，金光万丈！你超脱凡尘，飞升成仙！",
                     session.turn_count,
                 )
-                engine._emit("on_finale", "飞升成仙，超脱凡尘，修真之路圆满。")
+                engine.emit("on_finale", "飞升成仙，超脱凡尘，修真之路圆满。")
             else:
-                engine._emit(
+                engine.emit(
                     "on_narrative",
                     narrative or "突破成功！天地灵气涌动，境界提升！",
                     session.turn_count,
                 )
-                engine._emit("on_info", format_realm(session))
+                engine.emit("on_info", format_realm(session))
         elif bt_result == "failure":
-            engine._emit("on_narrative", narrative or "突破失败...修为受损。", session.turn_count)
-            engine._emit("on_info", "突破失败，受到反噬。")
+            engine.emit("on_narrative", narrative or "突破失败...修为受损。", session.turn_count)
+            engine.emit("on_info", "突破失败，受到反噬。")
         else:
-            engine._emit("on_narrative", narrative, session.turn_count)
+            engine.emit("on_narrative", narrative, session.turn_count)
 
 
 def _conflicts_with_breakthrough_result(corrected: dict[str, Any], original: dict[str, Any]) -> bool:

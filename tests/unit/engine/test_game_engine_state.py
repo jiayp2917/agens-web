@@ -148,7 +148,7 @@ class TestFinaleCallback:
         engine.game_session.finale = False
         engine.game_session.error = "天命难违"
         engine.game_session.char_name = "许满"
-        engine._check_game_over()
+        engine.check_game_over()
 
         assert engine.game_session.finale is False
         assert engine.game_session.game_over is True
