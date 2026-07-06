@@ -16,6 +16,7 @@ from typing import Any
 from agens_novel.settings import Settings
 from ..artifacts import store
 from ..engine.choices import clean_choice_text
+from ..llm.types import Message
 from ..utils.timing import utcnow_iso
 
 log = logging.getLogger(__name__)
@@ -70,3 +71,26 @@ def normalize_choices(value: Any) -> list[str]:
         if len(choices) == 4:
             break
     return choices
+
+
+def prompt_metrics(
+    messages: list[Message],
+    *,
+    game_state_json: str = "",
+    history_count: int = 0,
+    user_input: str = "",
+    narrative: str = "",
+) -> dict[str, int]:
+    """Return non-secret prompt size facts for latency triage.
+
+    Shared by narrator and judge. Returns all six metric keys; callers that
+    do not supply ``narrative`` or ``history_count`` get 0 for the unused key.
+    """
+    return {
+        "prompt_chars": sum(len(str(message.get("content") or "")) for message in messages),
+        "message_count": len(messages),
+        "history_count": int(history_count),
+        "game_state_chars": len(str(game_state_json or "")),
+        "user_input_chars": len(str(user_input or "")),
+        "narrative_chars": len(str(narrative or "")),
+    }

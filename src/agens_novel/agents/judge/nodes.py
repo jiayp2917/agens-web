@@ -22,6 +22,7 @@ from ...llm.client import LLMError, call_llm
 from ...llm.types import Message
 from ...utils.timing import utcnow_iso
 from ..common import load_agent_settings
+from ..common import prompt_metrics as _prompt_metrics
 
 log = logging.getLogger(__name__)
 
@@ -213,21 +214,3 @@ def _parse_judge_output(text: str) -> tuple[bool, dict, str, int]:
     log.warning("[judge] could not parse JSON verdict: %s", text[:200])
     # Default: REJECT on parse failure — safe default prevents bad state updates.
     return False, {}, "Judge 输出无法解析，拒绝状态更新", 0
-
-
-def _prompt_metrics(
-    messages: list[Message],
-    *,
-    game_state_json: str = "",
-    user_input: str = "",
-    narrative: str = "",
-) -> dict[str, int]:
-    """Return non-secret prompt size facts for latency triage."""
-    return {
-        "prompt_chars": sum(len(str(message.get("content") or "")) for message in messages),
-        "message_count": len(messages),
-        "history_count": 0,
-        "game_state_chars": len(str(game_state_json or "")),
-        "user_input_chars": len(str(user_input or "")),
-        "narrative_chars": len(str(narrative or "")),
-    }

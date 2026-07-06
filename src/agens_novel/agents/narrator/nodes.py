@@ -22,6 +22,7 @@ from ...llm.client import LLMError, call_llm, call_llm_stream
 from ...llm.types import Message
 from ...utils.timing import utcnow_iso
 from ..common import load_agent_settings, normalize_choices
+from ..common import prompt_metrics as _prompt_metrics
 from ...engine.choices import clean_visible_text
 
 log = logging.getLogger(__name__)
@@ -520,20 +521,3 @@ async def _repair_incomplete_output(
         return None, dict(resp)
     log.info("[narrator.repair] repaired incomplete output")
     return repaired_text, dict(resp)
-
-
-def _prompt_metrics(
-    messages: list[Message],
-    *,
-    game_state_json: str = "",
-    history_count: int = 0,
-    user_input: str = "",
-) -> dict[str, int]:
-    """Return non-secret prompt size facts for latency triage."""
-    return {
-        "prompt_chars": sum(len(str(message.get("content") or "")) for message in messages),
-        "message_count": len(messages),
-        "history_count": int(history_count),
-        "game_state_chars": len(str(game_state_json or "")),
-        "user_input_chars": len(str(user_input or "")),
-    }
