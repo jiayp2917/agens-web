@@ -5,6 +5,7 @@ from __future__ import annotations
 import os
 import random
 import re
+import sqlalchemy.exc
 import time
 import uuid
 from dataclasses import dataclass, field
@@ -879,7 +880,8 @@ class WebGameService:
                 for row in self.db.list_catalog(table)
                 if str(row.get("name") or "")
             ]
-        except Exception:
+        except sqlalchemy.exc.SQLAlchemyError as exc:
+            logging.getLogger(__name__).warning("catalog %s fetch failed: %s", table, exc)
             return []
 
     def _catalog_spirit_root_grade(self, name: str) -> str:
@@ -887,7 +889,8 @@ class WebGameService:
             for row in self.db.list_catalog("catalog_spirit_roots"):
                 if row.get("name") == name:
                     return str(row.get("grade") or "")
-        except Exception:
+        except sqlalchemy.exc.SQLAlchemyError as exc:
+            logging.getLogger(__name__).warning("catalog spirit_root_grade fetch failed for %s: %s", name, exc)
             return ""
         return ""
 
