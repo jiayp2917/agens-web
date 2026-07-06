@@ -17,7 +17,6 @@ _LETTER_PREFIX_RE = re.compile(
     r"^\s*(?:[（(]?\s*[A-Da-d1-4]\s*[）)]?|选项\s*[A-Da-d])"
     r"(?:\s*[\.:：、)）．。\-－—︰﹕：]|\s+(?=(?:稳妥|机遇|风险|气运)\s*[：:]))\s*"
 )
-_SEMANTIC_PREFIX_RE = re.compile(r"^\s*【(?:稳妥|机遇|风险|气运)】\s*")
 _SEMANTIC_WORD_PREFIX_RE = re.compile(r"^\s*(?:稳妥|机遇|风险|气运)\s*[：:]\s*")
 _FENCED_BLOCK_RE = re.compile(r"```(?:json|JSON)?\s*(?P<body>.*?)```", re.DOTALL)
 _STATE_TAG_RE = re.compile(r"<state_update\b[^>]*>.*?</state_update>", re.DOTALL | re.IGNORECASE)
@@ -85,11 +84,6 @@ def clean_visible_text(text: str, *, allow_structured: bool = True) -> str:
     cleaned = re.sub(r"[ \t]+", " ", cleaned)
     cleaned = re.sub(r"\n{3,}", "\n\n", cleaned)
     return cleaned.strip(" \t\r\n\"'[]")
-
-
-def display_choice_text(text: str) -> str:
-    """Return choice text for UI display, without semantic or letter prefixes."""
-    return clean_choice_text(_SEMANTIC_PREFIX_RE.sub("", str(text or ""), count=1))
 
 
 def complete_choices(raw_choices: Any, session: GameSession) -> list[str]:

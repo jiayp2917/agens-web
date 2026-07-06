@@ -308,12 +308,6 @@ class RealmSystem:
 
         return self._stage_delta(next_stage, cfg.stages, paced=False)
 
-    def public_realm_name(self, session: Any) -> str:
-        return format_realm_name(
-            str(getattr(session, "realm", "练气") or "练气"),
-            int(getattr(session, "realm_stage", 1) or 1),
-        )
-
     def _failure_status_effect(self, session: Any) -> str:
         if getattr(session, "realm", "练气") == "练气":
             age = int(getattr(session, "age", _QI_REFINING_BASE_AGE) or _QI_REFINING_BASE_AGE)

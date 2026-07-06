@@ -58,10 +58,3 @@ def log_path(timestamp: str) -> Path:
     """Path for a per-run audit log (jsonl)."""
     LOG_DIR.mkdir(parents=True, exist_ok=True)
     return LOG_DIR / f"run_{timestamp}.jsonl"
-
-
-def save_path(name: str) -> Path:
-    """Return the path for a game save file. Creates SAVE_DIR on demand."""
-    SAVE_DIR.mkdir(parents=True, exist_ok=True)
-    safe_name = "".join(c for c in name if c.isalnum() or c in ("-", "_")) or "default"
-    return SAVE_DIR / f"{safe_name}.json"

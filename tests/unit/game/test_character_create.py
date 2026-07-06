@@ -230,34 +230,6 @@ def test_unknown_profile_seed_does_not_change_local_fallback_opening(tmp_path, m
     assert "赤霄录" not in second.game_session.location
 
 
-def test_profile_concept_includes_attributes_and_fate_without_unknown_seed() -> None:
-    from agens_novel.engine.profile_opening import profile_concept
-
-    concept = profile_concept({
-        "unknown_seed": "星河剑宗",
-        "char_name": "许满",
-        "talent": "天命道胎",
-        "spirit_root": "雷灵根",
-        "family_background": "寒门",
-        "difficulty": "困难",
-        "randomize_attributes": True,
-        "attributes": {
-            "root_bone": 8,
-            "comprehension": 7,
-            "luck": 8,
-            "willpower": 4,
-            "physique": 2,
-            "soul": 1,
-        },
-    })
-
-    assert "六维属性" in concept
-    assert "根骨=8" in concept
-    assert "命数倾向" in concept
-    assert "天命奇遇" in concept
-    assert "星河剑宗" not in concept
-
-
 def test_different_profiles_get_different_fallback_worlds(tmp_path, monkeypatch):
     from agens_novel import paths
     monkeypatch.setattr(paths, "SAVE_DIR", tmp_path)

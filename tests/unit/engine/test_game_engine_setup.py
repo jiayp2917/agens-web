@@ -8,7 +8,7 @@ from unittest.mock import patch
 import pytest
 
 from agens_novel.engine.game_engine import GameEngine, fallback_choices
-from agens_novel.engine.choices import display_choice_text, normalize_choices
+from agens_novel.engine.choices import normalize_choices
 from agens_novel.session.game_session import GameSession
 
 
@@ -134,15 +134,6 @@ class TestGameEngineNewGame:
             "外出历练",
         ]
         assert normalize_choices(["【气运】随缘而行"]) == ["【气运】随缘而行"]
-        assert display_choice_text("【稳妥】A：A 稳妥：闭关吐纳") == "闭关吐纳"
-        assert display_choice_text("【气运】随缘而行") == "随缘而行"
-        assert [display_choice_text(text) for text in [
-            "A．闭关",
-            "A - 闭关",
-            "1. 闭关",
-            "（A）闭关",
-            "选项A：闭关",
-        ]] == ["闭关"] * 5
 
     def test_empty_model_choices_use_visible_fallback_notice(self, monkeypatch) -> None:
         monkeypatch.setenv("AGNES_API_KEY", "sk-test-1234567890")

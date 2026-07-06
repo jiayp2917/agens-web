@@ -107,29 +107,6 @@ def profile_opening(session: GameSession) -> str:
     )
 
 
-def profile_concept(profile: dict[str, Any]) -> str:
-    """Build a compact World Builder concept from the web creation form."""
-    summary = profile_summary(profile)
-    attrs = summary["attributes"]
-    attr_text = "，".join(
-        f"{ATTRIBUTE_LABELS.get(key, key)}={attrs[key]}" for key in ATTRIBUTE_KEYS
-    )
-    fate = "、".join(summary["fate_tendency"])
-    random_mode = "随机" if summary["randomize_attributes"] else "手选"
-    return (
-        f"角色名:{summary['char_name']};"
-        f"天赋:{summary['talent']};"
-        f"灵根:{summary['spirit_root']};"
-        f"家世:{summary['family_background']};"
-        f"难度:{summary['difficulty']};"
-        f"属性模式:{random_mode};"
-        f"六维属性:{attr_text};"
-        f"命数倾向:{fate}。"
-        "请生成本局世界观、外界情报、0-16岁短编年史、16岁初始局势和首次四个选择；"
-        "A/B/C/D固定为稳妥/机遇/风险/气运。"
-    )
-
-
 _WORLD_VARIANTS = {
     "frontier": {
         "world_name": "西陲裂土",

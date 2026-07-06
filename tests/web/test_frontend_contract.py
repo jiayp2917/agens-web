@@ -206,7 +206,6 @@ def test_react_game_page_has_escape_route_and_stable_meters() -> None:
     source = _read(
         "main.tsx",
         "pages/GamePage.tsx",
-        "components/StatLine.tsx",
         "components/LifespanBar.tsx",
         "components/ChronicleItem.tsx",
         "components/ChoiceButton.tsx",
@@ -217,7 +216,6 @@ def test_react_game_page_has_escape_route_and_stable_meters() -> None:
 
     assert "onHome={returnHome}" in source
     assert "返回首页" in source
-    assert "function StatLine" in source
     assert 'role="meter"' in source
     assert "realmLifespanCap" in source
     assert "value={remainingLifespan}" in source

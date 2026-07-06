@@ -1,6 +1,5 @@
 import { CatalogItem, visibleEventTypes, hiddenEventTexts } from "./catalog";
 
-export const randomBetween = (min: number, max: number) => Math.floor(Math.random() * (max - min + 1)) + min;
 export const pickRandom = <T,>(items: T[]) => items[Math.floor(Math.random() * items.length)];
 export const isManualRarity = (item: CatalogItem) => !["紫", "橙", "红"].includes(String(item.rarity || item.grade || ""));
 export const uniqueByName = (items: CatalogItem[]) => Array.from(new Map(items.map((item) => [item.name, item])).values());

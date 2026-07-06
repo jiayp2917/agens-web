@@ -291,12 +291,6 @@ def realm_lifespan_range(realm: str) -> tuple[int, int]:
     return REALM_LIFESPAN_RANGES.get(realm, (80, 120))
 
 
-def default_lifespan_for_realm(realm: str) -> int:
-    """Return the midpoint lifespan cap used by compatibility callers."""
-    low, high = realm_lifespan_range(realm)
-    return (low + high) // 2
-
-
 def stage_label_for_realm(realm: str, stage: int) -> str:
     """Display only Qi Refining as numbered layers; later realms use phases."""
     try:
