@@ -16,6 +16,11 @@ UPSTREAM_AUTH_NOTICE = "上游模型鉴权失败，请检查模型 Key 或切回
 UPSTREAM_TIMEOUT_NOTICE = "上游模型响应超时，本局已转入本地故事；可稍后重试或切换更稳定的模型。"
 MODEL_KEY_UNAVAILABLE_NOTICE = "模型 Key 未配置或不可解密，请在设置中配置个人 Key 或使用有效系统默认；本局已转入本地故事。"
 
+SECRET_MARKERS = (
+    "sk-", "api_key", "api-key", "x-api-key", "apikey",
+    "authorization", "bearer ", "database_url", "postgresql://",
+)
+
 log = logging.getLogger(__name__)
 
 
@@ -77,6 +82,6 @@ def _has_http_status(text: str, status: int) -> bool:
 
 def _looks_secret_bearing(text: str) -> bool:
     lowered = text.lower()
-    if any(marker in lowered for marker in ("sk-", "api_key", "api-key", "x-api-key", "apikey", "authorization", "bearer ")):
+    if any(marker in lowered for marker in SECRET_MARKERS):
         return True
     return bool(re.search(r"https?://\S+", text))

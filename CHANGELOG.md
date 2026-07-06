@@ -2,6 +2,13 @@
 
 ## 2026-07-06
 
+### Changed - read-only subagent audit and status-doc sync
+
+- Ran a read-only 6-dimension governance audit via parallel subagents (code quality, redundancy, deprecated content, dead code, governance, follow-up plan); every finding was adversarially cross-verified by a second agent. No code changed.
+- Synced `docs/INDEX.md` and `docs/PLAYABLE_GAMEPLAY_ROADMAP_20260629.md` from the superseded `local-visible-dynamic-opening-20260706-strict-live5` / 495-passed citations to the current `local-visible-p1-final-20260706` / 516-passed baseline (repair 0/20, judge 3, fallback 0), matching README, PROJECT_AUDIT, RUNTIME_FLOW, and this changelog.
+- Registered the verified findings in `docs/PROJECT_AUDIT.md` and the refined P0/P1/P2 follow-up plan in `docs/NEXT_GOVERNANCE_BACKLOG.md`. Code-level items (service.py god class, flow→engine private coupling, dead StartFlow/profile-opening chains, duplicated literals and secret markers, bare-except set, agent boilerplate) are recorded as backlog, not fixed in this pass.
+- Noted that `breakthrough_flow.py` is now the only narrator path still using `repair_incomplete_output=True` (intentional, low breakthrough frequency, authoritative-result decoupling still benefits from tag recovery); ordinary turns remain `False` per the P1 latency slice.
+
 ### Changed - P1 model-efficiency sampling and ordinary-turn repair reduction
 
 - Ran the new real visible Chrome 20-turn sampling baseline against an isolated local PostgreSQL acceptance DB before code changes: 20/20 choice turns were non-fallback, average choice latency was about 49.5s, max about 107.6s, repair was 18/20 turns, judge was 6 turns, and fallback was 0.

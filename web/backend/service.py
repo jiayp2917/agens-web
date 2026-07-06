@@ -16,7 +16,7 @@ from agens_novel.engine.death_rewards import (
 )
 from agens_novel.engine.choices import clean_choice_text, clean_visible_text
 from agens_novel.engine.game_engine import GameEngine, MODEL_FAILURE_CONTINUE
-from agens_novel.engine.model_fallback_policy import public_model_failure_notice
+from agens_novel.engine.model_fallback_policy import public_model_failure_notice, SECRET_MARKERS as _SECRET_MARKERS
 from agens_novel.engine.render import format_status_bar
 from agens_novel.engine.start_flow import normalize_profile_attributes
 from agens_novel.game.constants import (
@@ -48,7 +48,6 @@ _MODEL_FAILURE_PREFIXES = (
     "突破叙事失败:",
     "突破审判失败:",
 )
-_SECRET_MARKERS = ("sk-", "api_key", "api-key", "x-api-key", "apikey", "authorization", "bearer ", "database_url", "postgresql://")
 GUEST_USER_PREFIX = "guest:"
 
 

@@ -91,6 +91,51 @@ Only do complexity work that supports the main flow.
 - Keep `scripts/start_local_pg.ps1` as the PG startup/recovery helper. Do not delete `.tmp\pg-test-20260626-55432` while PG is running.
 - `output/playwright/` remains ignored generated evidence. Do not stage it in ordinary code/docs commits.
 
+## 2026-07-06 Subagent Audit - Refined Plan
+
+Sourced from the read-only subagent audit (see `docs/PROJECT_AUDIT.md` same-date section). No code changed in this pass; the following is the prioritized execution queue. The plan was reviewed by an independent critique agent, which dropped one fabricated item (a plan file that does not exist in this repo), promoted the secret-redaction drift to P0, and corrected the dead-chain verification to acknowledge a remaining test reference.
+
+### P0 (security / factual - do first)
+
+1. Unify the secret-redaction marker list.
+   - Current: `engine/game_engine.py:58` (7 markers) and `web/backend/service.py:51` (9 markers) diverge; the engine copy fails to redact `postgresql://` and sits on the model-failure log surface.
+   - Action: define one `SECRET_MARKERS` in a shared low-level module and import it in both; do not broaden redaction semantics.
+   - Verify: a reason string containing `postgresql://user:pass@host` is redacted on both engine and service log paths; existing secret-safe tests pass.
+
+### P1 (high-leverage quality / correctness)
+
+2. Split the `WebGameService` god class.
+   - Extract `ModelConfigService` (the 7 `_*_model_config` methods + encryption glue) and `DeathRewardsService` (`death_summary` + 4 helpers + `_persist_death_rewards`) into separate modules, mirroring the existing `service_summaries.py` split.
+   - Verify: `tests/web` and full pytest pass; API behavior unchanged.
+3. Tighten flow->engine private coupling.
+   - The three `*Flow` classes are instantiated only in `GameEngine.__init__` with zero reuse; either promote the called `engine._*` helpers to public methods and type `engine` as `GameEngine`, or fold the flows back into `game_engine.py`.
+   - Verify: flows no longer reference `engine._` privates; engine and flow-failure-path tests pass.
+4. Remove the verified-dead StartFlow / profile-opening chain.
+   - `generate_world_profile`, `generate_profile_opening`, and their GameEngine wrappers have zero callers repo-wide; delete them and collapse `generate_world_profile` to `return build_world_fallback(profile)`.
+   - Verify: zero non-test references in `src/`/`web/` after removal; `tests/unit/game/test_character_create.py:265` still does `monkeypatch.delenv("AGNES_START_MODEL_WORLD")` and must be removed in the same change; full pytest passes.
+5. Fix the local-story turn-history gap.
+   - `handle_local_story_action` (`turn_flow.py:71-81`) omits the chat_history append+compact, so local-story turns silently never enter narrator prompt history.
+   - Action: extract one `session.record_turn(input, narrative, delta, *, local_story=None)` and route all four turn-recording sites through it.
+   - Verify: a local-story turn appends to `chat_history`; relevant engine tests pass.
+6. Consolidate default base_url/model literals to `Settings`.
+   - 11 inline sites (`service.py` x4, `agents/common.py`, `game_engine.py`, `turn_runner.py`, `llm/client.py`, `database_postgres.py`, `app_models.py`) read from `Settings()` or a single constant instead.
+   - Verify: grep for `apihub.agnes-ai.com` / `agnes-2.0-flash` hits only `settings.py`; full pytest passes.
+7. Narrow the catalog bare `except Exception`.
+   - `service.py:883,891` silently swallow DB errors and return empty catalog/grade; narrow to specific exceptions and `log.warning`.
+   - Verify: catalog fetch failures are visible in logs and still return safe values; catalog tests pass.
+
+### P2 (cleanup / boilerplate consolidation)
+
+8. Consolidate agent LLM-call + `save_artifact` + `_prompt_metrics` boilerplate into `agents/common.py` (the repo's established dedup pattern).
+9. Remove verified zero-caller helpers: `default_lifespan_for_realm`, `RealmSystem.public_realm_name`, `choices.display_choice_text`, `profile_opening.profile_concept`, `lib/util.randomBetween`, `paths.save_path`, the 6 `render.py` formatters and their tests. Note: removing `StatLine.tsx` requires also updating `tests/web/test_frontend_contract.py:209,220`; `_session_flags`/`_inventory_text` must NOT be removed (`realm.py:136-137` uses them).
+10. Remove the 3 unreferenced tracked PNGs under `output/` (`agens-web-local-pg-*`).
+11. Governance doc structure cleanup (low priority): drop the duplicate condensed guidelines block in `AGENTS.md`; fix the `## 实现状态` heading nested inside a `>` blockquote in `GAME_MODE_SPEC.md`; split dated evidence out of the "current status" sections in `INDEX`/`RUNTIME_FLOW`.
+
+### Items to retire / demote in the existing backlog
+
+- "Keep the sidebar 外界情报 read-only" is already a stable invariant; demote from active P1 to a governance note.
+- The repair/judge P1 sub-bullets ("tighten narrator output contract/parser", "narrow judge triggers") should be narrowed: repair is already 0/20 and judge is 3, so the lever is largely exhausted; remaining latency work should focus on provider/narrator first response and history compression.
+
 ## Validation Rules
 
 - Backend/service changes:

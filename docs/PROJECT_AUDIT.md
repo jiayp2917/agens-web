@@ -45,6 +45,68 @@
 - 生产 P0 已通过：服务器线程部署 `25ad3d15` 后，容器 healthy，Alembic `20260622_0005`，`user_model_configs` 存在，public/origin health 和 catalog 正常，日志敏感标记扫描为 0；一次性真实账号注册、登录、开局、选择、存档、读档、跨会话恢复均通过；生产 start 和至少 1 次 choice 均为 non-fallback，choice 后 `turn_count=1`。
 - 最新本地代码已加入脱敏模型性能观测并完成一次 final Chrome 采样：repair 已从 18/20 降为 0/20，最终 Chrome 平均回合约 25.9s、最大约 57.1s；响应慢有所改善但未完全解决，下一步重点是 provider/narrator 首次响应与少数 judge 调用。
 
+## 2026-07-06 子智能体只读审计
+
+本次为只读审计：5 个 find→verify 维度（代码质量 / 冗余 / 废弃内容 / 死代码 / 治理）+ backlog 读取 + 计划与评审，共 13 个子智能体；每条发现都经独立 verifier 复核（均为 confirmed/partial，无被推翻的误报）。**代码层面发现只登记，本批不改代码**；事实性文档漂移（495→516、基线名）已在本次同步。精炼后续计划见 `docs/NEXT_GOVERNANCE_BACKLOG.md` 同日小节。
+
+### ① 代码质量
+
+| 发现 | 位置 | 级别 |
+| --- | --- | --- |
+| `WebGameService` 39 方法 god class（会话/存档/死亡奖励/模型配置/runner 缓存混合） | `web/backend/service.py:352-909` | high |
+| 三个 `*Flow` 取 `engine: Any` 并调用 engine 私有成员；仅 `GameEngine.__init__` 实例化、零复用，纯间接 | `engine/turn_flow.py`、`start_flow.py`、`breakthrough_flow.py` | high |
+| 默认 base_url/model 字面量在 11 处内联，未走 `Settings` | `settings.py:30-31` 等 11 处 | medium |
+| 密钥脱敏 marker 在 engine（7 项）与 service（9 项）分叉；engine 会漏脱 `postgresql://` | `engine/game_engine.py:58`、`web/backend/service.py:51` | medium |
+| `narrator/nodes.py` 539 行解析器堆积（7+ 私有 JSON 容错 helper，含手写括号深度状态机） | `agents/narrator/nodes.py:226-525` | medium |
+| 14 处裸 `except Exception`；`service.py:883,891` 静默吞 DB 错误返回空 catalog/空档位且无日志 | `service.py:883,891` 等 14 处 | medium |
+| `import logging` 放在 `service.py:940` 文件尾（带 `# noqa: E402`） | `web/backend/service.py:940-942` | low |
+| A/B/C/D 映射在 3 处各自定义；world-reset 关键词硬编码 | `choices.py:12`、`service.py:904`、`game_engine.py:354,558-566` | low |
+
+### ② 代码冗余
+
+| 发现 | 位置 | 级别 |
+| --- | --- | --- |
+| turn-history append+compact 块在 3 处复制 | `turn_flow.py:365-379,389-399`、`breakthrough_flow.py:170-180` | medium |
+| 第 4 处 `handle_local_story_action` 漏 chat_history append+compact → local-story 回合静默不入 narrator 历史 | `turn_flow.py:71-81` | medium |
+| `call_agnes_llm` 头部 guard + 错误信封在 narrator/judge/world_builder 三处复制 | `agents/{narrator,judge,world_builder}/nodes.py` | medium |
+| `save_artifact` audit dict 脚手架三处复制（80%+ 键同名，已开始分叉） | 同上 | medium |
+| `_prompt_metrics` 在 narrator/judge 近乎逐字节重复 | `narrator/nodes.py:525-539`、`judge/nodes.py:218-233` | low |
+| `start_flow` 的 confirm→fallback-or-end 模式重复 6 次 | `start_flow.py:76-95,165-217` | low |
+| 三套 state-delta merge helper（两套浅合并可合一，`merge_rule_delta` 保留） | `turn_flow.py:434-444`、`breakthrough_flow.py:108-123`、`action_delta_policy.py:196-244` | low |
+| `agents/common.py` 已 dedup load_settings/normalize_choices，却未覆盖上述三块样板 | `agents/common.py:23-71` | low |
+
+### ③ 废弃内容（文档/资产）
+
+| 发现 | 位置 | 级别 |
+| --- | --- | --- |
+| `output/` 下 3 个已跟踪 PNG 无任何 .md/.py/.ts 引用，违反"证据不入库"规则 | `output/agens-web-local-pg-*.png`（cf0ddf4 加入） | low |
+| CHANGELOG 旧条目称普通回合 `repair=True`（已被当日顶部条目反转；旧条目可选标注 superseded） | `CHANGELOG.md:438-440` | low |
+| `breakthrough_flow.py` 是唯一仍 `repair=True` 的 narrator 路径，无文档说明此为有意保留 | `breakthrough_flow.py:102` | low |
+
+> 会话目录 `C:/Users/29176/.claude/plans/zesty-popping-graham.md` 提议与已提交 `8da562b` 相反的方向（建议把普通回合 repair 翻 True）。该文件不在本仓库内，不计入仓库审计；作为会话产物建议归档或清除以防后续误用。
+
+### ④ 死代码（verifier 已核实零调用）
+
+| 发现 | 位置 | 级别 |
+| --- | --- | --- |
+| `generate_world_profile` + 包装 `_generate_world_profile` 全仓库零调用（env 门控是烟雾弹，整链已死） | `start_flow.py:221-251`、`game_engine.py:246-253` | medium |
+| `generate_profile_opening` + 包装 `_generate_profile_opening` 同为零调用死链 | `start_flow.py:253`、`game_engine.py:255-257` | medium |
+| 6 个 `render.py` 格式化函数（status_card/inventory/skills/map/quests/equipment）仅测试用 | `engine/render.py:51,81,101,123,134,193` | low |
+| `display_choice_text`、`profile_concept`、`validate_local_story_graph`、`default_lifespan_for_realm`、`RealmSystem.public_realm_name`、`paths.save_path`、前端 `lib/util.randomBetween` 均零调用 | 见各文件 | low |
+| 前端 `StatLine.tsx` 运行时零引用，但被 `tests/web/test_frontend_contract.py:209,220` 锁定，删除须同步改契约测试 | `components/StatLine.tsx` | low |
+
+> verifier 更正：`_session_flags`/`_inventory_text` 并非死代码（`realm.py:136-137` 在用），不可随 `public_realm_name` 一并删。
+
+### ⑤ 项目治理
+
+| 发现 | 位置 | 级别 |
+| --- | --- | --- |
+| `INDEX.md`、`ROADMAP` 的 495/旧基线已在本次同步到 516/`p1-final` | `docs/INDEX.md`、`docs/PLAYABLE_GAMEPLAY_ROADMAP_20260629.md` | 已修 |
+| `AGENTS.md` 含两份"通用编码准则"（L1-60 详版 + L145-161 精简版），措辞已轻微分叉 | `AGENTS.md:1-60,145-161` | low |
+| `AGENTS.md` 与 `CLAUDE.md` 的准则块近乎逐字重复，改一处需同步另一处 | `AGENTS.md`、`CLAUDE.md` | low |
+| `GAME_MODE_SPEC.md` 把 `## 实现状态` 标题嵌进 `>` 引用块（结构非标准） | `docs/GAME_MODE_SPEC.md:20-35` | low |
+| `INDEX`/`RUNTIME_FLOW` 的"当前状态"段混入 dated 证据/未来指针 | 见各文档 | low |
+
 ## 剩余 P0 风险
 
 | 问题 | 当前状态 | 下一步 |

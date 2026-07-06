@@ -35,6 +35,7 @@ from .model_fallback_policy import (
     MODEL_FAILURE_CONTINUE,
     MODEL_FAILURE_END,
     MODEL_FAILURE_PROMPT,
+    SECRET_MARKERS,
     ModelFallbackPolicy,
 )
 from .start_flow import (
@@ -55,7 +56,7 @@ def _safe_log_reason(reason: str, limit: int = 220) -> str:
     """Trim and redact failure text before it reaches logcat."""
     text = (reason or "").replace("\n", " ").strip()
     lowered = text.lower()
-    if any(marker in lowered for marker in ("sk-", "api_key", "api-key", "x-api-key", "apikey", "authorization", "bearer ")):
+    if any(marker in lowered for marker in SECRET_MARKERS):
         return "redacted model configuration error"
     if "http://" in lowered or "https://" in lowered:
         return "redacted model configuration error"
