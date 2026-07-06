@@ -115,7 +115,7 @@ def fake_judge_llm() -> AsyncMock:
         "elapsed_ms": 500,
         "raw": {"stub": True},
     })
-    with patch("agens_novel.agents.judge.nodes.call_llm", mock):
+    with patch("agens_novel.agents.common.call_llm", mock):
         yield mock, canned
 
 
@@ -151,5 +151,5 @@ def fake_world_builder_llm() -> AsyncMock:
         "elapsed_ms": 2000,
         "raw": {"stub": True},
     })
-    with patch("agens_novel.agents.world_builder.nodes.call_llm", mock):
+    with patch("agens_novel.agents.common.call_llm", mock):
         yield mock, canned

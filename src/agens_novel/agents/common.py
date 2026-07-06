@@ -16,6 +16,7 @@ from typing import Any
 from agens_novel.settings import Settings
 from ..artifacts import store
 from ..engine.choices import clean_choice_text
+from ..llm.client import LLMError, call_llm
 from ..llm.types import Message
 from ..utils.timing import utcnow_iso
 
@@ -94,3 +95,53 @@ def prompt_metrics(
         "user_input_chars": len(str(user_input or "")),
         "narrative_chars": len(str(narrative or "")),
     }
+
+
+async def call_agnes_llm_common(
+    state: dict[str, Any],
+    *,
+    agent_name: str,
+    temperature: float,
+    max_tokens: int,
+    include_prompt_metrics: bool = False,
+) -> dict[str, Any]:
+    """Shared non-streaming ``call_agnes_llm`` body for judge + world_builder.
+
+    Owns the api_key/messages guard prelude, the single non-streaming
+    ``call_llm`` request, and the ``LLMError`` epilogue. The narrator agent
+    cannot use this — its streaming + output-repair specialization does not
+    fit the shared shape.
+    """
+    if not state.get("api_key_set"):
+        return {
+            "output_text": "", "llm_error": "AGNES_API_KEY 未设置。",
+            "elapsed_ms": 0, "usage": {},
+        }
+    messages: list[Message] = state.get("messages") or []
+    if not messages:
+        return {
+            "output_text": "", "llm_error": "messages 为空。",
+            "elapsed_ms": 0, "usage": {},
+        }
+    try:
+        resp = await call_llm(
+            messages,
+            model=state.get("model"),
+            base_url=state.get("base_url"),
+            api_key=state.get("api_key"),
+            temperature=temperature,
+            max_tokens=max_tokens,
+            stream=False,
+        )
+        result: dict[str, Any] = {
+            "output_text": resp.get("text", ""),
+            "usage": dict(resp.get("usage") or {}),
+            "elapsed_ms": int(resp.get("elapsed_ms", 0)),
+            "llm_error": "",
+        }
+        if include_prompt_metrics:
+            result["prompt_metrics"] = state.get("prompt_metrics") or {}
+        return result
+    except LLMError as e:
+        log.error("[%s.call_agnes_llm] failed: %s", agent_name, e)
+        return {"output_text": "", "llm_error": str(e), "elapsed_ms": 0, "usage": {}}

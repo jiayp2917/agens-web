@@ -15,10 +15,9 @@ from typing import Any
 
 from ... import paths
 from ...artifacts import store
-from ...llm.client import LLMError, call_llm
 from ...llm.types import Message
 from ...utils.timing import utcnow_iso
-from ..common import load_agent_settings, normalize_choices
+from ..common import call_agnes_llm_common, load_agent_settings, normalize_choices
 
 log = logging.getLogger(__name__)
 
@@ -63,36 +62,12 @@ def build_prompt(state: dict[str, Any]) -> dict[str, Any]:
 
 
 async def call_agnes_llm(state: dict[str, Any]) -> dict[str, Any]:
-    if not state.get("api_key_set"):
-        return {
-            "output_text": "", "llm_error": "AGNES_API_KEY 未设置。",
-            "elapsed_ms": 0, "usage": {},
-        }
-    messages: list[Message] = state.get("messages") or []
-    if not messages:
-        return {
-            "output_text": "", "llm_error": "messages 为空。",
-            "elapsed_ms": 0, "usage": {},
-        }
-    try:
-        resp = await call_llm(
-            messages,
-            model=state.get("model"),
-            base_url=state.get("base_url"),
-            api_key=state.get("api_key"),
-            temperature=0.6,
-            max_tokens=4096,
-            stream=False,
-        )
-        return {
-            "output_text": resp.get("text", ""),
-            "usage": dict(resp.get("usage") or {}),
-            "elapsed_ms": int(resp.get("elapsed_ms", 0)),
-            "llm_error": "",
-        }
-    except LLMError as e:
-        log.error("[world_builder.call_agnes_llm] failed: %s", e)
-        return {"output_text": "", "llm_error": str(e), "elapsed_ms": 0, "usage": {}}
+    return await call_agnes_llm_common(
+        state,
+        agent_name=AGENT_NAME,
+        temperature=0.6,
+        max_tokens=4096,
+    )
 
 
 def save_artifact(state: dict[str, Any]) -> dict[str, Any]:
