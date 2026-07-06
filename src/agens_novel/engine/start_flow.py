@@ -156,6 +156,14 @@ class StartFlow:
         engine = self.engine
         fallback = build_world_fallback(profile)
 
+        def decline_or_continue(source: str, reason: str) -> dict[str, Any]:
+            """On model failure: return fallback if the user accepts, else end the run."""
+            if engine.confirm_local_fallback(source, reason):
+                engine.emit("on_info", engine.fallback_notice_for(reason))
+                return fallback
+            engine.end_model_failure_run(reason)
+            return {}
+
         use_model = (
             os.environ.get(START_MODEL_WORLD_ENV) == "1"
             or os.environ.get(START_MODEL_OPENING_ENV) == "1"
@@ -164,12 +172,7 @@ class StartFlow:
             return fallback
 
         if not _engine_has_api_key(engine):
-            reason = "AGNES_API_KEY 未设置。"
-            if engine.confirm_local_fallback("profile_opening_missing_key", reason):
-                engine.emit("on_info", engine.fallback_notice_for(reason))
-                return fallback
-            engine.end_model_failure_run(reason)
-            return {}
+            return decline_or_continue("profile_opening_missing_key", "AGNES_API_KEY 未设置。")
 
         prompt = build_world_prompt(profile)
         try:
@@ -181,12 +184,7 @@ class StartFlow:
             )
         except Exception:
             log.exception("profile opening world_builder error")
-            reason = "开场推演失败（详见日志）。"
-            if engine.confirm_local_fallback("profile_opening_exception", reason):
-                engine.emit("on_info", engine.fallback_notice_for(reason))
-                return fallback
-            engine.end_model_failure_run(reason)
-            return {}
+            return decline_or_continue("profile_opening_exception", "开场推演失败（详见日志）。")
 
         world_status = classify_world_builder_result(result)
         parsed = parse_world_response(result) if world_status.kind != ModelResultKind.REQUEST_FAILED else {}
@@ -205,19 +203,11 @@ class StartFlow:
         )
         if world_status.kind == ModelResultKind.REQUEST_FAILED:
             reason = world_status.reason.replace("世界生成失败", "开场推演失败", 1)
-            if engine.confirm_local_fallback("profile_opening_error", reason):
-                engine.emit("on_info", engine.fallback_notice_for(reason))
-                return fallback
-            engine.end_model_failure_run(reason)
-            return {}
+            return decline_or_continue("profile_opening_error", reason)
 
         if world_status.kind == ModelResultKind.INCOMPLETE_OUTPUT or not parsed:
             reason = getattr(world_status, "reason", "") or "开场推演数据不可用。"
-            if engine.confirm_local_fallback("profile_opening_empty", reason):
-                engine.emit("on_info", engine.fallback_notice_for(reason))
-                return fallback
-            engine.end_model_failure_run(reason)
-            return {}
+            return decline_or_continue("profile_opening_empty", reason)
 
         return merge_opening_payload(fallback, parsed)
 
