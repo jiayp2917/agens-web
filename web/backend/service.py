@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import logging
 import random
 import re
 import sqlalchemy.exc
@@ -32,6 +33,8 @@ from .database_postgres import PostgresWebDatabase
 from .service_death_rewards import DeathRewardsService
 from .service_model_config import ModelConfigService
 from .service_summaries import build_death_summary
+
+log = logging.getLogger(__name__)
 
 PUBLIC_MODEL_FALLBACK_TEXT = "模型暂不可用，当前以本地故事继续。"
 _MODEL_FAILURE_PREFIXES = (
@@ -741,10 +744,6 @@ def _random_attributes() -> dict[str, int]:
 
 
 # ── Death rewards helpers (P4) ──────────────────────────────────────────────
-
-import logging  # noqa: E402
-
-log = logging.getLogger(__name__)
 
 
 def _turn_start_snapshot(session: GameSession) -> dict[str, Any]:

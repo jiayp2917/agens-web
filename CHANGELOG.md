@@ -476,7 +476,9 @@ Validation gates per commit: `compileall` clean; `tests/unit/engine` 187 passed;
   `AGENS_*`.
 - The prior code fix is already committed in `dc05e9f4`: turn and breakthrough
   narrator paths pass `repair_incomplete_output=True`, and deployment
-  examples/tests use the correct `AGNES_*` model prefix.
+  examples/tests use the correct `AGNES_*` model prefix. *(Superseded 2026-07-06:
+  ordinary turns flipped to `False` in the P1 latency slice; only
+  `breakthrough_flow.py` remains `True` — see top-of-file entry.)*
 - The deployment builder compatibility fix is already committed in `2ea29972`:
   `Dockerfile` no longer requires BuildKit-only `RUN --mount=type=cache`.
 - Production env was backed up and the correct `AGNES_*` model variables were

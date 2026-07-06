@@ -79,7 +79,7 @@
 | **Judge** | `agents/judge/` | `temperature=0.2`, `max_tokens=512` | 审核 Narrator 提议的 `state_delta`；返回 `approved` / `corrected_delta` / `judgment_note` / `review_score`；LLMError 默认 `approved=False`（安全失败） |
 | **World Builder** | `agents/world_builder/` | `temperature=0.6`, `max_tokens=4096` | 新游戏和角色创建开局生成世界 + 角色；解析 `<world_data>` JSON 标签；保留 `chronicle_0_16`、`initial_situation_16`、`fate_hooks` 等动态开局字段；清理内部错误/调试字段 |
 | **Sequential 包装** | `agents/sequential.py` | — | `SequentialAgentGraph` 通用 4 节点编排；3 个 Agent 共享同一编排 |
-| **共享 helper** | `agents/common.py` | — | `load_agent_settings()`（narrator / judge / world_builder 的 `load_settings` 均委托至此）+ `normalize_choices()`（复用 engine choice 清理，上限 4） |
+| **共享 helper** | `agents/common.py` | — | `load_agent_settings()`（narrator / judge / world_builder 的 `load_settings` 均委托至此）+ `normalize_choices()`（agents 层 A/B/C/D 选项清理，上限 4）+ `prompt_metrics()`（narrator / judge 共享）+ `call_agnes_llm_common()`（judge / world_builder 共享的非流式 LLM 调用，narrator 因 streaming/repair 保留自有实现） |
 
 验收边界：`fallback_choices()` 或 TurnFlow 的语义补齐只保证玩家不断流；
 它不是完整模型选项质量证明。live-model 成功仍要求非 fallback 且叙事、结构化
