@@ -834,7 +834,7 @@ def test_user_model_settings_reject_empty_initial_key_and_keep_existing_key(tmp_
     assert updated.json()["source"] == "user"
     assert updated.json()["api_key_set"] is True
     assert app.state.service.db.get_user_model_config(user["id"])["api_key_encrypted"] == encrypted
-    runtime = app.state.service._runtime_model_config(user["id"])
+    runtime = app.state.service._model_config.runtime(user["id"])
     assert runtime["api_key"] == "test-user-key-123456"
     assert runtime["provider"] == "Qwen"
 
@@ -879,7 +879,7 @@ def test_model_settings_missing_secret_fails_closed(tmp_path: Path, monkeypatch)
     client.post("/api/settings/model", json=_model_payload("test-user-key-123456"))
 
     monkeypatch.delenv("MODEL_CONFIG_SECRET", raising=False)
-    runtime = app.state.service._runtime_model_config(user["id"])
+    runtime = app.state.service._model_config.runtime(user["id"])
     assert runtime["source"] == "user"
     assert runtime["api_key"] == ""
     assert runtime["api_key_set"] is False
@@ -905,8 +905,8 @@ def test_runtime_model_config_uses_current_user_without_env_pollution(tmp_path: 
     user_b = _login_user(client_b, "player_b", "invite-b-123")
     client_b.post("/api/settings/model", json=_model_payload("test-user-b-key-123456"))
 
-    config_a = app.state.service._runtime_model_config(user_a["id"])
-    config_b = app.state.service._runtime_model_config(user_b["id"])
+    config_a = app.state.service._model_config.runtime(user_a["id"])
+    config_b = app.state.service._model_config.runtime(user_b["id"])
     assert config_a["api_key"] == "test-user-a-key-123456"
     assert config_b["api_key"] == "test-user-b-key-123456"
     assert os.environ["AGNES_API_KEY"] == "test-env-key-should-not-win"
@@ -930,7 +930,7 @@ def test_legacy_system_model_config_without_encrypted_key_uses_env_key(
         "api_key_encrypted": "",
     })
 
-    runtime = app.state.service._runtime_model_config(None)
+    runtime = app.state.service._model_config.runtime(None)
 
     assert runtime["source"] == "system"
     assert runtime["api_key"] == "test-env-key-legacy-system"

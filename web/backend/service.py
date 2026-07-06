@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-import os
 import random
 import re
 import sqlalchemy.exc
@@ -13,7 +12,6 @@ from typing import Any
 
 from agens_novel.engine.death_rewards import (
     apply_legacy_bonuses,
-    bonuses_to_legacy,
 )
 from agens_novel.engine.choices import clean_choice_text, clean_visible_text
 from agens_novel.engine.game_engine import GameEngine, MODEL_FAILURE_CONTINUE
@@ -28,17 +26,11 @@ from agens_novel.game.constants import (
     TALENT_OPTIONS,
 )
 from agens_novel.session.game_session import GameSession
-from agens_novel.settings import Settings
-
-from .model_config_security import (
-    ModelConfigSecretError,
-    decrypt_api_key,
-    encrypt_api_key,
-    mask_api_key,
-)
 
 from .database import WebDatabaseProtocol
 from .database_postgres import PostgresWebDatabase
+from .service_death_rewards import DeathRewardsService
+from .service_model_config import ModelConfigService
 from .service_summaries import build_death_summary
 
 PUBLIC_MODEL_FALLBACK_TEXT = "模型暂不可用，当前以本地故事继续。"
@@ -211,50 +203,7 @@ class WebRunner:
         """Write achievements, account rewards, and legacy bonuses to the DB."""
         if self.db is None:
             return
-        db = self.db
-        existing_rewards = [
-            reward
-            for reward in db.list_account_rewards(user_id)
-            if reward.get("source_session_id") == session_id
-        ]
-        if db.list_run_achievements(user_id, session_id) or existing_rewards:
-            return
-        db.record_game_run(
-            user_id=user_id,
-            run_id=session_id,
-            session_id=session_id,
-            char_name=session.char_name,
-            realm=session.realm,
-            death_cause=str(summary.get("death_cause") or ""),
-            ascended=bool(session.finale),
-            turn_count=int(session.turn_count or 0),
-        )
-        for achievement in summary.get("achievements", []) or []:
-            db.save_run_achievement(
-                user_id=user_id,
-                session_id=session_id,
-                achievement_key=str(achievement.get("key") or ""),
-                achievement_name=str(achievement.get("name") or ""),
-                description=str(achievement.get("description") or ""),
-                death_cause=str(summary.get("death_cause") or ""),
-            )
-        for reward in summary.get("rewards", []) or []:
-            db.save_account_reward(
-                user_id=user_id,
-                reward_type=str(reward.get("type") or ""),
-                reward_value=str(reward.get("value") or ""),
-                label=str(reward.get("label") or ""),
-                source_session_id=session_id,
-            )
-        for bonus in bonuses_to_legacy(summary.get("rewards", []) or []):
-            db.save_legacy_bonus(
-                user_id=user_id,
-                bonus_type=str(bonus.get("bonus_type") or ""),
-                bonus_value=str(bonus.get("bonus_value") or ""),
-                label=str(bonus.get("label") or ""),
-                source_session_id=session_id,
-                runs_remaining=int(bonus.get("runs_remaining") or 1),
-            )
+        DeathRewardsService(self.db).persist(session, user_id, session_id, summary)
 
 
 def _sanitize_event_payload(event_type: str, payload: dict[str, Any]) -> dict[str, Any]:
@@ -356,6 +305,8 @@ class WebGameService:
         self.db = db or PostgresWebDatabase()
         self.runners: dict[str, WebRunner] = {}
         self._runner_last_used: dict[str, float] = {}
+        self._model_config = ModelConfigService(self.db)
+        self._death_rewards = DeathRewardsService(self.db)
 
     def login(self, username: str = "local") -> dict[str, Any]:
         return self.db.upsert_user(username)
@@ -387,7 +338,7 @@ class WebGameService:
         self, session_id: str, profile: dict[str, Any], user_id: str | None = None
     ) -> dict[str, Any]:
         runner = self._runner(session_id, user_id=user_id)
-        self._apply_runner_model_config(runner)
+        self._model_config.apply_runner(runner)
         normalized = self._normalize_profile(profile)
         # Apply legacy bonuses from prior runs (P4) — registered users only.
         if user_id and not is_guest_user_id(user_id):
@@ -422,7 +373,7 @@ class WebGameService:
         return self._advance_turn(runner, action)
 
     def _advance_turn(self, runner: WebRunner, action: str) -> dict[str, Any]:
-        self._apply_runner_model_config(runner)
+        self._model_config.apply_runner(runner)
         before = _turn_start_snapshot(runner.engine.game_session)
         runner.engine.handle_action(action)
         self._record_settled_turn(runner, before, action)
@@ -501,7 +452,7 @@ class WebGameService:
         if live is not None:
             return live
 
-        return self._stored_death_summary(session_id, user_id)
+        return self._death_rewards.stored_summary(session_id, user_id)
 
     def _live_death_summary(
         self,
@@ -528,54 +479,16 @@ class WebGameService:
         live = self._live_death_summary(session_id, user_id=user_id, is_guest=is_guest)
         return live if live["summary"] else None
 
-    def _stored_death_summary(self, session_id: str, user_id: str) -> dict[str, Any]:
-        achievements = self.db.list_run_achievements(user_id, session_id)
-        rewards = [
-            r
-            for r in self.db.list_account_rewards(user_id)
-            if r.get("source_session_id") == session_id
-        ]
-        if not achievements and not rewards:
-            return {"session_id": session_id, "is_guest": False, "summary": {}}
-        death_cause = achievements[0].get("death_cause", "") if achievements else ""
-        headline_parts = [a.get("achievement_name") for a in achievements[:3] if a.get("achievement_name")]
-        headline = "、".join(headline_parts) if headline_parts else ""
-        return {
-            "session_id": session_id,
-            "is_guest": False,
-            "summary": {
-                "death_cause": death_cause,
-                "achievements": [
-                    {
-                        "key": a.get("achievement_key", ""),
-                        "name": a.get("achievement_name", ""),
-                        "description": a.get("description", ""),
-                    }
-                    for a in achievements
-                ],
-                "rewards": [
-                    {
-                        "type": r.get("reward_type", ""),
-                        "value": r.get("reward_value", ""),
-                        "label": r.get("label", ""),
-                    }
-                    for r in rewards
-                ],
-                "headline": headline,
-            },
-        }
-
     def legacy_bonuses(self, user_id: str) -> list[dict[str, Any]]:
-        if not user_id or is_guest_user_id(user_id):
-            return []
-        return self.db.list_legacy_bonuses(user_id)
+        return self._death_rewards.legacy_bonuses(user_id)
 
     def model_settings(self, user_id: str) -> dict[str, Any]:
-        return self._public_model_settings(self._effective_model_config(user_id))
+        svc = self._model_config
+        return svc.public_settings(svc.effective(user_id))
 
     def update_model_settings(self, user_id: str, payload: dict[str, Any]) -> dict[str, Any]:
         current = self.db.get_user_model_config(user_id) or {}
-        config = self._build_stored_model_config(payload, existing=current)
+        config = self._model_config.build_stored(payload, existing=current)
         self.db.save_user_model_config(user_id, config)
         return self.model_settings(user_id)
 
@@ -584,124 +497,14 @@ class WebGameService:
         return self.model_settings(user_id)
 
     def admin_model_settings(self) -> dict[str, Any]:
-        return self._public_model_settings(self._system_model_config())
+        svc = self._model_config
+        return svc.public_settings(svc.system())
 
     def update_admin_model_settings(self, payload: dict[str, Any]) -> dict[str, Any]:
         current = self.db.get_model_config() or {}
-        config = self._build_stored_model_config(payload, existing=current)
+        config = self._model_config.build_stored(payload, existing=current)
         self.db.save_model_config(config)
         return self.admin_model_settings()
-
-    def _build_stored_model_config(
-        self,
-        payload: dict[str, Any],
-        *,
-        existing: dict[str, Any] | None = None,
-    ) -> dict[str, Any]:
-        existing = existing or {}
-        base_url = str(payload.get("base_url") or Settings().base_url).strip()
-        model = str(payload.get("model") or Settings().model).strip()
-        provider = str(payload.get("provider") or "Agens").strip()
-        api_key = str(payload.get("api_key") or "").strip()
-        encrypted = str(existing.get("api_key_encrypted") or "")
-        masked = str(existing.get("api_key_masked") or "<unset>")
-        if api_key:
-            try:
-                encrypted = encrypt_api_key(api_key)
-            except ModelConfigSecretError as exc:
-                raise ValueError("MODEL_CONFIG_SECRET is required to save model keys.") from exc
-            masked = mask_api_key(api_key)
-        elif not encrypted:
-            raise ValueError("API Key is required when creating a stored model config.")
-        api_key_set = bool(encrypted)
-        return {
-            "provider": provider,
-            "base_url": base_url,
-            "model": model,
-            "api_key_set": api_key_set,
-            "api_key_masked": masked if api_key_set else "<unset>",
-            "api_key_encrypted": encrypted,
-        }
-
-    def _public_model_settings(self, config: dict[str, Any]) -> dict[str, Any]:
-        return {
-            "provider": config.get("provider") or "Agens",
-            "base_url": config.get("base_url") or Settings().base_url,
-            "model": config.get("model") or Settings().model,
-            "api_key_set": bool(config.get("api_key_set")),
-            "api_key_masked": str(config.get("api_key_masked") or "<unset>"),
-            "source": config.get("source") or "system",
-        }
-
-    def _system_model_config(self) -> dict[str, Any]:
-        stored = self.db.get_model_config() or {}
-        settings = Settings()
-        source = "system"
-        env_key = os.environ.get("AGNES_API_KEY", "")
-        if stored:
-            encrypted = str(stored.get("api_key_encrypted") or "")
-            config = {
-                "provider": stored.get("provider") or "Agens",
-                "base_url": stored.get("base_url") or settings.base_url,
-                "model": stored.get("model") or settings.model,
-                "api_key_set": bool(encrypted or env_key),
-                "api_key_masked": stored.get("api_key_masked") if encrypted else (mask_api_key(env_key) if env_key else "<unset>"),
-                "api_key_encrypted": encrypted,
-                "source": source,
-            }
-            if not encrypted and env_key:
-                config["api_key"] = env_key
-        else:
-            config = {
-                "provider": "Agens",
-                "base_url": os.environ.get("AGNES_BASE_URL") or settings.base_url,
-                "model": os.environ.get("AGNES_MODEL") or settings.model,
-                "api_key_set": bool(env_key),
-                "api_key_masked": mask_api_key(env_key) if env_key else "<unset>",
-                "api_key_encrypted": "",
-                "source": source,
-                "api_key": env_key,
-            }
-        return config
-
-    def _effective_model_config(self, user_id: str | None) -> dict[str, Any]:
-        if user_id and not is_guest_user_id(user_id):
-            personal = self.db.get_user_model_config(user_id)
-            if personal is not None and personal.get("api_key_encrypted"):
-                return {
-                    "provider": personal.get("provider") or "Agens",
-                    "base_url": personal.get("base_url") or Settings().base_url,
-                    "model": personal.get("model") or Settings().model,
-                    "api_key_set": bool(personal.get("api_key_encrypted")),
-                    "api_key_masked": personal.get("api_key_masked") if personal.get("api_key_encrypted") else "<unset>",
-                    "api_key_encrypted": personal.get("api_key_encrypted") or "",
-                    "source": "user",
-                }
-        return self._system_model_config()
-
-    def _runtime_model_config(self, user_id: str | None) -> dict[str, Any]:
-        effective = self._effective_model_config(user_id)
-        encrypted = str(effective.get("api_key_encrypted") or "")
-        api_key = str(effective.get("api_key") or "")
-        key_error = ""
-        if encrypted:
-            try:
-                api_key = decrypt_api_key(encrypted)
-            except ModelConfigSecretError:
-                api_key = ""
-                key_error = "MODEL_CONFIG_SECRET unavailable"
-        return {
-            "provider": effective.get("provider") or "Agens",
-            "base_url": effective.get("base_url") or Settings().base_url,
-            "model": effective.get("model") or Settings().model,
-            "api_key": api_key,
-            "api_key_set": bool(api_key),
-            "source": effective.get("source") or "system",
-            "key_error": key_error,
-        }
-
-    def _apply_runner_model_config(self, runner: WebRunner) -> None:
-        runner.engine.model_config = self._runtime_model_config(runner.user_id)
 
     def _require_non_guest_runner(
         self,
