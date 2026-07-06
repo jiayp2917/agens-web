@@ -53,12 +53,12 @@ P0 is currently closed for the latest local and production batches. Re-run only 
 Next work should be data-led and gameplay-facing.
 
 1. Continue latency work from the post-fix evidence.
-   - `local-visible-p1-final-20260706` shows repair is no longer the dominant cost: repair 0/20, judge 3 turns, average narrator about 22.5s, average judge about 21.8s.
-   - Do not treat the repair reduction as a full performance fix; total choice latency is still too high.
-2. Choose the next latency fix from evidence.
+   - `local-visible-p1-final-20260706`: repair 0/20 (lever exhausted), judge 3 turns (narrowed from 6), average narrator ~22.5s, average judge ~21.8s. Remaining latency is in **provider/narrator first response + history size**, not repair.
+   - Do not treat repair/judge reduction as a performance fix; total choice latency (~25.9s avg) is still too high.
+2. Choose the next latency fix from evidence (provider/narrator/history, not repair/judge).
    - If prompt/history grows: compress `chat_history` into summary + recent turns.
-   - If narrator still emits narrative-only outputs: tighten the narrator output contract/parser without accepting missing narrative or missing usable choices as success.
-   - If judge dominates: narrow judge trigger conditions to authoritative/risky state changes.
+   - If narrator still emits narrative-only outputs: tighten the narrator output contract/parser without accepting missing narrative or missing usable choices as success. (Parser refactor is high-risk — see the `narrator/nodes.py` deferred batch; sample first.)
+   - Judge triggers already narrowed (6→3); further narrowing has diminishing returns.
    - If provider dominates: document model performance differences and rely on user-configurable providers.
 3. Improve 20-turn playable content.
    - Add the 0-16 岁 opening chronicle per `docs/GAME_MODE_SPEC.md` §3.5.
@@ -67,7 +67,6 @@ Next work should be data-led and gameplay-facing.
    - Reduce repeated retreat/breakthrough loops.
    - Keep small-realm progress mostly implicit; reserve major breakthroughs for stage events.
    - Keep Qi Refining pacing credible: age and turn count should prevent a 20-turn slice from lingering in early small layers.
-   - Keep the sidebar "外界情报" read-only and fed by existing world summaries; do not turn it into a new resource system until the gameplay design explicitly calls for one.
 4. Tighten authoritative state accounting.
    - Key items, techniques, attribute growth, titles, relationships, injuries, lifespan, realm changes, and karma must be structured state or rewritten/suppressed.
    - Ordinary chronicle rumors, intentions, or non-authoritative color text do not automatically become inventory.
@@ -86,6 +85,7 @@ Only do complexity work that supports the main flow.
 
 ## P2: Documentation And Cleanup
 
+- Governance invariant (demoted from P1 §3): the sidebar "外界情报" is read-only, fed by existing world summaries; it is not a future resource system unless the gameplay design explicitly calls for one.
 - Keep `docs/INDEX.md`, `docs/PLAYABLE_GAMEPLAY_ROADMAP_20260629.md`, `docs/GAME_MODE_SPEC.md`, `docs/RUNTIME_FLOW.md`, and this file aligned.
 - Historical planning drafts and UI prototypes have been removed from `docs/archive/`; current state belongs in current docs, and history belongs in `CHANGELOG.md` or concise lessons sections.
 - Keep `scripts/start_local_pg.ps1` as the PG startup/recovery helper. Do not delete `.tmp\pg-test-20260626-55432` while PG is running.
@@ -140,28 +140,27 @@ Sourced from the read-only subagent audit (see `docs/PROJECT_AUDIT.md` same-date
 
 ### 留后续项（2026-07-06 复核审计后，本轮处理后剩余）
 
-2026-07-06 复核审计（见 `docs/PROJECT_AUDIT.md` 同日"复核审计"段）登记的多数遗留项已于本轮（commits `f7fa7e8`..`397a412`）处理：死代码 7 项清理、`call_agnes_llm` 抽 common、`import logging` 迁移、`normalize_choices` docstring drift、CHANGELOG superseded 标注、AGENTS↔CLAUDE 仓库内准则块 source-of-truth 标注。bare-except 8 处经评估**保留**为 defensive seam。复核推翻的项（三套 merge helper 合并、`normalize_choices` 合并、world-reset 关键词、`_choose_model_failure` 误判）见 PROJECT_AUDIT 复核段，不再列为待办。以下为仍未处理项：
+2026-07-06 复核审计（见 `docs/PROJECT_AUDIT.md` 同日"复核审计"段）登记的多数遗留项已于本轮（commits `f7fa7e8`..`59dc483` + retire/demote 固化批）处理：死代码 7 项清理、`call_agnes_llm` 抽 common、`import logging` 迁移、`normalize_choices` docstring drift、CHANGELOG superseded 标注、AGENTS↔CLAUDE 仓库内准则块 source-of-truth 标注、`start_flow` 抽 `decline_or_continue` closure、retire/demote 固化（外界情报 demote 到 P2、repair/judge bullets 收窄）。bare-except 8 处与 A/B-C/D zip 经评估**保留/跳过**。复核推翻的项（三套 merge helper 合并、`normalize_choices` 合并、world-reset 关键词、`_choose_model_failure` 误判）见 PROJECT_AUDIT 复核段，不再列为待办。以下为仍未处理项：
 
 **已评估、有意不做**：
 
 - `save_artifact` audit dict 抽取：agent-specific parse/return 逻辑占主导，抽取增间接层、收益 modest。
 - `call_agnes_llm` narrator 合并：streaming + repair 特殊化无法干净合并（judge + world_builder 已抽取）。
 - bare-except 8 处收窄：经评估均为 intentional defensive seam（LLM 失败兜底 / UI callback / decode fallback），收窄风险 > 收益。
+- A/B-C/D letter→index zip cleanup：`game_engine.py:343` 含数字键（zip 不适用），`service.py:709` 字面量比 zip+import 更直白，净收益为负（见 commit `59dc483` 评估说明）。
 
 **待办（按主流程需要推进）**：
 
 - `narrator/nodes.py` 539 行解析器堆积（7+ 私有 JSON 容错 helper，含手写括号深度状态机，`nodes.py:226-525`）：refactor 候选，**高风险**，需谨慎不改 parse 语义，独立批次 + 充分测试预算。建议先以 20 回合采样数据证明它是延迟/契约根因再动。
-- `start_flow` confirm→fallback-or-end 模式重复 6 次（`start_flow.py:76-95,165-217`）：低优先，可抽 helper。
-- A/B/C/D letter→index 映射（`game_engine.py:343`、`service.py:709`）：服务不同输入面，不强合并；可选 `dict(zip(CHOICE_LABELS, range(4)))` minor cleanup。
 
 **跨仓库（不在本仓库范围）**：
 
 - `D:\chat\CLAUDE.md`（上级工作区治理文件）的"通用编码准则"块与本仓库 `AGENTS.md`/`CLAUDE.md` 仍重复：本仓库内已加 source-of-truth 维护说明，跨仓库同步需在上级工作区单独处理。
 
-**待固化的 retire/demote 决策**：
+**retire/demote 决策（2026-07-06 已固化）**：
 
-- "Keep the sidebar 外界情报 read-only" 已是稳定不变量，建议从 P1 §3 活动 demote 为 governance note（现仍在 P1 第 70 行）。
-- repair/judge P1 sub-bullets：repair 已 0/20、judge 3 次，lever 基本耗尽；剩余延迟工作应聚焦 provider/narrator 首次响应与 history 压缩（现仍在 P1 §1-2）。
+- "Keep the sidebar 外界情报 read-only" 已从 P1 §3 活动 demote 为 P2 governance invariant。
+- repair/judge P1 sub-bullets 已收窄：repair 0/20、judge 3 次（6→3），lever 基本耗尽；P1 §1-2 已改为聚焦 provider/narrator 首次响应与 history 压缩。
 
 ## Validation Rules
 

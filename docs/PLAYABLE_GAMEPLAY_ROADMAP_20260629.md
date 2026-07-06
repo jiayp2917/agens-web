@@ -42,13 +42,15 @@
 
 目标：先用数据定位慢因，再改 prompt/history/repair/judge/provider。
 
+现状（`local-visible-p1-final-20260706`）：repair 0/20、judge 3 次（已从 6 收窄），平均 narrator ~22.5s、judge ~21.8s；repair/judge lever 基本耗尽，当前慢因转向 **provider/narrator 首次响应与 history 规模**。
+
 下一步：
 
-- 用当前脱敏诊断跑一次真实 Chrome 20 回合采样。
+- 用当前脱敏诊断跑一次真实 Chrome 20 回合采样（确认上述现状是否仍成立）。
 - 采集平均/最大 choice 耗时、narrator 耗时、judge 耗时、repair attempt、repaired output、prompt 字符数、history 数量、game-state 字符数、token usage、fallback、`game_turns` 连续性。
 - 如果慢因是 prompt/history 增长，压缩历史为摘要 + 最近少量原文。
-- 如果慢因是 repair，收紧 narrator 输出契约和 parser。
-- 如果慢因是 judge，缩小 judge 触发条件到突破、死亡、稀有奖励、关系/称号/寿元等权威变更。
+- repair 已 0/20（lever 耗尽）；narrator parser 重构见 backlog 高风险独立批次，先采样再动。
+- judge 已从 6 收窄到 3；进一步收窄收益递减。
 - 如果慢因是 provider，记录性能差异并继续保留用户个人模型配置能力。
 
 ## P1：玩法稳定与内容改造

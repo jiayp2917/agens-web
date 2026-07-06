@@ -2,6 +2,13 @@
 
 ## 2026-07-06
 
+### Changed - start_flow helper + retire/demote 固化（commits 59dc483 + 本批）
+
+- start_flow dedup (commit `59dc483`): extracted a local `decline_or_continue(source, reason)` closure in `generate_opening_payload`, collapsing 4 line-identical confirm→fallback sites (missing_key / exception / REQUEST_FAILED / INCOMPLETE) to one-liners. The 2 `new_game` sites use a different shape (set_choices fallback) and stay as-is. No behavior change; tests/unit/game+engine 262 passed.
+- A/B-C/D zip cleanup: evaluated and SKIPPED — `game_engine.py:343`'s mapping has numeric keys (zip inapplicable); `service.py:709`'s literal is more direct than zip+import. Net value negative.
+- retire/demote 固化 (本批): demoted "外界情报 sidebar read-only" from P1 §3 activity to a P2 governance invariant; narrowed P1 §1-2 latency bullets to reflect repair 0/20 (exhausted) + judge 6→3 (diminishing returns), focusing remaining work on provider/narrator first response + history compression. Updated both `NEXT_GOVERNANCE_BACKLOG.md` and `PLAYABLE_GAMEPLAY_ROADMAP_20260629.md`.
+- `NEXT_GOVERNANCE_BACKLOG.md` "留后续项" refreshed: start_flow done, retire/demote 固化, A/B-C/D recorded as intentionally-skipped. Only `narrator/nodes.py` parser pile-up remains as a deferred high-risk batch (sample-first).
+
 ### Changed - 处理复核审计遗留项（commits f7fa7e8..397a412）
 
 Acted on the post-execution re-audit (e3103a1) deferred items. Subagent-verified, each commit independently gated.
