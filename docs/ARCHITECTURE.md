@@ -64,7 +64,7 @@
 | `choices.py` | `complete_choices()`, `fallback_choices()`, `normalize_choices()` | A/B/C/D 归一化；模型输出不足 4 个时用 `fallback_choices(session)` 按当前 `location` 兜底；D 固定为气运/天命路线 |
 | `render.py` | `format_status_bar`, `format_log` 以及历史/测试用文本格式化函数 | 状态 → 文本字符串；Web 响应当前只暴露 `panels.status_bar`，旧状态/背包/功法/地图/任务/境界工具面板不再作为产品入口 |
 | `local_story.py` | `start_local_story()`, `advance_local_story()`, `validate_local_story_graph()` | 回合期模型失败的固定本地故事图；角色创建开局模型失败优先走 profile-aware fallback，不再默认进入 `misty_gate` |
-| `profile_opening.py` | `profile_default_world`, `profile_opening`, `profile_concept`, `profile_summary`, `fate_tendency` | 开局输入归一化；按角色名、天赋、灵根、家世、难度、六维属性和随机/手选模式推导命数倾向 |
+| `profile_opening.py` | `profile_default_world`, `profile_opening`, `profile_summary`, `fate_tendency` | 开局输入归一化；按角色名、天赋、灵根、家世、难度、六维属性和随机/手选模式推导命数倾向 |
 | `world_generator.py` | `build_world_prompt`, `build_world_fallback`, `parse_world_response` | World Builder prompt + profile-aware 本地兜底；输出本局世界观、0-16 岁编年史、16 岁初始局势、外界情报和 A/B/C/D choices |
 | `death_rewards.py` | `categorize_death`, `evaluate_achievements`, `compute_rewards`, `bonuses_to_legacy`, `apply_legacy_bonuses`, `build_run_summary` | 终局分类（飞升 > 因果反噬 > 事件 > 寿元 > 手动）+ 成就评估 + 奖励计算 + 跨局传承奖励 |
 | `model_result.py` | `ModelResultKind`, `classify_narrator_result`, `classify_world_builder_result`, `classify_judge_result`, `result_diagnostics` | 模型输出分类（OK / REQUEST_FAILED / INCOMPLETE_OUTPUT / JUDGE_FAILED / LOCAL_FALLBACK）；用于遥测与 UI 兜底判定 |
@@ -118,7 +118,7 @@
 | `api/client.ts` | `api<T>()`, `User`, `Session`, `SaveRow`, `ModelSettings` | fetch 包装（`credentials: "include"`、错误抛 `Error(detail)`）；4 个核心 DTO 类型 |
 | `lib/api.ts` | `api`, `View`, `AuthMode`, `DialogMode`, `DeathSummaryResponse`, `fetchDeathSummary()`, `fetchCatalog()` | re-export + 终局摘要获取 + catalog 获取 |
 | `lib/catalog.ts` | `attributes`, `fallbackCatalogs`, `manual*Names`, `randomOnlySpiritRootNames`, `manualAttributeBudget`/`Min`/`Max`, `choiceSemantics`, `realmLifespanCap`, `modelPresets`, `visibleEventTypes`, `hiddenEventTexts` | 静态数据 + fallback |
-| `lib/util.ts` | `randomBetween`, `pickRandom`, `isManualRarity`, `uniqueByName`, `itemLabel`, `toPositiveNumber`, `eventText`, `isReadableEvent`, `formatTime` | 工具函数 |
+| `lib/util.ts` | `pickRandom`, `isManualRarity`, `uniqueByName`, `itemLabel`, `toPositiveNumber`, `eventText`, `isReadableEvent`, `formatTime` | 工具函数 |
 | `styles.css` | — | 全局样式（1105 行）；水墨主题 + `≥760px` / `≤900px` / `≤480px` 三个断点 |
 
 ### 5.2 5 个页面（`pages/`）
@@ -131,11 +131,10 @@
 | `GamePage.tsx` | 游戏主界面；左侧角色摘要 + 编年史故事行 + 4 选项；移动端顶部摘要 + 单列选项 | `POST /api/sessions/{id}/choice`（用户点击）；由 `App.runTurn()` 中转 |
 | `EndingPage.tsx` | 飞升 / 本局结束页 + `death_summary` 侧栏（成就 / 奖励 / 最近 6 条叙事） | `GET /api/sessions/{id}/death_summary` |
 
-### 5.3 7 个组件（`components/`）
+### 5.3 6 个组件（`components/`）
 
 | 组件 | Props / 行为 |
 | --- | --- |
-| `StatLine.tsx` | `{ label, value, max }`；渲染 `role="meter"` 进度条 |
 | `TutorialDialog.tsx` | `{ onClose }`；A/B/C/D 弹窗说明 |
 | `BgmToggle.tsx` | 无 props；右上角扬声器；`<audio src="/assets/audio/bgm.flac" loop preload="none" />`；音量 0.42 |
 | `FallbackBanner.tsx` | `{ session, busy, runTurn }`；模型失败时顶部条幅 + "继续本局 / 结束本局" |

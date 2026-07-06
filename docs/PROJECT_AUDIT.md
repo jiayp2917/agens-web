@@ -102,10 +102,38 @@
 | 发现 | 位置 | 级别 |
 | --- | --- | --- |
 | `INDEX.md`、`ROADMAP` 的 495/旧基线已在本次同步到 516/`p1-final` | `docs/INDEX.md`、`docs/PLAYABLE_GAMEPLAY_ROADMAP_20260629.md` | 已修 |
-| `AGENTS.md` 含两份"通用编码准则"（L1-60 详版 + L145-161 精简版），措辞已轻微分叉 | `AGENTS.md:1-60,145-161` | low |
+| `AGENTS.md` 含两份"通用编码准则"（L1-60 详版 + L145-161 精简版），措辞已轻微分叉 — **已于 2026-07-06 删除精简版（commit `026cd69`）** | `AGENTS.md:1-60,145-161` | low → 已修 |
 | `AGENTS.md` 与 `CLAUDE.md` 的准则块近乎逐字重复，改一处需同步另一处 | `AGENTS.md`、`CLAUDE.md` | low |
 | `GAME_MODE_SPEC.md` 把 `## 实现状态` 标题嵌进 `>` 引用块（结构非标准） | `docs/GAME_MODE_SPEC.md:20-35` | low |
 | `INDEX`/`RUNTIME_FLOW` 的"当前状态"段混入 dated 证据/未来指针 | 见各文档 | low |
+
+## 2026-07-06 复核审计（post-execution）
+
+第一轮审计的代码层面发现在 commits `cd57215..026cd69` 执行后，代码面貌已变（死代码删除、`WebGameService` 拆分、flow 耦合收敛）。本次基于执行后的**当前代码**再做一轮 6 维度 finder + 3 verifier 对抗式复核审计，**未修改任何代码**，仅更新文档与遗留项登记。
+
+### 新确证的死代码（上一批未抓到，verifier 全仓库 grep 复核）
+
+| 符号 | 位置 | 状态 |
+| --- | --- | --- |
+| `GameEngine.expand()` | `engine/game_engine.py:379` | 零调用（任何位置） |
+| `GameEngine.get_log()` + `format_log()` | `game_engine.py:418` + `render.py:51` | 仅测试 + `engine/README.md:20` doc row |
+| `local_story_available()` | `engine/local_story.py:295` | 零调用 |
+| `validate_local_story_graph()` | `engine/local_story.py:402` | 仅测试 |
+| `ensure_runtime_dirs()` + `CHECKPOINT_DIR` | `paths.py:28,21` | 仅 `tests/conftest.py` |
+| `MODEL_FAILURE_PROMPT` import | `game_engine.py:38` | 未用 import（常量本身亦零引用） |
+
+### 复核推翻 / 降级的发现（避免误登记为待办）
+
+- **三套 state-delta merge helper**（`merge_rule_delta` / `_merge_state_delta` / `_merge_breakthrough_delta`）：verifier 确认三者语义有意不同（rule 权威 + key 白名单 + list-append / 通用浅合并 / 突破失败 drop realm），**不应合并**。撤回旧 backlog "合并两套浅合并"提议。
+- **`normalize_choices` 两套实现**（`agents/common.py:55` vs `engine/choices.py:39`）：agents 版严格 list 契约是 load-bearing，合并会引入 `json.loads` 字符串解析的行为变化。**保留分离**；仅 `agents/common.py:9-10` docstring 与 `docs/ARCHITECTURE.md:82` 有 drift（声称"复用 engine choice 清理"但实际没有）。
+- **A/B/C/D letter→index 映射**（`game_engine.py:343` vs `service.py:709`）：服务不同输入面（自由文本 vs 按钮 payload），**不强合并**；可选 `dict(zip(CHOICE_LABELS, range(4)))` minor cleanup。
+- **world-reset 关键词**（`game_engine.py:554` vs `judge.md` / `catalog_seed.py`）：prompt 散文 ≠ code 常量，catalog 是 coincidental 用词，**false positive**。
+- **`_choose_model_failure` 总返回 `MODEL_FAILURE_CONTINUE`**：intentional——END 通过 `POST /api/sessions/{id}/end` + `<FallbackBanner>` "结束本局" 按钮可达（`ARCHITECTURE.md:309-316` + `tests/web/test_web_api.py:699` 覆盖）。**不是 bug**。
+- **`call_agnes_llm` 三处定义**：narrator 因 streaming + repair 特殊化**保留**；judge + world_builder 可抽 `common.call_agnes_llm_common`（prelude + 单次非流式 call + epilogue），比第一轮"只抽 guard"的判断更宽，但仍排除 narrator。
+
+### 保留的有效治理项
+
+`narrator/nodes.py` 539 行解析器堆积、`service.py:101,638` 等 bare-except 收窄、`import logging` 文件尾位置、`start_flow` confirm→fallback 重复、AGENTS↔CLAUDE 准则块跨文件重复（单独批次）、retire/demote 决策固化——继续登记在 `docs/NEXT_GOVERNANCE_BACKLOG.md` "留后续项"小节。
 
 ## 剩余 P0 风险
 

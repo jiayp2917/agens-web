@@ -140,22 +140,31 @@ Sourced from the read-only subagent audit (see `docs/PROJECT_AUDIT.md` same-date
 
 ### 留后续项（2026-07-06 审计未处理）
 
-下述条目在本次审计中已核实，但未在 `cd57215..026cd69` 执行批次处理；按主流程需要或单独批次推进。Complexity Governance 段中 `service.py` 的 model-config/persistence 抽取与 `game_engine` 的 flow 耦合收敛已完成，其余方向仍适用该段指引。
+下述条目经 6 维度 finder + 3 verifier 对抗式复核核实，未在 `cd57215..026cd69` 执行批次处理；按主流程需要或单独批次推进。Complexity Governance 段中 `service.py` 的 model-config/persistence 抽取与 `game_engine` 的 flow 耦合收敛已完成，其余方向仍适用该段指引。**复核推翻的项**（三套 merge helper 合并、`normalize_choices` 合并、world-reset 关键词、`_choose_model_failure` 误判）见 `docs/PROJECT_AUDIT.md` "2026-07-06 复核审计" 段，不再列为待办。
+
+**死代码清理批次（verifier 确证零调用，低风险，建议优先）**：
+
+- `GameEngine.expand()`（`engine/game_engine.py:379`）— 零调用任何位置。
+- `GameEngine.get_log()` + `format_log()`（`game_engine.py:418` + `render.py:51`）+ `engine/README.md:20` doc row — 仅测试。
+- `local_story_available()`（`engine/local_story.py:295`）— 零调用。
+- `validate_local_story_graph()`（`engine/local_story.py:402`）— 仅测试，删除须同步删 `tests/unit/engine/test_local_story_fallback.py`。
+- `ensure_runtime_dirs()` + `CHECKPOINT_DIR`（`paths.py:28,21`）— 仅 `tests/conftest.py`，删除须同步迁移 conftest 用法。
+- `MODEL_FAILURE_PROMPT` import（`game_engine.py:38`）— 未用 import（常量本身亦零引用）。
 
 **已评估、有意不做**：
 
-- `call_agnes_llm` 头部 guard 在 narrator/judge/world_builder 三处复制：verifier 判定 classify 是 logging-only，flow 层 inline check 驱动不同控制流，强行合并损失可读性。
 - `save_artifact` audit dict 抽取：verifier 发现 agent-specific parse/return 逻辑占主导，抽取增间接层、收益 modest。
+- `call_agnes_llm` 整体合并：narrator 因 streaming + repair 特殊化无法干净合并（judge + world_builder 的部分抽取见下条"待办"）。
 
 **待办（按主流程需要推进）**：
 
-- `narrator/nodes.py` 539 行解析器堆积（7+ 私有 JSON 容错 helper，含手写括号深度状态机，`nodes.py:226-525`）：refactor 候选，需谨慎不改 parse 语义。
+- `narrator/nodes.py` 539 行解析器堆积（7+ 私有 JSON 容错 helper，含手写括号深度状态机，`nodes.py:226-525`）：refactor 候选，需谨慎不改 parse 语义，独立批次 + 充分测试预算。
+- `call_agnes_llm` 抽 `common.call_agnes_llm_common`（prelude + 单次非流式 call + epilogue）：仅 judge + world_builder 适用，narrator 保留（streaming/repair）。MEDIUM。
 - bare-except：catalog 2 处已收窄为 `SQLAlchemyError`；`web/backend/service.py:101,638` 仍剩 2 处，全仓库其余分散处待逐处评估收窄 + `log.warning`。
-- `validate_local_story_graph`：production 零调用但有 `tests/unit/engine/test_local_story_fallback.py` 覆盖；删除须同步删测试，待确认无 production 价值。
+- `normalize_choices` docstring drift：`agents/common.py:9-10` 与 `docs/ARCHITECTURE.md:82` 声称"复用 engine choice 清理"但实际没有——修 docstring，不改实现。
 - `start_flow` confirm→fallback-or-end 模式重复 6 次（`start_flow.py:76-95,165-217`）：低优先，可抽 helper。
-- 三套 state-delta merge helper（两套浅合并可合一，`merge_rule_delta` 保留）：`turn_flow.py:434-444`、`breakthrough_flow.py:108-123`。
+- A/B/C/D letter→index 映射（`game_engine.py:343`、`service.py:709`）：服务不同输入面，不强合并；可选 `dict(zip(CHOICE_LABELS, range(4)))` minor cleanup。
 - `import logging` 位于 `service.py` 文件尾（`# noqa: E402`）：移到文件头，低优先。
-- A/B/C/D 映射在 3 处各自定义、world-reset 关键词硬编码（`choices.py:12`、`service.py:904`、`game_engine.py:354,558-566`）：可统一，低优先。
 - CHANGELOG 旧条目称普通回合 `repair=True`（`CHANGELOG.md:438-440`，已被当日顶部条目反转）：可选标注 superseded。
 
 **跨文件协同（单独一次处理）**：

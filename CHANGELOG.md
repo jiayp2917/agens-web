@@ -2,6 +2,16 @@
 
 ## 2026-07-06
 
+### Changed - post-execution re-audit (no code change)
+
+Second 6-dimension finder audit + 3 adversarial verifier passes on the CURRENT codebase (post `cd57215..9f87660`), since the first audit's baseline predates those 11 commits. No code modified; this pass only updates docs and the deferred-items backlog.
+
+- Confirmed 7 new dead symbols (verifier grep-verified zero callers): `GameEngine.expand()`, `get_log()`+`format_log()`, `local_story_available()`, `validate_local_story_graph()` (test-only), `ensure_runtime_dirs()`+`CHECKPOINT_DIR` (test-only), and the unused `MODEL_FAILURE_PROMPT` import → registered as a low-risk cleanup batch in `NEXT_GOVERNANCE_BACKLOG.md`.
+- Refuted 5 prior findings so they are NOT filed as todos: the three state-delta merge helpers are intentionally distinct (do NOT combine); the two `normalize_choices` implementations stay separate (the agents version's strict-list contract is load-bearing); A/B/C/D letter→index mapping serves different input surfaces (no consolidation); world-reset keyword "duplication" is prompt-prose ≠ code-constant (false positive); `_choose_model_failure` always returning CONTINUE is intentional (END is reachable via `POST /api/sessions/{id}/end` + `<FallbackBanner>`, test-covered).
+- Narrowed `call_agnes_llm`: judge + world_builder extractable to `common.call_agnes_llm_common`; narrator stays (streaming/repair).
+- Stale-doc fixes: `README.md` 516→503 (missed in the prior sync), `docs/ARCHITECTURE.md` module tables (removed deleted `profile_concept`/`randomBetween`/`StatLine.tsx`, 7→6 components), `docs/PROJECT_AUDIT.md` governance row (AGENTS duplicate-guidelines block marked 已修).
+- Added `docs/PROJECT_AUDIT.md` "2026-07-06 复核审计（post-execution）" section; rewrote `docs/NEXT_GOVERNANCE_BACKLOG.md` "留后续项" subsection (dead-code batch added, refuted items removed).
+
 ### Changed - post-audit documentation sync
 
 - Synced stale validation counts in `docs/INDEX.md`, `docs/PROJECT_AUDIT.md`, `docs/PLAYABLE_GAMEPLAY_ROADMAP_20260629.md`, and `docs/NEXT_GOVERNANCE_BACKLOG.md` from `516 passed` to `503 passed` (13 dead tests dropped in the audit execution batch; full `pytest -q` is 503 passed with `TEST_DATABASE_URL` configured — 426 passed + 77 skipped when the web-DB URL is unset, code unchanged since the 503 verification).
