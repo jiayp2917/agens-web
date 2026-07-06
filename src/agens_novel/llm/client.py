@@ -19,6 +19,7 @@ from typing import Any, Callable
 
 import httpx
 
+from agens_novel.settings import Settings
 from .retry import with_retry
 from .sse import extract_delta_text
 from .types import LLMResponse, Message, Usage
@@ -48,9 +49,9 @@ def _resolve_config(
     Base URL and model keep safe defaults; API key must be supplied by
     explicit arg or ``AGNES_API_KEY``.
     """
-    base = base_url or os.environ.get("AGNES_BASE_URL") or "https://apihub.agnes-ai.com/v1"
+    base = base_url or os.environ.get("AGNES_BASE_URL") or Settings().base_url
     key = os.environ.get("AGNES_API_KEY", "") if api_key is None else api_key
-    mdl = model or os.environ.get("AGNES_MODEL", "agnes-2.0-flash")
+    mdl = model or os.environ.get("AGNES_MODEL", Settings().model)
     return base, key, mdl
 
 

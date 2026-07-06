@@ -599,8 +599,8 @@ class WebGameService:
         existing: dict[str, Any] | None = None,
     ) -> dict[str, Any]:
         existing = existing or {}
-        base_url = str(payload.get("base_url") or "https://apihub.agnes-ai.com/v1").strip()
-        model = str(payload.get("model") or "agnes-2.0-flash").strip()
+        base_url = str(payload.get("base_url") or Settings().base_url).strip()
+        model = str(payload.get("model") or Settings().model).strip()
         provider = str(payload.get("provider") or "Agens").strip()
         api_key = str(payload.get("api_key") or "").strip()
         encrypted = str(existing.get("api_key_encrypted") or "")
@@ -626,8 +626,8 @@ class WebGameService:
     def _public_model_settings(self, config: dict[str, Any]) -> dict[str, Any]:
         return {
             "provider": config.get("provider") or "Agens",
-            "base_url": config.get("base_url") or "https://apihub.agnes-ai.com/v1",
-            "model": config.get("model") or "agnes-2.0-flash",
+            "base_url": config.get("base_url") or Settings().base_url,
+            "model": config.get("model") or Settings().model,
             "api_key_set": bool(config.get("api_key_set")),
             "api_key_masked": str(config.get("api_key_masked") or "<unset>"),
             "source": config.get("source") or "system",
@@ -670,8 +670,8 @@ class WebGameService:
             if personal is not None and personal.get("api_key_encrypted"):
                 return {
                     "provider": personal.get("provider") or "Agens",
-                    "base_url": personal.get("base_url") or "https://apihub.agnes-ai.com/v1",
-                    "model": personal.get("model") or "agnes-2.0-flash",
+                    "base_url": personal.get("base_url") or Settings().base_url,
+                    "model": personal.get("model") or Settings().model,
                     "api_key_set": bool(personal.get("api_key_encrypted")),
                     "api_key_masked": personal.get("api_key_masked") if personal.get("api_key_encrypted") else "<unset>",
                     "api_key_encrypted": personal.get("api_key_encrypted") or "",
@@ -692,8 +692,8 @@ class WebGameService:
                 key_error = "MODEL_CONFIG_SECRET unavailable"
         return {
             "provider": effective.get("provider") or "Agens",
-            "base_url": effective.get("base_url") or "https://apihub.agnes-ai.com/v1",
-            "model": effective.get("model") or "agnes-2.0-flash",
+            "base_url": effective.get("base_url") or Settings().base_url,
+            "model": effective.get("model") or Settings().model,
             "api_key": api_key,
             "api_key_set": bool(api_key),
             "source": effective.get("source") or "system",

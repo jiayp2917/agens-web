@@ -9,6 +9,8 @@ from typing import Any
 from sqlalchemy import create_engine, text
 from sqlalchemy.engine import Engine
 
+from agens_novel.settings import Settings
+
 from .database_common import (
     CATALOG_TABLES,
     decode_json_fields,
@@ -295,8 +297,8 @@ class PostgresWebDatabase:
     def _model_config_data(self, config: dict[str, Any], *, updated_at: float | None = None) -> dict[str, Any]:
         return {
             "provider": str(config.get("provider") or "Agens"),
-            "base_url": str(config.get("base_url") or "https://apihub.agnes-ai.com/v1"),
-            "model": str(config.get("model") or "agnes-2.0-flash"),
+            "base_url": str(config.get("base_url") or Settings().base_url),
+            "model": str(config.get("model") or Settings().model),
             "api_key_masked": str(config.get("api_key_masked") or "<unset>"),
             "api_key_set": bool(config.get("api_key_set")),
             "api_key_encrypted": str(config.get("api_key_encrypted") or ""),

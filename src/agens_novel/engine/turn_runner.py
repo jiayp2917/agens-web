@@ -12,6 +12,7 @@ import logging
 import uuid
 from typing import Any, Callable
 
+from agens_novel.settings import Settings
 from ..session.game_session import GameSession
 
 log = logging.getLogger(__name__)
@@ -82,8 +83,8 @@ def run_turn_sync(
         "user_input": user_input,
         "game_state_json": json.dumps(session.as_game_state(), ensure_ascii=False),
         "thread_id": kwargs.pop("thread_id", None) or f"turn-{uuid.uuid4().hex[:8]}",
-        "model": os.environ.get("AGNES_MODEL", "agnes-2.0-flash"),
-        "base_url": os.environ.get("AGNES_BASE_URL", "https://apihub.agnes-ai.com/v1"),
+        "model": os.environ.get("AGNES_MODEL", Settings().model),
+        "base_url": os.environ.get("AGNES_BASE_URL", Settings().base_url),
         "api_key_set": bool(os.environ.get("AGNES_API_KEY", "")),
     }
 

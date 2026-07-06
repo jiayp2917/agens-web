@@ -15,6 +15,7 @@ import os
 from collections.abc import Callable
 from typing import Any
 
+from agens_novel.settings import Settings
 from ..game.realm import RealmSystem
 from ..session.game_session import GameSession
 from .choices import (
@@ -189,8 +190,8 @@ class GameEngine:
     ) -> None:
         """Write a non-secret model diagnostic line for runtime triage."""
         model_config = self.model_config if isinstance(self.model_config, dict) else {}
-        model = model_config.get("model") or os.environ.get("AGNES_MODEL", "agnes-2.0-flash")
-        base_url = model_config.get("base_url") or os.environ.get("AGNES_BASE_URL", "https://apihub.agnes-ai.com/v1")
+        model = model_config.get("model") or os.environ.get("AGNES_MODEL", Settings().model)
+        base_url = model_config.get("base_url") or os.environ.get("AGNES_BASE_URL", Settings().base_url)
         diagnostics = result_diagnostics(result)
         log.info(
             "model_result agent=%s source=%s status=%s model_set=%s base_url_set=%s key_set=%s config_source=%s reason=%s diagnostics=%s",

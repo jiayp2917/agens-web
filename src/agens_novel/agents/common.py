@@ -13,6 +13,7 @@ import logging
 import os
 from typing import Any
 
+from agens_novel.settings import Settings
 from ..artifacts import store
 from ..engine.choices import clean_choice_text
 from ..utils.timing import utcnow_iso
@@ -28,8 +29,8 @@ def load_agent_settings(agent_name: str, state: dict[str, Any] | None = None) ->
     user's key cannot leak into another request through process globals.
     """
     state = state or {}
-    base_url = str(state.get("base_url") or os.environ.get("AGNES_BASE_URL") or "https://apihub.agnes-ai.com/v1")
-    model = str(state.get("model") or os.environ.get("AGNES_MODEL") or "agnes-2.0-flash")
+    base_url = str(state.get("base_url") or os.environ.get("AGNES_BASE_URL") or Settings().base_url)
+    model = str(state.get("model") or os.environ.get("AGNES_MODEL") or Settings().model)
     if "api_key" in state:
         api_key = str(state.get("api_key") or "")
     else:
