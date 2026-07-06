@@ -2,6 +2,20 @@
 
 ## 2026-07-06
 
+### Changed - 处理复核审计遗留项（commits f7fa7e8..397a412）
+
+Acted on the post-execution re-audit (e3103a1) deferred items. Subagent-verified, each commit independently gated.
+
+- Dead code (-136 lines, commit `f7fa7e8`): removed 7 verifier-confirmed zero-caller symbols — `GameEngine.expand()`, `get_log()`+`format_log()`, `local_story_available()`, `validate_local_story_graph()` (test-only), `ensure_runtime_dirs()`+`CHECKPOINT_DIR` (conftest-only), unused `MODEL_FAILURE_PROMPT` import + constant. Synced tests/conftest/README; `service.py` now imports `MODEL_FAILURE_CONTINUE` directly from `model_fallback_policy` (was a fragile game_engine re-export).
+- LLM-call dedup (commit `0ade2db`): extracted `common.call_agnes_llm_common` for judge + world_builder (shared api_key/messages guard prelude + LLMError epilogue); narrator keeps its own (streaming + repair). Fixed conftest fixture patch paths.
+- Low-risk cleanup (commit `397a412`): moved `service.py` `import logging` from file-tail (`# noqa: E402`) to top; fixed `ARCHITECTURE.md` `normalize_choices` drift + documented shared `prompt_metrics`/`call_agnes_llm_common`; marked the CHANGELOG 2026-06-27 `repair_incomplete_output=True` claim superseded.
+- AGENTS↔CLAUDE (本批): added source-of-truth maintenance notes to both in-repo guideline blocks (AGENTS.md = source, CLAUDE.md = synced copy) so future edits stay aligned. `D:\chat\CLAUDE.md` (parent workspace) intentionally out of scope.
+- bare-except assessment (no code change): all 8 `except Exception` sites KEPT as intentional defensive seams (6 LLM-wrapping sites already `log.exception` + must fall back to local story; `model_fallback_policy:43` wraps arbitrary UI callback; `llm/client:308` guards `resp.read()` edge cases — decode uses "replace" so `UnicodeDecodeError` cannot fire). Narrowing would risk letting unforeseen exceptions crash turns. Conclusion logged in `NEXT_GOVERNANCE_BACKLOG.md`.
+
+Validation: compileall clean; tests/unit 372 passed; full pytest 499 passed (4 dead-symbol tests removed: test_local_story_graph_has_no_dead_nodes, TestFormatLog×2, test_get_log_empty); no frontend change; no API behavior change.
+
+Deferred: `narrator/nodes.py` 539-line parser pile-up remains a high-risk independent batch (needs 20-turn sampling data to prove it is the latency/contract root cause before refactoring).
+
 ### Changed - post-execution re-audit (no code change)
 
 Second 6-dimension finder audit + 3 adversarial verifier passes on the CURRENT codebase (post `cd57215..9f87660`), since the first audit's baseline predates those 11 commits. No code modified; this pass only updates docs and the deferred-items backlog.

@@ -138,38 +138,25 @@ Sourced from the read-only subagent audit (see `docs/PROJECT_AUDIT.md` same-date
 - "Keep the sidebar 外界情报 read-only" is already a stable invariant; demote from active P1 to a governance note.
 - The repair/judge P1 sub-bullets ("tighten narrator output contract/parser", "narrow judge triggers") should be narrowed: repair is already 0/20 and judge is 3, so the lever is largely exhausted; remaining latency work should focus on provider/narrator first response and history compression.
 
-### 留后续项（2026-07-06 审计未处理）
+### 留后续项（2026-07-06 复核审计后，本轮处理后剩余）
 
-下述条目经 6 维度 finder + 3 verifier 对抗式复核核实，未在 `cd57215..026cd69` 执行批次处理；按主流程需要或单独批次推进。Complexity Governance 段中 `service.py` 的 model-config/persistence 抽取与 `game_engine` 的 flow 耦合收敛已完成，其余方向仍适用该段指引。**复核推翻的项**（三套 merge helper 合并、`normalize_choices` 合并、world-reset 关键词、`_choose_model_failure` 误判）见 `docs/PROJECT_AUDIT.md` "2026-07-06 复核审计" 段，不再列为待办。
-
-**死代码清理批次（verifier 确证零调用，低风险，建议优先）**：
-
-- `GameEngine.expand()`（`engine/game_engine.py:379`）— 零调用任何位置。
-- `GameEngine.get_log()` + `format_log()`（`game_engine.py:418` + `render.py:51`）+ `engine/README.md:20` doc row — 仅测试。
-- `local_story_available()`（`engine/local_story.py:295`）— 零调用。
-- `validate_local_story_graph()`（`engine/local_story.py:402`）— 仅测试，删除须同步删 `tests/unit/engine/test_local_story_fallback.py`。
-- `ensure_runtime_dirs()` + `CHECKPOINT_DIR`（`paths.py:28,21`）— 仅 `tests/conftest.py`，删除须同步迁移 conftest 用法。
-- `MODEL_FAILURE_PROMPT` import（`game_engine.py:38`）— 未用 import（常量本身亦零引用）。
+2026-07-06 复核审计（见 `docs/PROJECT_AUDIT.md` 同日"复核审计"段）登记的多数遗留项已于本轮（commits `f7fa7e8`..`397a412`）处理：死代码 7 项清理、`call_agnes_llm` 抽 common、`import logging` 迁移、`normalize_choices` docstring drift、CHANGELOG superseded 标注、AGENTS↔CLAUDE 仓库内准则块 source-of-truth 标注。bare-except 8 处经评估**保留**为 defensive seam。复核推翻的项（三套 merge helper 合并、`normalize_choices` 合并、world-reset 关键词、`_choose_model_failure` 误判）见 PROJECT_AUDIT 复核段，不再列为待办。以下为仍未处理项：
 
 **已评估、有意不做**：
 
-- `save_artifact` audit dict 抽取：verifier 发现 agent-specific parse/return 逻辑占主导，抽取增间接层、收益 modest。
-- `call_agnes_llm` 整体合并：narrator 因 streaming + repair 特殊化无法干净合并（judge + world_builder 的部分抽取见下条"待办"）。
+- `save_artifact` audit dict 抽取：agent-specific parse/return 逻辑占主导，抽取增间接层、收益 modest。
+- `call_agnes_llm` narrator 合并：streaming + repair 特殊化无法干净合并（judge + world_builder 已抽取）。
+- bare-except 8 处收窄：经评估均为 intentional defensive seam（LLM 失败兜底 / UI callback / decode fallback），收窄风险 > 收益。
 
 **待办（按主流程需要推进）**：
 
-- `narrator/nodes.py` 539 行解析器堆积（7+ 私有 JSON 容错 helper，含手写括号深度状态机，`nodes.py:226-525`）：refactor 候选，需谨慎不改 parse 语义，独立批次 + 充分测试预算。
-- `call_agnes_llm` 抽 `common.call_agnes_llm_common`（prelude + 单次非流式 call + epilogue）：仅 judge + world_builder 适用，narrator 保留（streaming/repair）。MEDIUM。
-- bare-except：catalog 2 处已收窄为 `SQLAlchemyError`；`web/backend/service.py:101,638` 仍剩 2 处，全仓库其余分散处待逐处评估收窄 + `log.warning`。
-- `normalize_choices` docstring drift：`agents/common.py:9-10` 与 `docs/ARCHITECTURE.md:82` 声称"复用 engine choice 清理"但实际没有——修 docstring，不改实现。
+- `narrator/nodes.py` 539 行解析器堆积（7+ 私有 JSON 容错 helper，含手写括号深度状态机，`nodes.py:226-525`）：refactor 候选，**高风险**，需谨慎不改 parse 语义，独立批次 + 充分测试预算。建议先以 20 回合采样数据证明它是延迟/契约根因再动。
 - `start_flow` confirm→fallback-or-end 模式重复 6 次（`start_flow.py:76-95,165-217`）：低优先，可抽 helper。
 - A/B/C/D letter→index 映射（`game_engine.py:343`、`service.py:709`）：服务不同输入面，不强合并；可选 `dict(zip(CHOICE_LABELS, range(4)))` minor cleanup。
-- `import logging` 位于 `service.py` 文件尾（`# noqa: E402`）：移到文件头，低优先。
-- CHANGELOG 旧条目称普通回合 `repair=True`（`CHANGELOG.md:438-440`，已被当日顶部条目反转）：可选标注 superseded。
 
-**跨文件协同（单独一次处理）**：
+**跨仓库（不在本仓库范围）**：
 
-- `AGENTS.md` 与 `CLAUDE.md`（含 `D:\chat\CLAUDE.md`）的"通用编码准则"块近乎逐字重复：涉及多个治理根文件协同修改，2026-07-06 审计明确留作单独一次处理。
+- `D:\chat\CLAUDE.md`（上级工作区治理文件）的"通用编码准则"块与本仓库 `AGENTS.md`/`CLAUDE.md` 仍重复：本仓库内已加 source-of-truth 维护说明，跨仓库同步需在上级工作区单独处理。
 
 **待固化的 retire/demote 决策**：
 

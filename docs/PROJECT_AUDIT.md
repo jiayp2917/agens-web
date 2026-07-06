@@ -111,7 +111,7 @@
 
 第一轮审计的代码层面发现在 commits `cd57215..026cd69` 执行后，代码面貌已变（死代码删除、`WebGameService` 拆分、flow 耦合收敛）。本次基于执行后的**当前代码**再做一轮 6 维度 finder + 3 verifier 对抗式复核审计，**未修改任何代码**，仅更新文档与遗留项登记。
 
-### 新确证的死代码（上一批未抓到，verifier 全仓库 grep 复核）
+### 新确证的死代码（已于 2026-07-06 commit `f7fa7e8` 删除，verifier 全仓库 grep 复核）
 
 | 符号 | 位置 | 状态 |
 | --- | --- | --- |
@@ -122,6 +122,8 @@
 | `ensure_runtime_dirs()` + `CHECKPOINT_DIR` | `paths.py:28,21` | 仅 `tests/conftest.py` |
 | `MODEL_FAILURE_PROMPT` import | `game_engine.py:38` | 未用 import（常量本身亦零引用） |
 
+以上 7 项符号 + `MODEL_FAILURE_PROMPT` 常量定义均已删除（含同步删除/迁移对应测试与 conftest 用法）。`service.py` 改为直接从 `model_fallback_policy` 导入 `MODEL_FAILURE_CONTINUE`（原本依赖 `game_engine` 的脆弱 re-export）。
+
 ### 复核推翻 / 降级的发现（避免误登记为待办）
 
 - **三套 state-delta merge helper**（`merge_rule_delta` / `_merge_state_delta` / `_merge_breakthrough_delta`）：verifier 确认三者语义有意不同（rule 权威 + key 白名单 + list-append / 通用浅合并 / 突破失败 drop realm），**不应合并**。撤回旧 backlog "合并两套浅合并"提议。
@@ -129,11 +131,13 @@
 - **A/B/C/D letter→index 映射**（`game_engine.py:343` vs `service.py:709`）：服务不同输入面（自由文本 vs 按钮 payload），**不强合并**；可选 `dict(zip(CHOICE_LABELS, range(4)))` minor cleanup。
 - **world-reset 关键词**（`game_engine.py:554` vs `judge.md` / `catalog_seed.py`）：prompt 散文 ≠ code 常量，catalog 是 coincidental 用词，**false positive**。
 - **`_choose_model_failure` 总返回 `MODEL_FAILURE_CONTINUE`**：intentional——END 通过 `POST /api/sessions/{id}/end` + `<FallbackBanner>` "结束本局" 按钮可达（`ARCHITECTURE.md:309-316` + `tests/web/test_web_api.py:699` 覆盖）。**不是 bug**。
-- **`call_agnes_llm` 三处定义**：narrator 因 streaming + repair 特殊化**保留**；judge + world_builder 可抽 `common.call_agnes_llm_common`（prelude + 单次非流式 call + epilogue），比第一轮"只抽 guard"的判断更宽，但仍排除 narrator。
+- **`call_agnes_llm` 三处定义**：judge + world_builder 已于 commit `0ade2db` 抽取为 `common.call_agnes_llm_common`（共享 prelude + 单次非流式 call + epilogue）；narrator 因 streaming + repair 特殊化保留自有实现。
 
-### 保留的有效治理项
+### 保留的有效治理项（2026-07-06 处理状态）
 
-`narrator/nodes.py` 539 行解析器堆积、`service.py:101,638` 等 bare-except 收窄、`import logging` 文件尾位置、`start_flow` confirm→fallback 重复、AGENTS↔CLAUDE 准则块跨文件重复（单独批次）、retire/demote 决策固化——继续登记在 `docs/NEXT_GOVERNANCE_BACKLOG.md` "留后续项"小节。
+本轮（commits `f7fa7e8`..`397a412`）已处理：死代码 7 项清理、`call_agnes_llm` 抽 common（judge + world_builder）、`import logging` 迁到 `service.py` 文件头、`normalize_choices` docstring drift 修复、CHANGELOG `repair=True` 旧条目标注 superseded、AGENTS↔CLAUDE 仓库内准则块加 source-of-truth 维护说明。bare-except 8 处经评估**保留**为 intentional defensive seam（已 `log.exception` / graceful fallback，收窄风险 > 收益）。
+
+仍登记在 `docs/NEXT_GOVERNANCE_BACKLOG.md` "留后续项"小节的待办：`narrator/nodes.py` 539 行解析器堆积（高风险，独立批次，需 20 回合采样数据先证明是根因）、`start_flow` confirm→fallback 重复（低优先）、A/B/C/D 映射可选 zip cleanup、retire/demote 决策固化。
 
 ## 剩余 P0 风险
 
