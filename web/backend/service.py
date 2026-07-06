@@ -14,8 +14,8 @@ from agens_novel.engine.death_rewards import (
     apply_legacy_bonuses,
 )
 from agens_novel.engine.choices import clean_choice_text, clean_visible_text
-from agens_novel.engine.game_engine import GameEngine, MODEL_FAILURE_CONTINUE
-from agens_novel.engine.model_fallback_policy import public_model_failure_notice, SECRET_MARKERS as _SECRET_MARKERS
+from agens_novel.engine.game_engine import GameEngine
+from agens_novel.engine.model_fallback_policy import MODEL_FAILURE_CONTINUE, public_model_failure_notice, SECRET_MARKERS as _SECRET_MARKERS
 from agens_novel.engine.render import format_status_bar
 from agens_novel.engine.start_flow import normalize_profile_attributes
 from agens_novel.game.constants import (

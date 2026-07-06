@@ -8,7 +8,6 @@ from collections.abc import Callable
 
 from .choices import CHOICE_FALLBACK_NOTICE
 
-MODEL_FAILURE_PROMPT = "天道紊乱，是否以因果残影继续推演？"
 MODEL_FAILURE_CONTINUE = "fallback"
 MODEL_FAILURE_END = "end"
 UPSTREAM_NOT_FOUND_NOTICE = "上游模型配置不可用（HTTP 404），请检查模型名/Base URL 或切回系统默认 Agens；本局已转入本地故事。"

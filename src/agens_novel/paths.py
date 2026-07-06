@@ -18,25 +18,10 @@ PROJECT_ROOT = Path(os.environ.get("AGENS_NOVEL_ROOT", _THIS_FILE.parents[2]))
 
 RUNTIME_DIR = PROJECT_ROOT / "runtime"
 ARTIFACT_ROOT = RUNTIME_DIR / "artifacts"
-CHECKPOINT_DIR = RUNTIME_DIR / "checkpoints"
 LOG_DIR = RUNTIME_DIR / "logs"
 CONFIG_DIR = PROJECT_ROOT / "config"
 PROMPT_DIR = CONFIG_DIR / "prompts" / "system"
 SAVE_DIR = RUNTIME_DIR / "saves"
-
-
-def ensure_runtime_dirs() -> dict[str, Path]:
-    """Create runtime/ subdirs if missing. Returns a dict of created paths."""
-    paths = {
-        "runtime": RUNTIME_DIR,
-        "artifacts": ARTIFACT_ROOT,
-        "checkpoints": CHECKPOINT_DIR,
-        "logs": LOG_DIR,
-        "writer_artifacts": ARTIFACT_ROOT / "writer",
-    }
-    for p in paths.values():
-        p.mkdir(parents=True, exist_ok=True)
-    return paths
 
 
 def agent_artifact_dir(agent_name: str) -> Path:

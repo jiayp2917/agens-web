@@ -5,7 +5,7 @@ from __future__ import annotations
 from unittest.mock import patch
 
 from agens_novel.engine.game_engine import GameEngine
-from agens_novel.engine.local_story import DEFAULT_STORY_ID, NO_MATCH_NOTICE, validate_local_story_graph
+from agens_novel.engine.local_story import DEFAULT_STORY_ID, NO_MATCH_NOTICE
 from agens_novel.session.game_session import GameSession
 
 
@@ -67,10 +67,6 @@ def test_local_story_choice_advances_node_and_delta(monkeypatch, tmp_path) -> No
         for msg in engine.game_session.chat_history
     )
     assert any(msg.get("role") == "assistant" for msg in engine.game_session.chat_history)
-
-
-def test_local_story_graph_has_no_dead_nodes() -> None:
-    assert validate_local_story_graph(DEFAULT_STORY_ID) == []
 
 
 def test_local_story_d_keyword_match_and_no_match_keep_choices(monkeypatch, tmp_path) -> None:

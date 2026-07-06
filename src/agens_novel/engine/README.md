@@ -17,7 +17,6 @@
 | `GameEngine.handle_action(input)` | `str -> None` | 处理玩家 A/B/C/D 行动 |
 | `GameEngine.attempt_breakthrough()` | `() -> None` | 触发境界突破 |
 | `GameEngine.save(name)` / `load(name)` | `str -> bool` | 存档 / 读档 |
-| `GameEngine.get_log(count)` | `int -> str` | 查询最近日志文本 |
 | `run_turn_sync(agent, input, session)` | `-> dict` | 调用 LLM Agent（LangGraph 节点入口） |
 
 ## 测试位置

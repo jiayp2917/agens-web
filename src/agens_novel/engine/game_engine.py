@@ -33,9 +33,6 @@ from .model_result import (
     result_diagnostics,
 )
 from .model_fallback_policy import (
-    MODEL_FAILURE_CONTINUE,
-    MODEL_FAILURE_END,
-    MODEL_FAILURE_PROMPT,
     SECRET_MARKERS,
     ModelFallbackPolicy,
 )
@@ -44,9 +41,6 @@ from .start_flow import (
 )
 from .turn_runner import run_turn_sync
 from .turn_flow import TurnFlow
-from .render import (
-    format_log,
-)
 
 log = logging.getLogger(__name__)
 
@@ -373,50 +367,6 @@ class GameEngine:
         """Reset the game session."""
         self.game_session.reset()
         self.emit("on_info", "游戏已重置。请返回角色创建重新开始。")
-
-    # ─── World expansion ─────────────────────────────────────────────
-
-    def expand(self, gen_type: str = "new_region") -> None:
-        """Request world expansion from the World Builder."""
-        if not self.game_session.game_started:
-            self.emit("on_info", "请先从主页创建角色并开始游戏。")
-            return
-
-        if gen_type not in ("new_region", "new_encounter", "new_technique"):
-            gen_type = "new_region"
-
-        self.emit("on_loading", "世界扩展中...")
-
-        try:
-            result = run_turn_sync(
-                "world_builder", gen_type, self.game_session,
-                generation_type=gen_type,
-            )
-        except Exception:
-            log.exception("expand error")
-            self.emit("on_error", "世界扩展失败（详见日志）")
-            return
-
-        if result.get("llm_error"):
-            self.emit("on_error", f"扩展失败: {result['llm_error']}")
-            return
-
-        desc = result.get("world_description", "")
-        if desc:
-            self.emit("on_narrative", desc, 0)
-
-        generated = result.get("generated_data", {})
-        if generated:
-            world = generated.get("world", {})
-            if "lore_add" in world:
-                self.game_session.lore_facts.extend(world["lore_add"])
-            if "discovered_add" in world:
-                self.game_session.discovered_locations.extend(world["discovered_add"])
-
-    # ─── Read-only queries ─────────────────────────────────────────────
-
-    def get_log(self, count: int = 5) -> str:
-        return format_log(self.game_session, count)
 
     # ─── Internal helpers ──────────────────────────────────────────────
 

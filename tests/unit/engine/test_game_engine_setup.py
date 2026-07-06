@@ -229,12 +229,6 @@ class TestGameEngineNewGame:
         assert "为空" in infos[0]
 
 
-class TestGameEngineQueries:
-    def test_get_log_empty(self) -> None:
-        engine = GameEngine()
-        assert "暂无" in engine.get_log()
-
-
 class TestGameEngineReset:
     def test_reset(self) -> None:
         engine = GameEngine()

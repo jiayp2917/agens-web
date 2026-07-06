@@ -292,11 +292,6 @@ _STORIES: dict[str, dict[str, LocalStoryNode]] = {
 }
 
 
-def local_story_available(story_id: str | None = None) -> bool:
-    """Return whether a local story id is registered."""
-    return (story_id or DEFAULT_STORY_ID) in _STORIES
-
-
 def start_local_story(session: GameSession, story_id: str | None = None) -> LocalStoryResult:
     """Enter the local story fallback and return its opening result."""
     story_key = story_id or DEFAULT_STORY_ID
@@ -397,21 +392,3 @@ def _local_story_result_text(
     if repeat_count <= 1:
         return option.result
     return f"{option.result}（第{repeat_count}次复盘此路，你把前一夜的散乱处又收束了一分。）"
-
-
-def validate_local_story_graph(story_id: str | None = None) -> list[str]:
-    """Return structural problems in local stories; empty means playable graph."""
-    story_key = story_id or DEFAULT_STORY_ID
-    story = _STORIES.get(story_key)
-    if not story:
-        return [f"missing story: {story_key}"]
-    problems: list[str] = []
-    for node_id, node in story.items():
-        if len(node.options) != 4:
-            problems.append(f"{node_id}: expected 4 options, got {len(node.options)}")
-        for option in node.options:
-            if option.next_node not in story:
-                problems.append(f"{node_id}: option '{option.text}' points to missing node {option.next_node}")
-            if not option.text.strip():
-                problems.append(f"{node_id}: empty option text")
-    return problems

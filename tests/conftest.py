@@ -53,10 +53,10 @@ def temp_project_root(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> Iterat
     runtime_root.mkdir(parents=True, exist_ok=True)
     monkeypatch.setattr(p_mod, "RUNTIME_DIR", runtime_root)
     monkeypatch.setattr(p_mod, "ARTIFACT_ROOT", runtime_root / "artifacts")
-    monkeypatch.setattr(p_mod, "CHECKPOINT_DIR", runtime_root / "checkpoints")
     monkeypatch.setattr(p_mod, "LOG_DIR", runtime_root / "logs")
     monkeypatch.setattr(p_mod, "SAVE_DIR", runtime_root / "saves")
-    p_mod.ensure_runtime_dirs()
+    for sub in ("artifacts", "logs", "saves"):
+        (runtime_root / sub).mkdir(parents=True, exist_ok=True)
     yield tmp_path
     importlib.reload(p_mod)
 

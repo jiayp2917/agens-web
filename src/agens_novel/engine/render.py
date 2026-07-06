@@ -48,21 +48,6 @@ def format_status_bar(session: GameSession) -> str:
     return f"[{realm_str} | {age}岁 | 寿元:{remaining}/{lifespan}年{prep_str} | 地点:{loc} | 第{session.turn_count}回合]"
 
 
-def format_log(session: GameSession, count: int = 5) -> str:
-    """Recent turn narratives."""
-    history = session.turn_history
-    if not history:
-        return "  (暂无回合记录)"
-    parts = []
-    for entry in history[-count:]:
-        turn = entry.get("turn", "?")
-        narrative = entry.get("narrative", "（无叙事）")
-        if len(narrative) > 150:
-            narrative = narrative[:147] + "..."
-        parts.append(f"── 第 {turn} 回合 ──\n{narrative}")
-    return "\n\n".join(parts)
-
-
 def format_realm(session: GameSession) -> str:
     """Format realm/breakthrough info."""
     from ..game.constants import REALM_ORDER
