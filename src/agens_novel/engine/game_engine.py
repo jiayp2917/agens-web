@@ -245,19 +245,6 @@ class GameEngine:
         """
         self._start_flow.start_from_profile(profile)
 
-    def _generate_world_profile(self, profile: dict[str, Any]) -> dict[str, Any]:
-        """Generate a structured world profile for the character session.
-
-        Uses the model only when explicitly enabled; otherwise falls back to
-        a local template. The world profile is stored in the session and
-        used to contextualize subsequent turns.
-        """
-        return self._start_flow.generate_world_profile(profile)
-
-    def _generate_profile_opening(self, profile: dict[str, Any]) -> tuple[str, list[str]]:
-        """Ask World Builder for the first scene after form creation."""
-        return self._start_flow.generate_profile_opening(profile)
-
     def handle_action(self, text: str) -> None:
         """Process a player action through Narrator + Judge.
 

@@ -218,46 +218,6 @@ class StartFlow:
 
         return merge_opening_payload(fallback, parsed)
 
-    def generate_world_profile(self, profile: dict[str, Any]) -> dict[str, Any]:
-        """Generate a structured world profile for the character session."""
-        engine = self.engine
-        fallback = build_world_fallback(profile)
-
-        if os.environ.get(START_MODEL_WORLD_ENV) != "1":
-            return fallback
-
-        if not _engine_has_api_key(engine):
-            engine._emit("on_info", "未检测到 API Key，使用本地模板生成世界观。")
-            return fallback
-
-        prompt = build_world_prompt(profile)
-        try:
-            result = engine._run_agent(
-                "world_builder",
-                prompt,
-                engine.game_session,
-                generation_type="world_profile",
-            )
-        except Exception:
-            log.exception("world profile generation failed, using fallback")
-            return fallback
-
-        parsed = parse_world_response(result)
-        if not parsed or not parsed.get("world_name"):
-            return fallback
-
-        merged = dict(fallback)
-        merged.update({k: v for k, v in parsed.items() if v})
-        return merged
-
-    def generate_profile_opening(self, profile: dict[str, Any]) -> tuple[str, list[str]]:
-        """Ask World Builder for the first scene after form creation."""
-        payload = self.generate_opening_payload(profile)
-        return str(payload.get("opening_narrative") or ""), complete_choices(
-            payload.get("choices"),
-            self.engine.game_session,
-        )
-
     def _emit_opening(self, opening: str) -> None:
         engine = self.engine
         engine._emit("on_narrative", opening, 0)
