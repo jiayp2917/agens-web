@@ -9,7 +9,7 @@ from ..session.game_session import GameSession
 from .choices import dedupe_strings
 
 INCONSISTENT_NARRATIVE_NOTICE = "narrative/state mismatch: authoritative state change was missing structured data"
-PLAYER_NARRATIVE_MISMATCH_NOTICE = "本回合以基础规则结算，传闻与收获尚未入册。"
+PLAYER_NARRATIVE_MISMATCH_NOTICE = "此事未入正史，按本局因果结算。"
 
 
 _MEDITATION_KEYWORDS: tuple[str, ...] = (

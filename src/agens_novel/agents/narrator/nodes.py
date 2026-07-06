@@ -22,6 +22,7 @@ from ...llm.client import LLMError, call_llm, call_llm_stream
 from ...llm.types import Message
 from ...utils.timing import utcnow_iso
 from ..common import load_agent_settings, normalize_choices
+from ...engine.choices import clean_visible_text
 
 log = logging.getLogger(__name__)
 
@@ -270,13 +271,18 @@ def _parse_narrator_output(text: str) -> tuple[str, dict | None, list[str]]:
     if choices:
         narrative = _strip_inline_choice_lines(narrative)
 
-    return narrative, state_delta, choices
+    return clean_visible_text(narrative, allow_structured=False), state_delta, choices
 
 
 def _parse_choices_payload(raw: str) -> Any:
     try:
         return json.loads(raw)
     except (json.JSONDecodeError, ValueError):
+        try:
+            import ast
+            return ast.literal_eval(raw)
+        except (ValueError, SyntaxError, TypeError):
+            pass
         lines = [line.strip(" \t-0123456789.ABCabc、.：:") for line in raw.splitlines()]
         return [line for line in lines if line]
 

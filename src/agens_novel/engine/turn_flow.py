@@ -13,6 +13,7 @@ from .action_delta_policy import (
     validate_narrative_delta_consistency,
 )
 from .choices import fallback_choices, normalize_choices
+from .choices import clean_visible_text
 from .model_result import (
     ModelResultKind,
     classify_judge_result,
@@ -59,6 +60,8 @@ class TurnFlow:
         if result.breakthrough:
             breakthrough_delta = engine._attempt_local_story_breakthrough()
             if breakthrough_delta:
+                session.apply_delta(breakthrough_delta)
+                self._emit_local_story_breakthrough_result(breakthrough_delta)
                 result_delta = self._merge_state_delta(result_delta, breakthrough_delta)
 
         if result.narrative:
@@ -133,7 +136,7 @@ class TurnFlow:
             recovered_choices = self._recover_incomplete_narrator_choices(narrative, choices)
             if recovered_choices:
                 choices = recovered_choices
-                engine._emit("on_info", "叙事模型选项格式不完整，已按本回合局面补齐下一步选择。")
+                engine._emit("on_info", "本回合已按当前局面补齐下一步选择。")
                 if malformed_state_delta:
                     state_delta = {"character": {}, "world": {}, "meta": {}}
                     malformed_state_delta = False
@@ -286,13 +289,13 @@ class TurnFlow:
             else:
                 note = judge_result.get("judgment_note", "")
                 log.info("Judge rejected (no corrected delta): %s", note)
-                engine._emit("on_info", "本回合以基础规则结算，模型状态变更未采用。")
+                engine._emit("on_info", PLAYER_NARRATIVE_MISMATCH_NOTICE)
                 narrative = ""
                 state_delta = {"character": {}, "world": {}, "meta": {}}
             note = judge_result.get("judgment_note", "")
             if note:
                 log.info("Judge corrected: %s", note)
-        return narrative, state_delta
+        return clean_visible_text(narrative, allow_structured=False), state_delta
 
     def _validate_and_apply_delta(
         self,
@@ -408,9 +411,25 @@ class TurnFlow:
             session.apply_delta(stage_delta)
             new_stage = stage_delta.get("meta", {}).get("new_stage", 0)
             max_stage = stage_delta.get("meta", {}).get("max_stage", 0)
-            engine._emit("on_info", f"修为精进！{session.realm}第{new_stage}层（{new_stage}/{max_stage}）")
+            if session.realm == "练气":
+                label = f"{session.realm}第{new_stage}层"
+            else:
+                label = format_realm(session)
+            engine._emit("on_info", f"修为精进！{label}（{new_stage}/{max_stage}）")
             return stage_delta
         return None
+
+    def _emit_local_story_breakthrough_result(self, breakthrough_delta: dict[str, Any]) -> None:
+        engine = self.engine
+        session = engine.game_session
+        result = breakthrough_delta.get("meta", {}).get("breakthrough_result", "")
+        if result == "success":
+            if session.finale:
+                engine._emit("on_finale", session.error or "飞升成仙，修真之路圆满。")
+            else:
+                engine._emit("on_info", format_realm(session))
+        elif result == "failure":
+            engine._emit("on_info", "突破失败，受到反噬。")
 
     @staticmethod
     def _merge_state_delta(base: dict[str, Any], extra: dict[str, Any]) -> dict[str, Any]:

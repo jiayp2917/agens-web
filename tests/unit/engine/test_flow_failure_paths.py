@@ -186,3 +186,29 @@ def test_breakthrough_flow_enables_narrator_repair(monkeypatch) -> None:
             engine.attempt_breakthrough()
 
     assert captured.get("repair_incomplete_output") is True
+
+
+def test_breakthrough_narrator_exception_keeps_rule_settlement(monkeypatch) -> None:
+    monkeypatch.setenv("AGNES_API_KEY", "sk-test-1234567890")
+    engine = GameEngine()
+    engine.game_session.game_started = True
+    engine.game_session.realm = "练气"
+    engine.game_session.realm_stage = 9
+    engine.game_session.breakthrough_flags = ["foundation_aid"]
+    engine.game_session.last_choices = ["稳固道心", "请护法", "观察瓶颈", "随缘听天命"]
+
+    def runner(agent_name, user_input, session, **kwargs):
+        if agent_name == "narrator":
+            raise RuntimeError("narrator unavailable")
+        if agent_name == "judge":
+            return {"approved": True, "corrected_delta": {}, "judgment_note": ""}
+        return {}
+
+    with patch("agens_novel.engine.game_engine.run_turn_sync", side_effect=runner):
+        with patch("agens_novel.game.realm.random.random", return_value=0.001):
+            engine.attempt_breakthrough()
+
+    assert engine.game_session.realm == "筑基"
+    assert engine.game_session.turn_count == 1
+    assert len(engine.game_session.last_choices) == 4
+    assert engine.game_session.turn_history[-1]["delta"]["meta"]["breakthrough_result"] == "success"

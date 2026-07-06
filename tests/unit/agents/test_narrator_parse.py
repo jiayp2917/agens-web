@@ -148,22 +148,26 @@ class TestNarratorParse:
         assert delta["world"]["current_scene"] == "山脚溪桥"
         assert choices == ["在溪桥吐纳", "拜访附近散修", "深入灵雾", "随钟声而行"]
 
-    def test_plain_json_like_prose_is_not_removed_from_narrative(self) -> None:
+    def test_plain_json_like_prose_is_removed_from_visible_narrative(self) -> None:
         text = '你拾起一枚玉牌，上面刻着 {"rank":"outer","note":"药谷"}，像是旧年外门凭证。'
         narrative, delta, choices = _parse_narrator_output(text)
 
-        assert narrative == text
+        assert "{" not in narrative
+        assert "rank" not in narrative
+        assert "旧年外门凭证" in narrative
         assert delta is None
         assert choices == []
 
-    def test_contract_like_words_inside_plain_json_prose_are_not_structured(self) -> None:
+    def test_contract_like_words_inside_plain_json_prose_are_removed_from_visible_text(self) -> None:
         text = (
             '榜文旁贴着一张旧签，写着 {"text":"外门旧录","choices":["勿动"]}；'
             '另一枚木牌只记 {"meta":{"rank":"outer"}}。'
         )
         narrative, delta, choices = _parse_narrator_output(text)
 
-        assert narrative == text
+        assert "choices" not in narrative
+        assert "meta" not in narrative
+        assert "{" not in narrative
         assert delta is None
         assert choices == []
 
@@ -175,7 +179,8 @@ class TestNarratorParse:
         )
         narrative, delta, choices = _parse_narrator_output(text)
 
-        assert '旧牌 {"text":"外门旧录"}' in narrative
+        assert "旧牌" in narrative
+        assert "{" not in narrative
         assert delta["world"]["current_scene"] == "山门榜前"
         assert choices == ["整理旧录", "询问执事", "揭榜试炼", "随缘抽签"]
 

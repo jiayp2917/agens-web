@@ -1,7 +1,7 @@
 import { useMemo } from "react";
 import { Home, Save, Settings } from "lucide-react";
 import type { DialogMode, Session } from "../lib/api";
-import { choiceSemantics, realmLifespanCap } from "../lib/catalog";
+import { choiceSemantics, formatRealmName, realmLifespanCap } from "../lib/catalog";
 import { buildChronicleRecords, getCurrentChronicleYear } from "../lib/chronicle";
 import { isReadableEvent, toPositiveNumber } from "../lib/util";
 import { FallbackBanner } from "../components/FallbackBanner";
@@ -42,11 +42,23 @@ export function GamePage({
   const explicitChronicleYear = toPositiveNumber(world.calendar_year ?? world.year ?? world.day_count, 0) || 1;
   const age = Number(character.age) || 16;
   const currentTurn = Math.max(0, Number(session.turn_count) || 0);
-  const realm = `${character.realm || "练气"}${character.realm_stage || 1}层`;
+  const realm = formatRealmName(character.realm, character.realm_stage);
   const luck = character.attributes?.luck ?? character.luck ?? "平稳";
   const worldIntel = useMemo(() => buildWorldIntel(world), [world]);
   const cleanChoiceText = (choice: string) => {
     let text = String(choice || "").replace(/^【(?:稳妥|机遇|风险|气运)】\s*/, "").trim();
+    try {
+      const parsed = JSON.parse(text.replace(/'/g, "\""));
+      if (Array.isArray(parsed) && parsed.length) text = String(parsed[0] || "").trim();
+      if (parsed && !Array.isArray(parsed) && typeof parsed === "object") text = String(parsed.action || parsed.text || parsed.label || "").trim();
+    } catch {
+      // Keep plain text choices.
+    }
+    text = text
+      .replace(/```(?:json)?/giu, "")
+      .replace(/<\/?(?:choices|state_update)\b[^>]*>/giu, "")
+      .replace(/\bprowess\b/giu, "实战能力")
+      .trim();
     for (let i = 0; i < 3; i += 1) {
       const next = text
         .replace(/^(?:[（(]?\s*[A-Da-d1-4]\s*[）)]?|选项\s*[A-Da-d])(?:\s*[\.:：、)）．。-]|\s+(?=(?:稳妥|机遇|风险|气运)\s*[：:]))\s*/, "")
@@ -79,7 +91,7 @@ export function GamePage({
         <CharacterAvatar name={character.name} compact />
         <div>
           <h2>{character.name || "无名"}</h2>
-          <p><span>{character.realm || "练气"}</span><span>{age}岁</span><span>寿元 <strong>{remainingLifespan}</strong>/{lifespanMax}</span></p>
+          <p><span>{realm}</span><span>{age}岁</span><span>寿元 <strong>{remainingLifespan}</strong>/{lifespanMax}</span></p>
         </div>
       </section>
       <div className="game-grid">

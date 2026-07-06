@@ -15,6 +15,7 @@ from ..game.constants import (
     FAMILY_BACKGROUNDS,
     SPIRIT_ROOTS,
     TALENT_OPTIONS,
+    compute_starting_lifespan,
     normalize_attribute_value,
 )
 from ..session.game_session import GameSession
@@ -291,7 +292,12 @@ def apply_world_builder_generated_session(
         session.techniques = char_data.get("techniques", [])
         session.inventory = char_data.get("inventory", [])
         session.status_effects = char_data.get("status_effects", [])
-        session.lifespan = char_data.get("lifespan", 100)
+        session.lifespan = int(char_data.get("lifespan") or compute_starting_lifespan(
+            session.realm,
+            attributes=session.attributes,
+            talent=session.talent,
+            difficulty=session.difficulty,
+        ))
         if "equipment_slots" in char_data:
             session.equipment_slots = char_data["equipment_slots"]
 
@@ -332,6 +338,13 @@ def apply_profile_session(session: GameSession, profile: dict[str, Any]) -> None
     session.family_background = str(profile.get("family_background") or FAMILY_BACKGROUNDS[0])
     session.difficulty = str(profile.get("difficulty") or DIFFICULTY_OPTIONS[1])
     session.attributes = attrs
+    session.lifespan = compute_starting_lifespan(
+        session.realm,
+        attributes=attrs,
+        talent=session.talent,
+        difficulty=session.difficulty,
+        extra_lifespan=int(profile.get("extra_lifespan") or 0),
+    )
     session.techniques = list(profile.get("techniques") or [{"name": "基础吐纳术", "level": 1, "type": "内功"}])
     session.inventory = list(profile.get("inventory") or [{"name": "粗布道袍", "quantity": 1, "type": "防具"}])
     default_scene, default_location, default_region, default_lore = profile_default_world(profile)

@@ -14,6 +14,7 @@ from agens_novel.engine.death_rewards import (
     apply_legacy_bonuses,
     bonuses_to_legacy,
 )
+from agens_novel.engine.choices import clean_choice_text, clean_visible_text
 from agens_novel.engine.game_engine import GameEngine, MODEL_FAILURE_CONTINUE
 from agens_novel.engine.model_fallback_policy import public_model_failure_notice
 from agens_novel.engine.render import format_status_bar
@@ -269,11 +270,20 @@ def _sanitize_event_payload(event_type: str, payload: dict[str, Any]) -> dict[st
         text = str(sanitized.get("text") or "")
         if _looks_internal_model_error(text):
             sanitized["text"] = PUBLIC_MODEL_FALLBACK_TEXT
+        else:
+            sanitized["text"] = _public_event_text(text)
         return sanitized
     if event_type == "error":
         text = str(sanitized.get("text") or "")
         if _looks_internal_model_error(text):
             sanitized["text"] = PUBLIC_MODEL_FALLBACK_TEXT
+        else:
+            sanitized["text"] = _public_event_text(text)
+        return sanitized
+    if event_type in {"narrative", "game_over", "finale"}:
+        sanitized["text"] = _public_event_text(str(sanitized.get("text") or ""))
+    if "choices" in sanitized and isinstance(sanitized.get("choices"), list):
+        sanitized["choices"] = [clean_choice_text(str(choice)) for choice in sanitized["choices"]]
     return sanitized
 
 
@@ -325,6 +335,18 @@ def _is_public_model_notice(text: str) -> bool:
         public_model_failure_notice("timeout"),
         public_model_failure_notice("AGNES_API_KEY unavailable"),
     }
+
+
+def _public_event_text(text: str) -> str:
+    cleaned = clean_visible_text(text, allow_structured=False)
+    internal_notices = (
+        "模型状态变更未采用",
+        "state_delta",
+        "状态更新格式不完整",
+    )
+    if any(marker in cleaned for marker in internal_notices):
+        return "此事未入正史，按本局因果结算。"
+    return cleaned
 
 
 class WebGameService:

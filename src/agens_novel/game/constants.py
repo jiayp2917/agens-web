@@ -97,6 +97,18 @@ REALM_LIFESPANS: dict[str, int] = {
     "飞升": 9999,
 }
 
+REALM_LIFESPAN_RANGES: dict[str, tuple[int, int]] = {
+    "练气": (80, 120),
+    "筑基": (160, 240),
+    "金丹": (400, 600),
+    "元婴": (800, 1200),
+    "化神": (1600, 2400),
+    "合体": (3200, 4800),
+    "大乘": (4200, 5800),
+    "渡劫": (5200, 6800),
+    "飞升": (9999, 9999),
+}
+
 # Realm configuration: each realm's stage count and breakthrough gates.
 REALM_CONFIGS: dict[str, dict[str, Any]] = {
     "练气": {
@@ -272,6 +284,82 @@ def rarity_unlocked_for(runs_completed: int, ascension_count: int, *,
         if runs_completed >= need_runs and ascension_count >= need_asc:
             unlocked.append(tier["key"])
     return unlocked
+
+
+def realm_lifespan_range(realm: str) -> tuple[int, int]:
+    """Return the allowed lifespan cap range for a realm."""
+    return REALM_LIFESPAN_RANGES.get(realm, (80, 120))
+
+
+def default_lifespan_for_realm(realm: str) -> int:
+    """Return the midpoint lifespan cap used by compatibility callers."""
+    low, high = realm_lifespan_range(realm)
+    return (low + high) // 2
+
+
+def stage_label_for_realm(realm: str, stage: int) -> str:
+    """Display only Qi Refining as numbered layers; later realms use phases."""
+    try:
+        value = int(stage)
+    except (TypeError, ValueError):
+        value = 1
+    if realm == "练气":
+        value = max(1, min(9, value))
+        return f"{value}层"
+    if realm == "飞升":
+        return ""
+    labels = ("初期", "中期", "后期", "圆满")
+    return labels[max(1, min(4, value)) - 1]
+
+
+def format_realm_name(realm: str, stage: int) -> str:
+    """Return the public realm label used by backend and frontend."""
+    label = stage_label_for_realm(realm, stage)
+    return f"{realm}{label}" if label else realm
+
+
+def compute_starting_lifespan(
+    realm: str,
+    *,
+    attributes: dict[str, int] | None = None,
+    talent: str = "",
+    difficulty: str = "",
+    extra_lifespan: int = 0,
+) -> int:
+    """Compute a character-specific lifespan cap within the realm range."""
+    low, high = realm_lifespan_range(realm)
+    attrs = attributes or {}
+    physique = normalize_attribute_value(attrs.get("physique", ATTRIBUTE_DEFAULT))
+    root_bone = normalize_attribute_value(attrs.get("root_bone", ATTRIBUTE_DEFAULT))
+    span = high - low
+    score = (physique + root_bone) / (ATTRIBUTE_MAX * 2)
+    cap = low + round(span * score)
+    if "天命" in talent or "长生" in talent:
+        cap += max(5, span // 8)
+    if difficulty == "困难":
+        cap -= max(3, span // 12)
+    elif difficulty == "简单":
+        cap += max(3, span // 12)
+    cap += int(extra_lifespan or 0)
+    return max(1, min(high + max(0, int(extra_lifespan or 0)), cap))
+
+
+def compute_breakthrough_lifespan(
+    next_realm: str,
+    current_lifespan: int,
+    *,
+    attributes: dict[str, int] | None = None,
+    talent: str = "",
+    difficulty: str = "",
+) -> int:
+    """Return the new lifespan cap after a successful breakthrough."""
+    cap = compute_starting_lifespan(
+        next_realm,
+        attributes=attributes,
+        talent=talent,
+        difficulty=difficulty,
+    )
+    return max(int(current_lifespan or 1), cap)
 
 # ─────────────────────────────────────────────────────────────────────────────
 # Equipment slots

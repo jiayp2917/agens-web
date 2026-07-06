@@ -8,16 +8,11 @@ Used by the web adapter and tests.
 
 from __future__ import annotations
 
+from ..game.constants import format_realm_name
 from ..session.game_session import GameSession
 
-# Chinese stage suffixes for realm display.
-_STAGE_CN = ["", "一层", "二层", "三层", "四层", "五层", "六层", "七层", "八层", "九层"]
-
-
-def _stage_suffix(stage: int) -> str:
-    if 1 <= stage <= 9:
-        return _STAGE_CN[stage]
-    return f" {stage}层"
+def public_realm_label(session: GameSession) -> str:
+    return format_realm_name(session.realm or "练气", int(session.realm_stage or 1))
 
 
 def _spirit_root_str(session: GameSession) -> str:
@@ -43,7 +38,7 @@ def _breakthrough_requirement_count(session: GameSession) -> tuple[int, int]:
 
 def format_status_bar(session: GameSession) -> str:
     """One-line compact status — game mode (age/realm/lifespan/meters)."""
-    realm_str = f"{session.realm}{_stage_suffix(session.realm_stage)}"
+    realm_str = public_realm_label(session)
     age = getattr(session, "age", 16)
     lifespan = getattr(session, "lifespan", 100)
     remaining = max(0, lifespan - age)
@@ -55,7 +50,7 @@ def format_status_bar(session: GameSession) -> str:
 
 def format_status_card(session: GameSession) -> str:
     """Multi-line character card — game mode (no HP/MP)."""
-    realm_str = f"{session.realm}{_stage_suffix(session.realm_stage)}"
+    realm_str = public_realm_label(session)
     prep_met, prep_total = _breakthrough_requirement_count(session)
     age = getattr(session, "age", 16)
     lifespan = getattr(session, "lifespan", 100)
@@ -171,7 +166,7 @@ def format_realm(session: GameSession) -> str:
     """Format realm/breakthrough info."""
     from ..game.constants import REALM_ORDER
 
-    realm_str = f"{session.realm}{_stage_suffix(session.realm_stage)}"
+    realm_str = public_realm_label(session)
 
     lines = [
         f"  境界: {realm_str}",

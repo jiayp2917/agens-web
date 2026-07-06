@@ -1,6 +1,7 @@
 import { useEffect, useState } from "react";
 import { ScrollText } from "lucide-react";
 import { fetchDeathSummary, type Session } from "../lib/api";
+import { formatRealmName } from "../lib/catalog";
 
 export function EndingPage({ session, onHome, onRestart }: { session: Session; onHome: () => void; onRestart: () => void }) {
   const character = session.character || {};
@@ -47,7 +48,7 @@ export function EndingPage({ session, onHome, onRestart }: { session: Session; o
         <p>{session.error || "尘埃落定。"}</p>
         <dl>
           <dt>角色</dt><dd>{character.name || "无名"}</dd>
-          <dt>境界</dt><dd>{character.realm || "练气"}{character.realm_stage || 1}层</dd>
+          <dt>境界</dt><dd>{formatRealmName(character.realm, character.realm_stage)}</dd>
           <dt>回合</dt><dd>{session.turn_count}</dd>
         </dl>
         <div className="ending-actions">

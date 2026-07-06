@@ -5,10 +5,10 @@ This is the active backlog for `agens-web`. It separates local code work, local 
 ## Current Evidence
 
 - Current local code baseline includes sanitized model diagnostics and the 2026-07-04 attribute-scale cleanup.
-- Validation after the latest dynamic-opening slice passed:
+- Validation after the latest realm/breakthrough/lifespan consistency slice passed:
   - `python -m compileall -q src tests web scripts migrations`
-  - `python -m pytest -q tests\web` -> 73 passed after dynamic-opening batch
-  - full `python -m pytest -q` with local PostgreSQL `TEST_DATABASE_URL` -> 495 passed
+  - `python -m pytest -q tests\web` -> 73 passed with local PostgreSQL `TEST_DATABASE_URL`
+  - full `python -m pytest -q` with local PostgreSQL `TEST_DATABASE_URL` -> 507 passed, 1 xfailed
   - `cd web\frontend-react; npm.cmd run build` -> passed
   - `git diff --check` -> passed with LF/CRLF warnings only
 - User-scoped model settings are implemented:
@@ -22,6 +22,7 @@ This is the active backlog for `agens-web`. It separates local code work, local 
 - Current local working batch adds dynamic character-driven opening generation: difficulty, talent, spirit root, family background, six attributes, and random/manual mode now feed a unified opening payload for world profile, 0-16 chronicle, age-16 situation, external intelligence, and initial A/B/C/D choices. Model-unavailable starts use profile-aware fallback and still surface fallback status; fallback remains invalid as live-model success. The latest Chrome run passed, but repair remained high at 18/20 turns.
 - Current local working batch also closes the attribute-scale audit: runtime attributes are 0-10 with 5 as neutral, and old 0-100 values are compatibility inputs only. New realm, reward, catalog, or model-prompt logic must not use 50 as the neutral midpoint or 100 as the normal cap.
 - Active phase plan remains `docs/PLAYABLE_GAMEPLAY_ROADMAP_20260629.md`: P0 current batch is closed; next work is P1 gameplay quality and model-efficiency iteration without broad architecture changes.
+- Current local working batch fixes realm/breakthrough/lifespan visible consistency: Qi Refining displays 1-9 layers, higher realms display four stages, breakthrough is rule-settled before model narration, lifespan uses realm ranges with old-age pressure, and player-visible text is cleaned of JSON/English/internal mismatch debris.
 
 ## Lessons To Keep
 
@@ -71,6 +72,7 @@ Next work should be data-led and gameplay-facing.
    - Key items, techniques, attribute growth, titles, relationships, injuries, lifespan, realm changes, and karma must be structured state or rewritten/suppressed.
    - Ordinary chronicle rumors, intentions, or non-authoritative color text do not automatically become inventory.
    - Model text can polish narrative and choices, but cannot decide authoritative numbers.
+   - Breakthrough text is especially strict: success/failure/death/fall-back results must match the rule delta, and "修为尽废" is forbidden unless the rule engine actually performs severe loss or terminal failure.
 
 ## P1: Complexity Governance
 

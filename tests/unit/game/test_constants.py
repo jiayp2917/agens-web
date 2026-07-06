@@ -17,6 +17,7 @@ from agens_novel.game.constants import (
     NPC_AFFINITY_NEUTRAL,
     QUEST_TYPES,
     REALM_CONFIGS,
+    REALM_LIFESPAN_RANGES,
     REALM_LIFESPANS,
     REALM_ORDER,
     SPIRIT_ROOTS,
@@ -53,6 +54,12 @@ class TestRealmConstants:
         lifespans = [REALM_LIFESPANS[name] for name in REALM_ORDER]
         for current, nxt in zip(lifespans, lifespans[1:]):
             assert current < nxt
+
+    def test_realm_lifespan_ranges_cover_legacy_caps(self):
+        for name in REALM_ORDER:
+            lower, upper = REALM_LIFESPAN_RANGES[name]
+            assert lower <= REALM_LIFESPANS[name] <= upper
+            assert lower <= upper
 
     def test_flying_realm_is_terminal(self):
         assert REALM_CONFIGS["飞升"]["breakthrough_base_rate"] == 0.0

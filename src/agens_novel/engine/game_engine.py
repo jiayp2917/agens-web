@@ -44,7 +44,6 @@ from .turn_runner import run_turn_sync
 from .turn_flow import TurnFlow
 from .render import (
     format_log,
-    format_realm,
 )
 
 log = logging.getLogger(__name__)
@@ -295,15 +294,6 @@ class GameEngine:
             self._emit("on_info", reason)
             return {}
         delta = self.realm_system.attempt_breakthrough(self.game_session)
-        self.game_session.apply_delta(delta)
-        result = delta.get("meta", {}).get("breakthrough_result", "")
-        if result == "success":
-            if self.game_session.finale:
-                self._emit("on_finale", self.game_session.error or "飞升成仙，修真之路圆满。")
-            else:
-                self._emit("on_info", format_realm(self.game_session))
-        elif result == "failure":
-            self._emit("on_info", "突破失败，受到反噬。")
         return delta
 
     def _parse_breakthrough_action(self, text: str) -> bool:

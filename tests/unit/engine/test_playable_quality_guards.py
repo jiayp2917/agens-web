@@ -190,7 +190,7 @@ def test_authoritative_mismatch_is_suppressed_in_turn_flow(monkeypatch) -> None:
     with patch("agens_novel.engine.game_engine.run_turn_sync", side_effect=runner):
         engine.handle_action("强行运功逼毒")
 
-    assert any("基础规则结算" in msg for msg in infos)
+    assert any("因果结算" in msg for msg in infos)
     assert engine.game_session.status_effects == []
     assert all("寒毒" not in text for text, _turn in narratives)
     assert engine.game_session.turn_history[-1]["narrative"] == ""

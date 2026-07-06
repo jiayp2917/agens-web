@@ -150,6 +150,19 @@ def settle_turn(
     if remaining_lifespan <= 0 and session.realm != "飞升":
         game_over = True
         game_over_reason = "寿元耗尽，坐化而去。"
+    else:
+        pressure = _low_realm_age_pressure(session, new_age)
+        if pressure:
+            if pressure.get("lifespan_delta"):
+                lifespan_delta = int(pressure["lifespan_delta"])
+                char_delta["lifespan"] = f"{lifespan_delta:+d}"
+                lifespan_cap = max(1, lifespan_cap + lifespan_delta)
+                remaining_lifespan = lifespan_cap - new_age
+            if pressure.get("status_effect"):
+                char_delta["status_effects_add"] = [pressure["status_effect"]]
+            if remaining_lifespan <= 0:
+                game_over = True
+                game_over_reason = str(pressure.get("game_over_reason") or "寿元耗尽，坐化而去。")
 
     # ── Build turn summary for model prompt ──
     turn_summary = (
@@ -182,3 +195,21 @@ def settle_turn(
 def get_realm_lifespan(realm: str) -> int:
     """Return the base lifespan for a given realm."""
     return REALM_LIFESPANS.get(realm, 100)
+
+
+def _low_realm_age_pressure(session: Any, new_age: int) -> dict[str, Any]:
+    """Apply aging pressure when a Qi Refining run stalls for decades."""
+    if getattr(session, "realm", "练气") != "练气":
+        return {}
+    stage = int(getattr(session, "realm_stage", 1) or 1)
+    if new_age >= 90 and stage < 9:
+        return {
+            "lifespan_delta": -15,
+            "status_effect": "病衰",
+            "game_over_reason": "年岁已高，根基未成，病衰坐化。",
+        }
+    if new_age >= 70 and stage < 9:
+        return {"lifespan_delta": -8, "status_effect": "气血衰败"}
+    if new_age >= 50 and stage < 6:
+        return {"lifespan_delta": -4, "status_effect": "瓶颈衰相"}
+    return {}

@@ -18,6 +18,8 @@ from .constants import (
     REALM_CONFIGS,
     REALM_LIFESPANS,
     SPIRIT_ROOT_MAP,
+    compute_breakthrough_lifespan,
+    format_realm_name,
     normalize_attribute_value,
 )
 
@@ -26,6 +28,7 @@ log = logging.getLogger(__name__)
 _QI_REFINING_BASE_AGE = 16
 _QI_REFINING_YEARS_PER_STAGE = 2
 _QI_REFINING_TURNS_PER_STAGE = 3
+_BREAKTHROUGH_BLOCKING_EFFECTS = ("根基重创", "修为未复")
 
 
 @dataclass
@@ -104,6 +107,10 @@ class RealmSystem:
 
         if game_over:
             return False, "游戏已结束，无法突破。"
+        effects = getattr(session, "status_effects", [])
+        effects = effects if isinstance(effects, list) else []
+        if isinstance(effects, list) and any(effect in effects for effect in _BREAKTHROUGH_BLOCKING_EFFECTS):
+            return False, "根基尚未恢复，需先疗伤稳固后方可突破。"
 
         cfg = self.get_realm_config(realm)
         if cfg is None:
@@ -111,7 +118,7 @@ class RealmSystem:
 
         # Must be at the final stage of the current realm.
         if realm_stage < cfg.stages:
-            return False, f"当前境界{realm}第{realm_stage}层，需达到第{cfg.stages}层方可突破。"
+            return False, f"当前境界{format_realm_name(realm, realm_stage)}，需达到{format_realm_name(realm, cfg.stages)}方可突破。"
 
         missing = self._missing_breakthrough_requirements(session, cfg)
         if missing:
@@ -166,8 +173,24 @@ class RealmSystem:
             grade_bonus = modifier.get("breakthrough_bonus", 0.0)
             base_rate += grade_bonus
 
+        attrs = getattr(session, "attributes", {})
+        if isinstance(attrs, dict):
+            comprehension = normalize_attribute_value(attrs.get("comprehension", ATTRIBUTE_DEFAULT))
+            root_bone = normalize_attribute_value(attrs.get("root_bone", ATTRIBUTE_DEFAULT))
+            luck = normalize_attribute_value(attrs.get("luck", ATTRIBUTE_DEFAULT))
+            base_rate += (comprehension - ATTRIBUTE_DEFAULT) * 0.015
+            base_rate += (root_bone - ATTRIBUTE_DEFAULT) * 0.015
+            base_rate += (luck - ATTRIBUTE_DEFAULT) * 0.01
+
+        if realm == "练气":
+            age = int(getattr(session, "age", _QI_REFINING_BASE_AGE) or _QI_REFINING_BASE_AGE)
+            if age >= 70:
+                base_rate -= 0.35
+            elif age >= 50:
+                base_rate -= 0.15
+
         # Clamp to [0.0, 1.0].
-        return max(0.0, min(1.0, base_rate))
+        return max(0.05, min(0.95, base_rate))
 
     # ─────────────────────────────────────────────────────────────────────
     # Breakthrough execution
@@ -196,7 +219,13 @@ class RealmSystem:
                 "character": {
                     "realm": next_realm,
                     "realm_stage": 1,
-                    "lifespan": REALM_LIFESPANS.get(next_realm, next_cfg.lifespan),
+                    "lifespan": compute_breakthrough_lifespan(
+                        next_realm,
+                        int(getattr(session, "lifespan", 1) or 1),
+                        attributes=getattr(session, "attributes", {}),
+                        talent=str(getattr(session, "talent", "") or ""),
+                        difficulty=str(getattr(session, "difficulty", "") or ""),
+                    ),
                 },
                 "meta": {
                     "breakthrough_result": "success",
@@ -211,11 +240,17 @@ class RealmSystem:
             return delta
         else:
             log.info("Breakthrough failed: %s (rate=%.2f)", realm, rate)
+            character_delta: dict[str, Any] = {}
+            status_effect = self._failure_status_effect(session)
+            if status_effect in {"根基重创", "修为未复"}:
+                character_delta["lifespan"] = self._failure_lifespan_delta(session)
+            if status_effect == "根基重创":
+                character_delta["status_effects_add"] = ["根基重创", "修为未复"]
             return {
-                "character": {},
+                "character": character_delta,
                 "meta": {
                     "breakthrough_result": "failure",
-                    "status_effect_add": "走火入魔",
+                    "status_effect_add": status_effect,
                 },
             }
 
@@ -242,6 +277,10 @@ class RealmSystem:
 
         if stage >= cfg.stages:
             return None  # at max layer — need breakthrough, not stage advance
+        effects = getattr(session, "status_effects", [])
+        effects = effects if isinstance(effects, list) else []
+        if isinstance(effects, list) and any(effect in effects for effect in _BREAKTHROUGH_BLOCKING_EFFECTS):
+            return None
 
         min_stage = self._minimum_stage_for_chronicle_pace(session, cfg)
         if min_stage > stage:
@@ -268,6 +307,29 @@ class RealmSystem:
         next_stage = stage + 1
 
         return self._stage_delta(next_stage, cfg.stages, paced=False)
+
+    def public_realm_name(self, session: Any) -> str:
+        return format_realm_name(
+            str(getattr(session, "realm", "练气") or "练气"),
+            int(getattr(session, "realm_stage", 1) or 1),
+        )
+
+    def _failure_status_effect(self, session: Any) -> str:
+        if getattr(session, "realm", "练气") == "练气":
+            age = int(getattr(session, "age", _QI_REFINING_BASE_AGE) or _QI_REFINING_BASE_AGE)
+            if age >= 70:
+                return "根基重创"
+            if age >= 50:
+                return "修为未复"
+        return "走火入魔"
+
+    def _failure_lifespan_delta(self, session: Any) -> str:
+        age = int(getattr(session, "age", _QI_REFINING_BASE_AGE) or _QI_REFINING_BASE_AGE)
+        if age >= 70:
+            return "-20"
+        if age >= 50:
+            return "-10"
+        return "-5"
 
     def _minimum_stage_for_chronicle_pace(self, session: Any, cfg: RealmConfig) -> int:
         """Keep early Qi Refining from lagging behind a multi-year chronicle."""

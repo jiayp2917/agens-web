@@ -67,6 +67,15 @@ export const realmLifespanCap: Record<string, number> = {
   飞升: 9999,
 };
 
+export function formatRealmName(realmValue: unknown, stageValue: unknown) {
+  const realm = String(realmValue || "练气");
+  const stage = Math.max(1, Number(stageValue) || 1);
+  if (realm === "练气") return `${realm}${Math.min(9, stage)}层`;
+  if (realm === "飞升") return realm;
+  const labels = ["初期", "中期", "后期", "圆满"];
+  return `${realm}${labels[Math.min(4, stage) - 1]}`;
+}
+
 export const modelPresets = [
   { provider: "Agens", base_url: "https://apihub.agnes-ai.com/v1", model: "agnes-2.0-flash" },
   { provider: "DeepSeek", base_url: "https://api.deepseek.com/v1", model: "deepseek-chat" },

@@ -2,6 +2,30 @@
 
 ## 2026-07-06
 
+### Fixed - realm, breakthrough, lifespan, and visible text consistency
+
+- Standardized realm display: Qi Refining keeps numbered layers, while
+  Foundation Establishment and higher realms render as early/middle/late/peak
+  stages across backend renderers and React status/ending views.
+- Made breakthrough rule-first. The rule engine now settles success/failure,
+  lifespan, status effects, and realm movement before narrator prose; narrator
+  timeout or exception no longer changes the authoritative breakthrough result.
+- Coerced contradictory breakthrough prose so a successful breakthrough cannot
+  visibly say cultivation was ruined, and a failed breakthrough cannot advance
+  realm state.
+- Added realm lifespan ranges, dynamic starting/breakthrough lifespan helpers,
+  and old-age pressure for low Qi Refining runs, including injury/lifespan
+  penalties and blocked breakthrough/auto-advance while root is damaged.
+- Hardened player-visible text cleanup for stringified choice arrays, JSON
+  fences, structured tags, English state terms such as `prowess`, and internal
+  mismatch wording.
+- Added focused tests for realm display, text cleanup, dynamic lifespan,
+  old-age pressure, breakthrough failure blocking, and contradictory
+  breakthrough narrative suppression.
+- Verified with local PostgreSQL: `compileall` passed, `tests\web` 73 passed,
+  full `pytest -q` 507 passed / 1 xfailed, frontend build passed, and
+  `git diff --check` only reported LF/CRLF warnings.
+
 ### Changed - documentation status and local service handoff
 
 - Synchronized current governance docs with the latest dynamic-opening baseline:

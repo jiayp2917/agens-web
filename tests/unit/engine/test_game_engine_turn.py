@@ -261,7 +261,7 @@ class TestGameEngineHandleAction:
         assert narratives == []
         assert engine.game_session.turn_history[-1]["narrative"] == ""
         assert any("补齐下一步选择" in msg for msg in infos)
-        assert any("基础规则结算" in msg for msg in infos)
+        assert any("因果结算" in msg for msg in infos)
         assert not any("状态栏为准" in msg or "state_delta" in msg for msg in infos)
 
     def test_empty_model_output_can_continue_with_local_fallback(self, monkeypatch) -> None:
@@ -346,7 +346,7 @@ class TestGameEngineHandleAction:
         assert engine.game_session.techniques == []
         assert not hasattr(engine.game_session, "mp")
         assert narratives == []
-        assert any("基础规则结算" in msg for msg in infos)
+        assert any("因果结算" in msg for msg in infos)
         assert not any("状态栏为准" in msg or "state_delta" in msg for msg in infos)
         assert all("清灵丹" not in choice and "云水诀" not in choice for choice in engine.game_session.last_choices)
         assert engine.game_session.turn_count == 1
@@ -548,7 +548,7 @@ class TestGameEngineHandleAction:
             engine.handle_action("修炼")
 
         assert narratives == []
-        assert any("基础规则结算" in msg for msg in infos)
+        assert any("因果结算" in msg for msg in infos)
         assert engine.game_session.current_scene == "晨雾中的青云山外门"
         assert engine.game_session.turn_count == 1
 
@@ -970,7 +970,7 @@ class TestBreakthroughPreparationGate:
         assert engine.game_session.realm == "筑基"
         assert engine.game_session.last_choices == ["稳固筑基道台", "拜谢护法长老", "查看新功法", "【气运】随缘而行，听天命、赌因果"]
 
-    def test_breakthrough_narrator_error_uses_fallback_choices(self, monkeypatch) -> None:
+    def test_breakthrough_narrator_error_keeps_rule_settlement(self, monkeypatch) -> None:
         monkeypatch.setenv("AGNES_API_KEY", "sk-test-1234567890")
         engine = GameEngine()
         infos: list[str] = []
@@ -989,11 +989,12 @@ class TestBreakthroughPreparationGate:
             return {}
 
         with patch("agens_novel.engine.game_engine.run_turn_sync", side_effect=runner):
-            engine.attempt_breakthrough()
+            with patch("agens_novel.game.realm.random.random", return_value=0.0):
+                engine.attempt_breakthrough()
 
-        assert engine.game_session.realm == "练气"
+        assert engine.game_session.realm == "筑基"
         assert len(engine.game_session.last_choices) == 4
-        assert any("上游模型响应超时" in msg for msg in infos)
+        assert any("筑基" in msg for msg in infos)
 
     def test_narrator_retry_recovers_transient_404_without_fallback(self, monkeypatch) -> None:
         monkeypatch.setenv("AGNES_API_KEY", "sk-test-1234567890")

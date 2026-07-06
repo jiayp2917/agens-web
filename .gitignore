@@ -38,6 +38,11 @@ runtime/**/*.log
 .playwright-cli/
 output/playwright/
 output/deploy/
+output/*.csv
+output/*.json
+output/*.jsonl
+output/*.ndjson
+output/*.png
 web/frontend-react/node_modules/
 web/frontend-react/dist/
 web/frontend-react/*.tsbuildinfo

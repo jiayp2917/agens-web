@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+import ast
+import json
 import re
 from typing import Any
 
@@ -17,13 +19,30 @@ _LETTER_PREFIX_RE = re.compile(
 )
 _SEMANTIC_PREFIX_RE = re.compile(r"^\s*【(?:稳妥|机遇|风险|气运)】\s*")
 _SEMANTIC_WORD_PREFIX_RE = re.compile(r"^\s*(?:稳妥|机遇|风险|气运)\s*[：:]\s*")
+_FENCED_BLOCK_RE = re.compile(r"```(?:json|JSON)?\s*(?P<body>.*?)```", re.DOTALL)
+_STATE_TAG_RE = re.compile(r"<state_update\b[^>]*>.*?</state_update>", re.DOTALL | re.IGNORECASE)
+_CHOICES_TAG_RE = re.compile(r"<choices\b[^>]*>.*?</choices>", re.DOTALL | re.IGNORECASE)
+_STRUCTURED_JSON_RE = re.compile(
+    r"\{[^{}]{0,120}(?:state_delta|state_update|character|world|meta|choices)[^{}]{0,800}\}",
+    re.DOTALL,
+)
+_ENGLISH_VISIBLE_REPLACEMENTS = {
+    "prowess": "实战能力",
+    "combat": "斗法",
+    "inventory": "随身物",
+    "technique": "功法",
+    "techniques": "功法",
+    "state_delta": "状态变更",
+    "state_update": "状态变更",
+}
 
 
 def normalize_choices(raw_choices: Any) -> list[str]:
     """Return clean model-choice texts without adding system fallback choices."""
     choices: list[str] = []
-    if isinstance(raw_choices, list):
-        for item in raw_choices:
+    parsed_choices = _coerce_choice_list(raw_choices)
+    if isinstance(parsed_choices, list):
+        for item in parsed_choices:
             text = _choice_text(item)
             if text:
                 choices.append(text)
@@ -38,7 +57,8 @@ def clean_choice_text(text: str) -> str:
     The UI already renders stable button letters. Keeping model prefixes creates
     duplicated labels such as ``A：A：闭关`` in headed validation.
     """
-    cleaned = str(text or "").strip()
+    cleaned = _unwrap_choice_literal(str(text or "").strip())
+    cleaned = clean_visible_text(cleaned, allow_structured=False)
     for _ in range(3):
         next_text = _LETTER_PREFIX_RE.sub("", cleaned, count=1).strip()
         next_text = _SEMANTIC_WORD_PREFIX_RE.sub("", next_text, count=1).strip()
@@ -46,6 +66,25 @@ def clean_choice_text(text: str) -> str:
             break
         cleaned = next_text
     return cleaned
+
+
+def clean_visible_text(text: str, *, allow_structured: bool = True) -> str:
+    """Remove model contract debris from text that may be shown to players."""
+    cleaned = str(text or "").strip()
+    if not cleaned:
+        return ""
+    cleaned = _FENCED_BLOCK_RE.sub(lambda match: match.group("body").strip(), cleaned)
+    cleaned = _STATE_TAG_RE.sub("", cleaned)
+    cleaned = _CHOICES_TAG_RE.sub("", cleaned)
+    if not allow_structured:
+        cleaned = _STRUCTURED_JSON_RE.sub("", cleaned)
+        cleaned = _strip_embedded_structured_objects(cleaned)
+    for source, target in _ENGLISH_VISIBLE_REPLACEMENTS.items():
+        cleaned = re.sub(rf"\b{re.escape(source)}\b", target, cleaned, flags=re.IGNORECASE)
+    cleaned = cleaned.replace("\\n", "\n")
+    cleaned = re.sub(r"[ \t]+", " ", cleaned)
+    cleaned = re.sub(r"\n{3,}", "\n\n", cleaned)
+    return cleaned.strip(" \t\r\n\"'[]")
 
 
 def display_choice_text(text: str) -> str:
@@ -121,3 +160,95 @@ def _choice_text(item: Any) -> str:
     else:
         text = ""
     return clean_choice_text(text)
+
+
+def _coerce_choice_list(value: Any) -> Any:
+    if isinstance(value, list):
+        return value
+    if not isinstance(value, str):
+        return value
+    parsed = _parse_literal(value)
+    return parsed if isinstance(parsed, list) else value
+
+
+def _unwrap_choice_literal(text: str) -> str:
+    parsed = _parse_literal(text)
+    if isinstance(parsed, list) and parsed:
+        # Some providers return each option as "['actual choice']".
+        if len(parsed) == 1:
+            return str(parsed[0]).strip()
+        return str(parsed[0]).strip()
+    if isinstance(parsed, dict):
+        for key in ("action", "text", "label", "choice"):
+            if parsed.get(key):
+                return str(parsed[key]).strip()
+    return text
+
+
+def _parse_literal(text: str) -> Any:
+    stripped = str(text or "").strip()
+    if not stripped:
+        return None
+    if stripped[:1] not in {"[", "{"}:
+        return None
+    try:
+        return json.loads(stripped)
+    except (json.JSONDecodeError, ValueError, TypeError):
+        pass
+    try:
+        return ast.literal_eval(stripped)
+    except (ValueError, SyntaxError, TypeError):
+        return None
+
+
+def _strip_embedded_structured_objects(text: str) -> str:
+    source = str(text or "")
+    out: list[str] = []
+    index = 0
+    while index < len(source):
+        if source[index] != "{":
+            out.append(source[index])
+            index += 1
+            continue
+        end = _balanced_json_object_end(source, index)
+        if end <= index:
+            out.append(source[index])
+            index += 1
+            continue
+        chunk = source[index:end]
+        parsed = _parse_literal(chunk)
+        if isinstance(parsed, dict):
+            index = end
+            continue
+        out.append(source[index])
+        index += 1
+    return "".join(out)
+
+
+def _balanced_json_object_end(text: str, start: int) -> int:
+    depth = 0
+    in_string = False
+    escaped = False
+    quote = ""
+    for index in range(start, len(text)):
+        current = text[index]
+        if in_string:
+            if escaped:
+                escaped = False
+            elif current == "\\":
+                escaped = True
+            elif current == quote:
+                in_string = False
+            continue
+        if current in {"'", '"'}:
+            in_string = True
+            quote = current
+        elif current == "{":
+            depth += 1
+        elif current == "}":
+            depth -= 1
+            if depth == 0:
+                return index + 1
+            if depth < 0:
+                return -1
+    return -1
