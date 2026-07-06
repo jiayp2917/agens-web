@@ -16,9 +16,13 @@
 ## 本地启动
 
 ```powershell
-cd <repo>
+cd D:\chat\agens-web
 .\scripts\start_local_pg.ps1
-.\.venv\Scripts\python.exe -m pip install -e ".[dev]"
+$env:DATABASE_URL = "postgresql+psycopg://agens_test@127.0.0.1:55432/agens_web_test"
+$env:TEST_DATABASE_URL = "postgresql+psycopg://agens_test@127.0.0.1:55432/agens_web_test"
+$env:AGENS_PG_AUTO_DDL = "1"
+$env:SESSION_COOKIE_SECURE = "0"
+$env:PYTHONPATH = "D:\chat\agens-web\src"
 .\.venv\Scripts\python.exe -m uvicorn web.backend.app:app --host 127.0.0.1 --port 8000 --reload
 ```
 
@@ -33,8 +37,17 @@ $env:SESSION_COOKIE_SECURE="0"
 浏览器打开：
 
 ```text
-http://127.0.0.1:8000/
+http://127.0.0.1:5173/
 ```
+
+前端开发服务：
+
+```powershell
+cd D:\chat\agens-web\web\frontend-react
+npm.cmd run dev -- --host 127.0.0.1 --port 5173
+```
+
+如果只验证后端静态产物，也可以打开 `http://127.0.0.1:8000/`；日常本地开发优先走 Vite `5173`，由 Vite 代理 `/api` 到后端。
 
 ## 业务流程
 

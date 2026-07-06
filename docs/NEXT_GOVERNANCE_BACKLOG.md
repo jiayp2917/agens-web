@@ -5,10 +5,10 @@ This is the active backlog for `agens-web`. It separates local code work, local 
 ## Current Evidence
 
 - Current local code baseline includes sanitized model diagnostics and the 2026-07-04 attribute-scale cleanup.
-- Validation after the latest P1 observability slice passed:
+- Validation after the latest dynamic-opening slice passed:
   - `python -m compileall -q src tests web scripts migrations`
-  - `python -m pytest -q tests\web` -> 72 passed after dynamic-opening batch
-  - full `python -m pytest -q` with local PostgreSQL `TEST_DATABASE_URL` -> 493 passed
+  - `python -m pytest -q tests\web` -> 73 passed after dynamic-opening batch
+  - full `python -m pytest -q` with local PostgreSQL `TEST_DATABASE_URL` -> 495 passed
   - `cd web\frontend-react; npm.cmd run build` -> passed
   - `git diff --check` -> passed with LF/CRLF warnings only
 - User-scoped model settings are implemented:
@@ -16,7 +16,7 @@ This is the active backlog for `agens-web`. It separates local code work, local 
   - `/api/admin/settings/model` is the admin-only system-default endpoint.
   - `user_model_configs` stores one encrypted config per `user_id`; system default remains in `model_config`.
   - Runtime model calls resolve config by current session/user and do not mutate process-global `AGNES_API_KEY`.
-- Local visible Chrome acceptance passed in `local-visible-dynamic-opening-20260706-20turn-live`: dynamic opening live start gate (`start_model_ok=true`, `start_fallback=false`, 4 initial choices and dynamic world fields), account registration/login, character creation, 20/20 choice turns non-fallback, and save/load passed. Evidence remains generated under `output/playwright/` and is ignored by default.
+- Local visible Chrome acceptance passed in `local-visible-dynamic-opening-20260706-strict-live5`: dynamic opening live start gate (`start_model_ok=true`, `start_fallback=false`, 4 initial choices and dynamic world fields), account registration/login, character creation, 20/20 choice turns non-fallback, and save/load passed. Evidence remains generated under `output/playwright/` and is ignored by default.
 - Production P0 is accepted for the latest deployed production batch: server thread deployed `25ad3d15`, kept Alembic at `20260622_0005`, verified `user_model_configs`, health/catalog/container state, sanitized log scan, real-account flow, and production start+choice non-fallback with `turn_count=1`.
 - Latest local code adds sanitized `model_result` diagnostics with numeric/boolean fields only: narrator/judge elapsed time, repair elapsed time, prompt size, history count, game-state size, and provider token counters when available. This is measurement, not a latency fix.
 - Current local working batch adds dynamic character-driven opening generation: difficulty, talent, spirit root, family background, six attributes, and random/manual mode now feed a unified opening payload for world profile, 0-16 chronicle, age-16 situation, external intelligence, and initial A/B/C/D choices. Model-unavailable starts use profile-aware fallback and still surface fallback status; fallback remains invalid as live-model success. The latest Chrome run passed, but repair remained high at 18/20 turns.
@@ -32,6 +32,7 @@ This is the active backlog for `agens-web`. It separates local code work, local 
 - A healthy deploy can still fail gameplay acceptance; live-model fallback remains a product/runtime failure.
 - Browser evidence must be strict JSON/NDJSON/CSV so future audits can parse it.
 - Chrome playtests must not run concurrently with `tests\web` against the same database because Web tests truncate the shared test DB.
+- Local service startup should reuse `scripts/start_local_pg.ps1` for PostgreSQL and then run backend/frontend separately on `127.0.0.1:8000` and `127.0.0.1:5173`; do not delete `.tmp\pg-test-20260626-55432` while PostgreSQL is running.
 
 ## P0: Acceptance And Deployment Gates
 

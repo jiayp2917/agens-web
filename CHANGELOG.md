@@ -2,6 +2,18 @@
 
 ## 2026-07-06
 
+### Changed - documentation status and local service handoff
+
+- Synchronized current governance docs with the latest dynamic-opening baseline:
+  `tests\web` 73 passed, full `pytest -q` 495 passed, and headed Chrome evidence
+  prefix `local-visible-dynamic-opening-20260706-strict-live5`.
+- Added a copyable local service startup path for PostgreSQL, FastAPI on
+  `127.0.0.1:8000`, and Vite on `127.0.0.1:5173`.
+- Extended project lessons with the current startup rule: restore PostgreSQL
+  first, keep pytest and Chrome playtests from concurrently sharing the same
+  test database, and treat dynamic opening as a foundation rather than proof of
+  complete 20-turn content quality.
+
 ### Changed - character-driven dynamic opening generation
 
 - Reworked profile starts around one coherent opening payload so world profile,

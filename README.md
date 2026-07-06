@@ -58,6 +58,24 @@ cd ..\..
 .\.venv\Scripts\python.exe -m uvicorn web.backend.app:app --host 127.0.0.1 --port 8000 --reload
 ```
 
+本地调试的常用服务入口：
+
+```powershell
+cd D:\chat\agens-web
+.\scripts\start_local_pg.ps1
+$env:DATABASE_URL = "postgresql+psycopg://agens_test@127.0.0.1:55432/agens_web_test"
+$env:TEST_DATABASE_URL = "postgresql+psycopg://agens_test@127.0.0.1:55432/agens_web_test"
+$env:AGENS_PG_AUTO_DDL = "1"
+$env:SESSION_COOKIE_SECURE = "0"
+$env:PYTHONPATH = "D:\chat\agens-web\src"
+.\.venv\Scripts\python.exe -m uvicorn web.backend.app:app --host 127.0.0.1 --port 8000 --reload
+
+cd D:\chat\agens-web\web\frontend-react
+npm.cmd run dev -- --host 127.0.0.1 --port 5173
+```
+
+浏览器打开 `http://127.0.0.1:5173/`。后端健康检查为 `http://127.0.0.1:8000/api/health`。
+
 如未完成 editable install，启动后端前临时设置源码路径：
 
 ```powershell
