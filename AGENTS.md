@@ -142,24 +142,6 @@ cd <repo>
 
 后续智能体先读 `docs/INDEX.md`。当前运行链路见 `docs/RUNTIME_FLOW.md`，结构边界和技术债见 `docs/PROJECT_AUDIT.md`，下一批治理工作见 `docs/NEXT_GOVERNANCE_BACKLOG.md`。历史变更只看 `CHANGELOG.md`；不要引用已删除的 `docs/archive/` 旧草案作为当前事实。
 
-## 通用编码准则
-
-### 1. 不确定就问
-
-需求、边界、设计方向或破坏性清理不明确时，先停下来问用户。
-
-### 2. 简洁优先
-
-解决问题的最少代码。首期 Web 先跑通最小闭环，不提前建设复杂平台。
-
-### 3. 精准改动
-
-只触碰 Web 化必须改动的内容。移动端项目已在另一个目录维护，不在这里同步迭代。
-
-### 4. 目标驱动执行
-
-每次改动都要能通过明确验证：后端 API、浏览器 UI、核心引擎测试或文档检查。
-
 ## 2026-06-28 Model Settings Boundary
 
 - `/api/settings/model` is a logged-in user endpoint, not an admin/global endpoint. Each registered user owns one personal model config and may clear it to use the system Agens default.

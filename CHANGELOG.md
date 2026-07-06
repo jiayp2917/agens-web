@@ -9,6 +9,22 @@
 - Registered the verified findings in `docs/PROJECT_AUDIT.md` and the refined P0/P1/P2 follow-up plan in `docs/NEXT_GOVERNANCE_BACKLOG.md`. Code-level items (service.py god class, flow→engine private coupling, dead StartFlow/profile-opening chains, duplicated literals and secret markers, bare-except set, agent boilerplate) are recorded as backlog, not fixed in this pass.
 - Noted that `breakthrough_flow.py` is now the only narrator path still using `repair_incomplete_output=True` (intentional, low breakthrough frequency, authoritative-result decoupling still benefits from tag recovery); ordinary turns remain `False` per the P1 latency slice.
 
+### Changed - governance audit execution (P0+P1+P2)
+
+Acted on the read-only audit above via nine focused commits, each with its own verification gate. No public API behavior changed; tests stayed green throughout.
+
+- Security: unified the secret-redaction marker list to one 9-item `SECRET_MARKERS` (now includes `database_url`/`postgresql://`) shared by `game_engine._safe_log_reason`, `model_fallback_policy._looks_secret_bearing`, and `web/backend/service.py`; the engine copies previously missed the DB-URI markers.
+- Correctness: routed all four turn-recording sites through `GameSession.record_turn`, fixing a silent bug where `handle_local_story_action` wrote only `turn_history` and skipped the `chat_history` append+compact, so local-story turns never entered the narrator prompt context.
+- Defaults: consolidated 8 inline `https://apihub.agnes-ai.com/v1` / `agnes-2.0-flash` runtime fallbacks to `Settings().base_url` / `Settings().model` (settings.py stays the single source; `app_models.py` keeps its Pydantic Field defaults as API schema).
+- Catalog: narrowed the `_catalog_names` / `_catalog_spirit_root_grade` bare-except to `SQLAlchemyError` with `log.warning` so DB fetch failures are visible instead of silently returning empty defaults.
+- Dead code (-322 lines): removed the zero-caller `generate_world_profile` / `generate_profile_opening` chain, 10 zero-caller helpers (`default_lifespan_for_realm`, `RealmSystem.public_realm_name`, `display_choice_text`, `profile_concept`, `paths.save_path`, 6 `render.py` formatters), the now-unused `_SEMANTIC_PREFIX_RE`, frontend `randomBetween` and the `StatLine` component (plus its contract-test assertions), and 3 unreferenced tracked PNGs under `output/`. `_session_flags`/`_inventory_text` kept (still used by `realm.py`).
+- Boilerplate: unified the narrator/judge `_prompt_metrics` into `common.prompt_metrics` (verifier-confirmed output-safe; `result_diagnostics` ignores extra keys). `save_artifact` consolidation deferred — verifier found agent-specific parse/return logic dominates, extraction would add indirection for modest gain.
+- WebGameService split: extracted `ModelConfigService` and `DeathRewardsService` into dedicated modules mirroring the `service_summaries.py` precedent; `death_summary` orchestration stays on `WebGameService` (depends on the live runner resolver). 5 public model-config methods became one-line delegators; dropped now-unused imports.
+- Flow coupling: promoted 13 `engine._*` helpers called by the three Flow classes to public methods, and typed `engine` as `GameEngine` (TYPE_CHECKING import avoids the cycle). The four methods also called inside `game_engine.py` were renamed together; two test files updated.
+- Docs: removed the duplicate condensed coding-guidelines block in `AGENTS.md`, fixed the `## 实现状态` heading nested inside a blockquote in `GAME_MODE_SPEC.md`, and narrowed `RUNTIME_FLOW.md`'s current-status preamble to runtime facts + pointers (dated evidence stays in INDEX/PROJECT_AUDIT).
+
+Validation gates per commit: `compileall` clean; `tests/unit/engine` 187 passed; `tests/web` 73 passed; `tests/web + tests/unit` 453 passed; `npm run build` passed.
+
 ### Changed - P1 model-efficiency sampling and ordinary-turn repair reduction
 
 - Ran the new real visible Chrome 20-turn sampling baseline against an isolated local PostgreSQL acceptance DB before code changes: 20/20 choice turns were non-fallback, average choice latency was about 49.5s, max about 107.6s, repair was 18/20 turns, judge was 6 turns, and fallback was 0.
