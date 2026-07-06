@@ -59,6 +59,15 @@ def test_local_story_choice_advances_node_and_delta(monkeypatch, tmp_path) -> No
     assert any(quest.get("name") == "外门入门试炼" for quest in engine.game_session.active_quests)
     assert engine.game_session.attributes["willpower"] > before_willpower
 
+    # Regression: local-story turns must also feed chat_history (narrator prompt
+    # context). Before record_turn, handle_local_story_action wrote only
+    # turn_history and silently skipped chat_history append+compact.
+    assert any(
+        msg.get("role") == "user" and msg.get("content") == first_choice
+        for msg in engine.game_session.chat_history
+    )
+    assert any(msg.get("role") == "assistant" for msg in engine.game_session.chat_history)
+
 
 def test_local_story_graph_has_no_dead_nodes() -> None:
     assert validate_local_story_graph(DEFAULT_STORY_ID) == []

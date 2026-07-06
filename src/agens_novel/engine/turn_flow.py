@@ -14,7 +14,6 @@ from .action_delta_policy import (
 )
 from .choices import fallback_choices, normalize_choices
 from .choices import clean_visible_text
-from .history import compact_chat_history
 from .model_result import (
     ModelResultKind,
     classify_judge_result,
@@ -68,17 +67,15 @@ class TurnFlow:
         if result.narrative:
             engine._emit("on_narrative", result.narrative, session.turn_count)
 
-        session.turn_history.append({
-            "turn": session.turn_count,
-            "input": text,
-            "narrative": result.narrative,
-            "delta": result_delta,
-            "choices": session.last_choices,
-            "local_story": {
+        session.record_turn(
+            text,
+            result.narrative,
+            result_delta,
+            local_story={
                 "story_id": session.local_story_id,
                 "node_id": session.local_story_node_id,
             },
-        })
+        )
         engine._emit("on_status_bar", format_status_bar(session))
 
         if engine._check_game_over():
@@ -362,21 +359,15 @@ class TurnFlow:
             "world": {},
             "meta": fallback_meta,
         }
-        session.turn_history.append({
-            "turn": session.turn_count,
-            "input": text,
-            "narrative": narrative,
-            "delta": state_delta,
-            "choices": session.last_choices,
-            "local_story": {
+        session.record_turn(
+            text,
+            narrative,
+            state_delta,
+            local_story={
                 "story_id": session.local_story_id,
                 "node_id": session.local_story_node_id,
             },
-        })
-        session.chat_history.append({"role": "user", "content": text})
-        session.chat_history.append({"role": "assistant", "content": narrative})
-        if len(session.chat_history) > 20:
-            session.chat_history = compact_chat_history(session.chat_history, max_entries=20)
+        )
 
     def _record_and_emit_turn(
         self,
@@ -386,17 +377,7 @@ class TurnFlow:
     ) -> None:
         engine = self.engine
         session = engine.game_session
-        session.turn_history.append({
-            "turn": session.turn_count,
-            "input": text,
-            "narrative": narrative,
-            "delta": state_delta,
-            "choices": session.last_choices,
-        })
-        session.chat_history.append({"role": "user", "content": text})
-        session.chat_history.append({"role": "assistant", "content": narrative})
-        if len(session.chat_history) > 20:
-            session.chat_history = compact_chat_history(session.chat_history, max_entries=20)
+        session.record_turn(text, narrative, state_delta)
 
         if narrative:
             engine._emit("on_narrative", narrative, session.turn_count)

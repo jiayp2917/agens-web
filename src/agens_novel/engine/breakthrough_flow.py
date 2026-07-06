@@ -6,7 +6,6 @@ import logging
 import re
 from typing import Any
 
-from .history import compact_chat_history
 from .render import format_realm, format_status_bar
 
 log = logging.getLogger(__name__)
@@ -167,17 +166,7 @@ class BreakthroughFlow:
         state_delta: dict[str, Any],
     ) -> None:
         session = self.engine.game_session
-        session.turn_history.append({
-            "turn": session.turn_count,
-            "input": action_text,
-            "narrative": narrative,
-            "delta": state_delta,
-            "choices": session.last_choices,
-        })
-        session.chat_history.append({"role": "user", "content": action_text})
-        session.chat_history.append({"role": "assistant", "content": narrative})
-        if len(session.chat_history) > 20:
-            session.chat_history = compact_chat_history(session.chat_history, max_entries=20)
+        session.record_turn(action_text, narrative, state_delta)
 
     def _judge_breakthrough_delta(
         self,

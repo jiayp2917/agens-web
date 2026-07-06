@@ -378,6 +378,42 @@ class GameSession:
             self.finale = True
 
     # ─────────────────────────────────────────────────────────────────────────
+    # Turn recording
+    # ─────────────────────────────────────────────────────────────────────────
+
+    def record_turn(
+        self,
+        input_text: str,
+        narrative: str,
+        state_delta: dict[str, Any],
+        *,
+        local_story: dict[str, Any] | None = None,
+    ) -> None:
+        """Append one turn to turn_history and feed chat_history (with compact).
+
+        All turn-recording sites (ordinary, local-story, local-story fallback,
+        breakthrough) route through this so local-story turns also enter the
+        narrator prompt context. ``compact_chat_history`` is imported lazily to
+        avoid a session<->engine circular import at module load.
+        """
+        entry: dict[str, Any] = {
+            "turn": self.turn_count,
+            "input": input_text,
+            "narrative": narrative,
+            "delta": state_delta,
+            "choices": self.last_choices,
+        }
+        if local_story is not None:
+            entry["local_story"] = local_story
+        self.turn_history.append(entry)
+        self.chat_history.append({"role": "user", "content": input_text})
+        self.chat_history.append({"role": "assistant", "content": narrative})
+        if len(self.chat_history) > 20:
+            from ..engine.history import compact_chat_history
+
+            self.chat_history = compact_chat_history(self.chat_history, max_entries=20)
+
+    # ─────────────────────────────────────────────────────────────────────────
     # Serialization
     # ─────────────────────────────────────────────────────────────────────────
 
