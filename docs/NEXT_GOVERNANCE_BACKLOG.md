@@ -95,6 +95,8 @@ Only do complexity work that supports the main flow.
 
 Sourced from the read-only subagent audit (see `docs/PROJECT_AUDIT.md` same-date section). No code changed in this pass; the following is the prioritized execution queue. The plan was reviewed by an independent critique agent, which dropped one fabricated item (a plan file that does not exist in this repo), promoted the secret-redaction drift to P0, and corrected the dead-chain verification to acknowledge a remaining test reference.
 
+**Status (2026-07-06):** All P0/P1/P2 items below were executed in commits `cd57215..026cd69` — secret-marker unification, catalog except narrowing, default-literal consolidation, local-story chat_history fix + `record_turn`, dead profile-opening chain removal, zero-caller helpers/PNG/component removal, `_prompt_metrics` unification, `WebGameService` split (`ModelConfigService` + `DeathRewardsService`), flow→engine coupling convergence, and doc structure fixes. See the CHANGELOG same-date "governance audit execution" entry for the full summary. The items below are retained as the execution record; none remain open. The only deferral was `save_artifact` audit-dict extraction (verifier found agent-specific parse/return logic dominates — kept inline per the simplicity guideline).
+
 ### P0 (security / factual - do first)
 
 1. Unify the secret-redaction marker list.
