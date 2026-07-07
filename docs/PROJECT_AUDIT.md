@@ -35,15 +35,15 @@
 
 - 当前本地代码基线：已包含脱敏模型诊断、P1 可见反馈修复和 2026-07-04 属性尺度清理。
 - 本地 PostgreSQL 测试库目标：`127.0.0.1:55432/agens_web_test`。
-- 最新自动化门禁：P1 模型效率切片 `compileall` passed，`tests\web` 73 passed，全量 `pytest -q` 503 passed，前端 build passed，`git diff --check` 仅 LF/CRLF warning。
+- 最新自动化门禁：narrator prompt history soft-cap 修复后 `compileall` passed，`tests\web` 73 passed，全量 `pytest -q` 501 passed，前端 build passed，`git diff --check` 仅 LF/CRLF warning。
 - 用户级模型设置已落地：个人配置按 `user_id` 加密隔离，系统默认保留在 `model_config`，运行时按当前 session/user 解析模型配置，不再通过进程级 `AGNES_API_KEY` 注入用户 key。
 - 角色创建属性池已按 `GAME_MODE_SPEC.md` §4.1 落地：手动 2-8/总和 30，随机 0-10/总和 30。
 - 运行时属性尺度已审计并收敛为 0-10：`DEFAULT_ATTRIBUTES` 为 5，境界小层推进、`GameSession` delta/save、World Builder 入局、跨局奖励和 catalog 种子不再以 50/100 作为正常尺度；旧 0-100 仅作兼容迁移输入。
 - 动态开局链路已改为 profile-aware opening payload：难度、天赋、灵根、家世、六维属性和随机/手选模式生成本局世界观、0-16 岁编年史、16 岁初始局势、外界情报和首次 A/B/C/D；模型未启用或失败时使用差异化本地 fallback，不再固定青玄宗/东荒云界模板。
 - 境界、突破、寿元和可见文本一致性已进入规则约束：练气显示 1-9 层，筑基及以上显示初期/中期/后期/圆满；突破由规则先结算，模型只按结果叙事；寿元按境界区间和角色/事件动态修正；玩家可见文本清理 JSON、结构化标签、英文状态词和内部 mismatch 文案。
-- 本地真实 Chrome 验收已通过：`local-visible-p1-final-20260706` 完成动态开局 live start gate（`start_model_ok=true`、`start_fallback=false`、4 个初始 choices、动态世界字段存在）、注册/登录、角色创建、20/20 choice non-fallback、存档/读档；repair 0/20、judge 3 次、fallback 0。证据位于 `output/playwright/`，默认不提交。
+- 本地真实 Chrome 验收已通过：`local-visible-history-softcap-c1d8628-20260707` 完成动态开局 live start gate（`start_model_ok=true`、`start_fallback=false`、4 个初始 choices、动态世界字段存在）、注册/登录、角色创建、20/20 choice non-fallback、存档/读档；repair 0/20、judge 5 次、fallback 0。证据位于 `output/playwright/`，默认不提交。
 - 生产 P0 已通过：服务器线程部署 `25ad3d15` 后，容器 healthy，Alembic `20260622_0005`，`user_model_configs` 存在，public/origin health 和 catalog 正常，日志敏感标记扫描为 0；一次性真实账号注册、登录、开局、选择、存档、读档、跨会话恢复均通过；生产 start 和至少 1 次 choice 均为 non-fallback，choice 后 `turn_count=1`。
-- 最新本地代码已加入脱敏模型性能观测并完成一次 final Chrome 采样：repair 已从 18/20 降为 0/20，最终 Chrome 平均回合约 25.9s、最大约 57.1s；响应慢有所改善但未完全解决，下一步重点是 provider/narrator 首次响应与少数 judge 调用。
+- 最新本地代码已加入脱敏模型性能观测并完成 history soft-cap Chrome 复采：repair 维持 0/20，prompt 字符数被控制在约 6.7k 以内，但最终 Chrome 平均回合约 39.3s、最大约 157.3s；响应慢没有闭环，下一步重点是 provider/narrator 长尾、模型输出契约和 judge 调用成本。
 
 ## 2026-07-06 子智能体只读审计
 
@@ -184,7 +184,7 @@
 
 杠杆排序：
 
-1. **history 压缩**（最高杠杆）—— hc cap 20 后 narrator 上下文质量下降 → repair 频发。第一批代码切片已把 narrator prompt 压缩为“开场上下文 + 省略占位 + 最近 6 条”，但实际 repair/耗时收益仍需下一轮真实 Chrome 20 回合复采确认。
+1. **history 压缩**（最高杠杆）—— hc cap 20 后 narrator 上下文质量下降 → repair 频发。第一批代码切片已把 narrator prompt 压缩为“开场上下文 + 省略占位 + 最近 6 条”，并通过 `local-visible-history-softcap-c1d8628-20260707` 复采：repair 0/20，prompt 约 6.3k-6.7k，但平均/最大耗时仍偏高。
 2. **narrator 输出契约/解析器重构**（次高，高风险）—— `nodes.py` 539 行解析器堆积 + 契约松导致 parse 失败/repair。重构留独立批次，但本采样证明它确是根因。
 3. **repair 是契约失效的后果，不是独立杠杆** —— 降 repair 要靠契约/解析器/history。
 4. judge elapsed 全 0（非源）；provider narrator 首次 ~13.4s（可接受）。
@@ -202,7 +202,7 @@
 
 | 问题 | 风险 | 处理方向 |
 | --- | --- | --- |
-| live model 响应慢 | Final Chrome run 平均回合耗时约 25.9s、最大约 57.1s；repair 已为 0，慢因主要转向 provider/narrator 首次响应和少数 judge 调用。 | 继续优化 narrator 输出契约、judge 超时/触发成本，并评估 provider 性能；不要把 repair 降低误判为整体性能达标。 |
+| live model 响应慢 | 最新 `local-visible-history-softcap-c1d8628-20260707` 平均回合耗时约 39.3s、最大约 157.3s；repair 为 0，慢因主要转向 provider/narrator 长尾和少数 judge 调用。 | 继续优化 narrator 输出契约、judge 超时/触发成本，并评估 provider 性能；不要把 repair 为 0 误判为整体性能达标。 |
 | narrator repair / judge 依赖 | Ordinary-turn repair 已降为 0/20；judge 降为 3 次，但 narrator 仍大量输出 narrative-only，靠规则 delta 和 choice recovery 维持推进。 | 保持不接受缺叙事/缺可用选项；继续收紧模型契约，让模型返回完整结构，而不是长期依赖规则兜底。 |
 | 20 回合内容体验不足 | 动态开局已补 0-16 岁编年史和本局世界摘要，但 20 回合中段目标感、阶段奖励、世界变化和路线差异仍弱。 | 下一步继续做 3-5 回合反馈、四类事件池，减少重复闭关/突破循环，并用 Chrome 证据确认。 |
 | 叙事与权威状态落账 | 本轮已覆盖突破和部分可见文本清洗，但关键道具、功法、属性、称号、关系、伤势、寿元等普通回合仍需继续扩测试。 | 结构化落账、自然改写或压制可见叙事；模型不得决定权威数值。 |

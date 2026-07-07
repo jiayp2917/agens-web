@@ -8,7 +8,7 @@ This is the active backlog for `agens-web`. It separates local code work, local 
 - Validation after the latest P1 model-efficiency slice passed:
   - `python -m compileall -q src tests web scripts migrations`
   - `python -m pytest -q tests\web` -> 73 passed with local PostgreSQL `TEST_DATABASE_URL`
-  - full `python -m pytest -q` with local PostgreSQL `TEST_DATABASE_URL` -> 503 passed
+- full `python -m pytest -q` with local PostgreSQL `TEST_DATABASE_URL` -> 501 passed
   - `cd web\frontend-react; npm.cmd run build` -> passed
   - `git diff --check` -> passed with LF/CRLF warnings only
 - User-scoped model settings are implemented:
@@ -16,13 +16,13 @@ This is the active backlog for `agens-web`. It separates local code work, local 
   - `/api/admin/settings/model` is the admin-only system-default endpoint.
   - `user_model_configs` stores one encrypted config per `user_id`; system default remains in `model_config`.
   - Runtime model calls resolve config by current session/user and do not mutate process-global `AGNES_API_KEY`.
-- Previous dynamic-opening Chrome acceptance `local-visible-dynamic-opening-20260706-strict-live5` remains historical comparison evidence. The current local visible Chrome acceptance is `local-visible-p1-final-20260706`; generated evidence remains under `output/playwright/` and is ignored by default.
+- Previous dynamic-opening Chrome acceptance `local-visible-dynamic-opening-20260706-strict-live5` and `local-visible-p1-final-20260706` remain historical comparison evidence. The current local visible Chrome acceptance is `local-visible-history-softcap-c1d8628-20260707`; generated evidence remains under `output/playwright/` and is ignored by default.
 - Production P0 is accepted for the latest deployed production batch: server thread deployed `25ad3d15`, kept Alembic at `20260622_0005`, verified `user_model_configs`, health/catalog/container state, sanitized log scan, real-account flow, and production start+choice non-fallback with `turn_count=1`.
 - Latest local code adds sanitized `model_result` diagnostics with numeric/boolean fields only: narrator/judge elapsed time, repair elapsed time, prompt size, history count, game-state size, and provider token counters when available. This is measurement, not a latency fix.
 - Dynamic character-driven opening generation is implemented: difficulty, talent, spirit root, family background, six attributes, and random/manual mode feed a unified opening payload for world profile, 0-16 chronicle, age-16 situation, external intelligence, and initial A/B/C/D choices. Model-unavailable starts use profile-aware fallback and still surface fallback status; fallback remains invalid as live-model success.
 - Current local working batch also closes the attribute-scale audit: runtime attributes are 0-10 with 5 as neutral, and old 0-100 values are compatibility inputs only. New realm, reward, catalog, or model-prompt logic must not use 50 as the neutral midpoint or 100 as the normal cap.
 - Active phase plan remains `docs/PLAYABLE_GAMEPLAY_ROADMAP_20260629.md`: P0 current batch is closed; next work is P1 gameplay quality and model-efficiency iteration without broad architecture changes.
-- Current local P1 model-efficiency slice is verified by `local-visible-p1-final-20260706`: dynamic live start passed, 20/20 choice turns were non-fallback, save/load passed, fallback was 0, repair fell from 18/20 to 0/20, and judge fell from 6 to 3 turns. Reviewer follow-up fixed stage-feedback persistence and runtime opening-context pruning with automated coverage. Latency is improved from the earlier sampling run but remains a P1 tuning target: average choice latency was about 25.9s and max about 57.1s, with the remaining slow path in provider/narrator/judge latency, not repair calls.
+- Current local P1 model-efficiency slice is verified by `local-visible-history-softcap-c1d8628-20260707`: dynamic live start passed, 20/20 choice turns were non-fallback, save/load passed, fallback was 0, repair stayed 0/20, and judge ran 5 turns. The history soft-cap keeps prompt size bounded (avg ~6.3k chars, max ~6.7k chars), but latency did not improve in this sample: average choice latency was about 39.3s and max about 157.3s, with the remaining slow path in provider/narrator/judge latency, not repair calls.
 
 ## Lessons To Keep
 
@@ -56,7 +56,7 @@ Next work should be data-led and gameplay-facing.
    - `narrator-sample-20260706`（20 回合 chrome-devtools 采样，见 `docs/PROJECT_AUDIT.md` 同日采样段）：平均回合 ~30.4s、max 65.6s；**repair 率 70%（14/20），repair 占总延迟 56%**；history cap 20 后 repair 率 ~100%。
    - **这推翻 `local-visible-p1-final-20260706` 的 "repair 0/20，lever exhausted"** —— 当前 narrator 契约在 history 增长后频繁失效（p1-final 与本采样 repair 率差异大，可能因模型 key/版本/配置不同）。
 2. 杠杆排序（采样驱动）：
-   - **history 压缩**（最高杠杆）：已落地第一批软上限切片，narrator prompt 超过 7 条历史后压缩为“开场上下文 + 省略占位 + 最近 6 条”；仍需真实 Chrome 20 回合复采确认 repair/耗时是否下降。
+   - **history 压缩**（最高杠杆）：第一批软上限切片已落地并通过 `local-visible-history-softcap-c1d8628-20260707` 复采；repair 保持 0/20，prompt 字符数被控制在约 6.7k 以内，但平均/最大耗时仍偏高，后续重点转向 narrator/provider 长尾与 judge 调用成本。
    - **narrator 输出契约/解析器重构**（次高，高风险）：`nodes.py` 539 行解析器堆积，独立批次 + 充分测试。本采样已证明它是根因，不再是"先采样再决定"。
    - repair 是契约失效的后果，不是独立杠杆。
    - judge elapsed 全 0（非源）；provider narrator 首次 ~13.4s（可接受）。
@@ -160,7 +160,7 @@ Sourced from the read-only subagent audit (see `docs/PROJECT_AUDIT.md` same-date
 **retire/demote 决策（2026-07-06 已固化）**：
 
 - "Keep the sidebar 外界情报 read-only" 已从 P1 §3 活动 demote 为 P2 governance invariant。
-- repair/judge P1 sub-bullets 已收窄：repair 0/20、judge 3 次（6→3），lever 基本耗尽；P1 §1-2 已改为聚焦 provider/narrator 首次响应与 history 压缩。
+- repair/judge P1 sub-bullets 已收窄为“repair 不是独立杠杆”。2026-07-07 复采显示 repair 仍为 0/20，但 judge 为 5 次且总耗时仍高；P1 §1-2 当前应聚焦 provider/narrator 长尾、模型输出契约和 judge 调用成本。
 
 ## Validation Rules
 

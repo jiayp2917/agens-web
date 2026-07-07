@@ -26,8 +26,8 @@
 
 当前状态：已闭环。
 
-- 本地真实可见 Chrome 跟进验收已通过：`local-visible-p1-final-20260706` 完成普通账号注册/登录、动态开局 live start gate、角色创建、20/20 choice non-fallback、存档/读档（repair 0/20、judge 3、fallback 0）。`local-visible-dynamic-opening-20260706-strict-live5` 降级为历史对比证据。
-- 本地自动化基线已通过：`compileall`、`tests\web` 73 passed、全量 `pytest -q` 503 passed、前端 build、`git diff --check`。
+- 本地真实可见 Chrome 跟进验收已通过：`local-visible-history-softcap-c1d8628-20260707` 完成普通账号注册/登录、动态开局 live start gate、角色创建、20/20 choice non-fallback、存档/读档（repair 0/20、judge 5、fallback 0；平均约 39.3s、最大约 157.3s）。`local-visible-p1-final-20260706` 与 `local-visible-dynamic-opening-20260706-strict-live5` 降级为历史对比证据。
+- 本地自动化基线已通过：`compileall`、`tests\web` 73 passed、全量 `pytest -q` 501 passed、前端 build、`git diff --check`。
 - 生产部署与迁移已完成：Alembic 已到 `20260622_0005`，`user_model_configs` 存在。
 - 生产账号注册、登录、存档、读档、跨会话恢复已通过。
 - production live model P0 已通过：服务器线程部署 `25ad3d15` 后，生产 start 和至少 1 次 choice 均为 non-fallback，choice 后 `turn_count=1`。
@@ -42,15 +42,15 @@
 
 目标：先用数据定位慢因，再改 prompt/history/repair/judge/provider。
 
-现状（`local-visible-p1-final-20260706`）：repair 0/20、judge 3 次（已从 6 收窄），平均 narrator ~22.5s、judge ~21.8s；repair/judge lever 基本耗尽，当前慢因转向 **provider/narrator 首次响应与 history 规模**。
+现状（`local-visible-history-softcap-c1d8628-20260707`）：repair 0/20、judge 5 次，平均回合约 39.3s、最大约 157.3s；history soft-cap 已控制 prompt 字符数，但整体耗时没有闭环，当前慢因转向 **provider/narrator 长尾、模型输出契约和 judge 调用成本**。
 
 下一步：
 
 - 用当前脱敏诊断跑一次真实 Chrome 20 回合采样（确认上述现状是否仍成立）。
 - 采集平均/最大 choice 耗时、narrator 耗时、judge 耗时、repair attempt、repaired output、prompt 字符数、history 数量、game-state 字符数、token usage、fallback、`game_turns` 连续性。
-- 如果慢因是 prompt/history 增长，压缩历史为摘要 + 最近少量原文；当前已先做 narrator prompt 软上限切片（开场上下文 + 省略占位 + 最近 6 条），下一轮需用 Chrome 20 回合复采验证收益。
-- repair 已 0/20（lever 耗尽）；narrator parser 重构见 backlog 高风险独立批次，先采样再动。
-- judge 已从 6 收窄到 3；进一步收窄收益递减。
+- 如果慢因是 prompt/history 增长，压缩历史为摘要 + 最近少量原文；当前 narrator prompt 软上限切片（开场上下文 + 省略占位 + 最近 6 条）已通过 Chrome 20 回合复采，repair 保持 0/20，但耗时仍高。
+- repair 当前为 0/20，说明二次修复调用不是本次慢因；narrator parser/契约仍是高风险独立批次，需保持测试预算。
+- judge 本次为 5 次；继续评估触发条件和超时成本，但不要为了省耗时跳过突破、寿元、伤势、关键道具、功法、称号、关系等权威状态审核。
 - 如果慢因是 provider，记录性能差异并继续保留用户个人模型配置能力。
 
 ## P1：玩法稳定与内容改造

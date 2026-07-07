@@ -8,9 +8,14 @@
   exceeds the soft cap, the prompt keeps the opening context, inserts an omitted
   middle-history stub, and sends only the recent 6 messages verbatim.
 - Added unit coverage for short-history pass-through and long-history compaction.
-- Updated architecture/backlog/audit/roadmap docs. This is not yet a proven
-  latency win; the next Chrome 20-turn sample must re-measure repair rate and
-  choice latency.
+- Verified with `local-visible-history-softcap-c1d8628-20260707`: dynamic live
+  start passed, 20/20 choice turns were non-fallback, save/load passed, fallback
+  was 0, repair stayed 0/20, judge ran 5 turns, average choice latency was about
+  39.3s, max was about 157.3s, and strict JSON/NDJSON/CSV evidence was written
+  under ignored `output/playwright/`.
+- Updated architecture/backlog/audit/roadmap docs. This is a correctness and
+  prompt-bounding step, not a completed latency fix; next work should target
+  provider/narrator long-tail latency, narrator contract quality, and judge cost.
 
 ### Changed - narrator 20 回合延迟采样（chrome-devtools，数据驱动重塑优先级）
 
