@@ -28,8 +28,13 @@ from ...engine.choices import clean_visible_text
 log = logging.getLogger(__name__)
 
 AGENT_NAME = "narrator"
-_MAX_HISTORY_TURNS = 20
 _RECENT_HISTORY_MESSAGES = 6
+# Prompt soft cap: compress to opening + summary stub + recent window once
+# chat_history exceeds this. Deliberately below the storage cap (20, set in
+# record_turn) so the narrator prompt stays bounded as the conversation grows —
+# without it, the compression branch never fires and all 20 stored entries are
+# sent verbatim, which correlates with rising repair rates at high history counts.
+_HISTORY_PROMPT_SOFT_CAP = _RECENT_HISTORY_MESSAGES + 1
 
 
 def load_settings(state: dict[str, Any]) -> dict[str, Any]:
@@ -441,8 +446,15 @@ def _has_recoverable_state_delta(state_delta: Any) -> bool:
 
 
 def _compact_history_for_prompt(history: list[dict]) -> list[dict]:
-    """Keep long playthrough context bounded without losing the opening facts."""
-    if len(history) <= _MAX_HISTORY_TURNS:
+    """Bound the narrator prompt: opening + summary stub + recent turns.
+
+    Storage (``record_turn``) keeps up to 20 entries; the prompt compresses once
+    ``chat_history`` exceeds the soft cap so narrator output quality does not
+    degrade as the conversation grows. The opening entry (world setup from
+    ``record_opening_context``) is preserved, the recent window is kept verbatim
+    for continuity, and the collapsed middle is signalled by a stub.
+    """
+    if len(history) <= _HISTORY_PROMPT_SOFT_CAP:
         return history
 
     first = history[0]

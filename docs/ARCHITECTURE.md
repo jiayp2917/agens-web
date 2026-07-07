@@ -75,7 +75,7 @@
 
 | Agent | 路径 | 温度 / tokens | 节点要点 |
 | --- | --- | --- | --- |
-| **Narrator** | `agents/narrator/` | 默认 | 加载 `prompts/system/narrator.md`；拼接 `<当前状态>` + 最近 20 轮 `chat_history` + `<玩家行动>`；有可恢复内容但缺叙事/`<state_update>`/`<choices>` 时 1 次 repair；解析叙事正文 + `<state_update>` + `<choices>`，并兼容 fenced/bare JSON 与中文 A/B/C/D 行 |
+| **Narrator** | `agents/narrator/` | 默认 | 加载 `prompts/system/narrator.md`；拼接 `<当前状态>` + 压缩后的 `chat_history`（开场上下文 + 省略占位 + 最近 6 条）+ `<玩家行动>`；有可恢复内容但缺叙事/`<state_update>`/`<choices>` 时 1 次 repair；解析叙事正文 + `<state_update>` + `<choices>`，并兼容 fenced/bare JSON 与中文 A/B/C/D 行 |
 | **Judge** | `agents/judge/` | `temperature=0.2`, `max_tokens=512` | 审核 Narrator 提议的 `state_delta`；返回 `approved` / `corrected_delta` / `judgment_note` / `review_score`；LLMError 默认 `approved=False`（安全失败） |
 | **World Builder** | `agents/world_builder/` | `temperature=0.6`, `max_tokens=4096` | 新游戏和角色创建开局生成世界 + 角色；解析 `<world_data>` JSON 标签；保留 `chronicle_0_16`、`initial_situation_16`、`fate_hooks` 等动态开局字段；清理内部错误/调试字段 |
 | **Sequential 包装** | `agents/sequential.py` | — | `SequentialAgentGraph` 通用 4 节点编排；3 个 Agent 共享同一编排 |

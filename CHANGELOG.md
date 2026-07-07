@@ -2,6 +2,16 @@
 
 ## 2026-07-06
 
+### Changed - narrator prompt history soft cap
+
+- Added a conservative narrator prompt compaction slice: once stored `chat_history`
+  exceeds the soft cap, the prompt keeps the opening context, inserts an omitted
+  middle-history stub, and sends only the recent 6 messages verbatim.
+- Added unit coverage for short-history pass-through and long-history compaction.
+- Updated architecture/backlog/audit/roadmap docs. This is not yet a proven
+  latency win; the next Chrome 20-turn sample must re-measure repair rate and
+  choice latency.
+
 ### Changed - narrator 20 回合延迟采样（chrome-devtools，数据驱动重塑优先级）
 
 - Ran a 20-turn narrator latency sample via chrome-devtools (real browser, env

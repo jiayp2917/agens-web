@@ -56,7 +56,7 @@ Next work should be data-led and gameplay-facing.
    - `narrator-sample-20260706`（20 回合 chrome-devtools 采样，见 `docs/PROJECT_AUDIT.md` 同日采样段）：平均回合 ~30.4s、max 65.6s；**repair 率 70%（14/20），repair 占总延迟 56%**；history cap 20 后 repair 率 ~100%。
    - **这推翻 `local-visible-p1-final-20260706` 的 "repair 0/20，lever exhausted"** —— 当前 narrator 契约在 history 增长后频繁失效（p1-final 与本采样 repair 率差异大，可能因模型 key/版本/配置不同）。
 2. 杠杆排序（采样驱动）：
-   - **history 压缩**（最高杠杆）：hc cap 20 后 narrator 上下文质量下降 → repair 频发。压缩 `chat_history` 为摘要 + 最近 N 回合。
+   - **history 压缩**（最高杠杆）：已落地第一批软上限切片，narrator prompt 超过 7 条历史后压缩为“开场上下文 + 省略占位 + 最近 6 条”；仍需真实 Chrome 20 回合复采确认 repair/耗时是否下降。
    - **narrator 输出契约/解析器重构**（次高，高风险）：`nodes.py` 539 行解析器堆积，独立批次 + 充分测试。本采样已证明它是根因，不再是"先采样再决定"。
    - repair 是契约失效的后果，不是独立杠杆。
    - judge elapsed 全 0（非源）；provider narrator 首次 ~13.4s（可接受）。

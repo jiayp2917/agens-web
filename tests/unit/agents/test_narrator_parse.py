@@ -485,3 +485,44 @@ class TestNarrativeViewStreamFilter:
 
         assert narrative == "叙事内容"
         assert delta is None
+
+
+class TestNarratorHistoryCompaction:
+    """The narrator prompt must compress chat_history before it reaches the storage cap."""
+
+    def test_short_history_returned_verbatim(self) -> None:
+        from agens_novel.agents.narrator.nodes import _compact_history_for_prompt
+
+        history = [
+            {"role": "assistant", "content": "开场"},
+            {"role": "user", "content": "A"},
+        ]
+        assert _compact_history_for_prompt(history) is history
+
+    def test_long_history_compresses_to_opening_stub_and_recent_window(self) -> None:
+        from agens_novel.agents.narrator.nodes import (
+            _RECENT_HISTORY_MESSAGES,
+            _compact_history_for_prompt,
+        )
+
+        opening = {"role": "assistant", "content": "开局世界设定" * 200}  # >1200 chars
+        history: list[dict] = [opening]
+        for i in range(12):
+            history.append({"role": "user", "content": f"行动{i}"})
+            history.append({"role": "assistant", "content": f"叙事{i}"})
+
+        compacted = _compact_history_for_prompt(history)
+
+        # Opening (truncated) + summary stub + recent window.
+        assert len(compacted) == 1 + 1 + _RECENT_HISTORY_MESSAGES
+        # Opening entry preserved at the front and truncated to the 1200-char cap.
+        assert compacted[0]["role"] == "assistant"
+        assert compacted[0]["content"].startswith("开局世界设定")
+        assert len(compacted[0]["content"]) <= 1200
+        # Summary stub signals the omitted middle.
+        assert "省略" in compacted[1]["content"]
+        # Recent window is the verbatim tail.
+        assert compacted[-_RECENT_HISTORY_MESSAGES:] == history[-_RECENT_HISTORY_MESSAGES:]
+        # No uncompressed middle entries leak through.
+        middle_dropped = {"role": "user", "content": "行动0"}
+        assert middle_dropped not in compacted

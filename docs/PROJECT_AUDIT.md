@@ -184,7 +184,7 @@
 
 杠杆排序：
 
-1. **history 压缩**（最高杠杆）—— hc cap 20 后 narrator 上下文质量下降 → repair 频发。压缩为摘要 + 最近 N 回合可能直接降 repair 率。
+1. **history 压缩**（最高杠杆）—— hc cap 20 后 narrator 上下文质量下降 → repair 频发。第一批代码切片已把 narrator prompt 压缩为“开场上下文 + 省略占位 + 最近 6 条”，但实际 repair/耗时收益仍需下一轮真实 Chrome 20 回合复采确认。
 2. **narrator 输出契约/解析器重构**（次高，高风险）—— `nodes.py` 539 行解析器堆积 + 契约松导致 parse 失败/repair。重构留独立批次，但本采样证明它确是根因。
 3. **repair 是契约失效的后果，不是独立杠杆** —— 降 repair 要靠契约/解析器/history。
 4. judge elapsed 全 0（非源）；provider narrator 首次 ~13.4s（可接受）。

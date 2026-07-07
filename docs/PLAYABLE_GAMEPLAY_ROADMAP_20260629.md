@@ -48,7 +48,7 @@
 
 - 用当前脱敏诊断跑一次真实 Chrome 20 回合采样（确认上述现状是否仍成立）。
 - 采集平均/最大 choice 耗时、narrator 耗时、judge 耗时、repair attempt、repaired output、prompt 字符数、history 数量、game-state 字符数、token usage、fallback、`game_turns` 连续性。
-- 如果慢因是 prompt/history 增长，压缩历史为摘要 + 最近少量原文。
+- 如果慢因是 prompt/history 增长，压缩历史为摘要 + 最近少量原文；当前已先做 narrator prompt 软上限切片（开场上下文 + 省略占位 + 最近 6 条），下一轮需用 Chrome 20 回合复采验证收益。
 - repair 已 0/20（lever 耗尽）；narrator parser 重构见 backlog 高风险独立批次，先采样再动。
 - judge 已从 6 收窄到 3；进一步收窄收益递减。
 - 如果慢因是 provider，记录性能差异并继续保留用户个人模型配置能力。
