@@ -45,6 +45,30 @@ class TestGameSessionApplyDelta:
         assert s.spirit_root == "火灵根"
         assert s.spirit_root_grade == "地"
 
+    def test_apply_delta_ignores_none_nested_sections(self):
+        s = GameSession()
+
+        s.apply_delta({"character": None, "world": None, "meta": None})
+
+        assert s.realm == "练气"
+        assert s.age == 16
+        assert s.location == ""
+        assert s.game_over is False
+
+    def test_apply_delta_ignores_non_dict_nested_sections(self):
+        s = GameSession()
+        s.apply_delta(
+            {
+                "character": ["bad"],
+                "world": "bad",
+                "meta": 123,
+            }
+        )
+
+        assert s.realm == "练气"
+        assert s.location == ""
+        assert s.game_over is False
+
     def test_apply_profile_fields(self):
         s = GameSession()
         s.apply_delta({

@@ -27,7 +27,7 @@
 当前状态：已闭环。
 
 - 本地真实可见 Chrome 跟进验收已通过：`local-visible-history-softcap-c1d8628-20260707` 完成普通账号注册/登录、动态开局 live start gate、角色创建、20/20 choice non-fallback、存档/读档（repair 0/20、judge 5、fallback 0；平均约 39.3s、最大约 157.3s）。`local-visible-p1-final-20260706` 与 `local-visible-dynamic-opening-20260706-strict-live5` 降级为历史对比证据。
-- 本地自动化基线已通过：`compileall`、`tests\web` 73 passed、全量 `pytest -q` 501 passed、前端 build、`git diff --check`。
+- 本地自动化基线已通过：`compileall`、`tests\web` 73 passed、全量 `pytest -q` 508 passed、前端 build、`git diff --check`。2026-07-07 防御性运行修复已落地：malformed nested `state_delta` 不崩溃，`fallback_prompt.active` 不再被历史 `model_failure` 污染且 runner 重建可恢复当前提示态，`/choice` 接受 A/B/C/D 与 `"1"`-`"4"`。
 - 生产部署与迁移已完成：Alembic 已到 `20260622_0005`，`user_model_configs` 存在。
 - 生产账号注册、登录、存档、读档、跨会话恢复已通过。
 - production live model P0 已通过：服务器线程部署 `25ad3d15` 后，生产 start 和至少 1 次 choice 均为 non-fallback，choice 后 `turn_count=1`。

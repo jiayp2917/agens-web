@@ -58,6 +58,7 @@ class WebRunner:
     guest_token: str = ""
     db: Any = field(default=None, repr=False, compare=False)
     fallback_prompt_text: str = PUBLIC_MODEL_FALLBACK_TEXT
+    fallback_prompt_active: bool = False
 
     def __post_init__(self) -> None:
         self.engine.on_narrative = lambda text, turn: self.record("narrative", text=text, turn=turn)
@@ -106,6 +107,7 @@ class WebRunner:
 
     def _choose_model_failure(self, source: str, reason: str) -> str:
         self.fallback_prompt_text = public_model_failure_notice(reason)
+        self.fallback_prompt_active = True
         self.record(
             "model_failure",
             text=self.fallback_prompt_text,
@@ -135,6 +137,8 @@ class WebRunner:
             config_source=config_source,
             diagnostics=diagnostics,
         )
+        if str(status).lower() == "ok" and agent in {"narrator", "world_builder"}:
+            self.fallback_prompt_active = False
 
     @classmethod
     def from_snapshot(
@@ -148,6 +152,10 @@ class WebRunner:
         runner = cls(session_id=session_id, user_id=user_id, db=db)
         runner.engine.game_session = GameSession.from_save_dict(snapshot)
         runner.events = list(events or [])
+        (
+            runner.fallback_prompt_active,
+            runner.fallback_prompt_text,
+        ) = _fallback_prompt_state_from_events(runner.events)
         return runner
 
     def record(self, event_type: str, **payload: Any) -> None:
@@ -176,13 +184,8 @@ class WebRunner:
                 "node_id": session.local_story_node_id,
             },
             "fallback_prompt": {
-                "active": (
-                    not session.game_over
-                    and (
-                        session.local_story_active
-                        or any(event.get("type") == "model_failure" for event in self.events[-20:])
-                    )
-                ),
+                "active": not session.game_over
+                and (session.local_story_active or self.fallback_prompt_active),
                 "text": self.fallback_prompt_text or PUBLIC_MODEL_FALLBACK_TEXT,
             },
             "character": state["character"],
@@ -237,6 +240,25 @@ def _sanitize_event_payload(event_type: str, payload: dict[str, Any]) -> dict[st
     if "choices" in sanitized and isinstance(sanitized.get("choices"), list):
         sanitized["choices"] = [clean_choice_text(str(choice)) for choice in sanitized["choices"]]
     return sanitized
+
+
+def _fallback_prompt_state_from_events(events: list[dict[str, Any]]) -> tuple[bool, str]:
+    """Rebuild current fallback prompt state from persisted sanitized events."""
+    active = False
+    text = PUBLIC_MODEL_FALLBACK_TEXT
+    for event in events:
+        event_type = event.get("type")
+        if event_type == "model_failure":
+            active = True
+            candidate = str(event.get("text") or "")
+            text = candidate if _is_public_model_notice(candidate) else PUBLIC_MODEL_FALLBACK_TEXT
+        elif (
+            event_type == "model_result"
+            and str(event.get("status") or "").lower() == "ok"
+            and event.get("agent") in {"narrator", "world_builder"}
+        ):
+            active = False
+    return active, text
 
 
 def _sanitize_model_result_payload(payload: dict[str, Any]) -> dict[str, Any]:
@@ -712,6 +734,10 @@ class WebGameService:
         letter_map = {"A": 0, "B": 1, "C": 2, "D": 3}
         if raw.upper() in letter_map and letter_map[raw.upper()] < len(choices):
             return choices[letter_map[raw.upper()]]
+        if raw in {"1", "2", "3", "4"}:
+            index = int(raw) - 1
+            if index < len(choices):
+                return choices[index]
         if raw:
             raise ValueError("请选择 A/B/C/D。")
         raise ValueError("请选择 A/B/C/D。")

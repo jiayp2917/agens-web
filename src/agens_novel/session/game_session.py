@@ -172,7 +172,7 @@ class GameSession:
             log.warning("apply_delta: expected dict, got %s", type(delta).__name__)
             return
 
-        char_delta = delta.get("character", {})
+        char_delta = _delta_section(delta, "character")
         for key in ("lifespan", "realm_stage", "age"):
             if key in char_delta:
                 val = char_delta[key]
@@ -314,7 +314,7 @@ class GameSession:
                     else:
                         log.warning("apply_delta: unknown equipment slot %r, ignoring", k)
 
-        world_delta = delta.get("world", {})
+        world_delta = _delta_section(delta, "world")
         for key in ("location", "region", "current_scene", "day_count"):
             if key in world_delta:
                 setattr(self, key, world_delta[key])
@@ -359,7 +359,7 @@ class GameSession:
             else:
                 log.warning("apply_delta: discovered_add must be list")
 
-        meta = delta.get("meta", {})
+        meta = _delta_section(delta, "meta")
         if "game_over" in meta:
             val = meta["game_over"]
             # Only accept bool (or truthy/falsy that maps cleanly).
@@ -535,3 +535,12 @@ def _dedupe_strings(values: list[Any]) -> list[str]:
     from ..engine.choices import dedupe_strings
 
     return dedupe_strings(values)
+
+
+def _delta_section(delta: dict[str, Any], key: str) -> dict[str, Any]:
+    """Return a dict section from a model delta, ignoring malformed sections."""
+    value = delta.get(key, {})
+    if isinstance(value, dict):
+        return value
+    log.warning("apply_delta: %s must be dict, got %s", key, type(value).__name__)
+    return {}

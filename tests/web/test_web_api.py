@@ -237,7 +237,7 @@ def test_registered_account_session_start_choice_keeps_owner_and_session(
     assert counts["turns_count"] == 1
 
 
-def test_choice_endpoint_rejects_free_text_and_accepts_choice_letter(
+def test_choice_endpoint_rejects_free_text_and_accepts_choice_letter_or_number(
     tmp_path: Path,
     monkeypatch,
 ) -> None:
@@ -266,6 +266,25 @@ def test_choice_endpoint_rejects_free_text_and_accepts_choice_letter(
         )
         assert accepted.status_code == 200
         assert accepted.json()["turn_count"] == 1
+
+        accepted_number = client.post(
+            f"/api/sessions/{session_id}/choice",
+            json={"choice": "1"},
+        )
+        assert accepted_number.status_code == 200
+        assert accepted_number.json()["turn_count"] == 2
+
+        rejected_number = client.post(
+            f"/api/sessions/{session_id}/choice",
+            json={"choice": "5"},
+        )
+        assert rejected_number.status_code == 400
+        rejected_mixed = client.post(
+            f"/api/sessions/{session_id}/choice",
+            json={"choice": "1abc"},
+        )
+        assert rejected_mixed.status_code == 400
+        assert client.get(f"/api/sessions/{session_id}").json()["turn_count"] == 2
 
 
 def test_ineligible_breakthrough_choice_advances_and_records_turn(

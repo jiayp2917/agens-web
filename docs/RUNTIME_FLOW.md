@@ -80,7 +80,7 @@ npm.cmd run dev -- --host 127.0.0.1 --port 5173
    - 特殊开局只由后端识别，前端不明示隐藏规则。
 
 5. 回合推进
-   - A/B/C/D 固定按钮调用 `POST /api/sessions/{id}/choice`，D 为气运/天命路线。
+   - A/B/C/D 固定按钮调用 `POST /api/sessions/{id}/choice`，D 为气运/天命路线；API 接受 `choice_index`、A/B/C/D 和 `"1"`-`"4"`，任意自由文本继续拒绝。
    - `POST /api/sessions/{id}/action` 仅保留给兜底“继续本局”和兼容调用，不再作为 React 主入口的自由文本输入。
    - 后端把行动交给 `GameEngine.handle_action()`，引擎继续负责 Narrator、必要 Judge、状态落账、事件化斗法、突破、死亡和飞升。
    - 本地故事无效输入只提示并保留当前选项，不消耗回合；重复选择自循环节点会生成变化文本，避免完全相同叙事连发。

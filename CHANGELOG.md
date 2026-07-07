@@ -1,5 +1,24 @@
 # Changelog
 
+## 2026-07-07
+
+### Fixed - defensive state delta and web fallback state
+
+- Hardened `GameSession.apply_delta()` against malformed nested model deltas:
+  non-dict `character`, `world`, or `meta` sections are now logged and ignored
+  instead of crashing a turn.
+- Changed web `fallback_prompt.active` to use an explicit current failure flag
+  plus `local_story_active`, rather than scanning historical `model_failure`
+  events. A recovered live narrator/world-builder result now clears the prompt.
+- Aligned the Web choice API with the engine's simple numeric shorthand:
+  `/choice` still rejects free text, but accepts `choice_index`, A/B/C/D, and
+  numeric `"1"`-`"4"`.
+- Added regression coverage for malformed nested deltas, fallback prompt current
+  state, local-story fallback visibility, and numeric choice submission.
+- Verification: `compileall` passed; `tests\web` 73 passed with local
+  PostgreSQL `TEST_DATABASE_URL`; full `pytest -q` 508 passed; frontend build
+  passed; `git diff --check` passed with LF/CRLF warnings only.
+
 ## 2026-07-06
 
 ### Changed - narrator prompt history soft cap

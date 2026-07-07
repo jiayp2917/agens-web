@@ -5,10 +5,10 @@ This is the active backlog for `agens-web`. It separates local code work, local 
 ## Current Evidence
 
 - Current local code baseline includes sanitized model diagnostics and the 2026-07-04 attribute-scale cleanup.
-- Validation after the latest P1 model-efficiency slice passed:
+- Validation after the latest local defensive runtime batch passed:
   - `python -m compileall -q src tests web scripts migrations`
   - `python -m pytest -q tests\web` -> 73 passed with local PostgreSQL `TEST_DATABASE_URL`
-- full `python -m pytest -q` with local PostgreSQL `TEST_DATABASE_URL` -> 501 passed
+  - full `python -m pytest -q` with local PostgreSQL `TEST_DATABASE_URL` -> 508 passed
   - `cd web\frontend-react; npm.cmd run build` -> passed
   - `git diff --check` -> passed with LF/CRLF warnings only
 - User-scoped model settings are implemented:
@@ -23,6 +23,7 @@ This is the active backlog for `agens-web`. It separates local code work, local 
 - Current local working batch also closes the attribute-scale audit: runtime attributes are 0-10 with 5 as neutral, and old 0-100 values are compatibility inputs only. New realm, reward, catalog, or model-prompt logic must not use 50 as the neutral midpoint or 100 as the normal cap.
 - Active phase plan remains `docs/PLAYABLE_GAMEPLAY_ROADMAP_20260629.md`: P0 current batch is closed; next work is P1 gameplay quality and model-efficiency iteration without broad architecture changes.
 - Current local P1 model-efficiency slice is verified by `local-visible-history-softcap-c1d8628-20260707`: dynamic live start passed, 20/20 choice turns were non-fallback, save/load passed, fallback was 0, repair stayed 0/20, and judge ran 5 turns. The history soft-cap keeps prompt size bounded (avg ~6.3k chars, max ~6.7k chars), but latency did not improve in this sample: average choice latency was about 39.3s and max about 157.3s, with the remaining slow path in provider/narrator/judge latency, not repair calls.
+- 2026-07-07 defensive runtime batch is closed: malformed nested `state_delta.character/world/meta` sections are ignored with warnings instead of crashing; `fallback_prompt.active` now reflects current failure/local-story state rather than historical `model_failure` events and is restored from persisted events when a runner is rebuilt; `/choice` accepts `choice_index`, A/B/C/D, and `"1"`-`"4"` while still rejecting free text.
 
 ## Lessons To Keep
 

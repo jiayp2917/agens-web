@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from web.backend.service import WebRunner
+from web.backend.service import PUBLIC_MODEL_FALLBACK_TEXT, WebRunner
 
 
 def test_web_runner_records_only_sanitized_model_diagnostics() -> None:
@@ -40,3 +40,80 @@ def test_web_runner_records_only_sanitized_model_diagnostics() -> None:
     assert event["diagnostics"]["repaired_output"] is True
     assert "raw_text" not in event["diagnostics"]
     assert "api_key" not in event["diagnostics"]
+
+
+def test_web_runner_fallback_prompt_uses_current_failure_state() -> None:
+    runner = WebRunner(session_id="session-1", user_id="user-1")
+
+    runner._choose_model_failure("turn", "HTTP 404")
+    assert runner.response()["fallback_prompt"]["active"] is True
+
+    runner._record_model_result(
+        "narrator",
+        "turn",
+        "ok",
+        True,
+        True,
+        True,
+        "system",
+        {"elapsed_ms": 1000},
+    )
+
+    assert runner.response()["fallback_prompt"]["active"] is False
+
+
+def test_web_runner_historical_model_failure_event_does_not_keep_prompt_active() -> None:
+    runner = WebRunner(session_id="session-1", user_id="user-1")
+    runner.record("model_failure", text="模型暂不可用，当前以本地故事继续。", source="turn")
+
+    assert runner.response()["fallback_prompt"]["active"] is False
+
+
+def test_web_runner_local_story_still_keeps_fallback_prompt_active() -> None:
+    runner = WebRunner(session_id="session-1", user_id="user-1")
+    runner.engine.game_session.local_story_active = True
+
+    assert runner.response()["fallback_prompt"]["active"] is True
+
+
+def test_web_runner_from_snapshot_restores_current_fallback_prompt_state() -> None:
+    source = WebRunner(session_id="session-1", user_id="user-1")
+    snapshot = source.snapshot()
+
+    restored = WebRunner.from_snapshot(
+        "session-1",
+        "user-1",
+        snapshot,
+        events=[
+            {
+                "type": "model_failure",
+                "text": PUBLIC_MODEL_FALLBACK_TEXT,
+                "source": "profile_opening_missing_key",
+            }
+        ],
+    )
+
+    assert restored.response()["fallback_prompt"]["active"] is True
+    assert restored.response()["fallback_prompt"]["text"] == PUBLIC_MODEL_FALLBACK_TEXT
+
+
+def test_web_runner_from_snapshot_clears_fallback_prompt_after_recovered_model_result() -> None:
+    source = WebRunner(session_id="session-1", user_id="user-1")
+    snapshot = source.snapshot()
+
+    restored = WebRunner.from_snapshot(
+        "session-1",
+        "user-1",
+        snapshot,
+        events=[
+            {"type": "model_failure", "text": PUBLIC_MODEL_FALLBACK_TEXT, "source": "turn"},
+            {
+                "type": "model_result",
+                "agent": "narrator",
+                "source": "turn",
+                "status": "ok",
+            },
+        ],
+    )
+
+    assert restored.response()["fallback_prompt"]["active"] is False
