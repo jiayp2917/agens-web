@@ -2,6 +2,15 @@
 
 ## 2026-07-07
 
+### Changed - project lessons sync
+
+- Updated `docs/PROJECT_AUDIT.md` and `docs/NEXT_GOVERNANCE_BACKLOG.md`
+  with lessons from the defensive runtime batch: model deltas are untrusted
+  boundary input, current fallback UI state must not be inferred from historical
+  failure events, and Web choice compatibility stays limited to deterministic
+  option forms.
+- Documentation-only change; no runtime behavior changed.
+
 ### Fixed - defensive state delta and web fallback state
 
 - Hardened `GameSession.apply_delta()` against malformed nested model deltas:

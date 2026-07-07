@@ -35,6 +35,9 @@ This is the active backlog for `agens-web`. It separates local code work, local 
 - Browser evidence must be strict JSON/NDJSON/CSV so future audits can parse it.
 - Chrome playtests must not run concurrently with `tests\web` against the same database because Web tests truncate the shared test DB.
 - Local service startup should reuse `scripts/start_local_pg.ps1` for PostgreSQL and then run backend/frontend separately on `127.0.0.1:8000` and `127.0.0.1:5173`; do not delete `.tmp\pg-test-20260626-55432` while PostgreSQL is running.
+- Treat model output as untrusted at every authority boundary. Malformed nested `state_delta` sections should be ignored with diagnostics, not allowed to crash a turn.
+- Keep UI prompt state explicit and current. Do not infer current fallback visibility by scanning whether any historical `model_failure` event ever occurred.
+- Keep API choice compatibility narrow and deterministic: `choice_index`, A/B/C/D, and exact `"1"`-`"4"` are valid; free text, mixed strings, and out-of-range values stay invalid.
 
 ## P0: Acceptance And Deployment Gates
 
