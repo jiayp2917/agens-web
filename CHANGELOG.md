@@ -2,6 +2,26 @@
 
 ## 2026-07-07
 
+### Fixed - P1 gameplay state accounting and stage events
+
+- Added deterministic route event pools for ordinary-turn stage feedback:
+  every fourth turn can now add `world.lore_add` for steady, opportunity,
+  risk, or luck routes instead of repeating one generic chronicle line.
+- Tightened ordinary-turn narrative/state consistency by validating against the
+  final applied delta after model-delta sanitization and authoritative rule-delta
+  merge. Model-only attribute-growth claims are now suppressed unless the rule
+  engine actually grants the attribute change.
+- Expanded Judge routing for authoritative ordinary-turn gains: technique grants
+  and sensitive inventory grants such as breakthrough, lifespan, key-item,
+  inheritance, or high-rarity items are reviewed; ordinary small items do not
+  force Judge.
+- Added regression coverage for route event pools, final-delta attribute
+  accounting, and sensitive Judge routing.
+- Verification: `compileall` passed; `tests\web` 73 passed with local
+  PostgreSQL `TEST_DATABASE_URL`; full `pytest -q` 513 passed; frontend build
+  passed; `git diff --check` passed with LF/CRLF warnings only. Real Chrome
+  20-turn validation was not rerun in this batch.
+
 ### Changed - project lessons sync
 
 - Updated `docs/PROJECT_AUDIT.md` and `docs/NEXT_GOVERNANCE_BACKLOG.md`

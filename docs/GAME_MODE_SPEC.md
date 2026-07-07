@@ -11,6 +11,10 @@
 - Model narrative is not authoritative. When narrative claims gains or realm
   changes without matching structured `state_delta`, the narrative/state is
   rejected but the base rule settlement still records a complete turn.
+- Ordinary-turn narrative consistency is checked against the final state delta
+  after model-delta sanitization and rule-delta merge. If the model claims
+  attribute growth but the rule engine does not grant it, the visible claim is
+  suppressed; if the rule engine grants it, the chronicle may describe it.
 - The latest visible-Chrome local validation after ordinary-turn repair reduction
   passed 20/20 non-fallback turns. Repair fell to 0/20, but live latency
   remains a P1 gameplay-quality risk.
@@ -26,12 +30,13 @@
 > | §3 寿元寿命表 | 各境界寿元区间，UI 显示当前寿元上限与剩余寿元 | ✅ 已实现（`game/constants.py` REALM_LIFESPAN_RANGES、`render.format_status_bar`） |
 > | §4 六维属性 | 体魄/神魂/气运/悟性/心性/根骨，无 HP/MP；角色创建 30 点池 | ✅ 已实现（运行时默认属性保留在 `constants.DEFAULT_ATTRIBUTES`；角色创建由 `start_flow.normalize_profile_attributes()` 和 React 表单执行 2-8/30、0-10/30 校验；`GameSession` 已移除 hp/mp/luck/combat 字段） |
 > | §3.5 动态开局 | 难度、天赋、灵根、家世、六维和随机/手选模式驱动本局世界观、0-16 岁编年史、16 岁初始局势、外界情报和首次 A/B/C/D | ✅ 后端开局链路已改为统一 opening payload；模型未启用或失败时使用 profile-aware fallback，不再固定青玄宗/东荒云界模板；fallback 不算 live-model 成功 |
+> | §3.6 阶段反馈 / 事件池 | 每 3-5 回合反馈阶段目标、外界变化、路线差异 | ✅ 首批实现为每 4 回合按稳妥/机遇/风险/气运四路线写入 `world.lore_add`；仍需 Chrome 20 回合验证体验质量 |
 > | §4 战斗事件化 | 斗法/禁地/心魔/天劫以事件判定表达 | ✅ 已实现（`handle_combat_action` 为安全 no-op；`apply_delta` 丢弃结构化 combat delta） |
 > | §8.3 `game_turns` 表 | JSONB 回合日志 + `game_runs` + `player_progress` | ✅ 已接线（PostgreSQL 单后端（Option C 已移除 SQLite），Alembic `20260622_0003`，Web 回合/终局写入） |
 > | §11 稀有度解锁门 | 白/绿/蓝/紫/橙/红 六档 + runs/ascension 门径 | ✅ 已接线（`constants.rarity_unlocked_for`、`/api/catalog/rarities`，终局写入 `player_progress`） |
 > | §11 死亡分类 | finale > karma > event > lifespan > player | ✅ 已实现（`death_rewards.categorize_death`） |
 > | 验证 | compileall + pytest + React build + 密钥审计 | ⏳ 以当前分支最新测试结果为准，不在文档中固化旧计数 |
-> | 待办 | 继续降低本地 live 响应耗时、repair/judge 依赖，并改善 20 回合内容体验 | ⏳ 当前生产批次 start+choice 已 non-fallback；后续生产部署或模型配置变更仍需复跑。当前本地 `local-visible-p1-final-20260706` 已完成动态开局 live start gate、20/20 choice non-fallback 和存读档；repair 0/20、judge 3 次，但平均约 25.9s、最大约 57.1s，live 响应慢仍需治理 |
+> | 待办 | 继续降低本地 live 响应耗时、repair/judge 依赖，并改善 20 回合内容体验 | ⏳ 当前生产批次 start+choice 已 non-fallback；后续生产部署或模型配置变更仍需复跑。当前本地 `local-visible-history-softcap-c1d8628-20260707` 已完成动态开局 live start gate、20/20 choice non-fallback 和存读档；repair 0/20、judge 5 次，但平均约 39.3s、最大约 157.3s，live 响应慢仍需治理 |
 
 ## 0. TL;DR
 

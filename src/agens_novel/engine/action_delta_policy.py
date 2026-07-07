@@ -106,6 +106,13 @@ _CLAIM_RULES: tuple[tuple[tuple[re.Pattern[str], ...], tuple[tuple[str, str], ..
     ),
     (
         (
+            re.compile(r"(?:悟性|根骨|心性|体魄|神魂|气运|资质|道心)[^，。；\n]{0,12}(?:提升|增长|增加|精进|大涨|更坚|稳固)"),
+            re.compile(r"(?:提升|增长|增加|精进)[^，。；\n]{0,12}(?:悟性|根骨|心性|体魄|神魂|气运|资质|道心)"),
+        ),
+        (("character", "attributes"),),
+    ),
+    (
+        (
             re.compile(r"(?:结为|拜入|收为|认作)[^，。；\n]{0,18}(?:道侣|师徒|师父|师尊|弟子|盟友|仇敌)"),
             re.compile(r"(?:与|和)[^，。；\n]{1,18}(?:结缘|结仇|立誓|结盟|反目)"),
         ),
@@ -276,6 +283,11 @@ def _has_path(delta: dict[str, Any], section: str, key: str) -> bool:
             and len(value) > 1
             and value[0] in {"+", "-"}
             and value[1:].isdigit()
+        )
+    if key == "attributes":
+        return isinstance(value, dict) and any(
+            isinstance(item, int) and not isinstance(item, bool) and item != 0
+            for item in value.values()
         )
     if key in {"realm", "location", "current_scene", "breakthrough_result"}:
         return isinstance(value, str) and bool(value.strip())

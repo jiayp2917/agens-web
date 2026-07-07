@@ -306,17 +306,6 @@ class TurnFlow:
     ) -> tuple[str, dict[str, Any]] | None:
         engine = self.engine
         session = engine.game_session
-        consistent, consistency_reason = validate_narrative_delta_consistency(
-            narrative,
-            state_delta,
-        )
-        if not consistent:
-            log.info("Narrative/state mismatch rejected: %s", consistency_reason)
-            engine.emit("on_info", PLAYER_NARRATIVE_MISMATCH_NOTICE)
-            narrative = ""
-            state_delta = {"character": {}, "world": {}, "meta": {}}
-            session.last_choices = fallback_choices(session)
-
         state_delta = engine.sanitize_action_delta(state_delta)
 
         is_cultivation = is_pure_cultivation(text)
@@ -331,6 +320,17 @@ class TurnFlow:
             state_delta = {**state_delta, "character": char_delta}
 
         state_delta = merge_rule_delta(state_delta, rule_delta)
+        consistent, consistency_reason = validate_narrative_delta_consistency(
+            narrative,
+            state_delta,
+        )
+        if not consistent:
+            log.info("Narrative/state mismatch rejected: %s", consistency_reason)
+            engine.emit("on_info", PLAYER_NARRATIVE_MISMATCH_NOTICE)
+            narrative = ""
+            session.last_choices = fallback_choices(session)
+            state_delta = merge_rule_delta({"character": {}, "world": {}, "meta": {}}, rule_delta)
+
         session.apply_delta(state_delta)
         stage_delta = self._try_emit_stage_advance()
         if stage_delta is not None:

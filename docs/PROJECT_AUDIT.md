@@ -33,9 +33,9 @@
 
 ## 当前已验证事实
 
-- 当前本地代码基线：已包含脱敏模型诊断、P1 可见反馈修复和 2026-07-04 属性尺度清理。
+- 当前本地代码基线：已包含脱敏模型诊断、P1 可见反馈修复、2026-07-04 属性尺度清理和 2026-07-07 P1 事件池/最终 delta 一致性切片。
 - 本地 PostgreSQL 测试库目标：`127.0.0.1:55432/agens_web_test`。
-- 最新自动化门禁：2026-07-07 防御性运行修复后 `compileall` passed，`tests\web` 73 passed，全量 `pytest -q` 508 passed，前端 build passed，`git diff --check` 仅 LF/CRLF warning。
+- 最新自动化门禁：2026-07-07 P1 事件池/最终 delta 一致性切片后 `compileall` passed，`tests\web` 73 passed，全量 `pytest -q` 513 passed，前端 build passed，`git diff --check` 仅 LF/CRLF warning。
 - 用户级模型设置已落地：个人配置按 `user_id` 加密隔离，系统默认保留在 `model_config`，运行时按当前 session/user 解析模型配置，不再通过进程级 `AGNES_API_KEY` 注入用户 key。
 - 角色创建属性池已按 `GAME_MODE_SPEC.md` §4.1 落地：手动 2-8/总和 30，随机 0-10/总和 30。
 - 运行时属性尺度已审计并收敛为 0-10：`DEFAULT_ATTRIBUTES` 为 5，境界小层推进、`GameSession` delta/save、World Builder 入局、跨局奖励和 catalog 种子不再以 50/100 作为正常尺度；旧 0-100 仅作兼容迁移输入。
@@ -45,6 +45,7 @@
 - 生产 P0 已通过：服务器线程部署 `25ad3d15` 后，容器 healthy，Alembic `20260622_0005`，`user_model_configs` 存在，public/origin health 和 catalog 正常，日志敏感标记扫描为 0；一次性真实账号注册、登录、开局、选择、存档、读档、跨会话恢复均通过；生产 start 和至少 1 次 choice 均为 non-fallback，choice 后 `turn_count=1`。
 - 最新本地代码已加入脱敏模型性能观测并完成 history soft-cap Chrome 复采：repair 维持 0/20，prompt 字符数被控制在约 6.7k 以内，但最终 Chrome 平均回合约 39.3s、最大约 157.3s；响应慢没有闭环，下一步重点是 provider/narrator 长尾、模型输出契约和 judge 调用成本。
 - 2026-07-07 防御性运行修复已完成：`GameSession.apply_delta()` 对 malformed nested `character/world/meta` delta fail closed；Web `fallback_prompt.active` 改为当前态，不再因历史 `model_failure` 长时间误亮，且 runner 重建时会从持久化事件恢复当前提示态；`/choice` 支持 A/B/C/D 与 `"1"`-`"4"` 简写，仍拒绝自由文本。
+- 2026-07-07 P1 事件池/最终 delta 一致性切片已完成：每 4 回合阶段反馈改为稳妥/机遇/风险/气运四路线事件池；普通回合叙事一致性改为按“模型 delta 清洗 + 规则 delta 合并后的最终落账 delta”校验；功法新增、突破/延寿/传承/关键/高稀有道具新增会触发 Judge，普通小收获不全量触发 Judge。
 
 ## 2026-07-06 子智能体只读审计
 
@@ -204,9 +205,9 @@
 | 问题 | 风险 | 处理方向 |
 | --- | --- | --- |
 | live model 响应慢 | 最新 `local-visible-history-softcap-c1d8628-20260707` 平均回合耗时约 39.3s、最大约 157.3s；repair 为 0，慢因主要转向 provider/narrator 长尾和少数 judge 调用。 | 继续优化 narrator 输出契约、judge 超时/触发成本，并评估 provider 性能；不要把 repair 为 0 误判为整体性能达标。 |
-| narrator repair / judge 依赖 | Ordinary-turn repair 已降为 0/20；judge 降为 3 次，但 narrator 仍大量输出 narrative-only，靠规则 delta 和 choice recovery 维持推进。 | 保持不接受缺叙事/缺可用选项；继续收紧模型契约，让模型返回完整结构，而不是长期依赖规则兜底。 |
-| 20 回合内容体验不足 | 动态开局已补 0-16 岁编年史和本局世界摘要，但 20 回合中段目标感、阶段奖励、世界变化和路线差异仍弱。 | 下一步继续做 3-5 回合反馈、四类事件池，减少重复闭关/突破循环，并用 Chrome 证据确认。 |
-| 叙事与权威状态落账 | 本轮已覆盖突破和部分可见文本清洗，但关键道具、功法、属性、称号、关系、伤势、寿元等普通回合仍需继续扩测试。 | 结构化落账、自然改写或压制可见叙事；模型不得决定权威数值。 |
+| narrator repair / judge 依赖 | Ordinary-turn repair 已降为 0/20；当前 Chrome 证据 judge 为 5 次，但 narrator 仍大量输出 narrative-only，靠规则 delta 和 choice recovery 维持推进。 | 保持不接受缺叙事/缺可用选项；继续收紧模型契约，让模型返回完整结构，而不是长期依赖规则兜底。 |
+| 20 回合内容体验不足 | 动态开局已补 0-16 岁编年史和本局世界摘要；本轮补了每 4 回合四路线事件池反馈，但尚未用真实 Chrome 20 回合复验体验质量。 | 继续丰富事件池、阶段目标和路线差异，减少重复闭关/突破循环，并用 Chrome 证据确认。 |
+| 叙事与权威状态落账 | 本轮把属性成长叙事改为按最终落账 delta 校验，并补了功法/关键道具 Judge 触发；突破和可见文本清洗已有覆盖。 | 继续扩展普通回合称号、关系、伤势、寿元、karma 的结构化落账/自然改写/压制测试。 |
 | `GameEngine` 偏大 | 回合、突破、兜底、模型失败等职责集中。 | 只按主流程需要拆模型失败、本地故事、突破 helper，避免大拆。 |
 | `WebGameService` 边界需收束 | API 编排、持久化和错误映射仍集中。 | 抽私有 helper，不优先大拆 router。 |
 | `database_postgres.py` 偏大 | SQL、row shaping、测试 DDL 历史包袱仍多。 | 抽 catalog/progress/turn helper，不改 schema。 |

@@ -58,6 +58,18 @@ def _safe_log_reason(reason: str, limit: int = 220) -> str:
     return text[:limit]
 
 
+def _is_sensitive_inventory_item(item: dict[str, Any]) -> bool:
+    """Return True for inventory grants that should receive Judge review."""
+    rarity = str(item.get("rarity") or item.get("grade") or "")
+    if rarity in {"紫", "橙", "红", "上品", "极品", "仙品"}:
+        return True
+    if bool(item.get("key_item") or item.get("quest_item")):
+        return True
+    text = f"{item.get('name') or ''} {item.get('type') or ''} {item.get('tags') or ''}"
+    markers = ("筑基", "金丹", "元婴", "破境", "延寿", "续命", "法宝", "秘籍", "玉简", "传承")
+    return any(marker in text for marker in markers)
+
+
 class GameEngine:
     """UI-agnostic game logic service.
 
@@ -414,7 +426,9 @@ class GameEngine:
                 "difficulty",
                 "inventory",
                 "techniques",
+                "techniques_add",
                 "breakthrough_flags",
+                "breakthrough_flags_add",
                 "lifespan",
                 "status_effects",
                 "status_effects_add",
@@ -424,7 +438,7 @@ class GameEngine:
             additions = char_delta.get("inventory_add")
             if isinstance(additions, list):
                 for item in additions:
-                    if isinstance(item, dict) and str(item.get("rarity") or "") in {"紫", "橙", "红", "上品", "极品", "仙品"}:
+                    if isinstance(item, dict) and _is_sensitive_inventory_item(item):
                         return True
 
         world_delta = state_delta.get("world")
@@ -503,4 +517,3 @@ class GameEngine:
         lowered = value.lower()
         reset_markers = ("混沌", "虚空", "未开", "起源", "void", "chaos")
         return any(marker in lowered for marker in reset_markers)
-

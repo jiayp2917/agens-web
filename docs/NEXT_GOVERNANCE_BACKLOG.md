@@ -4,11 +4,11 @@ This is the active backlog for `agens-web`. It separates local code work, local 
 
 ## Current Evidence
 
-- Current local code baseline includes sanitized model diagnostics and the 2026-07-04 attribute-scale cleanup.
-- Validation after the latest local defensive runtime batch passed:
+- Current local code baseline includes sanitized model diagnostics, the 2026-07-04 attribute-scale cleanup, and the 2026-07-07 P1 gameplay-state slice.
+- Validation after the latest local P1 gameplay-state batch passed:
   - `python -m compileall -q src tests web scripts migrations`
   - `python -m pytest -q tests\web` -> 73 passed with local PostgreSQL `TEST_DATABASE_URL`
-  - full `python -m pytest -q` with local PostgreSQL `TEST_DATABASE_URL` -> 508 passed
+  - full `python -m pytest -q` with local PostgreSQL `TEST_DATABASE_URL` -> 513 passed
   - `cd web\frontend-react; npm.cmd run build` -> passed
   - `git diff --check` -> passed with LF/CRLF warnings only
 - User-scoped model settings are implemented:
@@ -24,6 +24,7 @@ This is the active backlog for `agens-web`. It separates local code work, local 
 - Active phase plan remains `docs/PLAYABLE_GAMEPLAY_ROADMAP_20260629.md`: P0 current batch is closed; next work is P1 gameplay quality and model-efficiency iteration without broad architecture changes.
 - Current local P1 model-efficiency slice is verified by `local-visible-history-softcap-c1d8628-20260707`: dynamic live start passed, 20/20 choice turns were non-fallback, save/load passed, fallback was 0, repair stayed 0/20, and judge ran 5 turns. The history soft-cap keeps prompt size bounded (avg ~6.3k chars, max ~6.7k chars), but latency did not improve in this sample: average choice latency was about 39.3s and max about 157.3s, with the remaining slow path in provider/narrator/judge latency, not repair calls.
 - 2026-07-07 defensive runtime batch is closed: malformed nested `state_delta.character/world/meta` sections are ignored with warnings instead of crashing; `fallback_prompt.active` now reflects current failure/local-story state rather than historical `model_failure` events and is restored from persisted events when a runner is rebuilt; `/choice` accepts `choice_index`, A/B/C/D, and `"1"`-`"4"` while still rejecting free text.
+- 2026-07-07 P1 gameplay-state slice is closed in automation: stage feedback now uses deterministic route event pools for steady/opportunity/risk/luck; ordinary-turn narrative consistency is checked after model delta sanitization and rule-delta merge so visible attribute-growth claims must match the final authoritative delta; Judge now reviews technique grants and sensitive inventory grants such as breakthrough, lifespan, key-item, inheritance, or high-rarity items. Chrome 20-turn validation has not been rerun after this slice.
 
 ## Lessons To Keep
 
@@ -65,14 +66,15 @@ Next work should be data-led and gameplay-facing.
    - repair 是契约失效的后果，不是独立杠杆。
    - judge elapsed 全 0（非源）；provider narrator 首次 ~13.4s（可接受）。
 3. Improve 20-turn playable content.
-   - Add the 0-16 岁 opening chronicle per `docs/GAME_MODE_SPEC.md` §3.5.
-   - Continue improving 3-5 turn stage feedback; the first lightweight every-fourth-turn `world.lore_add` feedback is implemented but not enough for full content quality.
-   - Build event pools for steady, opportunity, risk, and luck routes.
+   - 0-16 岁 opening chronicle is implemented in the dynamic-opening chain; keep it as a regression guard, not a fresh task.
+   - First deterministic stage-feedback/event-pool slice is implemented via every-fourth-turn `world.lore_add` for steady, opportunity, risk, and luck routes.
+   - Next content work should make those route pools richer and verify them in a real 20-turn Chrome run.
    - Reduce repeated retreat/breakthrough loops.
    - Keep small-realm progress mostly implicit; reserve major breakthroughs for stage events.
    - Keep Qi Refining pacing credible: age and turn count should prevent a 20-turn slice from lingering in early small layers.
 4. Tighten authoritative state accounting.
    - Key items, techniques, attribute growth, titles, relationships, injuries, lifespan, realm changes, and karma must be structured state or rewritten/suppressed.
+   - Current automation covers attribute-growth claims against final post-sanitize/post-rule-merge delta, technique grants, and sensitive inventory Judge routing; keep extending this for ordinary-turn titles, relationships, injuries, lifespan, and karma.
    - Ordinary chronicle rumors, intentions, or non-authoritative color text do not automatically become inventory.
    - Model text can polish narrative and choices, but cannot decide authoritative numbers.
    - Breakthrough text is especially strict: success/failure/death/fall-back results must match the rule delta, and "修为尽废" is forbidden unless the rule engine actually performs severe loss or terminal failure.

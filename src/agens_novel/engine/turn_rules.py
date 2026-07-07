@@ -68,6 +68,29 @@ _CHOICE_ATTRIBUTE_IMPACT: dict[str, dict[str, Any]] = {
     },
 }
 
+_STAGE_FEEDBACK_EVENT_POOLS: dict[str, tuple[str, ...]] = {
+    "稳妥": (
+        "{location}近年灵气渐稳，{realm_label}的根基有了可见积累。",
+        "{location}的执事重修课业簿，低阶弟子开始按月比对吐纳进度。",
+        "山门内院清点旧藏，稳修一脉多了几篇可供参照的修行札记。",
+    ),
+    "机遇": (
+        "{location}外传来新机缘，坊市与同门议论下一段修行去处。",
+        "邻近坊市放出讲法名额，散修与宗门弟子都在打听入场门路。",
+        "一位过路修士留下遗迹线索，真假未定，却足以改变下一段行程。",
+    ),
+    "风险": (
+        "{location}周边风波加重，斗法与禁地传闻让修行代价更清晰。",
+        "山外妖兽迁徙，巡山弟子折损，禁地边缘的风险被重新写入告示。",
+        "外门传来斗法伤亡，宗门开始限制低阶弟子私自远行。",
+    ),
+    "气运": (
+        "{age}岁这一年，天命暗流转向，外界对他的命数多了新的传闻。",
+        "夜里星象偏移，坊间术士称近期因果易变，有人得机缘也有人遭反噬。",
+        "一则无名签文在坊市流传，众人各自解读，命数之说更添几分波澜。",
+    ),
+}
+
 
 def classify_choice(text: str) -> str:
     """Map a player choice text to a category label (稳妥/机遇/风险/气运).
@@ -206,14 +229,9 @@ def _stage_feedback_delta(session: Any, category: str, new_age: int) -> dict[str
     stage = int(getattr(session, "realm_stage", 1) or 1)
     realm_label = format_realm_name(realm, stage)
     location = getattr(session, "location", "") or getattr(session, "current_scene", "") or "本地"
-    if category == "稳妥":
-        text = f"{location}近年灵气渐稳，{realm_label}的根基有了可见积累。"
-    elif category == "机遇":
-        text = f"{location}外传来新机缘，坊市与同门议论下一段修行去处。"
-    elif category == "风险":
-        text = f"{location}周边风波加重，斗法与禁地传闻让修行代价更清晰。"
-    else:
-        text = f"{new_age}岁这一年，天命暗流转向，外界对他的命数多了新的传闻。"
+    pool = _STAGE_FEEDBACK_EVENT_POOLS.get(category) or _STAGE_FEEDBACK_EVENT_POOLS["机遇"]
+    index = ((next_turn // 4) - 1) % len(pool)
+    text = pool[index].format(location=location, realm_label=realm_label, age=new_age)
     return {"lore_add": [text]}
 
 

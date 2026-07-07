@@ -217,6 +217,32 @@ def test_judge_triggers_for_authoritative_world_delta(monkeypatch) -> None:
     )
 
 
+def test_judge_triggers_for_techniques_and_sensitive_inventory_only(monkeypatch) -> None:
+    monkeypatch.setenv("AGNES_API_KEY", "test-model-key")
+    engine = GameEngine()
+
+    assert engine.should_run_judge(
+        "参悟玉简",
+        {"character": {"techniques_add": [{"name": "青木长生诀"}]}},
+        {"meta": {"choice_category": "机遇"}},
+    )
+    assert engine.should_run_judge(
+        "收下筑基丹",
+        {"character": {"inventory_add": [{"name": "筑基丹", "type": "丹药"}]}},
+        {"meta": {"choice_category": "机遇"}},
+    )
+    assert engine.should_run_judge(
+        "收下宗门信物",
+        {"character": {"inventory_add": [{"name": "青岚令", "key_item": True}]}},
+        {"meta": {"choice_category": "机遇"}},
+    )
+    assert not engine.should_run_judge(
+        "收下普通药草",
+        {"character": {"inventory_add": [{"name": "止血草", "type": "草药", "rarity": "白"}]}},
+        {"meta": {"choice_category": "机遇"}},
+    )
+
+
 def test_stage_feedback_adds_world_lore_every_four_turns() -> None:
     session = GameSession(location="青岚山门", turn_count=4, realm="筑基", realm_stage=2)
 
@@ -226,6 +252,34 @@ def test_stage_feedback_adds_world_lore_every_four_turns() -> None:
     assert "青岚山门" in delta["world"]["lore_add"][0]
     assert "筑基中期" in delta["world"]["lore_add"][0]
     assert "筑基2层" not in delta["world"]["lore_add"][0]
+
+
+def test_stage_feedback_uses_route_event_pools() -> None:
+    expected_markers = {
+        "A": "根基",
+        "B": "机缘",
+        "C": "风波",
+        "D": "命数",
+    }
+    for choice, marker in expected_markers.items():
+        session = GameSession(location="青岚山门", turn_count=4, realm="筑基", realm_stage=2)
+        delta = settle_turn(choice, session)
+        lore = delta["world"]["lore_add"][0]
+        assert marker in lore
+        assert "筑基中期" in lore or choice != "A"
+
+
+def test_stage_feedback_pool_rotates_across_later_phases() -> None:
+    session = GameSession(location="青岚山门", turn_count=4)
+    early = settle_turn("B", session)["world"]["lore_add"][0]
+
+    session.turn_count = 8
+    middle = settle_turn("B", session)["world"]["lore_add"][0]
+
+    session.turn_count = 12
+    later = settle_turn("B", session)["world"]["lore_add"][0]
+
+    assert len({early, middle, later}) == 3
 
 
 def test_rule_world_delta_survives_model_merge() -> None:
@@ -322,3 +376,72 @@ def test_authoritative_mismatch_is_suppressed_in_turn_flow(monkeypatch) -> None:
     assert engine.game_session.status_effects == []
     assert all("寒毒" not in text for text, _turn in narratives)
     assert engine.game_session.turn_history[-1]["narrative"] == ""
+
+
+def test_model_only_attribute_claim_is_suppressed_after_sanitization(monkeypatch) -> None:
+    monkeypatch.setenv("AGNES_API_KEY", "test-model-key")
+    engine = GameEngine()
+    engine.game_session.game_started = True
+    engine.game_session.attributes["comprehension"] = 5
+    narratives: list[tuple[str, int]] = []
+    infos: list[str] = []
+    engine.on_narrative = lambda text, turn: narratives.append((text, turn))
+    engine.on_info = lambda msg: infos.append(msg)
+
+    def runner(agent_name, user_input, session, **kw):
+        if agent_name == "narrator":
+            return {
+                "narrative": "数年参悟后，他的悟性大涨。",
+                "state_delta": {"character": {"attributes": {"comprehension": 2}}},
+                "choices": ["稳住根基", "请教经义", "冒险试法", "随缘听命"],
+                "llm_error": "",
+            }
+        return {"approved": True, "corrected_delta": {}, "judgment_note": "", "llm_error": ""}
+
+    rule_delta = {
+        "character": {"age": "+1"},
+        "world": {},
+        "meta": {"elapsed_years": 1, "choice_category": "机遇"},
+    }
+
+    with patch("agens_novel.engine.turn_flow.settle_turn", return_value=rule_delta):
+        with patch("agens_novel.engine.game_engine.run_turn_sync", side_effect=runner):
+            engine.handle_action("参悟经义")
+
+    assert any("因果结算" in msg for msg in infos)
+    assert engine.game_session.attributes["comprehension"] == 5
+    assert all("悟性大涨" not in text for text, _turn in narratives)
+    assert engine.game_session.turn_history[-1]["narrative"] == ""
+
+
+def test_rule_owned_attribute_claim_can_remain_visible(monkeypatch) -> None:
+    monkeypatch.setenv("AGNES_API_KEY", "test-model-key")
+    engine = GameEngine()
+    engine.game_session.game_started = True
+    engine.game_session.attributes["comprehension"] = 5
+    narratives: list[tuple[str, int]] = []
+    engine.on_narrative = lambda text, turn: narratives.append((text, turn))
+
+    def runner(agent_name, user_input, session, **kw):
+        if agent_name == "narrator":
+            return {
+                "narrative": "数年参悟后，他的悟性大涨。",
+                "state_delta": {"character": {}, "world": {}, "meta": {}},
+                "choices": ["稳住根基", "请教经义", "冒险试法", "随缘听命"],
+                "llm_error": "",
+            }
+        return {"approved": True, "corrected_delta": {}, "judgment_note": "", "llm_error": ""}
+
+    rule_delta = {
+        "character": {"age": "+1", "attributes": {"comprehension": 1}},
+        "world": {},
+        "meta": {"elapsed_years": 1, "choice_category": "机遇"},
+    }
+
+    with patch("agens_novel.engine.turn_flow.settle_turn", return_value=rule_delta):
+        with patch("agens_novel.engine.game_engine.run_turn_sync", side_effect=runner):
+            engine.handle_action("参悟经义")
+
+    assert narratives[-1][0] == "数年参悟后，他的悟性大涨。"
+    assert engine.game_session.attributes["comprehension"] == 6
+    assert engine.game_session.turn_history[-1]["narrative"] == "数年参悟后，他的悟性大涨。"
