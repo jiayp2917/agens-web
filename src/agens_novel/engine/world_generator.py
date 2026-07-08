@@ -13,6 +13,7 @@ from typing import Any
 from ..game.constants import ATTRIBUTE_KEYS, ATTRIBUTE_LABELS
 from .choices import normalize_choices
 from .profile_opening import profile_summary
+from .world_catalog import world_pack_for_key
 
 log = logging.getLogger(__name__)
 
@@ -20,10 +21,16 @@ def build_world_prompt(profile: dict[str, Any]) -> str:
     """Build a World Builder prompt from a character creation profile."""
     summary = profile_summary(profile)
     attrs = summary["attributes"]
+    fate_profile = summary["fate_profile"]
     attr_text = "，".join(
         f"{ATTRIBUTE_LABELS.get(key, key)}={attrs[key]}" for key in ATTRIBUTE_KEYS
     )
     fate = "、".join(summary["fate_tendency"])
+    fate_detail = "；".join(
+        f"{item['label']}({item['score']})"
+        for item in fate_profile
+        if isinstance(item, dict)
+    )
     random_mode = "随机" if summary["randomize_attributes"] else "手选"
 
     parts = [
@@ -35,6 +42,7 @@ def build_world_prompt(profile: dict[str, Any]) -> str:
         f"属性模式：{random_mode}",
         f"六维属性：{attr_text}",
         f"命数倾向：{fate}",
+        f"命数画像：{fate_detail}",
     ]
     return (
         "；".join(parts)
@@ -53,6 +61,7 @@ def build_world_fallback(profile: dict[str, Any]) -> dict[str, Any]:
     spirit_root = summary["spirit_root"]
     difficulty = summary["difficulty"]
     fate_tags = summary["fate_tendency"]
+    fate_profile = summary["fate_profile"]
     variant = _select_variant(summary)
     world_name = variant["world_name"]
     sect_name = variant["sect"]
@@ -91,11 +100,18 @@ def build_world_fallback(profile: dict[str, Any]) -> dict[str, Any]:
         "current_conflicts": [
             conflict,
             variant["secondary_conflict"],
+            variant["long_conflict"],
         ],
         "initial_situation": initial_situation,
         "initial_situation_16": initial_situation,
         "chronicle_0_16": chronicle,
         "fate_hooks": fate_tags,
+        "fate_profile": fate_profile,
+        "world_key": variant["world_key"],
+        "opening_hook": variant["opening_hook"],
+        "long_conflict": variant["long_conflict"],
+        "event_weights": variant["event_weights"],
+        "matched_fates": variant["matched_fates"],
         "opening_narrative": "\n".join(chronicle) + "\n\n" + initial_situation,
         "choices": choices,
         "world": {
@@ -150,9 +166,11 @@ def parse_world_response(result: dict[str, Any]) -> dict[str, Any]:
         log.warning("World builder response missing keys: %s", missing)
 
     # Ensure lists for list fields
-    for field in ("regions", "sects", "current_conflicts", "fate_hooks", "chronicle_0_16"):
+    for field in ("regions", "sects", "current_conflicts", "fate_hooks", "chronicle_0_16", "matched_fates"):
         if field in data and not isinstance(data[field], list):
             data[field] = [data[field]] if data[field] else []
+    if "fate_profile" in data and not isinstance(data["fate_profile"], list):
+        data["fate_profile"] = []
 
     if not data.get("initial_situation_16"):
         data["initial_situation_16"] = data.get("initial_situation", "")
@@ -217,91 +235,19 @@ def is_complete_opening_payload(data: dict[str, Any]) -> bool:
     )
 
 
-_FALLBACK_VARIANTS = {
-    "frontier": {
-        "world_name": "西陲裂土",
-        "region": "赤砂边境",
-        "region_desc": "灵脉裂谷、边营和流民村寨交错的西陲地带。",
-        "location": "荒岭接引营",
-        "sect": "砺锋院",
-        "sect_desc": "守边宗院，以磨砺心性和护送灵脉为早课。",
-        "outer_region": "断云古道",
-        "outer_desc": "商队、散修和妖兽踪迹交错的边地道路。",
-        "rival": "黑潮妖寨",
-        "rival_desc": "趁灵脉衰落侵扰边境的妖修势力。",
-        "neutral": "驼铃商栈",
-        "neutral_desc": "只认契约的边地商栈，掌握大量外界情报。",
-        "risk_hook": "黑潮妖寨的巡哨痕迹",
-        "secondary_conflict": "断云古道近月失踪数支灵材商队。",
-        "mentor": "边营执事",
-        "quest": "边营入册",
-    },
-    "clan": {
-        "world_name": "玄都盟境",
-        "region": "玄都内环",
-        "region_desc": "宗门、世家和盟约共同维持秩序的核心地带。",
-        "location": "玄都盟外院",
-        "sect": "玄都盟",
-        "sect_desc": "由宗门和世家共治的盟会，重视门第、契约与潜力。",
-        "outer_region": "旧王城",
-        "outer_desc": "遗留古朝禁制和家族旧账的繁华废城。",
-        "rival": "离火旁宗",
-        "rival_desc": "与玄都盟争夺席位的旁宗势力。",
-        "neutral": "司契楼",
-        "neutral_desc": "登记盟约、悬赏和家族债务的中立机构。",
-        "risk_hook": "旧王城未解的家族旧契",
-        "secondary_conflict": "盟会评席将近，世家与寒门弟子的矛盾浮上台面。",
-        "mentor": "盟院司录",
-        "quest": "外院评席",
-    },
-    "ocean": {
-        "world_name": "沧澜群岛",
-        "region": "潮生海市",
-        "region_desc": "灵潮涨落决定机缘与风险的群岛海市。",
-        "location": "潮音渡口",
-        "sect": "潮音阁",
-        "sect_desc": "立于群岛灵潮之上的宗门，善观潮汐与气运。",
-        "outer_region": "沉星礁",
-        "outer_desc": "灵潮退去后偶现古物和海兽的礁群。",
-        "rival": "沉星盗盟",
-        "rival_desc": "游走群岛、劫掠灵舟的散修盗盟。",
-        "neutral": "听潮船行",
-        "neutral_desc": "往来诸岛的船行，消息最灵通。",
-        "risk_hook": "沉星礁的异常退潮",
-        "secondary_conflict": "本月灵潮提前，沉星礁疑有旧府现世。",
-        "mentor": "听潮执事",
-        "quest": "渡口听潮",
-    },
-    "forest": {
-        "world_name": "青岚药境",
-        "region": "青岚内谷",
-        "region_desc": "药田、木法静室和外门庐舍环绕的山谷内域。",
-        "location": "青岚药圃",
-        "sect": "青岚谷",
-        "sect_desc": "以药圃、木法和温养根基闻名的山谷宗门。",
-        "outer_region": "雾萝山径",
-        "outer_desc": "灵草与残阵并存的湿润山径。",
-        "rival": "枯藤社",
-        "rival_desc": "觊觎药境灵草的外道小社。",
-        "neutral": "百草坊",
-        "neutral_desc": "交换药材、消息和杂役委托的坊市。",
-        "risk_hook": "雾萝山径的残阵药香",
-        "secondary_conflict": "药境外围灵草早开，百草坊和外门弟子都在争先登记。",
-        "mentor": "药圃执事",
-        "quest": "药圃入册",
-    },
-}
-
-
-def _select_variant(summary: dict[str, Any]) -> dict[str, str]:
+def _select_variant(summary: dict[str, Any]) -> dict[str, Any]:
     attrs = summary["attributes"]
     if summary["difficulty"] == "困难" or attrs["willpower"] >= 7 or attrs["luck"] <= 3:
-        return _FALLBACK_VARIANTS["frontier"]
-    if "隐世" in summary["family_background"] or "宗门" in summary["family_background"]:
-        return _FALLBACK_VARIANTS["clan"]
-    if attrs["luck"] >= 7 or attrs["soul"] >= 7:
-        return _FALLBACK_VARIANTS["ocean"]
-    return _FALLBACK_VARIANTS["forest"]
+        key = "frontier"
+    elif "隐世" in summary["family_background"] or "宗门" in summary["family_background"]:
+        key = "clan"
+    elif attrs["luck"] >= 7 or attrs["soul"] >= 7:
+        key = "ocean"
+    else:
+        key = "forest"
+    pack = dict(world_pack_for_key(key))
+    pack["world_key"] = key
+    return pack
 
 
 def _difficulty_conflict(difficulty: str, variant: dict[str, str]) -> str:

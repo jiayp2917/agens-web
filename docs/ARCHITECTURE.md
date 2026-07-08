@@ -59,12 +59,14 @@
 | --- | --- | --- |
 | `game_engine.py` | `GameEngine` | 唯一游戏逻辑入口；持有 `GameSession` + `RealmSystem`；11 个回调钩子（`on_narrative` / `on_status_bar` / `on_error` / `on_info` / `on_game_over` / `on_character_created` / `on_loading` / `on_stream_chunk` / `on_finale` / `on_model_failure_choice`）；`start_from_profile()` 与 `handle_action()` 是两个主入口 |
 | `turn_runner.py` | `run_turn_sync(agent_name, user_input, session, **kwargs)` | 同步包装 LangGraph；线程隔离的 `model` / `base_url` / `api_key_set`；通过 `_stream_context.set(callback)` 避免 msgpack 序列化 callable |
-| `turn_rules.py` | `settle_turn(choice_text, session)` | **规则引擎权威结算**：分类 A/B/C/D、按境界抽 elapsed_years、按风险系数与难度系数调整、属性增量、剩余寿元、`game_over_reason` 判定 |
+| `turn_rules.py` | `settle_turn(choice_text, session)` | **规则引擎权威结算**：分类 A/B/C/D、按境界抽 elapsed_years、按风险系数与难度系数调整、属性增量、剩余寿元、`game_over_reason` 判定，并把编年史事件上下文传给 narrator |
+| `event_catalog.py` | `select_chronicle_event`, `stage_feedback_due` | 数据驱动普通回合事件表；按世界包、命数画像、路线和回合阶段选择事件，阶段节点写入 `world.lore_add` |
+| `world_catalog.py` | `WORLD_PACKS`, `world_pack_for_key`, `world_key_for_name` | 四套固定世界包（西陲裂土、玄都盟境、沧澜群岛、青岚药境）及事件权重/势力/冲突元数据 |
 | `action_delta_policy.py` | `apply_breakthrough_flag_rule`, `validate_narrative_delta_consistency` | 纯函数规则引擎；渡劫境界追加 `tribulation_elixir` / `ascension_protection` 标志；narrative vs delta 一致性校验 |
 | `choices.py` | `complete_choices()`, `fallback_choices()`, `normalize_choices()` | A/B/C/D 归一化；模型输出不足 4 个时用 `fallback_choices(session)` 按当前 `location` 兜底；D 固定为气运/天命路线 |
 | `render.py` | `format_status_bar`, `format_log` 以及历史/测试用文本格式化函数 | 状态 → 文本字符串；Web 响应当前只暴露 `panels.status_bar`，旧状态/背包/功法/地图/任务/境界工具面板不再作为产品入口 |
 | `local_story.py` | `start_local_story()`, `advance_local_story()`, `validate_local_story_graph()` | 回合期模型失败的固定本地故事图；角色创建开局模型失败优先走 profile-aware fallback，不再默认进入 `misty_gate` |
-| `profile_opening.py` | `profile_default_world`, `profile_opening`, `profile_summary`, `fate_tendency` | 开局输入归一化；按角色名、天赋、灵根、家世、难度、六维属性和随机/手选模式推导命数倾向 |
+| `profile_opening.py` | `profile_default_world`, `profile_opening`, `profile_summary`, `fate_profile`, `fate_tendency` | 开局输入归一化；按角色名、天赋、灵根、家世、难度、六维属性和随机/手选模式推导结构化命数画像 |
 | `world_generator.py` | `build_world_prompt`, `build_world_fallback`, `parse_world_response` | World Builder prompt + profile-aware 本地兜底；输出本局世界观、0-16 岁编年史、16 岁初始局势、外界情报和 A/B/C/D choices |
 | `death_rewards.py` | `categorize_death`, `evaluate_achievements`, `compute_rewards`, `bonuses_to_legacy`, `apply_legacy_bonuses`, `build_run_summary` | 终局分类（飞升 > 因果反噬 > 事件 > 寿元 > 手动）+ 成就评估 + 奖励计算 + 跨局传承奖励 |
 | `model_result.py` | `ModelResultKind`, `classify_narrator_result`, `classify_world_builder_result`, `classify_judge_result`, `result_diagnostics` | 模型输出分类（OK / REQUEST_FAILED / INCOMPLETE_OUTPUT / JUDGE_FAILED / LOCAL_FALLBACK）；用于遥测与 UI 兜底判定 |
@@ -75,7 +77,7 @@
 
 | Agent | 路径 | 温度 / tokens | 节点要点 |
 | --- | --- | --- | --- |
-| **Narrator** | `agents/narrator/` | 默认 | 加载 `prompts/system/narrator.md`；拼接 `<当前状态>` + 压缩后的 `chat_history`（开场上下文 + 省略占位 + 最近 6 条）+ `<玩家行动>`；有可恢复内容但缺叙事/`<state_update>`/`<choices>` 时 1 次 repair；解析叙事正文 + `<state_update>` + `<choices>`，并兼容 fenced/bare JSON 与中文 A/B/C/D 行 |
+| **Narrator** | `agents/narrator/` | 默认 | 加载 `prompts/system/narrator.md`；拼接 `<当前状态>` + 压缩后的 `chat_history`（开场上下文 + 省略占位 + 最近 6 条）+ `<玩家行动>`；普通回合默认不二次 repair，突破等少数路径可启用；解析叙事正文 + `<state_update>` + `<choices>`，并记录脱敏契约诊断 |
 | **Judge** | `agents/judge/` | `temperature=0.2`, `max_tokens=512` | 审核 Narrator 提议的 `state_delta`；返回 `approved` / `corrected_delta` / `judgment_note` / `review_score`；LLMError 默认 `approved=False`（安全失败） |
 | **World Builder** | `agents/world_builder/` | `temperature=0.6`, `max_tokens=4096` | 新游戏和角色创建开局生成世界 + 角色；解析 `<world_data>` JSON 标签；保留 `chronicle_0_16`、`initial_situation_16`、`fate_hooks` 等动态开局字段；清理内部错误/调试字段 |
 | **Sequential 包装** | `agents/sequential.py` | — | `SequentialAgentGraph` 通用 4 节点编排；3 个 Agent 共享同一编排 |

@@ -6,6 +6,7 @@ from typing import Any
 
 from ..game.constants import ATTRIBUTE_KEYS, ATTRIBUTE_LABELS, normalize_attribute_value
 from ..session.game_session import GameSession
+from .world_catalog import world_pack_for_key
 
 
 def profile_attributes(profile: dict[str, Any]) -> dict[str, int]:
@@ -20,42 +21,86 @@ def profile_attributes(profile: dict[str, Any]) -> dict[str, int]:
     return attrs
 
 
-def fate_tendency(profile: dict[str, Any]) -> list[str]:
-    """Derive broad fate tags from public character-creation inputs."""
+def fate_profile(profile: dict[str, Any]) -> list[dict[str, Any]]:
+    """Return structured fate dimensions derived from public creation inputs."""
     attrs = profile_attributes(profile)
     talent = str(profile.get("talent") or "")
     root = str(profile.get("spirit_root") or "")
     family = str(profile.get("family_background") or "")
     difficulty = str(profile.get("difficulty") or "普通")
-    tags: list[str] = []
+    random_mode = bool(profile.get("randomize_attributes"))
+    scores: dict[str, int] = {
+        "苦修": 0,
+        "宗门": 0,
+        "散修": 0,
+        "天命": 0,
+        "灾厄": 0,
+        "贵胄": 0,
+        "神魂异兆": 0,
+        "边地劫数": 0,
+    }
 
-    if attrs["comprehension"] >= 7 or "剑心" in talent or "道胎" in talent:
-        tags.append("早慧悟道")
-    if attrs["luck"] >= 7 or "天命" in talent:
-        tags.append("天命奇遇")
     if attrs["root_bone"] >= 7 or attrs["physique"] >= 7 or "雷" in root:
-        tags.append("苦修武修")
-    if attrs["willpower"] >= 7 or difficulty == "困难":
-        tags.append("逆境磨砺")
+        scores["苦修"] += 3
+    if attrs["comprehension"] >= 7 or "剑心" in talent or "道胎" in talent:
+        scores["苦修"] += 2
+        scores["天命"] += 1
+    if attrs["luck"] >= 7 or "天命" in talent:
+        scores["天命"] += 4
+    if attrs["luck"] <= 3:
+        scores["灾厄"] += 3
+        scores["边地劫数"] += 2
+    if attrs["willpower"] >= 7:
+        scores["苦修"] += 1
+        scores["边地劫数"] += 1
     if attrs["soul"] >= 7:
-        tags.append("神魂异兆")
-    if "隐世" in family or "仙族" in family or "宗门" in family:
-        tags.append("贵胄世家")
-    elif "农家" in family or "寒门" in family:
-        tags.append("寒门散修")
-    if difficulty == "困难" or attrs["luck"] <= 3:
-        tags.append("灾厄边地")
-    if bool(profile.get("randomize_attributes")):
-        tags.append("命数起伏")
+        scores["神魂异兆"] += 4
+        scores["天命"] += 1
+    if "隐世" in family or "仙族" in family or "世家" in family:
+        scores["贵胄"] += 4
+        scores["宗门"] += 2
+    if "宗门" in family:
+        scores["宗门"] += 4
+    if "农家" in family or "寒门" in family:
+        scores["散修"] += 3
+    if difficulty == "困难":
+        scores["灾厄"] += 3
+        scores["边地劫数"] += 3
+    elif difficulty == "简单":
+        scores["宗门"] += 1
+    if random_mode:
+        scores["天命"] += 1
+        scores["灾厄"] += 1
 
-    if not tags:
-        tags.append("平稳入道")
-    return _dedupe(tags)[:4]
+    if max(scores.values()) <= 0:
+        scores["散修"] = 1
+
+    profiles: list[dict[str, Any]] = []
+    for fate_id, score in sorted(scores.items(), key=lambda item: (-item[1], item[0])):
+        if score <= 0:
+            continue
+        spec = _FATE_DIMENSIONS[fate_id]
+        profiles.append({
+            "id": fate_id,
+            "label": spec["label"],
+            "score": score,
+            "related_attributes": spec["related_attributes"],
+            "preferred_worlds": spec["preferred_worlds"],
+            "event_weight_modifiers": spec["event_weight_modifiers"],
+            "narrative_keywords": spec["narrative_keywords"],
+        })
+    return profiles[:4]
+
+
+def fate_tendency(profile: dict[str, Any]) -> list[str]:
+    """Derive broad fate tags from public character-creation inputs."""
+    return [item["label"] for item in fate_profile(profile)] or ["散修"]
 
 
 def profile_summary(profile: dict[str, Any]) -> dict[str, Any]:
     """Build the safe public profile facts used by opening generators."""
     attrs = profile_attributes(profile)
+    profile_fates = fate_profile(profile)
     return {
         "char_name": str(profile.get("char_name") or "无名"),
         "talent": str(profile.get("talent") or "平平无奇"),
@@ -64,7 +109,8 @@ def profile_summary(profile: dict[str, Any]) -> dict[str, Any]:
         "difficulty": str(profile.get("difficulty") or "普通"),
         "randomize_attributes": bool(profile.get("randomize_attributes")),
         "attributes": attrs,
-        "fate_tendency": fate_tendency(profile),
+        "fate_profile": profile_fates,
+        "fate_tendency": [item["label"] for item in profile_fates] or ["散修"],
     }
 
 
@@ -77,8 +123,9 @@ def profile_default_world(profile: dict[str, Any]) -> tuple[str, str, str, str]:
     attrs = summary["attributes"]
     fate = "、".join(summary["fate_tendency"])
     world_key = _world_key(summary)
-    region = _WORLD_VARIANTS[world_key]["world_name"]
-    location = _WORLD_VARIANTS[world_key]["location"]
+    pack = world_pack_for_key(world_key)
+    region = str(pack["world_name"])
+    location = str(pack["location"])
     pressure = {
         "简单": "各地灵脉尚稳，宗门愿给新弟子试错余地",
         "普通": "边境暗流渐起，宗门筛选弟子比往年更严",
@@ -105,30 +152,6 @@ def profile_opening(session: GameSession) -> str:
         f"其出身{session.family_background or '凡俗'}，灵根为{session.spirit_root or '未明'}，"
         f"外界局势已在{session.region or '本界'}积成暗流。"
     )
-
-
-_WORLD_VARIANTS = {
-    "frontier": {
-        "world_name": "西陲裂土",
-        "location": "荒岭接引营",
-        "sect": "砺锋院",
-    },
-    "clan": {
-        "world_name": "玄都盟境",
-        "location": "玄都盟外院",
-        "sect": "玄都盟",
-    },
-    "ocean": {
-        "world_name": "沧澜群岛",
-        "location": "潮音渡口",
-        "sect": "潮音阁",
-    },
-    "forest": {
-        "world_name": "青岚药境",
-        "location": "青岚药圃",
-        "sect": "青岚谷",
-    },
-}
 
 
 def _world_key(summary: dict[str, Any]) -> str:
@@ -160,3 +183,63 @@ def _dedupe(values: list[str]) -> list[str]:
         if text and text not in out:
             out.append(text)
     return out
+
+
+_FATE_DIMENSIONS: dict[str, dict[str, Any]] = {
+    "苦修": {
+        "label": "苦修",
+        "related_attributes": ["root_bone", "physique", "comprehension", "willpower"],
+        "preferred_worlds": ["frontier", "forest"],
+        "event_weight_modifiers": {"稳妥": 2, "风险": 1},
+        "narrative_keywords": ["根基", "苦修", "耐性"],
+    },
+    "宗门": {
+        "label": "宗门",
+        "related_attributes": ["comprehension", "willpower"],
+        "preferred_worlds": ["clan", "forest"],
+        "event_weight_modifiers": {"稳妥": 1, "机遇": 2},
+        "narrative_keywords": ["师门", "名册", "规矩"],
+    },
+    "散修": {
+        "label": "散修",
+        "related_attributes": ["luck", "willpower"],
+        "preferred_worlds": ["frontier", "ocean", "forest"],
+        "event_weight_modifiers": {"机遇": 1, "风险": 1},
+        "narrative_keywords": ["坊市", "路引", "自寻门路"],
+    },
+    "天命": {
+        "label": "天命",
+        "related_attributes": ["luck", "comprehension", "soul"],
+        "preferred_worlds": ["ocean", "clan"],
+        "event_weight_modifiers": {"气运": 3, "机遇": 1},
+        "narrative_keywords": ["签文", "星象", "潮汐"],
+    },
+    "灾厄": {
+        "label": "灾厄",
+        "related_attributes": ["luck", "willpower", "physique"],
+        "preferred_worlds": ["frontier"],
+        "event_weight_modifiers": {"风险": 2, "气运": 1},
+        "narrative_keywords": ["劫数", "反噬", "失踪"],
+    },
+    "贵胄": {
+        "label": "贵胄",
+        "related_attributes": ["comprehension", "soul"],
+        "preferred_worlds": ["clan"],
+        "event_weight_modifiers": {"机遇": 2, "稳妥": 1},
+        "narrative_keywords": ["旧契", "族名", "评席"],
+    },
+    "神魂异兆": {
+        "label": "神魂异兆",
+        "related_attributes": ["soul", "comprehension"],
+        "preferred_worlds": ["ocean", "clan"],
+        "event_weight_modifiers": {"气运": 2, "机遇": 1},
+        "narrative_keywords": ["梦兆", "魂灯", "幻境"],
+    },
+    "边地劫数": {
+        "label": "边地劫数",
+        "related_attributes": ["willpower", "physique", "luck"],
+        "preferred_worlds": ["frontier"],
+        "event_weight_modifiers": {"风险": 3},
+        "narrative_keywords": ["边营", "妖潮", "断路"],
+    },
+}

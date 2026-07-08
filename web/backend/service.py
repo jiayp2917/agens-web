@@ -728,16 +728,17 @@ class WebGameService:
             index = int(payload["choice_index"])
             if index < 0 or index >= len(choices):
                 raise ValueError("选项序号无效。")
-            return choices[index]
+            return _with_choice_semantic(index, choices[index])
 
         raw = str(payload.get("choice") or "").strip()
         letter_map = {"A": 0, "B": 1, "C": 2, "D": 3}
         if raw.upper() in letter_map and letter_map[raw.upper()] < len(choices):
-            return choices[letter_map[raw.upper()]]
+            index = letter_map[raw.upper()]
+            return _with_choice_semantic(index, choices[index])
         if raw in {"1", "2", "3", "4"}:
             index = int(raw) - 1
             if index < len(choices):
-                return choices[index]
+                return _with_choice_semantic(index, choices[index])
         if raw:
             raise ValueError("请选择 A/B/C/D。")
         raise ValueError("请选择 A/B/C/D。")
@@ -745,6 +746,39 @@ class WebGameService:
 
 def _pick(value: str, options: list[str]) -> str:
     return value if value in options else options[0]
+
+
+_CHOICE_SEMANTIC_PREFIXES = (
+    ("A", "稳妥"),
+    ("B", "机遇"),
+    ("C", "风险"),
+    ("D", "气运"),
+)
+
+
+def _with_choice_semantic(index: int, text: str) -> str:
+    """Preserve A/B/C/D semantics when model choice text omits route labels."""
+    body = str(text or "").strip()
+    if _has_choice_semantic(body):
+        return body
+    if 0 <= index < len(_CHOICE_SEMANTIC_PREFIXES):
+        letter, label = _CHOICE_SEMANTIC_PREFIXES[index]
+        return f"{letter}【{label}】{body}"
+    return body
+
+
+def _has_choice_semantic(text: str) -> bool:
+    upper = text.upper()
+    for letter, label in _CHOICE_SEMANTIC_PREFIXES:
+        if (
+            upper.startswith(letter)
+            or text.startswith(label)
+            or text.startswith(f"【{label}】")
+            or text.startswith(f"{label}:")
+            or text.startswith(f"{label}：")
+        ):
+            return True
+    return False
 
 
 def is_guest_user_id(user_id: str | None) -> bool:

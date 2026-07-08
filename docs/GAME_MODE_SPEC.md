@@ -15,9 +15,14 @@
   after model-delta sanitization and rule-delta merge. If the model claims
   attribute growth but the rule engine does not grant it, the visible claim is
   suppressed; if the rule engine grants it, the chronicle may describe it.
-- The latest visible-Chrome local validation after ordinary-turn repair reduction
-  passed 20/20 non-fallback turns. Repair fell to 0/20, but live latency
-  remains a P1 gameplay-quality risk.
+- The latest visible-Chrome local validation is
+  `local-visible-chronicle-events-routes-20260708`: 20/20 non-fallback turns,
+  repair 0/20, judge 4, average choice latency about 17.35s, max about 59.3s;
+  DB audit showed A/B/C/D route categories at 5 turns each and continuous
+  `game_turns` 1-20.
+- Current P1 implementation is moving ordinary turns toward a data-driven
+  chronicle loop: four fixed world packs, structured fate profile, route event
+  catalog, and stricter narrator contract diagnostics.
 
 > 状态：**v5 Alpha 本地与当前生产 P0 验收已闭环，下一步进入 P1 游玩质量与模型效率优化**。游戏模式核心规则已切换到 A/B/C/D 四按钮、无 HP/MP、事件判定战斗、寿元寿命表、六维属性、动态流逝年数、PostgreSQL 回合记录和用户级模型配置。
 > 文档定位：游戏模式的产品 spec + 技术实现规格，是“游戏模式”的单一事实来源。
@@ -30,13 +35,13 @@
 > | §3 寿元寿命表 | 各境界寿元区间，UI 显示当前寿元上限与剩余寿元 | ✅ 已实现（`game/constants.py` REALM_LIFESPAN_RANGES、`render.format_status_bar`） |
 > | §4 六维属性 | 体魄/神魂/气运/悟性/心性/根骨，无 HP/MP；角色创建 30 点池 | ✅ 已实现（运行时默认属性保留在 `constants.DEFAULT_ATTRIBUTES`；角色创建由 `start_flow.normalize_profile_attributes()` 和 React 表单执行 2-8/30、0-10/30 校验；`GameSession` 已移除 hp/mp/luck/combat 字段） |
 > | §3.5 动态开局 | 难度、天赋、灵根、家世、六维和随机/手选模式驱动本局世界观、0-16 岁编年史、16 岁初始局势、外界情报和首次 A/B/C/D | ✅ 后端开局链路已改为统一 opening payload；模型未启用或失败时使用 profile-aware fallback，不再固定青玄宗/东荒云界模板；fallback 不算 live-model 成功 |
-> | §3.6 阶段反馈 / 事件池 | 每 3-5 回合反馈阶段目标、外界变化、路线差异 | ✅ 首批实现为每 4 回合按稳妥/机遇/风险/气运四路线写入 `world.lore_add`；仍需 Chrome 20 回合验证体验质量 |
+> | §3.6 阶段反馈 / 事件池 | 每 3-5 回合反馈阶段目标、外界变化、路线差异 | ✅ 已推进为“世界包 + 命数画像 + 数据驱动事件表”：每回合选择编年史事件上下文，每 4 回合写入 `world.lore_add`；`local-visible-chronicle-events-routes-20260708` 验证 20 回合中 8 回合写入 lore |
 > | §4 战斗事件化 | 斗法/禁地/心魔/天劫以事件判定表达 | ✅ 已实现（`handle_combat_action` 为安全 no-op；`apply_delta` 丢弃结构化 combat delta） |
 > | §8.3 `game_turns` 表 | JSONB 回合日志 + `game_runs` + `player_progress` | ✅ 已接线（PostgreSQL 单后端（Option C 已移除 SQLite），Alembic `20260622_0003`，Web 回合/终局写入） |
 > | §11 稀有度解锁门 | 白/绿/蓝/紫/橙/红 六档 + runs/ascension 门径 | ✅ 已接线（`constants.rarity_unlocked_for`、`/api/catalog/rarities`，终局写入 `player_progress`） |
 > | §11 死亡分类 | finale > karma > event > lifespan > player | ✅ 已实现（`death_rewards.categorize_death`） |
 > | 验证 | compileall + pytest + React build + 密钥审计 | ⏳ 以当前分支最新测试结果为准，不在文档中固化旧计数 |
-> | 待办 | 继续降低本地 live 响应耗时、repair/judge 依赖，并改善 20 回合内容体验 | ⏳ 当前生产批次 start+choice 已 non-fallback；后续生产部署或模型配置变更仍需复跑。当前本地 `local-visible-history-softcap-c1d8628-20260707` 已完成动态开局 live start gate、20/20 choice non-fallback 和存读档；repair 0/20、judge 5 次，但平均约 39.3s、最大约 157.3s，live 响应慢仍需治理 |
+> | 待办 | 继续降低本地 live 响应长尾、减少 narrator 契约漂移，并改善 20 回合内容体验 | ⏳ 当前生产批次 start+choice 已 non-fallback；后续生产部署或模型配置变更仍需复跑。当前本地 `local-visible-chronicle-events-routes-20260708` 已完成动态开局 live start gate、20/20 choice non-fallback 和存读档；repair 0/20、judge 4 次、fallback 0，平均约 17.35s、最大约 59.3s |
 
 ## 0. TL;DR
 
@@ -225,6 +230,9 @@ def apply_luck_bias(base_risk: float, base_reward: int, luck: int) -> tuple[floa
 - **阶段反馈节奏**：每 **3-5 回合**出现阶段性反馈，包括年龄变化、修为推进、外界大事、关系变化、风险伏笔或奖励。
 - **动态开局输入**：开局生成必须使用难度、天赋、灵根、家世、六维属性和随机/手选模式推导命数倾向；模型输出与本地 fallback 都必须体现这些输入，不能只替换角色名。
 - **动态开局输出**：后端写入 `world_profile`、`world.lore_facts`、`world.current_scene` 和首次 choices；`world_profile` 至少应包含 `world_name`、`current_conflicts`、`fate_hooks`、`chronicle_0_16` 和 `initial_situation_16`。
+- **世界包**：第一批固定为西陲裂土、玄都盟境、沧澜群岛、青岚药境。每套世界包必须包含主势力、敌对势力、中立势力、区域、当前冲突、长期矛盾、开局钩子、事件权重和适配命数。
+- **命数画像**：命数不再只是展示标签；后端保存 `fate_profile`，至少包含苦修、宗门、散修、天命、灾厄、贵胄、神魂异兆、边地劫数这些维度中的若干项，并记录 score、关联属性、偏好世界、事件权重修正和叙事关键词。命数只影响事件倾向和叙事钩子，不直接决定突破、寿元、死亡或奖励。
+- **事件表**：普通回合通过数据驱动事件表选择编年史事件。事件包含类型、适用世界、适用命数、阶段范围、权重、阶段目标、可见编年史模板、允许的权威状态类型和下一步选项提示。`settle_turn()` 仍决定年龄、属性、寿元压力和终局；事件表不绕过规则引擎。
 - **境界节奏**：小境界进展多为隐式，不频繁作为选项；大境界突破作为阶段事件呈现，尤其筑基、金丹、元婴、化神和飞升。练气期不得长期滞留早期小层；规则引擎需要用年龄/回合推进提供小境界下限，避免 13 年仍停留练气三层这类编年史失真。
 - 第一版不做显式资源栏，只保留状态型记录，例如境界、年龄、寿元、称号、关系、关键机缘、伤势、因果和传承。
 - UI 侧栏可展示“外界情报”，来源限于 `world.current_scene`、`world.lore_facts` 和 `world_profile.current_conflicts` 等只读世界摘要；它不是玩家资源栏，也不授权前端修改权威状态。

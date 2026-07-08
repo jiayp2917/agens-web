@@ -134,6 +134,10 @@ class TurnFlow:
             meta_delta.get("game_over") or meta_delta.get("finale")
         )
         if narrator_status.kind == ModelResultKind.INCOMPLETE_OUTPUT:
+            if not str(narrative or "").strip() and isinstance(state_delta, dict) and normalize_choices(choices):
+                narrative = self._narrative_from_rule_delta(rule_delta)
+                state_delta = self._empty_delta_from_rule(rule_delta)
+                malformed_state_delta = False
             recovered_choices = self._recover_incomplete_narrator_choices(narrative, choices)
             if recovered_choices:
                 choices = recovered_choices
@@ -449,6 +453,26 @@ class TurnFlow:
                 if key in rule_delta["meta"]:
                     meta[key] = rule_delta["meta"][key]
         return {"character": {}, "world": {}, "meta": meta}
+
+    @staticmethod
+    def _narrative_from_rule_delta(rule_delta: dict[str, Any]) -> str:
+        """Build a short chronicle narrative when the model returns JSON-only output."""
+        meta = rule_delta.get("meta") if isinstance(rule_delta, dict) else {}
+        world = rule_delta.get("world") if isinstance(rule_delta, dict) else {}
+        elapsed = 0
+        stage_goal = ""
+        lore = ""
+        if isinstance(meta, dict):
+            elapsed = int(meta.get("elapsed_years") or 0)
+            stage_goal = str(meta.get("stage_goal") or "").strip()
+        if isinstance(world, dict) and isinstance(world.get("lore_add"), list) and world["lore_add"]:
+            lore = str(world["lore_add"][0] or "").strip()
+        years = f"{elapsed}年间，" if elapsed > 0 else ""
+        if lore:
+            return f"{years}{lore}"
+        if stage_goal:
+            return f"{years}此人循本局因果推进，{stage_goal}。"
+        return f"{years}此人按所选道路修行，外界局势仍在暗中变化。"
 
 
 def _should_retry_narrator_result(result: dict[str, Any]) -> bool:

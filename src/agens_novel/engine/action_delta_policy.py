@@ -243,7 +243,16 @@ def merge_rule_delta(
     rule_meta = rule_delta.get("meta", {})
     if isinstance(rule_meta, dict) and rule_meta:
         merged_meta = dict(merged.get("meta", {}))
-        for key in ("game_over", "game_over_reason", "elapsed_years", "choice_category"):
+        for key in (
+            "game_over",
+            "game_over_reason",
+            "elapsed_years",
+            "choice_category",
+            "event_id",
+            "event_type",
+            "stage_goal",
+            "allowed_delta_types",
+        ):
             if key in rule_meta:
                 merged_meta[key] = rule_meta[key]
         merged["meta"] = merged_meta

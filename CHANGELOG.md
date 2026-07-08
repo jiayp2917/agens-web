@@ -1,5 +1,31 @@
 # Changelog
 
+## 2026-07-08
+
+### Changed - chronicle world packs and event catalog
+
+- Added the first data-driven chronicle-content slice for ordinary turns:
+  centralized four fixed world packs, structured fate profile derivation, and a
+  route/event catalog that feeds compact event context into rule settlement and
+  narrator prompts.
+- Tightened narrator contract diagnostics without restoring high-frequency
+  repair: narrator results now expose sanitized shape diagnostics, and JSON-only
+  ordinary-turn output can settle with a rule-based chronicle narrative while
+  discarding model-proposed authoritative delta.
+- Preserved A/B/C/D route semantics through the web `/choice` path by adding
+  deterministic route prefixes before rule settlement and by teaching
+  `classify_choice()` to recognize visible Chinese route labels.
+- Verification: `compileall` passed; `tests\web` 74 passed with local
+  PostgreSQL `TEST_DATABASE_URL`; full `pytest -q` 520 passed; frontend build
+  passed; `git diff --check` passed with LF/CRLF warnings only.
+- Real Chrome validation: `local-visible-chronicle-events-routes-20260708`
+  passed 20/20 live choice turns with fallback 0, repair 0/20, judge 4,
+  save/load passed, average choice latency about 17.35s, max about 59.3s. DB
+  audit confirmed A/B/C/D route categories at 5 turns each, continuous
+  `game_turns` 1-20, and 8 lore-writing turns.
+- Remaining risk: content variety and route consequences still need more event
+  depth, and live-model latency still has a visible long tail.
+
 ## 2026-07-07
 
 ### Fixed - P1 gameplay state accounting and stage events

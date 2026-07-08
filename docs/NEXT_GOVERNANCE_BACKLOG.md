@@ -4,11 +4,11 @@ This is the active backlog for `agens-web`. It separates local code work, local 
 
 ## Current Evidence
 
-- Current local code baseline includes sanitized model diagnostics, the 2026-07-04 attribute-scale cleanup, and the 2026-07-07 P1 gameplay-state slice.
-- Validation after the latest local P1 gameplay-state batch passed:
+- Current local code baseline includes sanitized model diagnostics, the 2026-07-04 attribute-scale cleanup, the 2026-07-07 P1 gameplay-state slice, and the 2026-07-08 chronicle-content slice.
+- Validation after the latest local P1 chronicle-content batch passed:
   - `python -m compileall -q src tests web scripts migrations`
-  - `python -m pytest -q tests\web` -> 73 passed with local PostgreSQL `TEST_DATABASE_URL`
-  - full `python -m pytest -q` with local PostgreSQL `TEST_DATABASE_URL` -> 513 passed
+  - `python -m pytest -q tests\web` -> 74 passed with local PostgreSQL `TEST_DATABASE_URL`
+  - full `python -m pytest -q` with local PostgreSQL `TEST_DATABASE_URL` -> 520 passed
   - `cd web\frontend-react; npm.cmd run build` -> passed
   - `git diff --check` -> passed with LF/CRLF warnings only
 - User-scoped model settings are implemented:
@@ -16,15 +16,16 @@ This is the active backlog for `agens-web`. It separates local code work, local 
   - `/api/admin/settings/model` is the admin-only system-default endpoint.
   - `user_model_configs` stores one encrypted config per `user_id`; system default remains in `model_config`.
   - Runtime model calls resolve config by current session/user and do not mutate process-global `AGNES_API_KEY`.
-- Previous dynamic-opening Chrome acceptance `local-visible-dynamic-opening-20260706-strict-live5` and `local-visible-p1-final-20260706` remain historical comparison evidence. The current local visible Chrome acceptance is `local-visible-history-softcap-c1d8628-20260707`; generated evidence remains under `output/playwright/` and is ignored by default.
+- Previous dynamic-opening Chrome acceptance `local-visible-dynamic-opening-20260706-strict-live5`, `local-visible-p1-final-20260706`, `local-visible-history-softcap-c1d8628-20260707`, and `local-visible-a69a8af-20260708` remain historical comparison evidence. The current local visible Chrome acceptance is `local-visible-chronicle-events-routes-20260708`; generated evidence remains under `output/playwright/` and is ignored by default.
 - Production P0 is accepted for the latest deployed production batch: server thread deployed `25ad3d15`, kept Alembic at `20260622_0005`, verified `user_model_configs`, health/catalog/container state, sanitized log scan, real-account flow, and production start+choice non-fallback with `turn_count=1`.
 - Latest local code adds sanitized `model_result` diagnostics with numeric/boolean fields only: narrator/judge elapsed time, repair elapsed time, prompt size, history count, game-state size, and provider token counters when available. This is measurement, not a latency fix.
 - Dynamic character-driven opening generation is implemented: difficulty, talent, spirit root, family background, six attributes, and random/manual mode feed a unified opening payload for world profile, 0-16 chronicle, age-16 situation, external intelligence, and initial A/B/C/D choices. Model-unavailable starts use profile-aware fallback and still surface fallback status; fallback remains invalid as live-model success.
 - Current local working batch also closes the attribute-scale audit: runtime attributes are 0-10 with 5 as neutral, and old 0-100 values are compatibility inputs only. New realm, reward, catalog, or model-prompt logic must not use 50 as the neutral midpoint or 100 as the normal cap.
 - Active phase plan remains `docs/PLAYABLE_GAMEPLAY_ROADMAP_20260629.md`: P0 current batch is closed; next work is P1 gameplay quality and model-efficiency iteration without broad architecture changes.
-- Current local P1 model-efficiency slice is verified by `local-visible-history-softcap-c1d8628-20260707`: dynamic live start passed, 20/20 choice turns were non-fallback, save/load passed, fallback was 0, repair stayed 0/20, and judge ran 5 turns. The history soft-cap keeps prompt size bounded (avg ~6.3k chars, max ~6.7k chars), but latency did not improve in this sample: average choice latency was about 39.3s and max about 157.3s, with the remaining slow path in provider/narrator/judge latency, not repair calls.
+- Current local visible Chrome baseline is `local-visible-chronicle-events-routes-20260708`: dynamic live start passed, 20/20 choice turns were non-fallback, save/load passed, fallback was 0, repair stayed 0/20, judge ran 4 turns, average choice latency was about 17.35s and max about 59.3s. DB audit confirmed A/B/C/D route categories at 5 turns each, `game_turns` 1-20 continuity, and 8 lore-writing turns. This makes flow stability acceptable for P1 work, but content pacing, response long tail, and narrator contract quality still need improvement.
 - 2026-07-07 defensive runtime batch is closed: malformed nested `state_delta.character/world/meta` sections are ignored with warnings instead of crashing; `fallback_prompt.active` now reflects current failure/local-story state rather than historical `model_failure` events and is restored from persisted events when a runner is rebuilt; `/choice` accepts `choice_index`, A/B/C/D, and `"1"`-`"4"` while still rejecting free text.
-- 2026-07-07 P1 gameplay-state slice is closed in automation: stage feedback now uses deterministic route event pools for steady/opportunity/risk/luck; ordinary-turn narrative consistency is checked after model delta sanitization and rule-delta merge so visible attribute-growth claims must match the final authoritative delta; Judge now reviews technique grants and sensitive inventory grants such as breakthrough, lifespan, key-item, inheritance, or high-rarity items. Chrome 20-turn validation has not been rerun after this slice.
+- 2026-07-07 P1 gameplay-state slice is closed in automation and was later covered by the `a69a8af` Chrome run: stage feedback uses deterministic route events; ordinary-turn narrative consistency is checked after model delta sanitization and rule-delta merge; Judge reviews technique grants and sensitive inventory grants such as breakthrough, lifespan, key-item, inheritance, or high-rarity items.
+- 2026-07-08 chronicle-content batch is accepted locally: four fixed world packs are centralized, profile starts save a structured `fate_profile`, ordinary turns use a data-driven event catalog, narrator results expose sanitized contract diagnostics, and `/choice` now preserves A/B/C/D route semantics before rule settlement. Verified by full automation and `local-visible-chronicle-events-routes-20260708`.
 
 ## Lessons To Keep
 
@@ -61,14 +62,14 @@ Next work should be data-led and gameplay-facing.
    - `narrator-sample-20260706`（20 回合 chrome-devtools 采样，见 `docs/PROJECT_AUDIT.md` 同日采样段）：平均回合 ~30.4s、max 65.6s；**repair 率 70%（14/20），repair 占总延迟 56%**；history cap 20 后 repair 率 ~100%。
    - **这推翻 `local-visible-p1-final-20260706` 的 "repair 0/20，lever exhausted"** —— 当前 narrator 契约在 history 增长后频繁失效（p1-final 与本采样 repair 率差异大，可能因模型 key/版本/配置不同）。
 2. 杠杆排序（采样驱动）：
-   - **history 压缩**（最高杠杆）：第一批软上限切片已落地并通过 `local-visible-history-softcap-c1d8628-20260707` 复采；repair 保持 0/20，prompt 字符数被控制在约 6.7k 以内，但平均/最大耗时仍偏高，后续重点转向 narrator/provider 长尾与 judge 调用成本。
+   - **history 压缩**（最高杠杆）：第一批软上限切片已落地；`local-visible-chronicle-events-routes-20260708` 显示 repair 0/20、平均约 17.35s、最大约 59.3s。后续重点从“repair 次数”转向 narrator/provider 长尾、输出契约和内容质量。
    - **narrator 输出契约/解析器重构**（次高，高风险）：`nodes.py` 539 行解析器堆积，独立批次 + 充分测试。本采样已证明它是根因，不再是"先采样再决定"。
    - repair 是契约失效的后果，不是独立杠杆。
    - judge elapsed 全 0（非源）；provider narrator 首次 ~13.4s（可接受）。
 3. Improve 20-turn playable content.
    - 0-16 岁 opening chronicle is implemented in the dynamic-opening chain; keep it as a regression guard, not a fresh task.
-   - First deterministic stage-feedback/event-pool slice is implemented via every-fourth-turn `world.lore_add` for steady, opportunity, risk, and luck routes.
-   - Next content work should make those route pools richer and verify them in a real 20-turn Chrome run.
+   - First deterministic stage-feedback/event-pool slice has been expanded into a structured world-pack/fate-profile/event-catalog design. Every turn now has event context for narrator, and every fourth turn persists stage feedback to `world.lore_add`.
+   - Next content work should continue enriching the event catalog depth, route-specific consequences, and third-person chronicle texture; the current batch already has real 20-turn Chrome coverage.
    - Reduce repeated retreat/breakthrough loops.
    - Keep small-realm progress mostly implicit; reserve major breakthroughs for stage events.
    - Keep Qi Refining pacing credible: age and turn count should prevent a 20-turn slice from lingering in early small layers.

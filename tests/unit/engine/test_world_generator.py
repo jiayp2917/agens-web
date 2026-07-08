@@ -49,7 +49,8 @@ def test_world_prompt_includes_attributes_and_fate() -> None:
     assert "六维属性" in prompt
     assert "根骨=8" in prompt
     assert "命数倾向" in prompt
-    assert "天命奇遇" in prompt
+    assert "命数画像" in prompt
+    assert "天命" in prompt
     assert "0-16岁短编年史" in prompt
 
 
@@ -71,6 +72,10 @@ def test_fallback_varies_by_profile_and_contains_opening_payload() -> None:
     assert calm["initial_situation_16"] != hard["initial_situation_16"]
     assert len(calm["chronicle_0_16"]) >= 3
     assert len(calm["choices"]) == 4
+    assert calm["world_key"] == "forest"
+    assert calm["event_weights"]
+    assert calm["fate_profile"]
+    assert "long_conflict" in calm
     assert "青玄宗" not in calm["opening_narrative"]
     assert calm["world"]["lore_facts"]
 

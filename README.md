@@ -11,11 +11,12 @@ Web-only 文字修仙模拟器。当前 `master` 是浏览器版本主线：Reac
 - 角色创建六维属性池已按 `docs/GAME_MODE_SPEC.md` §4.1 收束：手动单项 2-8、总和 30；随机单项 0-10、总和 30。
 - 运行时六维属性统一为 0-10 尺度，5 为中性默认值；旧 0-100 存档或模型输出只在加载/入局时兼容迁移，不能再作为新逻辑的默认尺度。
 - 动态开局链路已接入：难度、天赋、灵根、家世、六维属性和随机/手选模式共同生成本局世界观、0-16 岁编年史、16 岁初始局势、外界情报和首次 A/B/C/D choices。模型未启用或失败时使用差异化 profile-aware fallback；fallback 可玩但不算 live-model 成功。
-- 最新本地自动化基线：本地 PostgreSQL 可用；P1 事件池/最终 delta 一致性切片后 `compileall` passed，`tests\web` 73 passed，全量 `pytest -q` 513 passed，前端 build passed，`git diff --check` 仅 LF/CRLF warning。
-- 最新本地真实 Chrome 验收：2026-07-07 `local-visible-history-softcap-c1d8628-20260707` 通过，使用本地后端 + Vite 验证动态开局 live path：`start_model_ok=true`、`start_fallback=false`、4 个初始 choices、动态世界名/0-16 岁编年史/16 岁初始局势存在，普通账号注册/登录、角色创建、20/20 choice non-fallback、存档/读档均通过；repair 0/20、judge 5 次、fallback 0。平均回合耗时约 39.3s、最大约 157.3s，soft-cap 已保持 repair 为 0，但 live 响应慢仍是 P1 风险。
+- 普通回合 P1 正在从“模型临场发挥”收束为“世界包 + 命数画像 + 数据驱动事件表 + narrator 润色”：第一批固定四套世界观（西陲裂土、玄都盟境、沧澜群岛、青岚药境），由规则引擎提供编年史事件上下文，并补充 narrator 契约诊断。
+- 最新本地自动化基线：本地 PostgreSQL 可用；本批 `compileall` passed，`tests\web` 74 passed，全量 `pytest -q` 520 passed，前端 build passed，`git diff --check` 仅 LF/CRLF warning。
+- 最新本地真实 Chrome 验收：2026-07-08 `local-visible-chronicle-events-routes-20260708` 通过，使用本地后端 + Vite 验证动态开局 live path：`start_model_ok=true`、`start_fallback=false`、4 个初始 choices、动态世界名/0-16 岁编年史/16 岁初始局势存在，普通账号注册/登录、角色创建、20/20 choice non-fallback、存档/读档均通过；repair 0/20、judge 4 次、fallback 0。平均回合耗时约 17.35s、最大约 59.3s；DB 审计显示 A/B/C/D 路线各 5 回合、`game_turns` 1-20 连续、8 回合写入 lore。后续风险主要是响应长尾、内容节奏和 narrator 契约漂移。
 - 最新生产批次：服务器线程已部署 `25ad3d15` 并迁移到 Alembic `20260622_0005`，`user_model_configs` 存在，public/origin health、catalog、容器健康和日志敏感标记扫描通过；一次性真实账号注册、登录、存档、读档、跨会话恢复通过。
 - production live model P0 已通过脱敏验收：生产 start 和至少 1 次 choice 均为 non-fallback，choice 后 `turn_count=1`。历史 `model_config` 旧行遮蔽 env key 的失败保留为经验，后续不再作为当前阻塞。
-- 尚未完成：P1 游玩质量和治理，包括 live 响应慢、narrator 输出结构不稳定、重复闭关/突破循环、20 回合内容体验和大文件复杂度治理。本轮已补四路线阶段事件池、最终落账 delta 校验和功法/关键道具 Judge 触发，但尚未重新跑真实 Chrome 20 回合。
+- 尚未完成：P1 游玩质量和治理，包括 live 响应长尾、narrator 输出契约、重复闭关/突破循环、20 回合内容体验和大文件复杂度治理。fallback 仍不能算 live-model 成功。
 
 ## Local PostgreSQL
 

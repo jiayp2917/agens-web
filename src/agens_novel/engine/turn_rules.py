@@ -12,7 +12,8 @@ from __future__ import annotations
 import random
 from typing import Any
 
-from ..game.constants import REALM_LIFESPANS, format_realm_name
+from ..game.constants import REALM_LIFESPANS
+from .event_catalog import event_summary, select_chronicle_event, stage_feedback_due
 
 # ── Realm → base years per turn ─────────────────────────────────────────────
 # Higher realms mean longer time spans for each pivotal decision.
@@ -68,36 +69,14 @@ _CHOICE_ATTRIBUTE_IMPACT: dict[str, dict[str, Any]] = {
     },
 }
 
-_STAGE_FEEDBACK_EVENT_POOLS: dict[str, tuple[str, ...]] = {
-    "稳妥": (
-        "{location}近年灵气渐稳，{realm_label}的根基有了可见积累。",
-        "{location}的执事重修课业簿，低阶弟子开始按月比对吐纳进度。",
-        "山门内院清点旧藏，稳修一脉多了几篇可供参照的修行札记。",
-    ),
-    "机遇": (
-        "{location}外传来新机缘，坊市与同门议论下一段修行去处。",
-        "邻近坊市放出讲法名额，散修与宗门弟子都在打听入场门路。",
-        "一位过路修士留下遗迹线索，真假未定，却足以改变下一段行程。",
-    ),
-    "风险": (
-        "{location}周边风波加重，斗法与禁地传闻让修行代价更清晰。",
-        "山外妖兽迁徙，巡山弟子折损，禁地边缘的风险被重新写入告示。",
-        "外门传来斗法伤亡，宗门开始限制低阶弟子私自远行。",
-    ),
-    "气运": (
-        "{age}岁这一年，天命暗流转向，外界对他的命数多了新的传闻。",
-        "夜里星象偏移，坊间术士称近期因果易变，有人得机缘也有人遭反噬。",
-        "一则无名签文在坊市流传，众人各自解读，命数之说更添几分波澜。",
-    ),
-}
-
-
 def classify_choice(text: str) -> str:
     """Map a player choice text to a category label (稳妥/机遇/风险/气运).
 
     Falls back to '机遇' for free-text actions that don't match A/B/C/D.
     """
     raw = text.strip()
+    if not raw:
+        return "机遇"
     # Direct A/B/C/D letter
     upper = raw.upper()
     if upper in _CHOICE_CATEGORY_MAP and len(raw) == 1:
@@ -105,6 +84,14 @@ def classify_choice(text: str) -> str:
     # Text starting with A/B/C/D marker
     for letter, category in _CHOICE_CATEGORY_MAP.items():
         if raw.startswith(letter) or raw.startswith(letter.lower()):
+            return category
+    for category in _CHOICE_CATEGORY_MAP.values():
+        if (
+            raw.startswith(category)
+            or raw.startswith(f"【{category}】")
+            or raw.startswith(f"{category}:")
+            or raw.startswith(f"{category}：")
+        ):
             return category
     # Default for free-text actions
     return "机遇"
@@ -187,6 +174,8 @@ def settle_turn(
                 game_over = True
                 game_over_reason = str(pressure.get("game_over_reason") or "寿元耗尽，坐化而去。")
 
+    event = select_chronicle_event(session, category, new_age)
+
     # ── Build turn summary for model prompt ──
     turn_summary = (
         f"本回合类别：{category}；"
@@ -194,16 +183,25 @@ def settle_turn(
         f"角色年龄：{session.age}→{new_age}岁；"
         f"剩余寿元：{max(0, remaining_lifespan)}年。"
     )
+    event_text = event_summary(event)
+    if event_text:
+        turn_summary += f" {event_text}"
     if game_over:
         turn_summary += f" 结局：{game_over_reason}"
+
+    world_delta = _stage_feedback_delta(session, event)
 
     # ── Build state_delta ──
     state_delta: dict[str, Any] = {
         "character": char_delta,
-        "world": _stage_feedback_delta(session, category, new_age),
+        "world": world_delta,
         "meta": {
             "elapsed_years": elapsed_years,
             "choice_category": category,
+            "event_id": event.get("id", ""),
+            "event_type": event.get("event_type", ""),
+            "stage_goal": event.get("stage_goal", ""),
+            "allowed_delta_types": event.get("allowed_delta_types", []),
             "turn_summary": turn_summary,
         },
     }
@@ -220,19 +218,12 @@ def get_realm_lifespan(realm: str) -> int:
     return REALM_LIFESPANS.get(realm, 100)
 
 
-def _stage_feedback_delta(session: Any, category: str, new_age: int) -> dict[str, Any]:
+def _stage_feedback_delta(session: Any, event: dict[str, Any]) -> dict[str, Any]:
     """Emit lightweight chronicle/world feedback every few turns."""
-    next_turn = int(getattr(session, "turn_count", 0) or 0)
-    if next_turn <= 0 or next_turn % 4 != 0:
+    if not event or not stage_feedback_due(session):
         return {}
-    realm = getattr(session, "realm", "练气") or "练气"
-    stage = int(getattr(session, "realm_stage", 1) or 1)
-    realm_label = format_realm_name(realm, stage)
-    location = getattr(session, "location", "") or getattr(session, "current_scene", "") or "本地"
-    pool = _STAGE_FEEDBACK_EVENT_POOLS.get(category) or _STAGE_FEEDBACK_EVENT_POOLS["机遇"]
-    index = ((next_turn // 4) - 1) % len(pool)
-    text = pool[index].format(location=location, realm_label=realm_label, age=new_age)
-    return {"lore_add": [text]}
+    lore = str(event.get("lore") or "").strip()
+    return {"lore_add": [lore]} if lore else {}
 
 
 def _low_realm_age_pressure(session: Any, new_age: int) -> dict[str, Any]:

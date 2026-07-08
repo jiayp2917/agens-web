@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import asyncio
 
-from agens_novel.agents.narrator.nodes import _parse_narrator_output, build_prompt
+from agens_novel.agents.narrator.nodes import _contract_diagnostics, _parse_narrator_output, build_prompt
 from agens_novel.engine.model_result import ModelResultKind, classify_narrator_result
 
 
@@ -225,6 +225,27 @@ class TestNarratorParse:
         assert delta is None
         assert choices == ["吐纳", "询问", "历练", "随缘"]
         assert status.kind == ModelResultKind.INCOMPLETE_OUTPUT
+
+    def test_contract_diagnostics_report_shape_without_text(self) -> None:
+        text = (
+            "他在山门旁看见旧榜。\n"
+            "<state_update>{\"character\":{},\"world\":{},\"meta\":{}}</state_update>\n"
+            "<choices>[\"闭关\", \"拜访\", \"历练\"]</choices>"
+        )
+        narrative, delta, choices = _parse_narrator_output(text)
+
+        diagnostics = _contract_diagnostics(text, narrative, delta, choices)
+
+        assert diagnostics == {
+            "missing_narrative": False,
+            "missing_state_update": False,
+            "choices_count": 3,
+            "choices_count_ok": False,
+            "raw_has_state_update_tag": True,
+            "raw_has_choices_tag": True,
+            "structured_residue": False,
+            "english_residue": False,
+        }
 
     def test_state_update_with_extra_trailing_brace_is_recovered(self) -> None:
         text = (

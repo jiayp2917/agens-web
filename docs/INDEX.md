@@ -7,10 +7,10 @@
 - 当前主线：游戏模式 v5 Alpha，A/B/C/D 四按钮固定语义（A 稳妥 / B 机遇 / C 风险 / D 气运），无自由文本主入口，无 HP/MP 常驻 UI。
 - 数据库路线：PostgreSQL-only，本地测试和生产都以 Alembic schema 为准；SQLite 已删除，仅作为历史记录保留在 `CHANGELOG.md`。
 - 模型设置：注册用户可配置个人模型；访客不可配置；无个人配置时使用系统 Agens 默认。用户 key 只允许后端加密存储和脱敏展示。
-- 最新本地代码基线：已包含脱敏模型性能观测、narrator prompt history soft-cap、2026-07-04 属性尺度清理、动态开局生成链路、2026-07-06 治理审计执行、2026-07-07 防御性运行修复，以及 P1 事件池/最终 delta 一致性切片（四路线阶段反馈事件池、属性成长叙事按最终落账 delta 校验、功法/关键道具 Judge 触发）；`compileall` passed，`tests\web` 73 passed，全量 `pytest -q` 513 passed，前端 build passed，`git diff --check` 仅 LF/CRLF warning。
-- 最新本地真实 Chrome 验收：2026-07-07 `local-visible-history-softcap-c1d8628-20260707` 通过（动态开局 live start gate、普通账号注册/登录、角色创建、20/20 choice non-fallback、存档/读档均通过；repair 0/20、judge 5 次、fallback 0；平均回合约 39.3s、最大约 157.3s）。证据位于 `output/playwright/local-visible-history-softcap-c1d8628-20260707.{json,ndjson,csv}` 和同名截图/source，默认不提交。
+- 最新本地代码基线：已包含脱敏模型性能观测、narrator prompt history soft-cap、2026-07-04 属性尺度清理、动态开局生成链路、2026-07-06 治理审计执行、2026-07-07 防御性运行修复，以及 P1 编年史内容切片（四套世界包、结构化命数画像、数据驱动事件表、narrator 契约诊断、A/B/C/D 路线语义持久化）。
+- 最新本地真实 Chrome 验收：2026-07-08 `local-visible-chronicle-events-routes-20260708` 通过（动态开局 live start gate、普通账号注册/登录、角色创建、20/20 choice non-fallback、存档/读档均通过；repair 0/20、judge 4 次、fallback 0；平均回合约 17.35s、最大约 59.3s；DB 审计 A/B/C/D 路线各 5 回合，`game_turns` 1-20 连续，8 回合写入 lore）。证据位于 `output/playwright/local-visible-chronicle-events-routes-20260708.{json,ndjson,csv}` 和同名 source，默认不提交。
 - 最新生产批次：服务器线程部署 `25ad3d15` 后，Alembic 为 `20260622_0005`，`user_model_configs` 存在，public/origin health、catalog、容器健康、日志敏感标记扫描、一次性真实账号注册/登录/存档/读档/跨会话恢复均通过；生产 start 和至少 1 次 choice 均为 non-fallback，choice 后 `turn_count=1`。
-- 当前剩余重点：P1 游玩质量和治理，包括 live 响应慢、narrator repair/judge 依赖、20 回合真实体验复验、重复闭关/突破循环进一步削弱，以及 `tests/web/test_web_api.py`、`web/backend/service.py`、`web/backend/database_postgres.py`、`src/agens_novel/engine/game_engine.py` 的小步复杂度治理。动态开局 fallback 可玩但不等于 live-model 成功，后续 Chrome 验收仍需记录 fallback 布尔。
+- 当前剩余重点：P1 游玩质量和治理，包括 live 响应长尾、narrator 输出契约、20 回合内容节奏、重复闭关/突破循环进一步削弱，以及 `tests/web/test_web_api.py`、`web/backend/service.py`、`web/backend/database_postgres.py`、`src/agens_novel/engine/game_engine.py` 的小步复杂度治理。动态开局 fallback 可玩但不等于 live-model 成功，后续 Chrome 验收仍需记录 fallback 布尔。
 
 ## 当前权威文档
 

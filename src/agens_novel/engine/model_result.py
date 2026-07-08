@@ -54,6 +54,8 @@ def classify_narrator_result(result: dict[str, Any]) -> ModelResultStatus:
         return ModelResultStatus(ModelResultKind.INCOMPLETE_OUTPUT, "模型输出缺少叙事正文。")
     if narrative and not choices:
         return ModelResultStatus(ModelResultKind.INCOMPLETE_OUTPUT, "模型已返回叙事，但未返回可用 A/B/C/D 选项。")
+    if len(choices) != 4:
+        return ModelResultStatus(ModelResultKind.INCOMPLETE_OUTPUT, "模型已返回叙事，但未返回恰好 4 个 A/B/C/D 选项。")
     return ModelResultStatus(ModelResultKind.OK)
 
 
@@ -89,6 +91,7 @@ def result_diagnostics(result: dict[str, Any]) -> dict[str, Any]:
     usage = result.get("usage") if isinstance(result.get("usage"), dict) else {}
     repair_usage = result.get("repair_usage") if isinstance(result.get("repair_usage"), dict) else {}
     prompt_metrics = result.get("prompt_metrics") if isinstance(result.get("prompt_metrics"), dict) else {}
+    contract = result.get("contract_diagnostics") if isinstance(result.get("contract_diagnostics"), dict) else {}
     if isinstance(generated, dict):
         raw_choices = generated.get("choices", raw_choices)
         narrative = generated.get("opening_narrative") or narrative
@@ -114,6 +117,11 @@ def result_diagnostics(result: dict[str, Any]) -> dict[str, Any]:
         "total_tokens": _int_metric(usage.get("total_tokens")),
         "repair_prompt_tokens": _int_metric(repair_usage.get("prompt_tokens")),
         "repair_completion_tokens": _int_metric(repair_usage.get("completion_tokens")),
+        "contract_missing_narrative": bool(contract.get("missing_narrative")),
+        "contract_missing_state_update": bool(contract.get("missing_state_update")),
+        "contract_choices_count_ok": bool(contract.get("choices_count_ok")),
+        "contract_structured_residue": bool(contract.get("structured_residue")),
+        "contract_english_residue": bool(contract.get("english_residue")),
     }
 
 

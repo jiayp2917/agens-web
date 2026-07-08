@@ -7,7 +7,8 @@ from unittest.mock import patch
 from agens_novel.engine.game_engine import GameEngine
 from agens_novel.engine.action_delta_policy import merge_rule_delta, validate_narrative_delta_consistency
 from agens_novel.engine.choices import fallback_choices
-from agens_novel.engine.turn_rules import settle_turn
+from agens_novel.engine.event_catalog import select_chronicle_event
+from agens_novel.engine.turn_rules import classify_choice, settle_turn
 from agens_novel.session.game_session import GameSession
 
 
@@ -167,6 +168,44 @@ def test_harmless_chronicle_claim_is_not_suppressed_in_turn_flow(monkeypatch) ->
     assert engine.game_session.turn_history[-1]["narrative"] == narrative
 
 
+def test_json_only_narrator_output_uses_rule_chronicle_without_local_story(monkeypatch) -> None:
+    monkeypatch.setenv("AGNES_API_KEY", "test-model-key")
+    engine = GameEngine()
+    engine.game_session.game_started = True
+    engine.game_session.last_choices = ["稳妥修行", "拜访同门", "探查禁地", "随缘而行"]
+
+    def runner(agent_name, user_input, session, **kw):
+        if agent_name == "narrator":
+            return {
+                "narrative": "",
+                "state_delta": {"character": {}, "world": {"lore_add": ["模型只给结构化见闻"]}, "meta": {}},
+                "choices": ["继续稳修", "打听消息", "探查边缘", "随缘行事"],
+                "llm_error": "",
+            }
+        return {"approved": True, "corrected_delta": {}, "judgment_note": "", "llm_error": ""}
+
+    with patch("agens_novel.engine.game_engine.run_turn_sync", side_effect=runner):
+        engine.handle_action("A")
+
+    assert engine.game_session.local_story_active is False
+    assert engine.game_session.turn_count == 1
+    assert engine.game_session.turn_history[-1]["narrative"]
+    assert engine.game_session.last_choices == ["继续稳修", "打听消息", "探查边缘", "随缘行事"]
+
+
+def test_choice_category_accepts_visible_route_semantics() -> None:
+    cases = [
+        ("A\u3010\u7a33\u59a5\u3011\u95ed\u5173\u7a33\u56fa", "\u7a33\u59a5"),
+        ("\u3010\u7a33\u59a5\u3011\u95ed\u5173\u7a33\u56fa", "\u7a33\u59a5"),
+        ("\u673a\u9047\uff1a\u62dc\u8bbf\u540c\u95e8", "\u673a\u9047"),
+        ("\u3010\u98ce\u9669\u3011\u63a2\u67e5\u7981\u5730", "\u98ce\u9669"),
+        ("\u6c14\u8fd0:\u968f\u7f18\u800c\u884c", "\u6c14\u8fd0"),
+    ]
+
+    for text, expected in cases:
+        assert classify_choice(text) == expected
+
+
 def test_judge_not_triggered_for_plain_risk_word_without_authoritative_delta(monkeypatch) -> None:
     monkeypatch.setenv("AGNES_API_KEY", "test-model-key")
     engine = GameEngine()
@@ -257,9 +296,9 @@ def test_stage_feedback_adds_world_lore_every_four_turns() -> None:
 def test_stage_feedback_uses_route_event_pools() -> None:
     expected_markers = {
         "A": "根基",
-        "B": "机缘",
-        "C": "风波",
-        "D": "命数",
+        "B": "消息",
+        "C": "异动",
+        "D": "签文",
     }
     for choice, marker in expected_markers.items():
         session = GameSession(location="青岚山门", turn_count=4, realm="筑基", realm_stage=2)
@@ -280,6 +319,36 @@ def test_stage_feedback_pool_rotates_across_later_phases() -> None:
     later = settle_turn("B", session)["world"]["lore_add"][0]
 
     assert len({early, middle, later}) == 3
+
+
+def test_chronicle_event_context_is_selected_every_turn() -> None:
+    session = GameSession(location="潮音渡口", region="沧澜群岛", turn_count=1)
+    session.world_profile = {
+        "world_name": "沧澜群岛",
+        "world_key": "ocean",
+        "fate_profile": [{"label": "天命", "score": 4}],
+        "event_weights": {"气运": 3},
+    }
+
+    event = select_chronicle_event(session, "气运", 18)
+
+    assert event["id"]
+    assert event["category"] == "气运"
+    assert event["stage_goal"]
+    assert event["allowed_delta_types"]
+    assert event["choice_hints"] and len(event["choice_hints"]) == 4
+    assert "天命" in event["matched_fates"]
+
+
+def test_settle_turn_records_event_meta_without_forcing_authoritative_rewards() -> None:
+    session = GameSession(location="青岚山门", turn_count=1)
+    delta = settle_turn("B", session)
+
+    assert delta["meta"]["event_id"]
+    assert delta["meta"]["event_type"]
+    assert delta["meta"]["stage_goal"]
+    assert delta["meta"]["allowed_delta_types"]
+    assert "inventory_add" not in delta["character"]
 
 
 def test_rule_world_delta_survives_model_merge() -> None:

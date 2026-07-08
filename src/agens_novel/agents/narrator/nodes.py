@@ -180,6 +180,7 @@ def save_artifact(state: dict[str, Any]) -> dict[str, Any]:
         narrative, state_delta, choices = "", {}, []
     else:
         narrative, state_delta, choices = _parse_narrator_output(text)
+    contract_diagnostics = _contract_diagnostics(text, narrative, state_delta, choices)
 
     out_path = store.write_output(AGENT_NAME, run_id, text)
     store.write_input_snapshot(
@@ -196,6 +197,7 @@ def save_artifact(state: dict[str, Any]) -> dict[str, Any]:
         "prompt_metrics": state.get("prompt_metrics") or {},
         "repaired_output": bool(state.get("repaired_output")),
         "repair_elapsed_ms": int(state.get("repair_elapsed_ms") or 0),
+        "contract_diagnostics": contract_diagnostics,
     }
     audit_path = store.write_audit(AGENT_NAME, run_id, audit)
     store.append_global_log({
@@ -211,6 +213,7 @@ def save_artifact(state: dict[str, Any]) -> dict[str, Any]:
         "repair_elapsed_ms": int(state.get("repair_elapsed_ms") or 0),
         "repair_usage": dict(state.get("repair_usage") or {}),
         "prompt_metrics": state.get("prompt_metrics") or {},
+        "contract_diagnostics": contract_diagnostics,
         "output_path": str(out_path),
         "audit_path": str(audit_path),
         "finished_at": audit["finished_at"],
@@ -226,6 +229,11 @@ _CHOICES_RE = re.compile(r"<choices>(.*?)</choices>", re.DOTALL)
 _FENCED_JSON_RE = re.compile(r"```(?:json|JSON)?\s*(?P<body>.*?)```", re.DOTALL)
 _ABC_LINE_RE = re.compile(
     r"(?im)^\s*(?:[-*]\s*)?(?:选项\s*)?(?:[ABCD]|[1-4])[\.、:：]\s*(?P<text>.+?)\s*$"
+)
+_VISIBLE_STRUCTURED_RE = re.compile(r"(<state_update|</state_update>|<choices|</choices>|```|\{|\}|\[[\"'])", re.IGNORECASE)
+_VISIBLE_ENGLISH_RE = re.compile(
+    r"\b(?:prowess|combat|inventory|technique|techniques|state_delta|state_update|choices|meta)\b",
+    re.IGNORECASE,
 )
 
 
@@ -278,6 +286,26 @@ def _parse_narrator_output(text: str) -> tuple[str, dict | None, list[str]]:
         narrative = _strip_inline_choice_lines(narrative)
 
     return clean_visible_text(narrative, allow_structured=False), state_delta, choices
+
+
+def _contract_diagnostics(
+    raw_text: str,
+    narrative: str,
+    state_delta: Any,
+    choices: list[str],
+) -> dict[str, Any]:
+    """Return non-secret narrator contract facts for logs and evidence."""
+    visible_text = "\n".join([str(narrative or ""), *[str(choice or "") for choice in choices]])
+    return {
+        "missing_narrative": not bool(str(narrative or "").strip()),
+        "missing_state_update": not isinstance(state_delta, dict),
+        "choices_count": len(choices),
+        "choices_count_ok": len(choices) == 4,
+        "raw_has_state_update_tag": "<state_update" in str(raw_text or "").lower(),
+        "raw_has_choices_tag": "<choices" in str(raw_text or "").lower(),
+        "structured_residue": bool(_VISIBLE_STRUCTURED_RE.search(visible_text)),
+        "english_residue": bool(_VISIBLE_ENGLISH_RE.search(visible_text)),
+    }
 
 
 def _parse_choices_payload(raw: str) -> Any:

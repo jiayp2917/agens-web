@@ -34,6 +34,20 @@ def test_narrator_choices_without_text_is_incomplete() -> None:
     assert "缺少叙事正文" in status.reason
 
 
+def test_narrator_requires_exactly_four_choices() -> None:
+    result = {
+        "narrative": "山门风起，外门弟子各自择路。",
+        "state_delta": {"character": {}, "world": {}, "meta": {}},
+        "choices": ["闭关", "拜访同门", "探查山径"],
+        "llm_error": "",
+    }
+
+    status = classify_narrator_result(result)
+
+    assert status.kind == ModelResultKind.INCOMPLETE_OUTPUT
+    assert "恰好 4 个" in status.reason
+
+
 def test_request_failure_is_separate_from_incomplete_output() -> None:
     result = {"narrative": "", "state_delta": {}, "choices": [], "llm_error": "timeout"}
 
@@ -100,6 +114,11 @@ def test_result_diagnostics_are_non_secret_shape_facts() -> None:
         "total_tokens": 30,
         "repair_prompt_tokens": 0,
         "repair_completion_tokens": 0,
+        "contract_missing_narrative": False,
+        "contract_missing_state_update": False,
+        "contract_choices_count_ok": False,
+        "contract_structured_residue": False,
+        "contract_english_residue": False,
     }
 
 

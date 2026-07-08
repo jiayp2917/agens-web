@@ -9,9 +9,11 @@ import pytest
 from fastapi.testclient import TestClient
 from sqlalchemy import create_engine, text
 
+from agens_novel.engine.turn_rules import classify_choice
 from agens_novel.game.constants import ATTRIBUTE_KEYS
 from web.backend.app import create_app
 from web.backend.auth import hash_invite_code
+from web.backend.service import _with_choice_semantic
 
 
 pytestmark = pytest.mark.xdist_group("pg_test_db")
@@ -84,6 +86,19 @@ def _runner(agent_name: str, *_args, **_kwargs):
     if agent_name == "judge":
         return _judge_result()
     raise AssertionError(agent_name)
+
+
+def test_choice_index_semantic_prefixes_match_rule_categories() -> None:
+    expected = [
+        "\u7a33\u59a5",
+        "\u673a\u9047",
+        "\u98ce\u9669",
+        "\u6c14\u8fd0",
+    ]
+
+    for index, category in enumerate(expected):
+        action = _with_choice_semantic(index, "\u5c71\u95e8\u4fee\u884c")
+        assert classify_choice(action) == category
 
 
 def _register(client: TestClient, invite: str = "invite-code-123") -> dict:
