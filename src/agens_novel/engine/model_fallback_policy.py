@@ -10,10 +10,22 @@ from .choices import CHOICE_FALLBACK_NOTICE
 
 MODEL_FAILURE_CONTINUE = "fallback"
 MODEL_FAILURE_END = "end"
-UPSTREAM_NOT_FOUND_NOTICE = "上游模型配置不可用（HTTP 404），请检查模型名/Base URL 或切回系统默认 Agens；本局已转入本地故事。"
-UPSTREAM_AUTH_NOTICE = "上游模型鉴权失败，请检查模型 Key 或切回系统默认 Agens；本局已转入本地故事。"
-UPSTREAM_TIMEOUT_NOTICE = "上游模型响应超时，本局已转入本地故事；可稍后重试或切换更稳定的模型。"
-MODEL_KEY_UNAVAILABLE_NOTICE = "模型 Key 未配置或不可解密，请在设置中配置个人 Key 或使用有效系统默认；本局已转入本地故事。"
+UPSTREAM_NOT_FOUND_NOTICE = "叙事服务配置暂未接通，请检查个人设置或切回系统默认后重试。"
+UPSTREAM_AUTH_NOTICE = "叙事服务鉴权未通过，请检查个人设置或切回系统默认后重试。"
+UPSTREAM_TIMEOUT_NOTICE = "叙事服务响应过久，请稍后重试或切换更稳定的设置。"
+MODEL_KEY_UNAVAILABLE_NOTICE = "叙事服务密钥未配置或不可用，请检查个人设置或使用系统默认。"
+MODEL_CONTRACT_UNAVAILABLE_NOTICE = CHOICE_FALLBACK_NOTICE
+MODEL_CONTRACT_MARKERS = (
+    "模型已返回",
+    "模型输出",
+    "状态更新格式不完整",
+    "缺少叙事正文",
+    "未返回可用",
+    "未返回恰好",
+    "不完整",
+    "未返回",
+    "格式",
+)
 
 SECRET_MARKERS = (
     "sk-", "api_key", "api-key", "x-api-key", "apikey",
@@ -70,8 +82,8 @@ def public_model_failure_notice(reason: str = "") -> str:
         return UPSTREAM_AUTH_NOTICE
     if _looks_secret_bearing(text):
         return CHOICE_FALLBACK_NOTICE
-    if "不完整" in text or "未返回" in text or "格式" in text:
-        return text
+    if any(marker in text for marker in MODEL_CONTRACT_MARKERS):
+        return MODEL_CONTRACT_UNAVAILABLE_NOTICE
     return CHOICE_FALLBACK_NOTICE
 
 

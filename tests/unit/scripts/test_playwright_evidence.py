@@ -17,6 +17,7 @@ def test_write_playwright_evidence_outputs_parseable_files(tmp_path) -> None:
         "local 20 turn",
         {
             "total_turns": 1,
+            "issues": [{"level": "P1", "text": "visible issue"}],
             "fallback_count": 0,
             "start_fallback": False,
             "start_model_ok": True,
@@ -71,6 +72,7 @@ def test_write_playwright_evidence_outputs_parseable_files(tmp_path) -> None:
     assert payload["summary"]["start_world_name_set"] is True
     assert payload["summary"]["start_chronicle_count"] == 3
     assert payload["summary"]["start_initial_situation_set"] is True
+    assert payload["issues"] == [{"level": "P1", "text": "visible issue"}]
     assert payload["turns"][0]["fallback"] is False
 
     ndjson_rows = [
@@ -166,6 +168,36 @@ def test_playwright_evidence_cli_writes_sanitized_outputs(tmp_path, monkeypatch,
     assert json.loads(open(paths["json"], encoding="utf-8").read())["summary"]["total_turns"] == 1
 
 
+def test_playwright_evidence_cli_preserves_top_level_issues(tmp_path, monkeypatch, capsys) -> None:
+    source = tmp_path / "strict-source.json"
+    out_dir = tmp_path / "out"
+    source.write_text(
+        json.dumps({
+            "summary": {"total_turns": 1},
+            "issues": [{"level": "P1", "text": "visible repeat"}],
+            "turns": [{"turn_index": 1, "fallback": False}],
+        }),
+        encoding="utf-8",
+    )
+    monkeypatch.setattr(
+        "sys.argv",
+        [
+            "playwright_evidence.py",
+            "--input",
+            str(source),
+            "--output-dir",
+            str(out_dir),
+            "--name",
+            "strict-source",
+        ],
+    )
+
+    assert playwright_evidence.main() == 0
+    paths = json.loads(capsys.readouterr().out)
+    payload = json.loads(open(paths["json"], encoding="utf-8").read())
+    assert payload["issues"] == [{"level": "P1", "text": "visible repeat"}]
+
+
 def test_content_audit_playtest_treats_p1_as_failed_content_gate() -> None:
     source = (ROOT / "scripts" / "local_visible_playtest.cjs").read_text(encoding="utf-8")
 
@@ -215,6 +247,28 @@ def test_content_audit_visible_text_heuristics_are_not_broad_brace_scans() -> No
     assert "state_delta|state_update|character|world|meta|choices" in source
     assert "/[{][\\s\\S]*[}]/u" not in source
     assert "function chineseNumber" in source
+
+
+def test_content_audit_forbids_chinese_fallback_notices() -> None:
+    source = (ROOT / "scripts" / "local_visible_playtest.cjs").read_text(encoding="utf-8")
+
+    assert "model_unavailable_notice" in source
+    assert "local_story_notice" in source
+    assert "heaven_disorder_notice" in source
+    assert "upstream_model_notice" in source
+    assert "basic_rule_settlement_notice" in source
+    assert "模型(?:暂)?不可用" in source
+    assert "本地故事继续" in source
+    assert "quoted_choice_fragment" in source
+
+
+def test_content_audit_recomputes_issue_counts_after_writer_failure() -> None:
+    source = (ROOT / "scripts" / "local_visible_playtest.cjs").read_text(encoding="utf-8")
+
+    assert "function updateIssueCounts(summary, issues)" in source
+    assert 'issue("P0", "strict evidence writer failed"' in source
+    assert "updateIssueCounts(summary, issues);" in source
+    assert 'summary.result = "failed_or_partial";' in source
 
 
 def test_content_audit_does_not_treat_previous_latest_as_new_turn() -> None:

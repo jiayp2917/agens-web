@@ -87,7 +87,7 @@ def test_react_homepage_buttons_have_handlers() -> None:
     assert "onTutorial" in source
     assert "onSettings" in source
     assert "TutorialDialog" in source
-    assert "模型暂不可用，当前以本地故事继续。" in source
+    assert "本回合记录暂未续上，请稍后重试或按当前局面继续。" in source
     assert "A 稳妥、B 机遇、C 风险、D 气运" in source
     assert "D 代表随缘与天命路线，不是自由输入" in source
     assert "D 输入框可以写自由行动" not in source

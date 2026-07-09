@@ -172,8 +172,8 @@ def test_http_404_model_failure_notice_is_actionable_and_secret_safe() -> None:
         '叙述失败: HTTP 404: {"error":{"message":"Not Found","code":"404"}}'
     )
 
-    assert "HTTP 404" in notice
-    assert "模型名/Base URL" in notice
+    assert "叙事服务配置" in notice
+    assert "系统默认" in notice
     assert "sk-" not in notice
     assert "http://" not in notice
     assert "https://" not in notice
@@ -181,12 +181,12 @@ def test_http_404_model_failure_notice_is_actionable_and_secret_safe() -> None:
 
 def test_model_failure_notice_matrix_is_actionable_and_secret_safe() -> None:
     cases = [
-        ("叙述失败: HTTP 401 Unauthorized", "鉴权失败"),
-        ("叙述失败: request timed out after 60s", "响应超时"),
-        ("AGNES_API_KEY unavailable", "Key 未配置"),
+        ("叙述失败: HTTP 401 Unauthorized", "鉴权未通过"),
+        ("叙述失败: request timed out after 60s", "响应过久"),
+        ("AGNES_API_KEY unavailable", "密钥未配置"),
         (
             "模型已返回叙事，但状态更新格式不完整: https://provider.example/v1 x-api-key sk-secret",
-            "天道紊乱",
+            "本回合记录暂未续上",
         ),
     ]
 

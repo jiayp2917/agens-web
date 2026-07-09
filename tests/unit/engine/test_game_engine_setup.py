@@ -212,7 +212,7 @@ class TestGameEngineNewGame:
             engine.handle_action("观察")
 
         assert len(engine.game_session.last_choices) == 4
-        assert any("上游模型响应超时" in msg for msg in infos)
+        assert any("叙事服务响应过久" in msg for msg in infos)
 
     def test_successful_narrative_without_choices_shows_recovery_notice(self, monkeypatch) -> None:
         monkeypatch.setenv("AGNES_API_KEY", "sk-test-1234567890")

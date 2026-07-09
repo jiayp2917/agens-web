@@ -430,11 +430,15 @@ def test_local_story_fallback_records_turn(
     body = chosen.json()
     assert body["turn_count"] == 1
     assert body["fallback_prompt"]["active"] is True
+    fallback_text = body["fallback_prompt"]["text"]
+    assert "本回合记录暂未续上" in fallback_text
+    assert "模型" not in fallback_text
+    assert "状态更新格式不完整" not in fallback_text
     with app.state.service.db.engine.connect() as conn:
         row = conn.execute(
             text(
                 """
-                SELECT turn_no, elapsed_years, event_kind, state_delta
+                SELECT turn_no, elapsed_years, event_kind, narrative, state_delta
                 FROM game_turns
                 WHERE run_id = :run_id
                 """
@@ -444,6 +448,7 @@ def test_local_story_fallback_records_turn(
     assert row["turn_no"] == 1
     assert row["elapsed_years"] == 0
     assert row["event_kind"] == "fallback"
+    assert "模型" not in row["narrative"]
     assert row["state_delta"]["meta"]["local_story_fallback"] is True
 
 
@@ -558,7 +563,7 @@ def test_malformed_state_update_with_narrative_settles_rule_turn(
     assert "local_story_fallback" not in row["state_delta"]["meta"]
 
 
-def test_model_failure_prompt_exposes_sanitized_http_404_cause(
+def test_model_failure_prompt_uses_sanitized_public_http_404_notice(
     tmp_path: Path,
     monkeypatch,
 ) -> None:
@@ -592,8 +597,10 @@ def test_model_failure_prompt_exposes_sanitized_http_404_cause(
     body = chosen.json()
     assert body["fallback_prompt"]["active"] is True
     text_value = body["fallback_prompt"]["text"]
-    assert "HTTP 404" in text_value
-    assert "模型名/Base URL" in text_value
+    assert "叙事服务配置暂未接通" in text_value
+    assert "系统默认" in text_value
+    assert "HTTP 404" not in text_value
+    assert "Base URL" not in text_value
     assert "sk-" not in text_value
     assert "https://" not in text_value
 
@@ -689,7 +696,7 @@ def test_model_failure_prompt_and_event_redact_secret_bearing_format_reason(
         for event in body["events"]
         if event.get("type") in {"model_failure", "error", "info"}
     )
-    assert any("天道紊乱" in text for text in visible_texts)
+    assert any("本回合记录暂未续上" in text for text in visible_texts)
     for text_value in visible_texts:
         assert "sk-" not in text_value
         assert "Authorization" not in text_value
@@ -1383,7 +1390,7 @@ def test_model_failure_events_are_public_safe(tmp_path: Path, monkeypatch) -> No
 
     body = json.dumps(payload, ensure_ascii=False)
     assert "sk-secret" not in body
-    assert "模型暂不可用，当前以本地故事继续。" in body
+    assert "本回合记录暂未续上，请稍后重试或按当前局面继续。" in body
 
 
 def test_start_accepts_seeded_catalog_character_options(tmp_path: Path, monkeypatch) -> None:

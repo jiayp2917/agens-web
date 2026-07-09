@@ -1,5 +1,38 @@
 # Changelog
 
+## 2026-07-09
+
+### Fixed - visible content audit and chronicle de-duplication
+
+- Expanded `scripts/local_visible_playtest.cjs` content-audit mode to capture
+  click-before/click-after UI text, full page text, external intelligence,
+  choices, fallback banner, API diagnostics, forbidden visible text, and
+  repeated chronicle similarity in strict JSON/NDJSON/CSV evidence.
+- Removed remaining player-visible model/internal fallback wording from backend
+  notices, frontend fallback/tutorial text, and catalog display text. Internal
+  model-contract reasons remain logged or captured as sanitized diagnostics.
+- Added ordinary-turn duplicate chronicle protection: recent narratives are
+  normalized across Chinese age/year/turn markers and high-similarity long
+  repeats are replaced with rule-derived chronicle text when no visible
+  authoritative delta would be lost.
+- Tightened fallback and judge handling: local-story fallback no longer records
+  unapplied rule-event lore, judge retryable provider failures retry once, and
+  the evidence writer carries issues into strict JSON output.
+- Verification: `compileall` passed; `tests\web` 74 passed with local
+  PostgreSQL `TEST_DATABASE_URL`; full `pytest -q` 555 passed; frontend build
+  passed; `git diff --check` passed with LF/CRLF warnings only.
+- Real Chrome content audit: final accepted evidence is
+  `local-content-basic-cycle-final2-20260709`,
+  `local-content-route-{a,b,c,d}-final2-20260709`, and
+  `local-content-mixed-60-final2-20260709`. Base, A, B, and D completed 20/20
+  live turns; C reached a natural terminal state at turn 19; mixed reached a
+  natural terminal state at turn 49. All final runs had fallback 0, P0 0, P1 0,
+  no player-visible forbidden text, and no repeated exact chronicle hits.
+- Remaining risk: narrator output is still structurally unreliable in long
+  runs (`narrator_incomplete_output_count=46/49` in mixed), live-model latency
+  still has a roughly 64s long tail, and terminal-page UI snapshot capture after
+  game-over is incomplete.
+
 ## 2026-07-08
 
 ### Added - visible Chrome content-audit playtest

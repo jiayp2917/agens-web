@@ -37,7 +37,7 @@ from .service_summaries import build_death_summary
 
 log = logging.getLogger(__name__)
 
-PUBLIC_MODEL_FALLBACK_TEXT = "模型暂不可用，当前以本地故事继续。"
+PUBLIC_MODEL_FALLBACK_TEXT = "本回合记录暂未续上，请稍后重试或按当前局面继续。"
 _MODEL_FAILURE_PREFIXES = (
     "世界生成失败:",
     "叙述失败:",
@@ -320,6 +320,16 @@ def _public_event_text(text: str) -> str:
         "本回合已按当前局面补齐下一步选择",
         "此事未入正史",
         "按本局因果结算",
+        "详见日志",
+        "叙述失败",
+        "世界生成失败",
+        "天道审判失败",
+        "突破叙事失败",
+        "突破审判失败",
+        "模型叙事",
+        "模型输出",
+        "本地故事",
+        "天道紊乱",
         "narrative/state mismatch",
         "state_delta",
         "状态更新格式不完整",

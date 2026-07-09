@@ -193,7 +193,7 @@ class TestGameEngineHandleAction:
         assert engine.game_session.turn_count == 0
         assert engine.game_session.local_story_active is True
         assert len(engine.game_session.last_choices) == 4
-        assert any("天道紊乱" in msg for msg in infos)
+        assert any("本回合记录暂未续上" in msg for msg in infos)
     def test_narrator_exception_can_end_run_from_ui_choice(self, monkeypatch) -> None:
         monkeypatch.setenv("AGNES_API_KEY", "sk-test-1234567890")
         engine = GameEngine()

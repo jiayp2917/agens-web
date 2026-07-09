@@ -10,7 +10,7 @@ from typing import Any
 from ..session.game_session import GameSession
 
 CHOICE_LABELS = ("A", "B", "C", "D")
-CHOICE_FALLBACK_NOTICE = "天道紊乱，暂以因果残影指引。"
+CHOICE_FALLBACK_NOTICE = "本回合记录暂未续上，请稍后重试或按当前局面继续。"
 # D 语义: "气运" - 随缘/天命，强绑定 luck 属性。UI 固定为第 4 按钮。
 
 _LETTER_PREFIX_RE = re.compile(
@@ -24,6 +24,9 @@ _CHOICES_TAG_RE = re.compile(r"<choices\b[^>]*>.*?</choices>", re.DOTALL | re.IG
 _STRUCTURED_JSON_RE = re.compile(
     r"\{[^{}]{0,120}(?:state_delta|state_update|character|world|meta|choices)[^{}]{0,800}\}",
     re.DOTALL,
+)
+_QUOTED_CHOICE_FRAGMENT_RE = re.compile(
+    r'(?:[\[\n]\s*)?(?:\\?["“][^"“”\n]{4,160}\\?["”]\s*[,，]\s*){3}\\?["“][^"“”\n]{4,160}\\?["”]\s*(?:\]|$)'
 )
 _ENGLISH_VISIBLE_REPLACEMENTS = {
     "prowess": "实战能力",
@@ -78,6 +81,7 @@ def clean_visible_text(text: str, *, allow_structured: bool = True) -> str:
     if not allow_structured:
         cleaned = _STRUCTURED_JSON_RE.sub("", cleaned)
         cleaned = _strip_embedded_structured_objects(cleaned)
+        cleaned = _QUOTED_CHOICE_FRAGMENT_RE.sub("", cleaned)
     for source, target in _ENGLISH_VISIBLE_REPLACEMENTS.items():
         cleaned = re.sub(rf"\b{re.escape(source)}\b", target, cleaned, flags=re.IGNORECASE)
     cleaned = cleaned.replace("\\n", "\n")

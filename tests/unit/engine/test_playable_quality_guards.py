@@ -6,8 +6,10 @@ from unittest.mock import patch
 
 from agens_novel.engine.game_engine import GameEngine
 from agens_novel.engine.action_delta_policy import merge_rule_delta, validate_narrative_delta_consistency
-from agens_novel.engine.choices import fallback_choices
+from agens_novel.engine.choices import CHOICE_FALLBACK_NOTICE, clean_visible_text, fallback_choices
 from agens_novel.engine.event_catalog import select_chronicle_event
+from agens_novel.engine.model_fallback_policy import public_model_failure_notice
+from agens_novel.engine.turn_flow import _has_visible_authoritative_delta
 from agens_novel.engine.turn_rules import classify_choice, settle_turn
 from agens_novel.session.game_session import GameSession
 
@@ -28,6 +30,30 @@ def test_fallback_choices_vary_by_play_phase_without_changing_d_semantics() -> N
     assert middle[:3] != later[:3]
     assert early[3] == middle[3] == later[3]
     assert "气运" in early[3]
+
+
+def test_model_contract_failure_notice_is_public_text() -> None:
+    for reason in (
+        "模型已返回叙事，但状态更新格式不完整。",
+        "模型输出缺少叙事正文。",
+        "模型已返回叙事，但未返回可用 A/B/C/D 选项。",
+        "模型已返回叙事，但未返回恰好 4 个 A/B/C/D 选项。",
+    ):
+        text = public_model_failure_notice(reason)
+        assert text == CHOICE_FALLBACK_NOTICE
+        assert "模型已返回" not in text
+        assert "状态更新格式不完整" not in text
+        assert "缺少叙事正文" not in text
+
+
+def test_clean_visible_text_keeps_legitimate_quoted_lore_list() -> None:
+    text = "墙上刻着“青木长生诀”、“庚金护身符”、“寒潭通行令”，皆为旧年传闻。"
+
+    cleaned = clean_visible_text(text, allow_structured=False)
+
+    assert "青木长生诀" in cleaned
+    assert "庚金护身符" in cleaned
+    assert "寒潭通行令" in cleaned
 
 
 def test_authoritative_injury_claim_requires_structured_status() -> None:
@@ -193,6 +219,412 @@ def test_json_only_narrator_output_uses_rule_chronicle_without_local_story(monke
     assert engine.game_session.last_choices == ["继续稳修", "打听消息", "探查边缘", "随缘行事"]
 
 
+def test_local_story_fallback_turn_does_not_claim_unapplied_rule_event(monkeypatch) -> None:
+    monkeypatch.setenv("AGNES_API_KEY", "test-model-key")
+    engine = GameEngine()
+    engine.game_session.game_started = True
+    engine.game_session.last_choices = ["稳妥修行", "拜访同门", "探查禁地", "随缘而行"]
+    rule_delta = {
+        "character": {"age": "+3"},
+        "world": {"lore_add": ["青岚谷外门重开药圃账册，验真者被列入新差事。"]},
+        "meta": {
+            "elapsed_years": 3,
+            "choice_category": "稳妥",
+            "event_lore": "青岚谷外门重开药圃账册，验真者被列入新差事。",
+            "stage_goal": "推进药圃差事",
+        },
+    }
+
+    def runner(agent_name, user_input, session, **kw):
+        if agent_name == "narrator":
+            return {"narrative": "", "state_delta": {}, "choices": [], "llm_error": ""}
+        return {"approved": True, "corrected_delta": {}, "judgment_note": "", "llm_error": ""}
+
+    with patch("agens_novel.engine.turn_flow.settle_turn", return_value=rule_delta):
+        with patch("agens_novel.engine.game_engine.run_turn_sync", side_effect=runner):
+            engine.handle_action("A")
+
+    last_turn = engine.game_session.turn_history[-1]
+    assert last_turn["delta"]["meta"]["local_story_fallback"] is True
+    assert last_turn["delta"]["meta"]["elapsed_years"] == 0
+    assert "药圃账册" not in last_turn["narrative"]
+    assert "3年间" not in last_turn["narrative"]
+
+
+def test_duplicate_model_narrative_is_replaced_by_rule_chronicle(monkeypatch) -> None:
+    monkeypatch.setenv("AGNES_API_KEY", "test-model-key")
+    engine = GameEngine()
+    engine.game_session.game_started = True
+    engine.game_session.turn_count = 1
+    duplicate = "青岚谷重定名册，验真者按册修行，外界暗流仍在山门之外。"
+    engine.game_session.turn_history.append({
+        "turn": 1,
+        "input": "A",
+        "narrative": duplicate,
+        "delta": {"character": {}, "world": {}, "meta": {}},
+        "choices": [],
+    })
+    engine.game_session.last_choices = ["稳住课业", "打听消息", "探查边缘", "随缘行事"]
+
+    rule_delta = {
+        "character": {"age": "+1"},
+        "world": {"lore_add": ["青岚谷讲师重排低阶课表，验真者被分入新讲席。"]},
+        "meta": {
+            "elapsed_years": 1,
+            "choice_category": "稳妥",
+            "event_lore": "青岚谷讲师重排低阶课表，验真者被分入新讲席。",
+            "stage_goal": "把稳妥路线写成课业反馈",
+        },
+    }
+
+    def runner(agent_name, user_input, session, **kw):
+        if agent_name == "narrator":
+            return {
+                "narrative": duplicate,
+                "state_delta": {"character": {}, "world": {}, "meta": {}},
+                "choices": ["继续课业", "请教同门", "外出试炼", "随缘旁听"],
+                "llm_error": "",
+            }
+        return {"approved": True, "corrected_delta": {}, "judgment_note": "", "llm_error": ""}
+
+    with patch("agens_novel.engine.turn_flow.settle_turn", return_value=rule_delta):
+        with patch("agens_novel.engine.game_engine.run_turn_sync", side_effect=runner):
+            engine.handle_action("A")
+
+    assert engine.game_session.turn_history[-1]["narrative"] != duplicate
+    assert "新讲席" in engine.game_session.turn_history[-1]["narrative"]
+
+
+def test_duplicate_narrative_with_visible_delta_is_not_replaced_by_unrelated_rule_text(monkeypatch) -> None:
+    monkeypatch.setenv("AGNES_API_KEY", "test-model-key")
+    engine = GameEngine()
+    engine.game_session.game_started = True
+    engine.game_session.turn_count = 1
+    duplicate = "青岚谷重定名册，验真者按册修行，外界暗流仍在山门之外。"
+    engine.game_session.turn_history.append({
+        "turn": 1,
+        "input": "A",
+        "narrative": duplicate,
+        "delta": {"character": {}, "world": {}, "meta": {}},
+        "choices": [],
+    })
+    engine.game_session.last_choices = ["稳住课业", "打听消息", "探查边缘", "随缘行事"]
+    rule_delta = {
+        "character": {"age": "+1"},
+        "world": {"lore_add": ["青岚谷讲师重排低阶课表，验真者被分入新讲席。"]},
+        "meta": {"elapsed_years": 1, "choice_category": "稳妥", "event_lore": "青岚谷讲师重排低阶课表。"},
+    }
+
+    def runner(agent_name, user_input, session, **kw):
+        if agent_name == "narrator":
+            return {
+                "narrative": duplicate,
+                "state_delta": {
+                    "character": {"status_effects_add": ["旧伤复发"]},
+                    "world": {},
+                    "meta": {},
+                },
+                "choices": ["继续课业", "请教同门", "外出试炼", "随缘旁听"],
+                "llm_error": "",
+            }
+        return {"approved": True, "corrected_delta": {}, "judgment_note": "", "llm_error": ""}
+
+    with patch("agens_novel.engine.turn_flow.settle_turn", return_value=rule_delta):
+        with patch("agens_novel.engine.game_engine.run_turn_sync", side_effect=runner):
+            engine.handle_action("A")
+
+    last_turn = engine.game_session.turn_history[-1]
+    assert last_turn["narrative"] == duplicate
+    assert "旧伤复发" in engine.game_session.status_effects
+
+
+def test_duplicate_narrative_with_lifespan_delta_is_not_replaced(monkeypatch) -> None:
+    monkeypatch.setenv("AGNES_API_KEY", "test-model-key")
+    engine = GameEngine()
+    engine.game_session.game_started = True
+    engine.game_session.turn_count = 1
+    engine.game_session.lifespan = 100
+    duplicate = "验真者服下延寿灵露，寿元增加一年。"
+    engine.game_session.turn_history.append({
+        "turn": 1,
+        "input": "B",
+        "narrative": duplicate,
+        "delta": {"character": {}, "world": {}, "meta": {}},
+        "choices": [],
+    })
+    engine.game_session.last_choices = ["稳住课业", "打听消息", "探查边缘", "随缘行事"]
+    rule_delta = {
+        "character": {"age": "+1", "lifespan": "+1"},
+        "world": {"lore_add": ["青岚药圃封存旧灵露记录，另起新册。"]},
+        "meta": {"elapsed_years": 1, "choice_category": "机缘", "event_lore": "青岚药圃封存旧灵露记录。"},
+    }
+
+    def runner(agent_name, user_input, session, **kw):
+        if agent_name == "narrator":
+            return {
+                "narrative": duplicate,
+                "state_delta": {"character": {}, "world": {}, "meta": {}},
+                "choices": ["温养药力", "追查丹方", "冒险试药", "随缘静候"],
+                "llm_error": "",
+            }
+        return {"approved": True, "corrected_delta": {}, "judgment_note": "", "llm_error": ""}
+
+    with patch("agens_novel.engine.turn_flow.settle_turn", return_value=rule_delta):
+        with patch("agens_novel.engine.game_engine.run_turn_sync", side_effect=runner):
+            engine.handle_action("服下延寿灵露")
+
+    assert engine.game_session.turn_history[-1]["narrative"] == duplicate
+    assert engine.game_session.lifespan == 101
+
+
+def test_duplicate_narrative_with_attribute_delta_is_not_replaced(monkeypatch) -> None:
+    monkeypatch.setenv("AGNES_API_KEY", "test-model-key")
+    engine = GameEngine()
+    engine.game_session.game_started = True
+    engine.game_session.turn_count = 1
+    engine.game_session.attributes["comprehension"] = 5
+    duplicate = "数年参悟后，他的悟性大涨。"
+    engine.game_session.turn_history.append({
+        "turn": 1,
+        "input": "B",
+        "narrative": duplicate,
+        "delta": {"character": {}, "world": {}, "meta": {}},
+        "choices": [],
+    })
+    engine.game_session.last_choices = ["稳住课业", "打听消息", "探查边缘", "随缘行事"]
+    rule_delta = {
+        "character": {"age": "+1", "attributes": {"comprehension": 1}},
+        "world": {"lore_add": ["青岚讲席记下新一轮经义评议。"]},
+        "meta": {"elapsed_years": 1, "choice_category": "机缘", "event_lore": "青岚讲席记下新一轮经义评议。"},
+    }
+
+    def runner(agent_name, user_input, session, **kw):
+        if agent_name == "narrator":
+            return {
+                "narrative": duplicate,
+                "state_delta": {"character": {}, "world": {}, "meta": {}},
+                "choices": ["稳住根基", "请教经义", "冒险试法", "随缘听命"],
+                "llm_error": "",
+            }
+        return {"approved": True, "corrected_delta": {}, "judgment_note": "", "llm_error": ""}
+
+    with patch("agens_novel.engine.turn_flow.settle_turn", return_value=rule_delta):
+        with patch("agens_novel.engine.game_engine.run_turn_sync", side_effect=runner):
+            engine.handle_action("参悟经义")
+
+    assert engine.game_session.turn_history[-1]["narrative"] == duplicate
+    assert engine.game_session.attributes["comprehension"] == 6
+
+
+def test_realm_stage_delta_blocks_duplicate_replacement_only_when_visible() -> None:
+    delta = {"character": {"realm_stage": 2}, "world": {}, "meta": {}}
+
+    assert _has_visible_authoritative_delta(delta, "数年苦修后，其修为提升至练气二层。")
+    assert not _has_visible_authoritative_delta(delta, "青岚谷重定名册，验真者按册修行。")
+
+
+def test_age_variant_duplicate_model_narrative_is_replaced(monkeypatch) -> None:
+    monkeypatch.setenv("AGNES_API_KEY", "test-model-key")
+    engine = GameEngine()
+    engine.game_session.game_started = True
+    engine.game_session.turn_count = 32
+    previous = (
+        "七十五岁，山径夜半灵光乍现。验真者静观其变，未妄动。"
+        "坊市传闻四起，皆言此乃异兆。他知机缘难得，亦伴凶险。"
+        "因果账目渐清，他决定顺势而为，探寻那抹微光的源头，静待天命回响。"
+    )
+    repeated = previous.replace("七十五岁", "七十岁")
+    engine.game_session.turn_history.append({
+        "turn": 32,
+        "input": "B",
+        "narrative": previous,
+        "delta": {"character": {}, "world": {}, "meta": {}},
+        "choices": [],
+    })
+    engine.game_session.last_choices = ["稳住课业", "打听消息", "探查边缘", "随缘行事"]
+
+    rule_delta = {
+        "character": {"age": "+1"},
+        "world": {"lore_add": ["青岚药圃把旧异兆归档，验真者转向新的因果线索。"]},
+        "meta": {
+            "elapsed_years": 1,
+            "choice_category": "机缘",
+            "event_lore": "青岚药圃把旧异兆归档，验真者转向新的因果线索。",
+            "stage_goal": "把机缘路线写成新线索推进",
+        },
+    }
+
+    def runner(agent_name, user_input, session, **kw):
+        if agent_name == "narrator":
+            return {
+                "narrative": repeated,
+                "state_delta": {"character": {}, "world": {}, "meta": {}},
+                "choices": ["回头复盘", "追查新线索", "冒险试探", "听天命"],
+                "llm_error": "",
+            }
+        return {"approved": True, "corrected_delta": {}, "judgment_note": "", "llm_error": ""}
+
+    with patch("agens_novel.engine.turn_flow.settle_turn", return_value=rule_delta):
+        with patch("agens_novel.engine.game_engine.run_turn_sync", side_effect=runner):
+            engine.handle_action("B")
+
+    final_narrative = engine.game_session.turn_history[-1]["narrative"]
+    assert final_narrative != repeated
+    assert "新的因果线索" in final_narrative
+
+
+def test_calendar_variant_duplicate_model_narrative_is_replaced(monkeypatch) -> None:
+    monkeypatch.setenv("AGNES_API_KEY", "test-model-key")
+    engine = GameEngine()
+    engine.game_session.game_started = True
+    engine.game_session.turn_count = 11
+    previous = (
+        "玄历四十四年，验真者四十四岁。青岚谷外门新贴因果账，称雾萝山径近来得失相抵，"
+        "受益者日后多半也要偿一笔人情。此人静观其变，未随波逐流，只将异象化为心底警戒。"
+        "坊市风声鹤唳，因果账目清晰，他深知此时当以静制动，任气运流转，静待后续变数。"
+    )
+    repeated = previous.replace("四十四年", "五十三年").replace("四十四岁", "五十三岁")
+    engine.game_session.turn_history.append({
+        "turn": 11,
+        "input": "D",
+        "narrative": previous,
+        "delta": {"character": {}, "world": {}, "meta": {}},
+        "choices": [],
+    })
+    engine.game_session.last_choices = ["稳住课业", "打听消息", "探查边缘", "随缘行事"]
+
+    rule_delta = {
+        "character": {"age": "+1", "realm_stage": 6},
+        "world": {"lore_add": ["青岚谷把旧因果账封存，另有一条签文落到验真者案前。"]},
+        "meta": {
+            "elapsed_years": 1,
+            "choice_category": "气运",
+            "event_lore": "青岚谷把旧因果账封存，另有一条签文落到验真者案前。",
+            "stage_goal": "把气运路线写成新签文推进",
+            "stage_advanced": True,
+            "new_stage": 6,
+            "max_stage": 9,
+        },
+    }
+
+    def runner(agent_name, user_input, session, **kw):
+        if agent_name == "narrator":
+            return {
+                "narrative": repeated,
+                "state_delta": {"character": {}, "world": {}, "meta": {}},
+                "choices": ["继续复盘", "追问签文", "冒险验签", "随缘接签"],
+                "llm_error": "",
+            }
+        return {"approved": True, "corrected_delta": {}, "judgment_note": "", "llm_error": ""}
+
+    with patch("agens_novel.engine.turn_flow.settle_turn", return_value=rule_delta):
+        with patch("agens_novel.engine.game_engine.run_turn_sync", side_effect=runner):
+            engine.handle_action("D")
+
+    final_narrative = engine.game_session.turn_history[-1]["narrative"]
+    assert final_narrative != repeated
+    assert "签文落到验真者案前" in final_narrative or "新签文推进" in final_narrative
+
+
+def test_high_similarity_duplicate_model_narrative_is_replaced(monkeypatch) -> None:
+    monkeypatch.setenv("AGNES_API_KEY", "test-model-key")
+    engine = GameEngine()
+    engine.game_session.game_started = True
+    engine.game_session.turn_count = 3
+    previous = (
+        "坊市流传雾萝山径因果账，称得失必偿人情。验真者静坐三年，对风波充耳不闻，"
+        "仅凭金灵根稳固根基。岁月流逝，其心如止水，在青岚药圃边缘继续吐纳，"
+        "静待那笔尚未落定的人情债何时清算，心境在无声中愈发坚韧。"
+    )
+    repeated = previous.replace("雾萝山径", "无名签文")
+    engine.game_session.turn_history.append({
+        "turn": 3,
+        "input": "D",
+        "narrative": previous,
+        "delta": {"character": {}, "world": {}, "meta": {}},
+        "choices": [],
+    })
+    engine.game_session.last_choices = ["稳住课业", "打听消息", "探查边缘", "随缘行事"]
+
+    rule_delta = {
+        "character": {"age": "+3"},
+        "world": {"lore_add": ["青岚药圃将旧账移入巡册，验真者另得一条地方风声。"]},
+        "meta": {
+            "elapsed_years": 3,
+            "choice_category": "气运",
+            "event_lore": "青岚药圃将旧账移入巡册，验真者另得一条地方风声。",
+            "stage_goal": "把气运路线写成地方变化",
+        },
+    }
+
+    def runner(agent_name, user_input, session, **kw):
+        if agent_name == "narrator":
+            return {
+                "narrative": repeated,
+                "state_delta": {"character": {}, "world": {}, "meta": {}},
+                "choices": ["继续复盘", "追问签文", "冒险验签", "随缘接签"],
+                "llm_error": "",
+            }
+        return {"approved": True, "corrected_delta": {}, "judgment_note": "", "llm_error": ""}
+
+    with patch("agens_novel.engine.turn_flow.settle_turn", return_value=rule_delta):
+        with patch("agens_novel.engine.game_engine.run_turn_sync", side_effect=runner):
+            engine.handle_action("D")
+
+    final_narrative = engine.game_session.turn_history[-1]["narrative"]
+    assert final_narrative != repeated
+    assert "地方风声" in final_narrative or "地方变化" in final_narrative
+
+
+def test_contained_duplicate_model_narrative_is_replaced(monkeypatch) -> None:
+    monkeypatch.setenv("AGNES_API_KEY", "test-model-key")
+    engine = GameEngine()
+    engine.game_session.game_started = True
+    engine.game_session.turn_count = 13
+    previous = (
+        "1年间，青岚谷外门新贴因果账，称雾萝山径近来得失相抵，"
+        "受益者日后多半也要偿一笔人情。 本次记为复盘札，侧重短板补足。"
+    )
+    repeated = "青岚谷外门新贴因果账，称雾萝山径近来得失相抵，受益者日后多半也要偿一笔人情。"
+    engine.game_session.turn_history.append({
+        "turn": 13,
+        "input": "D",
+        "narrative": previous,
+        "delta": {"character": {}, "world": {}, "meta": {}},
+        "choices": [],
+    })
+    engine.game_session.last_choices = ["稳住课业", "打听消息", "探查边缘", "随缘行事"]
+
+    rule_delta = {
+        "character": {"age": "+1"},
+        "world": {"lore_add": ["青岚谷把旧因果账封存，另有一条签文落到验真者案前。"]},
+        "meta": {
+            "elapsed_years": 1,
+            "choice_category": "气运",
+            "event_lore": "青岚谷把旧因果账封存，另有一条签文落到验真者案前。",
+            "stage_goal": "把气运路线写成新签文推进",
+        },
+    }
+
+    def runner(agent_name, user_input, session, **kw):
+        if agent_name == "narrator":
+            return {
+                "narrative": repeated,
+                "state_delta": {"character": {}, "world": {}, "meta": {}},
+                "choices": ["继续复盘", "追问签文", "冒险验签", "随缘接签"],
+                "llm_error": "",
+            }
+        return {"approved": True, "corrected_delta": {}, "judgment_note": "", "llm_error": ""}
+
+    with patch("agens_novel.engine.turn_flow.settle_turn", return_value=rule_delta):
+        with patch("agens_novel.engine.game_engine.run_turn_sync", side_effect=runner):
+            engine.handle_action("D")
+
+    final_narrative = engine.game_session.turn_history[-1]["narrative"]
+    assert final_narrative != repeated
+    assert "新签文推进" in final_narrative or "签文落到验真者案前" in final_narrative
+
+
 def test_choice_category_accepts_visible_route_semantics() -> None:
     cases = [
         ("A\u3010\u7a33\u59a5\u3011\u95ed\u5173\u7a33\u56fa", "\u7a33\u59a5"),
@@ -228,6 +660,47 @@ def test_judge_not_triggered_for_plain_risk_word_without_authoritative_delta(mon
         engine.handle_action("探查禁地边缘")
 
     assert calls == ["narrator"]
+
+
+def test_judge_retryable_provider_failure_retries_once(monkeypatch) -> None:
+    monkeypatch.setenv("AGNES_API_KEY", "test-model-key")
+    engine = GameEngine()
+    engine.game_session.game_started = True
+    engine.game_session.last_choices = ["稳妥修行", "拜访同门", "探查禁地边缘", "随缘而行"]
+    calls: list[str] = []
+    model_statuses: list[tuple[str, str]] = []
+    engine.on_model_result = (
+        lambda agent, source, status, model_set, base_url_set, key_set, config_source, diagnostics:
+        model_statuses.append((agent, status))
+    )
+
+    def runner(agent_name, user_input, session, **kw):
+        calls.append(agent_name)
+        if agent_name == "narrator":
+            return {
+                "narrative": "验真者服下延寿丹，寿元增加一年。",
+                "state_delta": {"character": {"lifespan": "+1"}, "world": {}, "meta": {}},
+                "choices": ["继续温养", "打听丹方", "试探禁地", "随缘行事"],
+                "llm_error": "",
+            }
+        if agent_name == "judge" and calls.count("judge") == 1:
+            return {
+                "approved": False,
+                "corrected_delta": {},
+                "judgment_note": "",
+                "llm_error": 'HTTP 404: {"error":{"type":"upstream_error","code":"404"}}',
+            }
+        if agent_name == "judge":
+            return {"approved": True, "corrected_delta": {}, "judgment_note": "", "llm_error": ""}
+        return {}
+
+    with patch("agens_novel.engine.game_engine.run_turn_sync", side_effect=runner):
+        engine.handle_action("服下延寿丹")
+
+    assert calls.count("judge") == 2
+    assert ("judge", "ok") in model_statuses
+    assert ("judge", "judge_failed") not in model_statuses
+    assert engine.game_session.turn_count == 1
 
 
 def test_judge_triggers_for_authoritative_world_delta(monkeypatch) -> None:
@@ -295,16 +768,16 @@ def test_stage_feedback_adds_world_lore_every_four_turns() -> None:
 
 def test_stage_feedback_uses_route_event_pools() -> None:
     expected_markers = {
-        "A": "根基",
-        "B": "消息",
-        "C": "异动",
-        "D": "签文",
+        "A": ("根基", "课表", "差事"),
+        "B": ("消息", "旧闻", "讲评"),
+        "C": ("异动", "约斗", "旧伤"),
+        "D": ("签文", "小兆", "因果账"),
     }
-    for choice, marker in expected_markers.items():
+    for choice, markers in expected_markers.items():
         session = GameSession(location="青岚山门", turn_count=4, realm="筑基", realm_stage=2)
         delta = settle_turn(choice, session)
         lore = delta["world"]["lore_add"][0]
-        assert marker in lore
+        assert any(marker in lore for marker in markers)
         assert "筑基中期" in lore or choice != "A"
 
 
@@ -338,6 +811,20 @@ def test_chronicle_event_context_is_selected_every_turn() -> None:
     assert event["allowed_delta_types"]
     assert event["choice_hints"] and len(event["choice_hints"]) == 4
     assert "天命" in event["matched_fates"]
+
+
+def test_fixed_route_chronicle_event_avoids_recent_reuse() -> None:
+    session = GameSession(location="青岚山门", turn_count=1)
+    seen: list[str] = []
+
+    for turn in range(1, 9):
+        session.turn_count = turn
+        event = select_chronicle_event(session, "稳妥", 18 + turn)
+        assert event["id"] not in seen[-3:]
+        seen.append(event["id"])
+        session.turn_history.append({"delta": {"meta": {"event_id": event["id"]}}})
+
+    assert len(set(seen[:4])) == 4
 
 
 def test_settle_turn_records_event_meta_without_forcing_authoritative_rewards() -> None:

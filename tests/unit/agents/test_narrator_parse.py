@@ -195,6 +195,18 @@ class TestNarratorParse:
         assert delta is None
         assert choices == []
 
+    def test_quoted_choice_fragments_are_removed_from_visible_narrative(self) -> None:
+        text = (
+            "他在药圃旁查完因果账。"
+            "\"稳住气息继续查账\", \"拜访账册执事\", \"冒险入山验证\", \"随缘不问来处\""
+        )
+        narrative, delta, choices = _parse_narrator_output(text)
+
+        assert narrative == "他在药圃旁查完因果账。"
+        assert "拜访账册执事" not in narrative
+        assert delta is None
+        assert choices == []
+
     def test_bare_payload_search_skips_plain_json_before_contract_payload(self) -> None:
         text = (
             '你先看见旧牌 {"text":"外门旧录"}，随后执事递来正式记录。\n'

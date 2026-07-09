@@ -304,14 +304,14 @@ EndingPage mount
      → 若 game_over||finale → view="ending"；否则 view="game"
 ```
 
-### 7.6 模型不可用兜底
+### 7.6 记录未续上处理
 
 ```text
 Narrator / Judge LLMError
   → engine._set_choices() 触发 on_model_failure_choice 回调
   → WebRunner._choose_model_failure() 返回 MODEL_FAILURE_CONTINUE
   → 事件流写入 model_failure + fallback_prompt.active=True
-  → 前端 GamePage 顶部出现 <FallbackBanner>
+  → 前端 GamePage 顶部出现脱敏 <FallbackBanner>
   → 用户可选"继续本局"（POST /action {action:"继续本局"}）→ engine._enter_local_story()
      或"结束本局"（POST /end {reason}）→ engine.on_game_over() 触发奖励判定
 ```

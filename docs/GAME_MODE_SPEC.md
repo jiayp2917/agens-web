@@ -41,7 +41,7 @@
 > | §11 稀有度解锁门 | 白/绿/蓝/紫/橙/红 六档 + runs/ascension 门径 | ✅ 已接线（`constants.rarity_unlocked_for`、`/api/catalog/rarities`，终局写入 `player_progress`） |
 > | §11 死亡分类 | finale > karma > event > lifespan > player | ✅ 已实现（`death_rewards.categorize_death`） |
 > | 验证 | compileall + pytest + React build + 密钥审计 | ⏳ 以当前分支最新测试结果为准，不在文档中固化旧计数 |
-> | 待办 | 继续降低本地 live 响应长尾、减少 narrator 契约漂移，并改善 20 回合内容体验 | ⏳ 当前生产批次 start+choice 已 non-fallback；后续生产部署或模型配置变更仍需复跑。当前本地 `local-visible-chronicle-events-routes-20260708` 已完成动态开局 live start gate、20/20 choice non-fallback 和存读档；repair 0/20、judge 4 次、fallback 0，平均约 17.35s、最大约 59.3s |
+> | 待办 | 继续降低本地 live 响应长尾、减少 narrator 契约漂移，并改善长期内容体验 | ⏳ 当前生产批次 start+choice 已 non-fallback；后续生产部署或模型配置变更仍需复跑。当前本地 2026-07-09 `final2` 内容审查已覆盖 base、A/B/C/D 路线和 mixed 长局，所有 final2 证据 fallback 0、P0/P1 0、可见禁用词 0、明显重复 0；剩余风险是 narrator 结构化输出不稳、live 长尾仍到约 64s、终局页证据采集不足 |
 
 ## 0. TL;DR
 

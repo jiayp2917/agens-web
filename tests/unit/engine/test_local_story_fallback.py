@@ -31,7 +31,7 @@ def test_profile_model_failure_uses_dynamic_fallback_not_local_story(monkeypatch
     assert engine.game_session.local_story_active is False
     assert engine.game_session.local_story_id == ""
     assert len(engine.game_session.last_choices) == 4
-    assert any("上游模型响应超时" in msg for msg in infos)
+    assert any("叙事服务响应过久" in msg for msg in infos)
     assert narratives and "因果残影" not in narratives[0]
 
 

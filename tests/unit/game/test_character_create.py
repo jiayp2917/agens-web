@@ -127,7 +127,7 @@ def test_start_from_profile_model_failure_uses_profile_aware_fallback(tmp_path, 
     assert engine.game_session.local_story_active is False
     assert len(engine.game_session.last_choices) == 4
     assert engine.game_session.world_profile["world_name"] == "西陲裂土"
-    assert any("上游模型响应超时" in msg for msg in infos)
+    assert any("叙事服务响应过久" in msg for msg in infos)
 
 
 def test_start_from_profile_model_failure_can_end_run(tmp_path, monkeypatch):
@@ -173,7 +173,7 @@ def test_start_from_profile_model_failure_ignores_profile_choice_override_by_def
     assert engine.game_session.local_story_active is False
     assert engine.game_session.last_choices != ["退回山门", "询问执事"]
     assert len(engine.game_session.last_choices) == 4
-    assert any("上游模型响应超时" in msg for msg in infos)
+    assert any("叙事服务响应过久" in msg for msg in infos)
 
 
 def test_unknown_profile_seed_is_not_sent_to_world_builder_prompt(tmp_path, monkeypatch):

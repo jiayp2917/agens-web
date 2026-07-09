@@ -2,7 +2,9 @@
 
 from __future__ import annotations
 
+from difflib import SequenceMatcher
 import logging
+import re
 from typing import TYPE_CHECKING, Any
 
 if TYPE_CHECKING:
@@ -247,7 +249,7 @@ class TurnFlow:
         except Exception:
             log.exception("narrator error")
             reason = "叙述失败（详见日志）"
-            engine.emit("on_error", reason)
+            engine.emit("on_error", engine.fallback_notice_for(reason))
             engine.set_choices(
                 None,
                 source="narrator_exception",
@@ -278,6 +280,18 @@ class TurnFlow:
                 narrative=narrative,
                 state_delta=state_delta,
             )
+            if is_retryable_model_request_failure(judge_result):
+                log.info("judge request failed with retryable provider error; retrying once")
+                retry_result = engine.run_agent(
+                    "judge",
+                    text,
+                    session,
+                    narrative=narrative,
+                    state_delta=state_delta,
+                )
+                if not retry_result.get("llm_error"):
+                    retry_result["retried_after_request_failed"] = True
+                judge_result = retry_result
         except Exception:
             log.exception("judge error")
             reason = "天道审判失败（详见日志）"
@@ -373,10 +387,10 @@ class TurnFlow:
         reason: str,
     ) -> None:
         session = self.engine.game_session
-        narrative = "模型叙事不完整，本回合已切换为本地故事继续。"
+        narrative = "验真者暂循旧路收束心神，静候下一步抉择。"
         fallback_meta = {
             "elapsed_years": 0,
-            "calendar_summary": "模型输出不完整，转入本地故事。",
+            "calendar_summary": "本回合记录按当前局面保留。",
             "choice_category": "fallback",
             "local_story_fallback": True,
             "fallback_reason": reason,
@@ -404,6 +418,19 @@ class TurnFlow:
     ) -> None:
         engine = self.engine
         session = engine.game_session
+        if _is_recent_duplicate_narrative(session, narrative):
+            replacement = ""
+            if not _has_visible_authoritative_delta(state_delta, narrative):
+                replacement = self._narrative_from_rule_delta(state_delta)
+            if (
+                replacement
+                and not _is_recent_duplicate_narrative(session, replacement)
+                and validate_narrative_delta_consistency(replacement, state_delta)[0]
+            ):
+                log.info("recent duplicate narrative replaced with rule chronicle")
+                narrative = replacement
+            elif not _has_visible_authoritative_delta(state_delta, narrative):
+                narrative = _generic_distinct_chronicle(state_delta, session)
         session.record_turn(text, narrative, state_delta)
 
         if narrative:
@@ -529,3 +556,144 @@ def _is_terminal_state_delta(state_delta: Any) -> bool:
         return False
     meta_delta = state_delta.get("meta")
     return isinstance(meta_delta, dict) and bool(meta_delta.get("game_over") or meta_delta.get("finale"))
+
+
+def _is_recent_duplicate_narrative(session: Any, narrative: str, *, limit: int = 20) -> bool:
+    key = _narrative_key(narrative)
+    if len(key) < 16:
+        return False
+    history = getattr(session, "turn_history", []) or []
+    if not isinstance(history, list):
+        return False
+    for entry in history[-limit:]:
+        if not isinstance(entry, dict):
+            continue
+        previous_key = _narrative_key(str(entry.get("narrative") or ""))
+        if _narrative_keys_overlap(key, previous_key):
+            return True
+    return False
+
+
+def _narrative_key(text: str) -> str:
+    value = str(text or "")
+    value = re.sub(r"[零〇一二三四五六七八九十百千万\d]+\s*(岁|年|载|回合)", r"X\1", value)
+    value = re.sub(r"\d+", "N", value)
+    return re.sub(r"[\s，。、“”‘’；：:,.!?！？（）()\[\]\"']+", "", value)
+
+
+def _narrative_keys_overlap(left: str, right: str) -> bool:
+    if left == right:
+        return True
+    if len(left) < 16 or len(right) < 16:
+        return False
+    shorter, longer = (left, right) if len(left) <= len(right) else (right, left)
+    if shorter in longer and len(shorter) / max(1, len(longer)) >= 0.65:
+        return True
+    if len(shorter) >= 48 and SequenceMatcher(None, left, right).ratio() >= 0.90:
+        return True
+    return False
+
+
+def _generic_distinct_chronicle(state_delta: dict[str, Any], session: Any) -> str:
+    meta = state_delta.get("meta") if isinstance(state_delta, dict) else {}
+    elapsed = 0
+    stage_goal = ""
+    category = ""
+    if isinstance(meta, dict):
+        elapsed = int(meta.get("elapsed_years") or 0)
+        stage_goal = str(meta.get("stage_goal") or "").strip()
+        category = str(meta.get("choice_category") or "").strip()
+    years = f"{elapsed}年间，" if elapsed > 0 else ""
+    turn = int(getattr(session, "turn_count", 0) or 0)
+    route = f"沿{category}之路" if category else "沿所选道路"
+    if stage_goal:
+        return f"{years}{route}转入第{turn}回合记录，{stage_goal}。"
+    return f"{years}{route}留下新的编年史旁证，外界局势继续变化。"
+
+
+def _has_visible_authoritative_delta(state_delta: dict[str, Any], narrative: str = "") -> bool:
+    """Return true when duplicate text should not replace a visible state event.
+
+    ``world.lore_add`` is intentionally not a blocker here: rule-derived
+    replacement chronicle text is built from the same lore facts, so using it is
+    how we remove repeated prose without hiding the external-intel update.
+    Numeric rule-owned changes only block replacement when the visible prose
+    actually claims that same kind of change; otherwise automatic age/stage
+    progression would let unrelated repeated prose leak through.
+    """
+    if not isinstance(state_delta, dict):
+        return False
+    char = state_delta.get("character")
+    world = state_delta.get("world")
+    meta = state_delta.get("meta")
+    if isinstance(char, dict):
+        for key in (
+            "breakthrough_flags",
+            "breakthrough_flags_add",
+            "equipment_slots",
+            "inventory",
+            "inventory_add",
+            "relationship_add",
+            "status_effects",
+            "status_effects_add",
+            "techniques",
+            "techniques_add",
+            "title_add",
+        ):
+            if _meaningful_delta_value(char.get(key)):
+                return True
+        if _meaningful_delta_value(char.get("lifespan")) and _narrative_claims_lifespan(narrative):
+            return True
+        if _meaningful_delta_value(char.get("attributes")) and _narrative_claims_attributes(narrative):
+            return True
+        if (
+            _meaningful_delta_value(char.get("realm"))
+            or _meaningful_delta_value(char.get("realm_stage"))
+        ) and _narrative_claims_realm_progress(narrative):
+            return True
+    if isinstance(world, dict):
+        for key in (
+            "active_quests",
+            "active_quests_add",
+            "current_scene",
+            "discovered_add",
+            "discovered_locations",
+            "location",
+            "npcs_present",
+            "npcs_present_add",
+            "region",
+        ):
+            if _meaningful_delta_value(world.get(key)):
+                return True
+    if isinstance(meta, dict):
+        if _meaningful_delta_value(meta.get("breakthrough_result")):
+            return True
+        if meta.get("game_over") or meta.get("finale"):
+            return True
+    return False
+
+
+def _narrative_claims_lifespan(text: str) -> bool:
+    return bool(re.search(r"(?:寿元|寿命|阳寿|延寿|续命)", str(text or "")))
+
+
+def _narrative_claims_attributes(text: str) -> bool:
+    return bool(re.search(r"(?:悟性|根骨|心性|体魄|神魂|气运|资质|道心)", str(text or "")))
+
+
+def _narrative_claims_realm_progress(text: str) -> bool:
+    return bool(re.search(
+        r"(?:修为|境界|突破|晋升|练气|筑基|金丹|元婴|化神|炼虚|合体|大乘|渡劫|飞升|"
+        r"初期|中期|后期|圆满|[一二三四五六七八九十\d]+层)",
+        str(text or ""),
+    ))
+
+
+def _meaningful_delta_value(value: Any) -> bool:
+    if isinstance(value, list):
+        return any(item not in ("", None, {}) for item in value)
+    if isinstance(value, dict):
+        return bool(value)
+    if isinstance(value, str):
+        return bool(value.strip())
+    return value is not None

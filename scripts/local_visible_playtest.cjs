@@ -23,6 +23,16 @@ const FORBIDDEN_VISIBLE_PATTERNS = [
   ["history_suppression_notice", /此事未入正史/u],
   ["choice_completion_notice", /补齐下一步选择/u],
   ["internal_delta_notice", /模型状态变更未采用/u],
+  ["model_contract_returned", /模型已返回/u],
+  ["model_output_notice", /模型输出/u],
+  ["state_update_format_notice", /状态更新格式不完整/u],
+  ["missing_narrative_notice", /缺少叙事正文/u],
+  ["missing_abcd_notice", /未返回可用\s*A\/B\/C\/D|未返回恰好\s*4\s*个\s*A\/B\/C\/D/u],
+  ["model_unavailable_notice", /模型(?:暂)?不可用/u],
+  ["local_story_notice", /(?:本地故事继续|转入本地故事|本局已转入本地故事)/u],
+  ["heaven_disorder_notice", /天道紊乱/u],
+  ["upstream_model_notice", /上游模型/u],
+  ["basic_rule_settlement_notice", /基础规则结算/u],
   ["fallback_word", /\bfallback\b/iu],
   ["mismatch_word", /\bmismatch\b/iu],
   ["state_update_tag", /<\/?state_update\b|<state_update>/iu],
@@ -30,6 +40,7 @@ const FORBIDDEN_VISIBLE_PATTERNS = [
   ["json_fence", /```(?:json)?/iu],
   ["json_like_object", /(?:^|[\s：:])\{[^{}]*(?:state_delta|state_update|character|world|meta|choices)[^{}]*\}/iu],
   ["json_like_array", /(?:^|[\s：:])\[(?=[^\]]*(?:"|'))[^\]]+\]/u],
+  ["quoted_choice_fragment", /(?:\\?["“][^"“”\n]{4,160}\\?["”]\s*[,，]\s*){2,}\\?["“][^"“”\n]{4,160}\\?["”]/u],
   ["english_status_word", /\b(?:prowess|inventory|lifespan|realm|delta|narrative|turn_count|game_turns)\b/iu],
 ];
 
@@ -302,9 +313,10 @@ async function choiceSnapshots(page) {
 }
 
 async function uiSnapshot(page, label) {
-  const snapshot = await page.evaluate((snapshotLabel) => {
-    const clean = (value) => String(value || "").replace(/\s+/g, " ").trim();
-    const textOf = (selector) => clean(document.querySelector(selector)?.textContent || "");
+    const snapshot = await page.evaluate((snapshotLabel) => {
+      const clean = (value) => String(value || "").replace(/\s+/g, " ").trim();
+      const textOf = (selector) => clean(document.querySelector(selector)?.textContent || "");
+      const fullPageText = clean(document.body?.innerText || "");
     const railStats = Array.from(document.querySelectorAll(".rail-stats span")).map((item) => clean(item.textContent || ""));
     const statValue = (labelText) => {
       const row = railStats.find((item) => item.startsWith(labelText));
@@ -342,10 +354,12 @@ async function uiSnapshot(page, label) {
       latest_chronicle: chronicle.filter((item) => item.latest),
       choices,
       fallback_banner: textOf(".fallback"),
-      body_issue_text: [
-        ...chronicle.map((item) => item.text),
-        ...Array.from(document.querySelectorAll(".world-intel li")).map((item) => clean(item.textContent || "")),
-        ...choices.map((item) => item.text),
+        full_page_text: fullPageText,
+        body_issue_text: [
+          fullPageText,
+          ...chronicle.map((item) => item.text),
+          ...Array.from(document.querySelectorAll(".world-intel li")).map((item) => clean(item.textContent || "")),
+          ...choices.map((item) => item.text),
         textOf(".fallback"),
       ].filter(Boolean).join("\n"),
     };
@@ -668,6 +682,11 @@ function updateSummaryFromTurns(summary, turns, auditState) {
   summary.max_previous_similarity = Math.max(0, ...turns.map((turn) => Number(turn.max_previous_similarity || 0)));
   summary.judge_failed_count = turns.filter((turn) => turn.judge_request_failed).length;
   summary.world_intel_change_count = auditState?.worldIntelChangeCount || 0;
+}
+
+function updateIssueCounts(summary, issues) {
+  summary.p0_issues = issues.filter((item) => item.level === "P0").length;
+  summary.p1_issues = issues.filter((item) => item.level === "P1").length;
 }
 
 (async () => {
@@ -1235,8 +1254,7 @@ function updateSummaryFromTurns(summary, turns, auditState) {
     issue("P0", "validation script failed", { error: String(error).slice(0, 1000) });
   } finally {
     summary.completed_at = new Date().toISOString();
-    summary.p0_issues = issues.filter((item) => item.level === "P0").length;
-    summary.p1_issues = issues.filter((item) => item.level === "P1").length;
+    updateIssueCounts(summary, issues);
     if (CONTENT_AUDIT_FAIL_ON_P1 && ["passed", "passed_terminal"].includes(summary.result) && summary.p1_issues > 0) {
       summary.result = "failed_content";
     }
@@ -1246,6 +1264,8 @@ function updateSummaryFromTurns(summary, turns, auditState) {
       paths = writeStrictEvidence(rawPath, STAMP);
     } catch (error) {
       issue("P0", "strict evidence writer failed", { error: String(error).slice(0, 1000) });
+      updateIssueCounts(summary, issues);
+      summary.result = "failed_or_partial";
       persistSource();
     }
     console.log(JSON.stringify({ summary, issues, paths, source: rawPath }, null, 2));

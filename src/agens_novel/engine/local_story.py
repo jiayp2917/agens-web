@@ -10,7 +10,7 @@ from .choices import normalize_choices
 
 DEFAULT_STORY_ID = "misty_gate"
 DEFAULT_NODE_ID = "start"
-NO_MATCH_NOTICE = "因果残影未能匹配这次选择，请从当前 A/B/C/D 选项中继续。"
+NO_MATCH_NOTICE = "这次行动未能对应当前局面，请从当前 A/B/C/D 选项中继续。"
 
 
 @dataclass(frozen=True)
@@ -43,7 +43,7 @@ _STORIES: dict[str, dict[str, LocalStoryNode]] = {
     DEFAULT_STORY_ID: {
         "start": LocalStoryNode(
             narrative=(
-                "玄历元年，模型暂不可用，因果残影接住了这一局。你立在雾隐山门前，"
+                "玄历元年，你立在雾隐山门前。"
                 "石阶尽头钟声低回，接引弟子正登记新入门的散修。"
             ),
             options=(
@@ -273,11 +273,11 @@ _STORIES: dict[str, dict[str, LocalStoryNode]] = {
                     keywords=("稳固", "药力", "根基"),
                 ),
                 LocalStoryOption(
-                    text="记录本次本地故事进展并保存",
+                    text="整理本次山门进展并封存玉简",
                     next_node="foundation_result",
-                    delta={"world": {"lore_add": ["因果残影已推进至筑基准备节点。"]}},
+                    delta={"world": {"lore_add": ["雾隐山门已记录筑基准备节点。"]}},
                     result="玄历六年，你将这段因果记入玉简，方便之后继续。",
-                    keywords=("记录", "保存", "玉简"),
+                    keywords=("记录", "保存", "玉简", "封存"),
                 ),
                 LocalStoryOption(
                     text="随缘静候下一缕进阶机缘",

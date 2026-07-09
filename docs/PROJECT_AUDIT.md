@@ -33,17 +33,17 @@
 
 ## 当前已验证事实
 
-- 当前本地代码基线：已包含脱敏模型诊断、P1 可见反馈修复、2026-07-04 属性尺度清理和 2026-07-07 P1 事件池/最终 delta 一致性切片。
+- 当前本地代码基线：已包含脱敏模型诊断、P1 可见反馈修复、2026-07-04 属性尺度清理、2026-07-07 P1 事件池/最终 delta 一致性切片、2026-07-08 编年史内容切片，以及 2026-07-09 真实浏览器内容审查/重复叙事去重/玩家可见兜底文案清理。
 - 本地 PostgreSQL 测试库目标：`127.0.0.1:55432/agens_web_test`。
-- 最新自动化门禁：2026-07-07 P1 事件池/最终 delta 一致性切片后 `compileall` passed，`tests\web` 73 passed，全量 `pytest -q` 513 passed，前端 build passed，`git diff --check` 仅 LF/CRLF warning。
+- 最新自动化门禁：2026-07-09 内容审查批次后 `compileall` passed，`tests\web` 74 passed，全量 `pytest -q` 555 passed，前端 build passed，`git diff --check` 仅 LF/CRLF warning。
 - 用户级模型设置已落地：个人配置按 `user_id` 加密隔离，系统默认保留在 `model_config`，运行时按当前 session/user 解析模型配置，不再通过进程级 `AGNES_API_KEY` 注入用户 key。
 - 角色创建属性池已按 `GAME_MODE_SPEC.md` §4.1 落地：手动 2-8/总和 30，随机 0-10/总和 30。
 - 运行时属性尺度已审计并收敛为 0-10：`DEFAULT_ATTRIBUTES` 为 5，境界小层推进、`GameSession` delta/save、World Builder 入局、跨局奖励和 catalog 种子不再以 50/100 作为正常尺度；旧 0-100 仅作兼容迁移输入。
 - 动态开局链路已改为 profile-aware opening payload：难度、天赋、灵根、家世、六维属性和随机/手选模式生成本局世界观、0-16 岁编年史、16 岁初始局势、外界情报和首次 A/B/C/D；模型未启用或失败时使用差异化本地 fallback，不再固定青玄宗/东荒云界模板。
 - 境界、突破、寿元和可见文本一致性已进入规则约束：练气显示 1-9 层，筑基及以上显示初期/中期/后期/圆满；突破由规则先结算，模型只按结果叙事；寿元按境界区间和角色/事件动态修正；玩家可见文本清理 JSON、结构化标签、英文状态词和内部 mismatch 文案。
-- 本地真实 Chrome 验收已通过：`local-visible-history-softcap-c1d8628-20260707` 完成动态开局 live start gate（`start_model_ok=true`、`start_fallback=false`、4 个初始 choices、动态世界字段存在）、注册/登录、角色创建、20/20 choice non-fallback、存档/读档；repair 0/20、judge 5 次、fallback 0。证据位于 `output/playwright/`，默认不提交。
+- 本地真实 Chrome 内容审查已通过：2026-07-09 `final2` 批次为 accepted local evidence。base、A、B、D 均完成 20/20 live turns；C 路线第 19 回合自然终局；mixed 长局第 49 回合自然终局。最终证据 `local-content-basic-cycle-final2-20260709`、`local-content-route-{a,b,c,d}-final2-20260709`、`local-content-mixed-60-final2-20260709` 均 fallback 0、P0/P1 0、玩家可见禁用词 0、明显重复 0，strict JSON/NDJSON/CSV 可解析。证据位于 `output/playwright/`，默认不提交。
 - 生产 P0 已通过：服务器线程部署 `25ad3d15` 后，容器 healthy，Alembic `20260622_0005`，`user_model_configs` 存在，public/origin health 和 catalog 正常，日志敏感标记扫描为 0；一次性真实账号注册、登录、开局、选择、存档、读档、跨会话恢复均通过；生产 start 和至少 1 次 choice 均为 non-fallback，choice 后 `turn_count=1`。
-- 最新本地代码已加入脱敏模型性能观测并完成 history soft-cap Chrome 复采：repair 维持 0/20，prompt 字符数被控制在约 6.7k 以内，但最终 Chrome 平均回合约 39.3s、最大约 157.3s；响应慢没有闭环，下一步重点是 provider/narrator 长尾、模型输出契约和 judge 调用成本。
+- 最新本地代码已加入脱敏模型性能观测并完成 2026-07-09 内容审查复采：final D 平均约 14.4s、最大约 64.2s；mixed 长局平均约 9.3s、最大约 64.1s。响应慢没有完全闭环，且 narrator 结构化输出仍不稳定；mixed 长局 `narrator_incomplete_output_count=46/49`，主要靠规则 delta 与 choices recovery 维持推进。下一步重点是 provider/narrator 长尾、模型输出契约、judge 调用成本和终局页证据采集。
 - 2026-07-07 防御性运行修复已完成：`GameSession.apply_delta()` 对 malformed nested `character/world/meta` delta fail closed；Web `fallback_prompt.active` 改为当前态，不再因历史 `model_failure` 长时间误亮，且 runner 重建时会从持久化事件恢复当前提示态；`/choice` 支持 A/B/C/D 与 `"1"`-`"4"` 简写，仍拒绝自由文本。
 - 2026-07-07 P1 事件池/最终 delta 一致性切片已完成：每 4 回合阶段反馈改为稳妥/机遇/风险/气运四路线事件池；普通回合叙事一致性改为按“模型 delta 清洗 + 规则 delta 合并后的最终落账 delta”校验；功法新增、突破/延寿/传承/关键/高稀有道具新增会触发 Judge，普通小收获不全量触发 Judge。
 
@@ -204,9 +204,9 @@
 
 | 问题 | 风险 | 处理方向 |
 | --- | --- | --- |
-| live model 响应慢 | 最新 `local-visible-history-softcap-c1d8628-20260707` 平均回合耗时约 39.3s、最大约 157.3s；repair 为 0，慢因主要转向 provider/narrator 长尾和少数 judge 调用。 | 继续优化 narrator 输出契约、judge 超时/触发成本，并评估 provider 性能；不要把 repair 为 0 误判为整体性能达标。 |
-| narrator repair / judge 依赖 | Ordinary-turn repair 已降为 0/20；当前 Chrome 证据 judge 为 5 次，但 narrator 仍大量输出 narrative-only，靠规则 delta 和 choice recovery 维持推进。 | 保持不接受缺叙事/缺可用选项；继续收紧模型契约，让模型返回完整结构，而不是长期依赖规则兜底。 |
-| 20 回合内容体验不足 | 动态开局已补 0-16 岁编年史和本局世界摘要；本轮补了每 4 回合四路线事件池反馈，但尚未用真实 Chrome 20 回合复验体验质量。 | 继续丰富事件池、阶段目标和路线差异，减少重复闭关/突破循环，并用 Chrome 证据确认。 |
+| live model 响应慢 | 2026-07-09 `final2` 内容审查中，D 路线平均约 14.4s、最大约 64.2s；mixed 长局平均约 9.3s、最大约 64.1s。历史 `local-visible-history-softcap-c1d8628-20260707` 仅作对比。 | 继续优化 narrator 输出契约、judge 超时/触发成本，并评估 provider 性能；不要把某一批平均值下降误判为长尾达标。 |
+| narrator repair / judge 依赖 | Ordinary-turn repair 仍为 0，但 narrator 结构化输出依赖规则兜底明显：mixed 长局 `narrator_incomplete_output_count=46/49`、`judge_count=4`。 | 保持不接受缺叙事/缺可用选项；继续收紧模型契约，让模型返回完整结构，而不是长期依赖规则 delta 和 choice recovery。 |
+| 20 回合内容体验不足 | 2026-07-09 `final2` 已用真实 Chrome 覆盖 base、A/B/C/D 路线和 mixed 长局，玩家可见兜底文案、明显重复和 P0/P1 内容审查项为 0；但事件深度、路线长期差异和终局页证据采集仍需继续做。 | 继续丰富事件池、阶段目标和路线差异，减少重复闭关/突破循环，并用内容审查证据确认。 |
 | 叙事与权威状态落账 | 本轮把属性成长叙事改为按最终落账 delta 校验，并补了功法/关键道具 Judge 触发；突破和可见文本清洗已有覆盖。 | 继续扩展普通回合称号、关系、伤势、寿元、karma 的结构化落账/自然改写/压制测试。 |
 | `GameEngine` 偏大 | 回合、突破、兜底、模型失败等职责集中。 | 只按主流程需要拆模型失败、本地故事、突破 helper，避免大拆。 |
 | `WebGameService` 边界需收束 | API 编排、持久化和错误映射仍集中。 | 抽私有 helper，不优先大拆 router。 |

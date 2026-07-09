@@ -28,8 +28,10 @@ def write_playwright_evidence(
     out.mkdir(parents=True, exist_ok=True)
 
     safe_name = _safe_name(name)
+    issues = summary.get("issues") if isinstance(summary.get("issues"), list) else []
     payload = {
         "summary": _json_safe(summary),
+        "issues": _json_safe(issues),
         "turns": [_json_safe(turn) for turn in turns],
     }
     json_path = out / f"{safe_name}.json"
@@ -143,6 +145,8 @@ def main() -> int:
         summary = {}
     if not isinstance(turns, list):
         turns = []
+    if isinstance(raw, dict) and isinstance(raw.get("issues"), list) and not isinstance(summary.get("issues"), list):
+        summary = {**summary, "issues": raw["issues"]}
     paths = write_playwright_evidence(args.output_dir, args.name, summary, turns)
     print(json.dumps(paths, ensure_ascii=False, indent=2))
     return 0

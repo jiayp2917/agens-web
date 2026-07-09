@@ -54,7 +54,9 @@ def select_chronicle_event(session: Any, category: str, new_age: int) -> dict[st
         score += sum(fate_scores.get(tag, 0) for tag in event.fate_tags)
         scored.append((score, event.id, event))
     scored.sort(key=lambda item: (-item[0], item[1]))
-    window = scored[: min(3, len(scored))]
+    recent_ids = _recent_event_ids(session)
+    selectable = [item for item in scored if item[2].id not in recent_ids] or scored
+    window = selectable[: min(4, len(selectable))]
     phase_index = max(0, (turn // 4) - 1)
     _, _, selected = window[phase_index % len(window)]
     lore = _format_event_lore(selected, session, new_age, world_key)
@@ -100,7 +102,7 @@ def _format_event_lore(event: ChronicleEvent, session: Any, new_age: int, world_
     conflict = current_conflicts[0] if current_conflicts else str(pack.get("secondary_conflict") or "")
     stage = int(getattr(session, "realm_stage", 1) or 1)
     realm = getattr(session, "realm", "练气") or "练气"
-    return event.lore_template.format(
+    lore = event.lore_template.format(
         age=new_age,
         location=getattr(session, "location", "") or pack["location"],
         region=getattr(session, "region", "") or pack["world_name"],
@@ -112,6 +114,42 @@ def _format_event_lore(event: ChronicleEvent, session: Any, new_age: int, world_
         realm=realm,
         realm_label=format_realm_name(realm, stage),
     )
+    return f"{lore} {_turn_texture(session)}"
+
+
+def _recent_event_ids(session: Any, *, limit: int = 3) -> set[str]:
+    out: set[str] = set()
+    history = getattr(session, "turn_history", []) or []
+    if not isinstance(history, list):
+        return out
+    for entry in reversed(history[-limit:]):
+        if not isinstance(entry, dict):
+            continue
+        delta = entry.get("delta")
+        meta = delta.get("meta") if isinstance(delta, dict) else {}
+        event_id = str(meta.get("event_id") or "").strip() if isinstance(meta, dict) else ""
+        if event_id:
+            out.add(event_id)
+    return out
+
+
+def _turn_texture(session: Any) -> str:
+    turn = max(1, int(getattr(session, "turn_count", 1) or 1))
+    textures = (
+        "\u672c\u6b21\u8bb0\u4e3a\u6668\u8bfe\u4fa7\u7b14\uff0c\u53ea\u4f5c\u9636\u6bb5\u65c1\u8bc1\u3002",
+        "\u672c\u6b21\u8bb0\u4e3a\u5348\u8bb2\u5f55\uff0c\u4fa7\u91cd\u5916\u95e8\u79e9\u5e8f\u3002",
+        "\u672c\u6b21\u8bb0\u4e3a\u66ae\u7701\u6863\uff0c\u4fa7\u91cd\u4eba\u4e8b\u98ce\u5411\u3002",
+        "\u672c\u6b21\u8bb0\u4e3a\u6708\u8003\u7b7e\uff0c\u4fa7\u91cd\u4fee\u884c\u538b\u529b\u3002",
+        "\u672c\u6b21\u8bb0\u4e3a\u5de1\u518c\u7b14\uff0c\u4fa7\u91cd\u5730\u65b9\u53d8\u5316\u3002",
+        "\u672c\u6b21\u8bb0\u4e3a\u95ee\u9053\u6761\uff0c\u4fa7\u91cd\u540e\u7eed\u9009\u62e9\u3002",
+        "\u672c\u6b21\u8bb0\u4e3a\u8bd5\u827a\u5f55\uff0c\u4fa7\u91cd\u540c\u8f88\u6bd4\u7167\u3002",
+        "\u672c\u6b21\u8bb0\u4e3a\u5b88\u6212\u7b3a\uff0c\u4fa7\u91cd\u98ce\u9669\u8fb9\u754c\u3002",
+        "\u672c\u6b21\u8bb0\u4e3a\u89c2\u6f6e\u95fb\uff0c\u4fa7\u91cd\u52bf\u529b\u6d41\u5411\u3002",
+        "\u672c\u6b21\u8bb0\u4e3a\u542c\u949f\u5fd7\uff0c\u4fa7\u91cd\u56e0\u679c\u53d8\u5316\u3002",
+        "\u672c\u6b21\u8bb0\u4e3a\u6821\u7c4d\u9875\uff0c\u4fa7\u91cd\u8eab\u4efd\u4f4d\u7f6e\u3002",
+        "\u672c\u6b21\u8bb0\u4e3a\u590d\u76d8\u672d\uff0c\u4fa7\u91cd\u77ed\u677f\u8865\u8db3\u3002",
+    )
+    return textures[(turn - 1) % len(textures)]
 
 
 def _session_world_key(session: Any) -> str:
@@ -186,6 +224,34 @@ CHRONICLE_EVENTS: tuple[ChronicleEvent, ...] = (
         lore_template="{neutral}更新名册，{sect}与{rival}的暗中试探被写进外门告示。",
         allowed_delta_types=("lore_add", "npcs_present_add"),
         choice_hints=("整理名册关系", "拜访司录执事", "查阅旧告示", "随缘留意签押"),
+    ),
+    ChronicleEvent(
+        id="steady-teaching-round",
+        category="稳妥",
+        event_type="ordinary",
+        worlds=(),
+        fate_tags=("苦修", "宗门"),
+        min_turn=1,
+        max_turn=120,
+        weight=4,
+        stage_goal="把稳妥路线写成可见的课业、同门与反馈，而不是反复闭关",
+        lore_template="{sect}轮值讲师重排低阶课表，{location}弟子被分入不同讲席，{realm_label}修行从独自吐纳转为按册核验。",
+        allowed_delta_types=("lore_add", "npcs_present_add", "attributes"),
+        choice_hints=("按课表补足短板", "请教师兄课业", "整理同门讲义", "随缘旁听新讲席"),
+    ),
+    ChronicleEvent(
+        id="steady-duty-ledger",
+        category="稳妥",
+        event_type="stage",
+        worlds=(),
+        fate_tags=("苦修", "贵胄"),
+        min_turn=1,
+        max_turn=120,
+        weight=3,
+        stage_goal="用稳定差事提供阶段反馈和外界变化",
+        lore_template="{neutral}将{outer_region}近月收支抄送{sect}，{location}低阶弟子开始以差事换取讲评名额。",
+        allowed_delta_types=("lore_add", "npcs_present_add", "breakthrough_flags_add"),
+        choice_hints=("接一桩稳妥差事", "核对外界账册", "护送同门交割", "随缘观察差事流向"),
     ),
     ChronicleEvent(
         id="opportunity-market-rumor",
@@ -272,6 +338,34 @@ CHRONICLE_EVENTS: tuple[ChronicleEvent, ...] = (
         choice_hints=("准备护身物", "寻找同伴同行", "冒险探查异动", "随缘避开锋芒"),
     ),
     ChronicleEvent(
+        id="risk-duel-summons",
+        category="风险",
+        event_type="risk",
+        worlds=(),
+        fate_tags=("灾厄", "散修", "边地劫数"),
+        min_turn=1,
+        max_turn=120,
+        weight=4,
+        stage_goal="让斗法压力以可选择的风险出现，并由规则承接伤势或因果",
+        lore_template="{rival}门下有人在{outer_region}设下约斗榜，{sect}执事提醒低阶修士不得把一时意气当作破境捷径。",
+        allowed_delta_types=("lore_add", "status_effects_add", "npcs_present_add"),
+        choice_hints=("避开约斗稳住气息", "打听约斗来历", "冒险赴榜试探", "随缘观望胜负"),
+    ),
+    ChronicleEvent(
+        id="risk-old-wound-sign",
+        category="风险",
+        event_type="stage",
+        worlds=(),
+        fate_tags=("灾厄", "苦修"),
+        min_turn=1,
+        max_turn=120,
+        weight=3,
+        stage_goal="把伤势、寿元和高龄压力写入路线风险",
+        lore_template="{location}近日多有低阶弟子旧伤复发，{neutral}的医修把{conflict}列为近期外出禁忌。",
+        allowed_delta_types=("lore_add", "status_effects_add", "lifespan"),
+        choice_hints=("调养旧伤", "寻医问药", "强行外出查探", "随缘听从医嘱"),
+    ),
+    ChronicleEvent(
         id="luck-sign-turns",
         category="气运",
         event_type="fate",
@@ -298,5 +392,33 @@ CHRONICLE_EVENTS: tuple[ChronicleEvent, ...] = (
         lore_template="{conflict}的传闻被重新解读，{neutral}称近期因果易变，低阶修士最好早做取舍。",
         allowed_delta_types=("lore_add", "breakthrough_flags_add"),
         choice_hints=("记录传闻", "结交消息灵通者", "趁乱试探", "随缘等下一次征兆"),
+    ),
+    ChronicleEvent(
+        id="luck-small-omen",
+        category="气运",
+        event_type="fate",
+        worlds=(),
+        fate_tags=("天命", "神魂异兆"),
+        min_turn=1,
+        max_turn=120,
+        weight=4,
+        stage_goal="让气运路线出现小兆头和后续钩子，而非固定随机奖惩",
+        lore_template="{location}夜半有短暂灵光掠过，{neutral}只把它记为小兆，不许低阶弟子据此自称得道。",
+        allowed_delta_types=("lore_add", "discovered_add", "attributes"),
+        choice_hints=("低调记录小兆", "询问懂星象者", "追随灵光方向", "随缘等待回响"),
+    ),
+    ChronicleEvent(
+        id="luck-debt-ledger",
+        category="气运",
+        event_type="ordinary",
+        worlds=(),
+        fate_tags=("灾厄", "贵胄", "边地劫数"),
+        min_turn=1,
+        max_turn=120,
+        weight=3,
+        stage_goal="把气运写成因果账和取舍压力",
+        lore_template="{sect}外门新贴因果账，称{outer_region}近来得失相抵，受益者日后多半也要偿一笔人情。",
+        allowed_delta_types=("lore_add", "npcs_present_add", "status_effects_add"),
+        choice_hints=("记下因果账", "拜访账册执事", "冒险接下人情", "随缘不问来处"),
     ),
 )
