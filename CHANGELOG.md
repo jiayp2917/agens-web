@@ -2,6 +2,21 @@
 
 ## 2026-07-09
 
+### Changed - content-audit lessons sync
+
+- Updated project audit and governance backlog lessons after the accepted
+  `final2` visible content-audit batch. The docs now make the multi-run audit
+  matrix explicit: base cycle, A/B/C/D route-biased runs, mixed long run, and
+  anomaly probes should be reported separately before broader real-player
+  testing.
+- Clarified that duplicate chronicle suppression must not hide authoritative
+  visible state changes; lifespan, attributes, realm, injury, technique,
+  key-item, title, relationship, and karma claims must still be checked against
+  the final structured delta.
+- Clarified the remaining-risk interpretation: P0/P1 issue counts can be zero
+  while narrator contract quality, terminal-page UI evidence, and live latency
+  long tails remain open P1/P2 work.
+
 ### Fixed - visible content audit and chronicle de-duplication
 
 - Expanded `scripts/local_visible_playtest.cjs` content-audit mode to capture

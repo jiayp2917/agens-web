@@ -39,11 +39,14 @@ This is the active backlog for `agens-web`. It separates local code work, local 
 - A healthy deploy can still fail gameplay acceptance; live-model fallback remains a product/runtime failure.
 - Browser evidence must be strict JSON/NDJSON/CSV so future audits can parse it.
 - Treat UI text as first-class evidence before inviting real players. A passing 20-turn technical Chrome run proves flow stability, not that the chronicle is readable, non-repetitive, or free of player-visible fallback/internal text.
+- For pre-player readiness, use a multi-run content-audit matrix rather than a single happy path: base cycle, A/B/C/D route-biased runs, mixed long run, and focused anomaly probes should be summarized separately.
+- Duplicate-chronicle suppression must preserve authoritative visible changes. If narrative text claims lifespan, attribute, realm, injury, technique, key-item, title, relationship, or karma changes, verify the final delta before replacing or suppressing the text.
 - Chrome playtests must not run concurrently with `tests\web` against the same database because Web tests truncate the shared test DB.
 - Local service startup should reuse `scripts/start_local_pg.ps1` for PostgreSQL and then run backend/frontend separately on `127.0.0.1:8000` and `127.0.0.1:5173`; do not delete `.tmp\pg-test-20260626-55432` while PostgreSQL is running.
 - Treat model output as untrusted at every authority boundary. Malformed nested `state_delta` sections should be ignored with diagnostics, not allowed to crash a turn.
 - Keep UI prompt state explicit and current. Do not infer current fallback visibility by scanning whether any historical `model_failure` event ever occurred.
 - Keep API choice compatibility narrow and deterministic: `choice_index`, A/B/C/D, and exact `"1"`-`"4"` are valid; free text, mixed strings, and out-of-range values stay invalid.
+- P0/P1 issue counts can reach 0 while narrator contract quality is still weak. Keep `narrator_incomplete_output_count`, terminal-page snapshot completeness, and latency long-tail metrics in the remaining-risk section.
 
 ## P0: Acceptance And Deployment Gates
 
