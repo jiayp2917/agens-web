@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import logging
+import os
 import random
 import re
 import sqlalchemy.exc
@@ -68,7 +69,8 @@ class WebRunner:
         self.engine.on_game_over = lambda text: self._on_game_over(text)
         self.engine.on_finale = lambda text: self.record("finale", text=text)
         self.engine.on_loading = lambda text: self.record("loading", text=text)
-        self.engine.on_stream_chunk = lambda text: None
+        if os.environ.get("AGENS_WEB_STREAMING") == "1":
+            self.engine.on_stream_chunk = lambda text: None
         self.engine.on_model_result = self._record_model_result
         self.engine.on_character_created = lambda session: self.record(
             "character_created", state=session.as_game_state()
@@ -315,11 +317,15 @@ def _public_event_text(text: str) -> str:
     cleaned = clean_visible_text(text, allow_structured=False)
     internal_notices = (
         "模型状态变更未采用",
+        "本回合已按当前局面补齐下一步选择",
+        "此事未入正史",
+        "按本局因果结算",
+        "narrative/state mismatch",
         "state_delta",
         "状态更新格式不完整",
     )
     if any(marker in cleaned for marker in internal_notices):
-        return "此事未入正史，按本局因果结算。"
+        return ""
     return cleaned
 
 

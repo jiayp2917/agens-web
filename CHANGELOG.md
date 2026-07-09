@@ -2,6 +2,35 @@
 
 ## 2026-07-08
 
+### Added - visible Chrome content-audit playtest
+
+- Extended `scripts/local_visible_playtest.cjs` with an opt-in content-audit
+  mode. It now records UI snapshots around each real browser click: status rail,
+  visible chronicle entries, external intelligence, choices, fallback banner,
+  and sanitized model diagnostics.
+- Added player-visible quality checks for internal/fallback text leakage,
+  JSON/tag/English residue, repeated chronicle text, stale external
+  intelligence, timeline age drift, empty choices, and breakthrough-looking
+  choices when the current realm is not eligible.
+- Added `scripts/local_visible_content_audit.cjs` to orchestrate the full
+  multi-run audit batch: base 20-turn cycle, four route-biased 20-turn runs,
+  mixed-player long run, and a double-click probe. Generated evidence remains
+  under ignored `output/playwright/`.
+- Hardened the content-audit evidence shape: issue category labels are no
+  longer overwritten by captured UI text, and `judge_failed` diagnostics now
+  produce a P1 issue plus `judge_failed_count` so non-fallback turns are not
+  over-reported as complete live-model consistency.
+- Current evidence: `local-content-audit-2026-07-08T16-30-20-089Z-mixed-player-60`
+  reached a natural terminal state at turn 47 with 47 accepted non-fallback
+  live turns, P0 0, P1 1, and max previous similarity 0.984. It still shows a
+  high narrator-contract dependency: incomplete output 43/47, missing
+  `state_update` 36/47, and bad choice shape 42/47.
+- Current anomaly retry:
+  `local-content-audit-2026-07-08T16-48-36-932Z-double-click-1` passed with one
+  accepted non-fallback live turn, P0/P1 0, save/load passed, and
+  `double_click_probe_passed=true`. Route-biased content audits still need a
+  fresh full rerun after the next content-repeat/narrator-contract fix.
+
 ### Changed - chronicle world packs and event catalog
 
 - Added the first data-driven chronicle-content slice for ordinary turns:
@@ -16,7 +45,7 @@
   deterministic route prefixes before rule settlement and by teaching
   `classify_choice()` to recognize visible Chinese route labels.
 - Verification: `compileall` passed; `tests\web` 74 passed with local
-  PostgreSQL `TEST_DATABASE_URL`; full `pytest -q` 520 passed; frontend build
+  PostgreSQL `TEST_DATABASE_URL`; full `pytest -q` 536 passed / 1 xfailed; frontend build
   passed; `git diff --check` passed with LF/CRLF warnings only.
 - Real Chrome validation: `local-visible-chronicle-events-routes-20260708`
   passed 20/20 live choice turns with fallback 0, repair 0/20, judge 4,

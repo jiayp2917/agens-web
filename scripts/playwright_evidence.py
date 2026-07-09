@@ -55,16 +55,39 @@ def write_playwright_evidence(
 def _write_turn_csv(path: Path, turns: list[dict[str, Any]]) -> None:
     fields = [
         "turn_index",
+        "phase",
+        "choice_letter",
         "choice",
         "http_status",
         "fallback",
+        "game_over",
+        "finale",
         "turn_count",
         "elapsed_ms",
         "choices_count",
+        "status_age",
+        "status_realm",
+        "status_lifespan",
+        "latest_chronicle_age",
+        "latest_chronicle_text",
+        "forbidden_count",
+        "forbidden_hits",
+        "repeated_exact",
+        "max_previous_similarity",
+        "world_intel_changed",
+        "invalid_breakthrough_choices",
+        "choice_response_count",
+        "narrator_status",
+        "judge_status",
         "narrator_elapsed_ms",
         "judge_elapsed_ms",
         "repair_elapsed_ms",
         "repaired_output",
+        "retried_after_incomplete_output",
+        "narrator_incomplete_output",
+        "contract_missing_narrative",
+        "contract_missing_state_update",
+        "contract_choices_count_ok",
         "prompt_chars",
         "game_state_chars",
         "history_count",
@@ -95,7 +118,10 @@ def _json_safe(value: Any) -> Any:
 def _csv_field(turn: dict[str, Any], field: str) -> Any:
     if field == "choice" and not turn.get("choice"):
         return turn.get("selected_choice", "")
-    return turn.get(field, "")
+    value = turn.get(field, "")
+    if isinstance(value, (dict, list)):
+        return json.dumps(_json_safe(value), ensure_ascii=False, separators=(",", ":"))
+    return value
 
 
 def _safe_name(name: str) -> str:

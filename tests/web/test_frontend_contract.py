@@ -215,6 +215,11 @@ def test_react_game_page_has_escape_route_and_stable_meters() -> None:
     css = _read_css()
 
     assert "onHome={returnHome}" in source
+    assert "ACTIVE_SESSION_KEY" in source
+    assert "readActiveSessionId" in source
+    assert "writeActiveSessionId(session.session_id)" in source
+    assert "clearActiveSessionId()" in source
+    assert 'api<Session>(`/api/sessions/${sessionId}`)' in source
     assert "返回首页" in source
     assert 'role="meter"' in source
     assert "realmLifespanCap" in source
@@ -223,10 +228,13 @@ def test_react_game_page_has_escape_route_and_stable_meters() -> None:
     assert "chronicle-age" in source
     assert "buildChronicleRecords" in source
     assert "getCurrentChronicleYear" in source
+    assert "normalizedChronicleText" in source
+    assert "events.slice(-12)" in source
     assert "buildWorldIntel" in source
     assert "外界情报" in source
     assert "world.lore_facts.slice(-3)" in source
     assert "profile.current_conflicts" in source
+    assert source.index("world.lore_facts.slice(-3)") < source.index("profile.current_conflicts")
     assert "cleanChronicleText" in source
     assert "Math.max(...yearCandidates)" in source
     assert "玄历" in source
@@ -316,6 +324,9 @@ def test_frontend_filters_model_stream_fragments_and_exposes_provider_presets() 
 
     assert "visibleEventTypes" in source
     assert "isReadableEvent" in source
+    assert "此事未入正史，按本局因果结算。" in source
+    assert "本回合已按当前局面补齐下一步选择。" in source
+    assert "补齐下一步选择" in source
     assert "modelPresets" in source
     for provider in ("DeepSeek", "Qwen", "GLM"):
         assert provider in source

@@ -2,9 +2,13 @@ from __future__ import annotations
 
 import csv
 import json
+from pathlib import Path
 
 from scripts import playwright_evidence
 from scripts.playwright_evidence import write_playwright_evidence
+
+
+ROOT = Path(__file__).resolve().parents[3]
 
 
 def test_write_playwright_evidence_outputs_parseable_files(tmp_path) -> None:
@@ -24,16 +28,30 @@ def test_write_playwright_evidence_outputs_parseable_files(tmp_path) -> None:
         [
             {
                 "turn_index": 1,
+                "phase": "main",
                 "choice": "A",
+                "choice_letter": "A",
                 "http_status": 200,
                 "fallback": False,
+                "game_over": False,
+                "finale": False,
                 "turn_count": 1,
                 "elapsed_ms": 1234,
                 "choices_count": 4,
+                "status_age": "18岁",
+                "status_realm": "练气2层",
+                "forbidden_hits": ["history_suppression_notice"],
+                "narrator_status": "incomplete_output",
+                "judge_status": "",
                 "narrator_elapsed_ms": 900,
                 "judge_elapsed_ms": 200,
                 "repair_elapsed_ms": 100,
                 "repaired_output": True,
+                "retried_after_incomplete_output": True,
+                "narrator_incomplete_output": True,
+                "contract_missing_narrative": False,
+                "contract_missing_state_update": True,
+                "contract_choices_count_ok": False,
                 "prompt_chars": 1200,
                 "game_state_chars": 300,
                 "history_count": 6,
@@ -64,8 +82,19 @@ def test_write_playwright_evidence_outputs_parseable_files(tmp_path) -> None:
     with open(paths["csv"], encoding="utf-8-sig", newline="") as fp:
         rows = list(csv.DictReader(fp))
     assert rows[0]["choice"] == "A"
+    assert rows[0]["phase"] == "main"
+    assert rows[0]["choice_letter"] == "A"
+    assert rows[0]["game_over"] == "False"
+    assert rows[0]["status_age"] == "18岁"
+    assert rows[0]["status_realm"] == "练气2层"
+    assert rows[0]["forbidden_hits"] == "[\"history_suppression_notice\"]"
     assert rows[0]["narrator_elapsed_ms"] == "900"
+    assert rows[0]["narrator_status"] == "incomplete_output"
     assert rows[0]["repair_elapsed_ms"] == "100"
+    assert rows[0]["retried_after_incomplete_output"] == "True"
+    assert rows[0]["narrator_incomplete_output"] == "True"
+    assert rows[0]["contract_missing_state_update"] == "True"
+    assert rows[0]["contract_choices_count_ok"] == "False"
     assert rows[0]["prompt_chars"] == "1200"
     assert rows[0]["prompt_tokens"] == "500"
 
@@ -135,3 +164,63 @@ def test_playwright_evidence_cli_writes_sanitized_outputs(tmp_path, monkeypatch,
     assert all(str(out_dir.resolve()) in value for value in paths.values())
     assert all(".." not in str(value) for value in paths.values())
     assert json.loads(open(paths["json"], encoding="utf-8").read())["summary"]["total_turns"] == 1
+
+
+def test_content_audit_playtest_treats_p1_as_failed_content_gate() -> None:
+    source = (ROOT / "scripts" / "local_visible_playtest.cjs").read_text(encoding="utf-8")
+
+    assert "CONTENT_AUDIT_FAIL_ON_P1" in source
+    assert 'summary.result = "failed_content"' in source
+
+
+def test_content_audit_playtest_allows_terminal_turn_without_choices() -> None:
+    source = (ROOT / "scripts" / "local_visible_playtest.cjs").read_text(encoding="utf-8")
+
+    assert "const terminalTurn = Boolean(turnRecord.game_over || turnRecord.finale);" in source
+    assert "!terminalTurn && ((afterSnapshot.choices || []).length !== 4" in source
+    assert 'summary.result = "passed_terminal"' in source
+    assert "summary.p1_issues > 0" in source
+
+
+def test_content_audit_batch_continues_p1_only_runs_but_fails_summary() -> None:
+    source = (ROOT / "scripts" / "local_visible_content_audit.cjs").read_text(encoding="utf-8")
+
+    assert "p1OnlyFailure" in source
+    assert "completed_with_p1" in source
+    assert "batch.p1_issues += p1Issues" in source
+
+
+def test_content_audit_issues_keep_category_when_payload_has_visible_text() -> None:
+    source = (ROOT / "scripts" / "local_visible_playtest.cjs").read_text(encoding="utf-8")
+
+    assert "record.visible_text = record.text" in source
+    assert "delete record.text" in source
+    assert "issues.push({ ...record, level, text })" in source
+    assert "issues.push({ level, text, ...data })" not in source
+
+
+def test_content_audit_flags_judge_failed_as_p1() -> None:
+    source = (ROOT / "scripts" / "local_visible_playtest.cjs").read_text(encoding="utf-8")
+
+    assert 'judge_request_failed: judgeStatus === "judge_failed"' in source
+    assert "summary.judge_failed_count" in source
+    assert "judge model request failed; rule-only settlement used" in source
+    assert "auditModelDiagnostics(turnRecord" in source
+
+
+def test_content_audit_visible_text_heuristics_are_not_broad_brace_scans() -> None:
+    source = (ROOT / "scripts" / "local_visible_playtest.cjs").read_text(encoding="utf-8")
+
+    assert "json_like_object" in source
+    assert "state_delta|state_update|character|world|meta|choices" in source
+    assert "/[{][\\s\\S]*[}]/u" not in source
+    assert "function chineseNumber" in source
+
+
+def test_content_audit_does_not_treat_previous_latest_as_new_turn() -> None:
+    source = (ROOT / "scripts" / "local_visible_playtest.cjs").read_text(encoding="utf-8")
+
+    assert "function chronicleSignature" in source
+    assert "non-fallback turn produced no new visible chronicle entry" in source
+    assert "return latest.length ? latest : after.slice(-1)" not in source
+    assert "所需|准备|底蕴|线索|打听|寻找|静候|机缘" in source

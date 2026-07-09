@@ -171,10 +171,12 @@ class GameEngine:
     def _enter_local_story(self, reason: str = "", *, emit_narrative: bool = True) -> tuple[str, list[str]]:
         """Switch the current run to a preset local story and emit its state."""
         if self.game_session.local_story_active:
-            self.game_session.last_choices = current_local_story_choices(self.game_session)
+            self.game_session.last_choices = self._filter_unavailable_breakthrough_choices(
+                current_local_story_choices(self.game_session)
+            )
             return "", list(self.game_session.last_choices)
         result = start_local_story(self.game_session)
-        self.game_session.last_choices = result.choices
+        self.game_session.last_choices = self._filter_unavailable_breakthrough_choices(result.choices)
         if emit_narrative and result.narrative:
             self.emit("on_narrative", result.narrative, self.game_session.turn_count)
         if reason:

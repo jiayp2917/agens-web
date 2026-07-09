@@ -116,6 +116,7 @@ def save_artifact(state: dict[str, Any]) -> dict[str, Any]:
 # ─────────────────────────────────────────────────────────────────────────────
 
 _TAG_RE = re.compile(r"<world_data>(.*?)</world_data>", re.DOTALL)
+_JSON_FENCE_RE = re.compile(r"```(?:json)?\s*(\{.*?\})\s*```", re.DOTALL)
 
 
 def _parse_world_output(text: str) -> tuple[dict, str, str]:
@@ -124,15 +125,26 @@ def _parse_world_output(text: str) -> tuple[dict, str, str]:
     world_description = text
     opening_narrative = ""
 
+    raw_json = ""
     m = _TAG_RE.search(text)
     if m:
         world_description = text[: m.start()].strip()
         raw_json = m.group(1).strip()
+    else:
+        fence = _JSON_FENCE_RE.search(text)
+        if fence:
+            world_description = text[: fence.start()].strip()
+            raw_json = fence.group(1).strip()
+        elif text.strip().startswith("{") and text.strip().endswith("}"):
+            world_description = ""
+            raw_json = text.strip()
+
+    if raw_json:
         try:
             data = json.loads(_strip_json_fence(raw_json))
             if isinstance(data, dict):
                 generated_data = _sanitize_world_data(data)
-                opening_narrative = data.get("opening_narrative", "")
+                opening_narrative = str(data.get("opening_narrative") or "")
                 generated_data["choices"] = normalize_choices(generated_data.get("choices"))
         except (json.JSONDecodeError, ValueError):
             log.warning("[world_builder] world_data JSON parse failed: %s", raw_json[:200])

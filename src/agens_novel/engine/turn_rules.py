@@ -200,6 +200,7 @@ def settle_turn(
             "choice_category": category,
             "event_id": event.get("id", ""),
             "event_type": event.get("event_type", ""),
+            "event_lore": event.get("lore", ""),
             "stage_goal": event.get("stage_goal", ""),
             "allowed_delta_types": event.get("allowed_delta_types", []),
             "turn_summary": turn_summary,

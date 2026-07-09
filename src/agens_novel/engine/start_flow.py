@@ -23,7 +23,12 @@ from ..game.constants import (
 )
 from ..session.game_session import GameSession
 from .choices import complete_choices
-from .model_result import ModelResultKind, ModelResultStatus, classify_world_builder_result
+from .model_result import (
+    ModelResultKind,
+    ModelResultStatus,
+    classify_world_builder_result,
+    is_retryable_model_request_failure,
+)
 from .profile_opening import profile_default_world, profile_opening
 from .render import format_status_bar
 from .world_generator import (
@@ -182,6 +187,17 @@ class StartFlow:
                 engine.game_session,
                 generation_type="profile_opening",
             )
+            if is_retryable_model_request_failure(result):
+                log.info("profile opening world_builder request failed with retryable provider error; retrying once")
+                retry_result = engine.run_agent(
+                    "world_builder",
+                    prompt,
+                    engine.game_session,
+                    generation_type="profile_opening",
+                )
+                if not retry_result.get("llm_error"):
+                    retry_result["retried_after_request_failed"] = True
+                result = retry_result
         except Exception:
             log.exception("profile opening world_builder error")
             return decline_or_continue("profile_opening_exception", "开场推演失败（详见日志）。")

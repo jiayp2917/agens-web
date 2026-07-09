@@ -50,6 +50,35 @@ def _canned_world_builder() -> dict[str, Any]:
     }
 
 
+def _complete_profile_world_builder() -> dict[str, Any]:
+    return {
+        "generated_data": {
+            "world_name": "Test Realm",
+            "regions": [{"name": "Outer Gate"}],
+            "sects": [{"name": "Cloud Sect"}],
+            "current_conflicts": ["border unrest"],
+            "fate_hooks": ["wanderer"],
+            "chronicle_0_16": ["0-16: grew up near the pass"],
+            "initial_situation": "At sixteen, the path opens.",
+            "initial_situation_16": "At sixteen, the path opens.",
+            "opening_narrative": "The chronicle starts at the pass.",
+            "choices": ["stay", "ask", "risk", "wait"],
+            "world": {
+                "current_scene": "At sixteen, the path opens.",
+                "location": "Outer Gate",
+                "region": "Test Realm",
+                "lore_facts": ["border unrest"],
+            },
+        },
+        "world_description": "Opening prose.",
+        "opening_narrative": "The chronicle starts at the pass.",
+        "output_path": "",
+        "audit_path": "",
+        "finished_at": "",
+        "llm_error": "",
+    }
+
+
 def _canned_narrator() -> dict[str, Any]:
     return {
         "narrative": "你静坐吐纳，灵气缓缓涌入。",
@@ -128,6 +157,33 @@ class TestGameEngineNewGame:
             "【气运】随缘而行，听天命、赌因果",
         ]
 
+    def test_profile_opening_retries_transient_world_builder_failure(self, monkeypatch) -> None:
+        monkeypatch.setenv("AGNES_API_KEY", "sk-test-1234567890")
+        monkeypatch.setenv("AGENS_START_MODEL_WORLD", "1")
+        engine = GameEngine()
+        infos: list[str] = []
+        calls: list[str] = []
+        engine.on_info = lambda msg: infos.append(msg)
+
+        def runner(agent_name, user_input, session, **kw):
+            calls.append(agent_name)
+            if agent_name == "world_builder" and calls.count("world_builder") == 1:
+                return {
+                    "generated_data": {},
+                    "llm_error": 'HTTP 404: {"error":{"type":"upstream_error","code":"404"}}',
+                }
+            if agent_name == "world_builder":
+                return _complete_profile_world_builder()
+            return {}
+
+        with patch("agens_novel.engine.game_engine.run_turn_sync", side_effect=runner):
+            engine.start_from_profile({"char_name": "许满"})
+
+        assert calls.count("world_builder") == 2
+        assert engine.game_session.region == "Test Realm"
+        assert engine.game_session.last_choices == ["stay", "ask", "risk", "wait"]
+        assert not any("模型" in msg or "fallback" in msg.lower() for msg in infos)
+
     def test_model_choice_prefixes_are_cleaned(self) -> None:
         assert normalize_choices(["A：A 稳妥：闭关吐纳", "B. B、外出历练"]) == [
             "闭关吐纳",
@@ -181,7 +237,7 @@ class TestGameEngineNewGame:
             engine.handle_action("观察")
 
         assert len(engine.game_session.last_choices) == 4
-        assert any("补齐下一步选择" in msg for msg in infos)
+        assert not any("补齐下一步选择" in msg or "因果结算" in msg for msg in infos)
         assert engine.game_session.local_story_active is False
 
     def test_new_game_without_api_key_uses_agent_error(self, monkeypatch) -> None:

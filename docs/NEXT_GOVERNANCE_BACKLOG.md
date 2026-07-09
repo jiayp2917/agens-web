@@ -8,7 +8,7 @@ This is the active backlog for `agens-web`. It separates local code work, local 
 - Validation after the latest local P1 chronicle-content batch passed:
   - `python -m compileall -q src tests web scripts migrations`
   - `python -m pytest -q tests\web` -> 74 passed with local PostgreSQL `TEST_DATABASE_URL`
-  - full `python -m pytest -q` with local PostgreSQL `TEST_DATABASE_URL` -> 520 passed
+  - full `python -m pytest -q` with local PostgreSQL `TEST_DATABASE_URL` -> 536 passed / 1 xfailed
   - `cd web\frontend-react; npm.cmd run build` -> passed
   - `git diff --check` -> passed with LF/CRLF warnings only
 - User-scoped model settings are implemented:
@@ -26,6 +26,8 @@ This is the active backlog for `agens-web`. It separates local code work, local 
 - 2026-07-07 defensive runtime batch is closed: malformed nested `state_delta.character/world/meta` sections are ignored with warnings instead of crashing; `fallback_prompt.active` now reflects current failure/local-story state rather than historical `model_failure` events and is restored from persisted events when a runner is rebuilt; `/choice` accepts `choice_index`, A/B/C/D, and `"1"`-`"4"` while still rejecting free text.
 - 2026-07-07 P1 gameplay-state slice is closed in automation and was later covered by the `a69a8af` Chrome run: stage feedback uses deterministic route events; ordinary-turn narrative consistency is checked after model delta sanitization and rule-delta merge; Judge reviews technique grants and sensitive inventory grants such as breakthrough, lifespan, key-item, inheritance, or high-rarity items.
 - 2026-07-08 chronicle-content batch is accepted locally: four fixed world packs are centralized, profile starts save a structured `fate_profile`, ordinary turns use a data-driven event catalog, narrator results expose sanitized contract diagnostics, and `/choice` now preserves A/B/C/D route semantics before rule settlement. Verified by full automation and `local-visible-chronicle-events-routes-20260708`.
+- 2026-07-08 visible content-audit tooling is available but does not by itself prove content quality. `scripts/local_visible_playtest.cjs` now has opt-in content-audit snapshots, preserves issue category labels even when captured UI text is stored, and flags `judge_failed` as a P1 consistency issue. `scripts/local_visible_content_audit.cjs` can orchestrate the base 20-turn run, four route-biased 20-turn runs, a mixed long run, and a double-click probe.
+- 2026-07-08 current content-audit evidence: `local-content-audit-2026-07-08T16-30-20-089Z-mixed-player-60` reached terminal at turn 47 with 47 accepted non-fallback live turns, `fallback_count=0`, P0 0, P1 1, and `max_previous_similarity=0.984`. The remaining P1 is high-similarity chronicle repetition; narrator contract dependency is still high (`narrator_incomplete_output_count=43`, missing `state_update` 36, bad choice shape 42). `local-content-audit-2026-07-08T16-48-36-932Z-double-click-1` passed after retry with `double_click_probe_passed=true`, one accepted live turn, `fallback_count=0`, P0/P1 0, and save/load passed. Full route-biased content readiness is not accepted until the route audits are rerun after the next content-repeat/narrator-contract fix.
 
 ## Lessons To Keep
 
@@ -35,6 +37,7 @@ This is the active backlog for `agens-web`. It separates local code work, local 
 - Production reports must be sanitized: booleans, counts, revisions, table names, HTTP status, and error classes only. Do not output keys, cookies, real accounts, invite codes, database URLs, raw prompts, raw responses, or secrets.
 - A healthy deploy can still fail gameplay acceptance; live-model fallback remains a product/runtime failure.
 - Browser evidence must be strict JSON/NDJSON/CSV so future audits can parse it.
+- Treat UI text as first-class evidence before inviting real players. A passing 20-turn technical Chrome run proves flow stability, not that the chronicle is readable, non-repetitive, or free of player-visible fallback/internal text.
 - Chrome playtests must not run concurrently with `tests\web` against the same database because Web tests truncate the shared test DB.
 - Local service startup should reuse `scripts/start_local_pg.ps1` for PostgreSQL and then run backend/frontend separately on `127.0.0.1:8000` and `127.0.0.1:5173`; do not delete `.tmp\pg-test-20260626-55432` while PostgreSQL is running.
 - Treat model output as untrusted at every authority boundary. Malformed nested `state_delta` sections should be ignored with diagnostics, not allowed to crash a turn.
@@ -53,6 +56,11 @@ P0 is currently closed for the latest local and production batches. Re-run only 
    - Re-run after gameplay pacing, state/chronicle consistency, option constraints, model-efficiency, or major UI-flow changes.
    - Required proof: start has a successful `world_builder`/`profile_opening` model event (`start_model_ok=true`), is non-fallback with 4 initial choices plus dynamic `world_profile` fields (`world_name`, `chronicle_0_16`, `initial_situation_16`), 20/20 choices are non-fallback, save/load works, `game_turns` stays continuous, and evidence is strict JSON/NDJSON/CSV.
    - Do not run concurrently with pytest against the same database.
+3. Visible content-audit gate before real-player testing.
+   - Run with content audit enabled after major gameplay-content, narrator-contract, timeline, or option-generation changes.
+   - Required proof: no player-visible fallback/internal text, no JSON/tag/English residue, no consecutive repeated chronicle entries, external intelligence changes or has an explicit reason within 3-5 turns, timeline age/status stay coherent, and choices remain four non-empty A/B/C/D semantic buttons.
+   - Full batch command: `node scripts/local_visible_content_audit.cjs`. For a shorter smoke run, set `AGENS_CONTENT_AUDIT_RUNS=base`.
+   - Current blockers: fix the mixed-run high-similarity chronicle repetition, reduce narrator incomplete/missing-structure dependency, and rerun the four route-biased 20-turn audits. The earlier double-click/start-fallback anomaly is superseded by the passing retry evidence, but future provider request failures must still be treated as non-acceptance for that run.
 
 ## P1: Gameplay Quality And Model Efficiency
 

@@ -82,6 +82,33 @@ def classify_judge_result(result: dict[str, Any]) -> ModelResultStatus:
     return ModelResultStatus(ModelResultKind.OK)
 
 
+def is_retryable_model_request_failure(result: dict[str, Any]) -> bool:
+    """Return True for transient provider failures worth one live retry."""
+    if not isinstance(result, dict):
+        return False
+    error = str(result.get("llm_error") or "").lower()
+    if not error:
+        return False
+    if any(marker in error for marker in ("api_key", "missing key", "401", "403")):
+        return False
+    retry_markers = (
+        "timeout",
+        "timed out",
+        "temporarily",
+        "connection",
+        "http 408",
+        "http 425",
+        "http 429",
+        "http 500",
+        "http 502",
+        "http 503",
+        "http 504",
+        "upstream_error",
+        "notfounderror",
+    )
+    return any(marker in error for marker in retry_markers)
+
+
 def result_diagnostics(result: dict[str, Any]) -> dict[str, Any]:
     """Return non-secret model result facts suitable for logcat diagnostics."""
     generated = result.get("generated_data")
@@ -104,6 +131,7 @@ def result_diagnostics(result: dict[str, Any]) -> dict[str, Any]:
         "generated_ok": isinstance(generated, dict) and bool(generated),
         "repaired_output": bool(result.get("repaired_output")),
         "retried_after_request_failed": bool(result.get("retried_after_request_failed")),
+        "retried_after_incomplete_output": bool(result.get("retried_after_incomplete_output")),
         "repair_elapsed_ms": int(result.get("repair_elapsed_ms") or 0),
         "judge_approved": result.get("approved") if "approved" in result else None,
         "has_corrected_delta": bool(result.get("corrected_delta")),

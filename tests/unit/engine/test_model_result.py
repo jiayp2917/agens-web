@@ -7,6 +7,7 @@ from agens_novel.engine.model_result import (
     classify_judge_result,
     classify_narrator_result,
     classify_world_builder_result,
+    is_retryable_model_request_failure,
     result_diagnostics,
 )
 
@@ -73,6 +74,15 @@ def test_judge_llm_error_is_judge_failed() -> None:
     assert status.kind == ModelResultKind.JUDGE_FAILED
 
 
+def test_retryable_model_request_failure_detects_transient_provider_errors() -> None:
+    assert is_retryable_model_request_failure(
+        {"llm_error": 'HTTP 404: {"error":{"type":"upstream_error","code":"404"}}'}
+    )
+    assert is_retryable_model_request_failure({"llm_error": "request timed out"})
+    assert not is_retryable_model_request_failure({"llm_error": "HTTP 401 unauthorized"})
+    assert not is_retryable_model_request_failure({"llm_error": "AGNES_API_KEY missing"})
+
+
 def test_result_diagnostics_are_non_secret_shape_facts() -> None:
     result = {
         "narrative": "获得清灵丹。",
@@ -101,6 +111,7 @@ def test_result_diagnostics_are_non_secret_shape_facts() -> None:
         "generated_ok": False,
         "repaired_output": False,
         "retried_after_request_failed": False,
+        "retried_after_incomplete_output": False,
         "repair_elapsed_ms": 0,
         "judge_approved": None,
         "has_corrected_delta": False,
@@ -139,5 +150,20 @@ def test_result_diagnostics_include_repair_metrics_without_text() -> None:
     assert diagnostics["repair_elapsed_ms"] == 300
     assert diagnostics["repair_prompt_tokens"] == 40
     assert diagnostics["repair_completion_tokens"] == 12
+    assert "narrative" not in diagnostics
+    assert "api_key" not in diagnostics
+
+
+def test_result_diagnostics_include_incomplete_retry_flag_without_text() -> None:
+    result = {
+        "narrative": "山门风紧。",
+        "state_delta": {},
+        "choices": ["吐纳", "询问", "历练", "随缘"],
+        "retried_after_incomplete_output": True,
+    }
+
+    diagnostics = result_diagnostics(result)
+
+    assert diagnostics["retried_after_incomplete_output"] is True
     assert "narrative" not in diagnostics
     assert "api_key" not in diagnostics

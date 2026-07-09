@@ -143,7 +143,7 @@ _STORIES: dict[str, dict[str, LocalStoryNode]] = {
             ),
         ),
         "cultivation": LocalStoryNode(
-            narrative="玄历三年，外门静室灯火渐少。你能继续稳固根基，也能外出寻找破境准备。",
+            narrative="玄历三年，外门静室灯火渐少。你能继续稳固根基，也能外出寻找进阶所需的护持。",
             options=(
                 LocalStoryOption(
                     text="继续吐纳一夜，稳固根骨与心性",
@@ -153,17 +153,17 @@ _STORIES: dict[str, dict[str, LocalStoryNode]] = {
                     keywords=("吐纳", "修炼", "稳妥", "根骨"),
                 ),
                 LocalStoryOption(
-                    text="外出历练，寻找突破所需的护持",
+                    text="外出历练，寻找筑基所需的护持",
                     next_node="herb_path",
                     delta={"world": {"discovered_add": ["雾隐山后径"]}},
                     result="玄历三年，你离开静室，山风一吹，远处药香像是在招引。",
                     keywords=("历练", "外出", "机遇", "护持"),
                 ),
                 LocalStoryOption(
-                    text="整理所得，检查是否已具备筑基准备",
+                    text="整理所得，检查是否已具备筑基底蕴",
                     next_node="preparation",
                     delta={"character": {"attributes": {"comprehension": 1}}},
-                    result="玄历三年，你摊开木牌、心得和行囊，逐项确认破境所缺。",
+                    result="玄历三年，你摊开木牌、心得和行囊，逐项确认进阶所缺。",
                     keywords=("整理", "检查", "准备"),
                 ),
                 LocalStoryOption(
@@ -231,24 +231,24 @@ _STORIES: dict[str, dict[str, LocalStoryNode]] = {
                     breakthrough=True,
                 ),
                 LocalStoryOption(
-                    text="暂缓突破，继续做外门任务积累底蕴",
+                    text="暂缓筑基，继续做外门任务积累底蕴",
                     next_node="outer_gate",
                     delta={"character": {"attributes": {"root_bone": 1, "comprehension": 1}}},
                     result="玄历五年，你压下急躁，转身接取新的外门任务。",
                     keywords=("暂缓", "任务", "积累", "机遇"),
                 ),
                 LocalStoryOption(
-                    text="检查行囊与心得，再确认破境准备",
+                    text="检查行囊与心得，再确认筑基底蕴",
                     next_node="preparation",
                     delta={"character": {"attributes": {"comprehension": 1}}},
                     result="玄历五年，你反复核对药引、心得与气息，心中把握更清晰了些。",
                     keywords=("检查", "行囊", "心得", "准备"),
                 ),
                 LocalStoryOption(
-                    text="听从心血来潮，择此刻一试天命",
+                    text="听从心血来潮，冒险冲击筑基",
                     next_node="foundation_result",
                     delta={"character": {"attributes": {"luck": -1}, "breakthrough_flags_add": ["foundation_aid"]}},
-                    result="玄历五年，你感到心血来潮，虽仍有风险，却捕捉到一线破境契机。",
+                    result="玄历五年，你感到心血来潮，虽仍有风险，却捕捉到一线筑基契机。",
                     keywords=("心血来潮", "天命", "气运", "随缘"),
                     breakthrough=True,
                 ),
@@ -280,11 +280,11 @@ _STORIES: dict[str, dict[str, LocalStoryNode]] = {
                     keywords=("记录", "保存", "玉简"),
                 ),
                 LocalStoryOption(
-                    text="随缘静候下一缕破境机缘",
+                    text="随缘静候下一缕进阶机缘",
                     next_node="preparation",
                     delta={"character": {"attributes": {"luck": 1}}},
-                    result="玄历六年，你没有强求破境，只在静候中让气息更贴近天时。",
-                    keywords=("随缘", "静候", "破境", "气运"),
+                    result="玄历六年，你没有强求进阶，只在静候中让气息更贴近天时。",
+                    keywords=("随缘", "静候", "进阶", "气运"),
                 ),
             ),
         ),

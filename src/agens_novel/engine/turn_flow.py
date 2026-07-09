@@ -9,7 +9,6 @@ if TYPE_CHECKING:
     from .game_engine import GameEngine
 
 from .action_delta_policy import (
-    PLAYER_NARRATIVE_MISMATCH_NOTICE,
     apply_breakthrough_flag_rule,
     is_pure_cultivation,
     merge_rule_delta,
@@ -21,6 +20,7 @@ from .model_result import (
     ModelResultKind,
     classify_judge_result,
     classify_narrator_result,
+    is_retryable_model_request_failure,
 )
 from .render import format_realm, format_status_bar
 from .turn_rules import settle_turn
@@ -41,7 +41,7 @@ class TurnFlow:
         from .local_story import advance_local_story
 
         result = advance_local_story(session, text)
-        session.last_choices = result.choices
+        session.last_choices = engine._filter_unavailable_breakthrough_choices(result.choices)
 
         if not result.matched:
             engine.emit("on_info", result.narrative)
@@ -129,11 +129,18 @@ class TurnFlow:
         malformed_state_delta = raw_state_delta is None or not isinstance(raw_state_delta, dict)
         state_delta = raw_state_delta if isinstance(raw_state_delta, dict) else {}
         choices = narrator_result.get("choices", [])
-        meta_delta = state_delta.get("meta") if isinstance(state_delta, dict) else {}
-        is_terminal_delta = isinstance(meta_delta, dict) and bool(
-            meta_delta.get("game_over") or meta_delta.get("finale")
-        )
         if narrator_status.kind == ModelResultKind.INCOMPLETE_OUTPUT:
+            if (
+                not str(narrative or "").strip()
+                and isinstance(state_delta, dict)
+                and _has_nonempty_structured_delta(state_delta)
+                and not normalize_choices(choices)
+            ):
+                log.info("narrator returned JSON-only delta; rejecting model delta and settling by rules")
+                narrative = self._narrative_from_rule_delta(rule_delta)
+                state_delta = self._empty_delta_from_rule(rule_delta)
+                choices = fallback_choices(session)
+                malformed_state_delta = False
             if not str(narrative or "").strip() and isinstance(state_delta, dict) and normalize_choices(choices):
                 narrative = self._narrative_from_rule_delta(rule_delta)
                 state_delta = self._empty_delta_from_rule(rule_delta)
@@ -141,13 +148,14 @@ class TurnFlow:
             recovered_choices = self._recover_incomplete_narrator_choices(narrative, choices)
             if recovered_choices:
                 choices = recovered_choices
-                engine.emit("on_info", "本回合已按当前局面补齐下一步选择。")
+                log.info("narrator choices recovered from rule context")
                 if malformed_state_delta:
                     state_delta = self._empty_delta_from_rule(rule_delta)
                     malformed_state_delta = False
             else:
                 choices = []
                 engine.emit("on_info", narrator_status.reason)
+        is_terminal_delta = _is_terminal_state_delta(state_delta)
         if is_terminal_delta:
             session.last_choices = []
         else:
@@ -217,6 +225,24 @@ class TurnFlow:
                 if not retry_result.get("llm_error"):
                     retry_result["retried_after_request_failed"] = True
                 return retry_result
+            if _should_retry_unrecoverable_narrator_result(result):
+                log.info("narrator output incomplete and unrecoverable; retrying once with strict contract reminder")
+                retry_input = (
+                    f"{narrator_input}\n\n"
+                    "[输出契约提醒：上一轮可能缺少叙事或四个选项。本次必须输出："
+                    "编年史叙事正文、<state_update>JSON</state_update>、"
+                    "<choices>四个中文行动选项JSON数组</choices>。]"
+                )
+                retry_result = engine.run_agent(
+                    "narrator",
+                    retry_input,
+                    session,
+                    stream_callback=engine.stream_callback if engine.on_stream_chunk else None,
+                    repair_incomplete_output=False,
+                )
+                if not retry_result.get("llm_error"):
+                    retry_result["retried_after_incomplete_output"] = True
+                return retry_result
             return result
         except Exception:
             log.exception("narrator error")
@@ -255,10 +281,6 @@ class TurnFlow:
         except Exception:
             log.exception("judge error")
             reason = "天道审判失败（详见日志）"
-            if not engine.confirm_local_fallback("judge_exception", reason):
-                session.turn_count -= 1
-                engine.end_model_failure_run(reason)
-                return None
             judge_result = {"approved": False, "corrected_delta": {}, "judgment_note": reason}
 
         judge_status = classify_judge_result(judge_result)
@@ -271,10 +293,7 @@ class TurnFlow:
         )
         if judge_status.kind == ModelResultKind.JUDGE_FAILED:
             reason = judge_status.reason
-            if not engine.confirm_local_fallback("judge_error", reason):
-                session.turn_count -= 1
-                engine.end_model_failure_run(reason)
-                return None
+            log.info("Judge failed; rejecting model delta and continuing with rule settlement")
             judge_result = {"approved": False, "corrected_delta": {}, "judgment_note": reason}
 
         return judge_result
@@ -293,7 +312,6 @@ class TurnFlow:
             else:
                 note = judge_result.get("judgment_note", "")
                 log.info("Judge rejected (no corrected delta): %s", note)
-                engine.emit("on_info", PLAYER_NARRATIVE_MISMATCH_NOTICE)
                 narrative = ""
                 state_delta = {"character": {}, "world": {}, "meta": {}}
             note = judge_result.get("judgment_note", "")
@@ -330,9 +348,8 @@ class TurnFlow:
         )
         if not consistent:
             log.info("Narrative/state mismatch rejected: %s", consistency_reason)
-            engine.emit("on_info", PLAYER_NARRATIVE_MISMATCH_NOTICE)
             narrative = ""
-            session.last_choices = fallback_choices(session)
+            session.last_choices = engine._filter_unavailable_breakthrough_choices(fallback_choices(session))
             state_delta = merge_rule_delta({"character": {}, "world": {}, "meta": {}}, rule_delta)
 
         session.apply_delta(state_delta)
@@ -342,6 +359,9 @@ class TurnFlow:
 
         if engine.check_game_over():
             return None
+
+        if not str(narrative or "").strip():
+            narrative = self._narrative_from_rule_delta(state_delta)
 
         return narrative, state_delta
 
@@ -464,6 +484,7 @@ class TurnFlow:
         lore = ""
         if isinstance(meta, dict):
             elapsed = int(meta.get("elapsed_years") or 0)
+            lore = str(meta.get("event_lore") or "").strip()
             stage_goal = str(meta.get("stage_goal") or "").strip()
         if isinstance(world, dict) and isinstance(world.get("lore_add"), list) and world["lore_add"]:
             lore = str(world["lore_add"][0] or "").strip()
@@ -471,32 +492,40 @@ class TurnFlow:
         if lore:
             return f"{years}{lore}"
         if stage_goal:
-            return f"{years}此人循本局因果推进，{stage_goal}。"
-        return f"{years}此人按所选道路修行，外界局势仍在暗中变化。"
+            return f"{years}其沿所选道路推进，{stage_goal}。"
+        return f"{years}其按所选道路修行，外界局势仍在暗中变化。"
 
 
 def _should_retry_narrator_result(result: dict[str, Any]) -> bool:
     """Retry one live narrator request for transient provider failures only."""
-    if not isinstance(result, dict):
+    return is_retryable_model_request_failure(result)
+
+
+def _should_retry_unrecoverable_narrator_result(result: dict[str, Any]) -> bool:
+    """Retry one live narrator request when TurnFlow cannot recover the shape."""
+    if not isinstance(result, dict) or result.get("llm_error"):
         return False
-    error = str(result.get("llm_error") or "").lower()
-    if not error:
+    if _has_nonempty_structured_delta(result.get("state_delta")):
         return False
-    if any(marker in error for marker in ("api_key", "missing key", "401", "403")):
+    if str(result.get("narrative") or "").strip():
         return False
-    retry_markers = (
-        "timeout",
-        "timed out",
-        "temporarily",
-        "connection",
-        "http 408",
-        "http 425",
-        "http 429",
-        "http 500",
-        "http 502",
-        "http 503",
-        "http 504",
-        "upstream_error",
-        "notfounderror",
-    )
-    return any(marker in error for marker in retry_markers)
+    if normalize_choices(result.get("choices")):
+        return False
+    return classify_narrator_result(result).kind == ModelResultKind.INCOMPLETE_OUTPUT
+
+
+def _has_nonempty_structured_delta(value: Any) -> bool:
+    if not isinstance(value, dict):
+        return False
+    for section in ("character", "world", "meta"):
+        section_value = value.get(section)
+        if isinstance(section_value, dict) and section_value:
+            return True
+    return False
+
+
+def _is_terminal_state_delta(state_delta: Any) -> bool:
+    if not isinstance(state_delta, dict):
+        return False
+    meta_delta = state_delta.get("meta")
+    return isinstance(meta_delta, dict) and bool(meta_delta.get("game_over") or meta_delta.get("finale"))

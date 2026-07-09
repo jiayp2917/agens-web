@@ -28,6 +28,8 @@ const assetVars = {
   "--game-bg": `url("${assetUrl("assets/bg_chronicle_game.png")}")`,
 } as React.CSSProperties;
 
+const ACTIVE_SESSION_KEY = "agens-web.active-session-id";
+
 function App() {
   const [user, setUser] = useState<User | null>(null);
   const [session, setSession] = useState<Session | null>(null);
@@ -43,6 +45,29 @@ function App() {
       .then((payload) => setUser(payload.user))
       .catch(() => setUser(null));
   }, []);
+
+  useEffect(() => {
+    const sessionId = readActiveSessionId();
+    if (!sessionId) return;
+    api<Session>(`/api/sessions/${sessionId}`)
+      .then((restored) => {
+        setSession(restored);
+        if (restored.game_over || restored.finale) {
+          setView("ending");
+        } else if (restored.game_started) {
+          setView("game");
+        } else {
+          setView("character");
+        }
+      })
+      .catch(() => clearActiveSessionId());
+  }, []);
+
+  useEffect(() => {
+    if (session?.session_id) {
+      writeActiveSessionId(session.session_id);
+    }
+  }, [session?.session_id]);
 
   const openAuth = (mode: AuthMode = "login") => {
     setAuthMode(mode);
@@ -97,6 +122,7 @@ function App() {
 
   const logout = async () => {
     await api("/api/auth/logout", { method: "POST", body: "{}" });
+    clearActiveSessionId();
     setUser(null);
     setSession(null);
     setDialogMode(null);
@@ -104,6 +130,7 @@ function App() {
   };
 
   const returnHome = () => {
+    clearActiveSessionId();
     setDialogMode(null);
     setSession(null);
     setView("home");
@@ -183,3 +210,27 @@ function App() {
 }
 
 createRoot(document.getElementById("root")!).render(<App />);
+
+function readActiveSessionId() {
+  try {
+    return localStorage.getItem(ACTIVE_SESSION_KEY) || "";
+  } catch {
+    return "";
+  }
+}
+
+function writeActiveSessionId(sessionId: string) {
+  try {
+    localStorage.setItem(ACTIVE_SESSION_KEY, sessionId);
+  } catch {
+    // Browser storage can be unavailable in restricted contexts.
+  }
+}
+
+function clearActiveSessionId() {
+  try {
+    localStorage.removeItem(ACTIVE_SESSION_KEY);
+  } catch {
+    // Browser storage can be unavailable in restricted contexts.
+  }
+}

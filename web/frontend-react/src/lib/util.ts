@@ -23,6 +23,7 @@ export const isReadableEvent = (event: Record<string, any>) => {
   const text = eventText(event);
   if (!text || !visibleEventTypes.has(String(event.type || ""))) return false;
   if (hiddenEventTexts.includes(text)) return false;
+  if (/此事未入正史|补齐下一步选择|模型状态变更未采用|narrative\/state mismatch|state_delta/i.test(text)) return false;
   if (/^[\s"'`.,，。:：;；<>{}\[\]\/\\]+$/.test(text)) return false;
   if (/<\/?(choices|state_update)\b/i.test(text)) return false;
   if (/^(choices|state_update|meta|character|world)$/i.test(text)) return false;

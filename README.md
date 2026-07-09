@@ -12,7 +12,7 @@ Web-only 文字修仙模拟器。当前 `master` 是浏览器版本主线：Reac
 - 运行时六维属性统一为 0-10 尺度，5 为中性默认值；旧 0-100 存档或模型输出只在加载/入局时兼容迁移，不能再作为新逻辑的默认尺度。
 - 动态开局链路已接入：难度、天赋、灵根、家世、六维属性和随机/手选模式共同生成本局世界观、0-16 岁编年史、16 岁初始局势、外界情报和首次 A/B/C/D choices。模型未启用或失败时使用差异化 profile-aware fallback；fallback 可玩但不算 live-model 成功。
 - 普通回合 P1 正在从“模型临场发挥”收束为“世界包 + 命数画像 + 数据驱动事件表 + narrator 润色”：第一批固定四套世界观（西陲裂土、玄都盟境、沧澜群岛、青岚药境），由规则引擎提供编年史事件上下文，并补充 narrator 契约诊断。
-- 最新本地自动化基线：本地 PostgreSQL 可用；本批 `compileall` passed，`tests\web` 74 passed，全量 `pytest -q` 520 passed，前端 build passed，`git diff --check` 仅 LF/CRLF warning。
+- 最新本地自动化基线：本地 PostgreSQL 可用；本批 `compileall` passed，`tests\web` 74 passed，全量 `pytest -q` 536 passed / 1 xfailed，前端 build passed，`git diff --check` 仅 LF/CRLF warning。
 - 最新本地真实 Chrome 验收：2026-07-08 `local-visible-chronicle-events-routes-20260708` 通过，使用本地后端 + Vite 验证动态开局 live path：`start_model_ok=true`、`start_fallback=false`、4 个初始 choices、动态世界名/0-16 岁编年史/16 岁初始局势存在，普通账号注册/登录、角色创建、20/20 choice non-fallback、存档/读档均通过；repair 0/20、judge 4 次、fallback 0。平均回合耗时约 17.35s、最大约 59.3s；DB 审计显示 A/B/C/D 路线各 5 回合、`game_turns` 1-20 连续、8 回合写入 lore。后续风险主要是响应长尾、内容节奏和 narrator 契约漂移。
 - 最新生产批次：服务器线程已部署 `25ad3d15` 并迁移到 Alembic `20260622_0005`，`user_model_configs` 存在，public/origin health、catalog、容器健康和日志敏感标记扫描通过；一次性真实账号注册、登录、存档、读档、跨会话恢复通过。
 - production live model P0 已通过脱敏验收：生产 start 和至少 1 次 choice 均为 non-fallback，choice 后 `turn_count=1`。历史 `model_config` 旧行遮蔽 env key 的失败保留为经验，后续不再作为当前阻塞。
@@ -96,6 +96,28 @@ $env:TEST_DATABASE_URL = "postgresql+psycopg://agens_test@127.0.0.1:55432/agens_
 cd web\frontend-react
 npm.cmd run build
 ```
+
+Visible Chrome content-audit runs are separate from the baseline gate. Use them
+when gameplay text quality needs review, and do not run them concurrently with
+`tests\web` against the same database:
+
+```powershell
+cd D:\chat\agens-web
+$env:AGENS_PLAYTEST_CONTENT_AUDIT = "1"
+$env:AGENS_PLAYTEST_NAME = "local-content-smoke"
+node scripts\local_visible_playtest.cjs
+
+# Full batch: base 20-turn, four route-biased 20-turn runs, mixed long run,
+# and double-click probe. Evidence stays under ignored output/playwright/.
+node scripts\local_visible_content_audit.cjs
+```
+
+Current content-audit evidence is not yet a real-player readiness pass. The
+latest mixed 60-turn run reached a natural terminal state at turn 47 with
+fallback 0 and P0 0, but still recorded one high-similarity chronicle repeat and
+heavy narrator-contract recovery. The latest double-click anomaly retry passed.
+Treat any future `judge_failed` diagnostic as a P1 consistency issue even when
+the turn is non-fallback.
 
 ## Model Settings Rule
 

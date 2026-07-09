@@ -245,7 +245,7 @@ class TestGameEngineHandleAction:
         assert engine.game_session.turn_history[-1]["input"] == "修炼"
         assert engine.game_session.turn_history[-1]["delta"]["meta"]["elapsed_years"] > 0
         assert "local_story" not in engine.game_session.turn_history[-1]
-        assert any("补齐下一步选择" in msg for msg in infos)
+        assert not any("补齐下一步选择" in msg or "因果结算" in msg for msg in infos)
 
     def test_narrative_reward_claim_without_delta_is_suppressed_after_choice_recovery(self, monkeypatch) -> None:
         monkeypatch.setenv("AGNES_API_KEY", "sk-test-1234567890")
@@ -271,10 +271,11 @@ class TestGameEngineHandleAction:
         assert engine.game_session.local_story_active is False
         assert len(engine.game_session.last_choices) == 4
         assert engine.game_session.inventory == []
-        assert narratives == []
-        assert engine.game_session.turn_history[-1]["narrative"] == ""
-        assert any("补齐下一步选择" in msg for msg in infos)
-        assert any("因果结算" in msg for msg in infos)
+        assert narratives
+        assert "清灵丹" not in narratives[-1][0]
+        assert engine.game_session.turn_history[-1]["narrative"]
+        assert "清灵丹" not in engine.game_session.turn_history[-1]["narrative"]
+        assert not any("补齐下一步选择" in msg or "因果结算" in msg for msg in infos)
         assert not any("状态栏为准" in msg or "state_delta" in msg for msg in infos)
 
     def test_empty_model_output_can_continue_with_local_fallback(self, monkeypatch) -> None:
@@ -300,6 +301,94 @@ class TestGameEngineHandleAction:
         assert any("缺少叙事" in msg or "未返回可用 A/B/C" in msg for msg in infos)
         assert engine.game_session.local_story_active is True
         assert len(engine.game_session.last_choices) == 4
+
+    def test_unrecoverable_empty_narrator_output_retries_live_once(self, monkeypatch) -> None:
+        monkeypatch.setenv("AGNES_API_KEY", "sk-test-1234567890")
+        engine = GameEngine()
+        engine.game_session.game_started = True
+        engine.game_session.last_choices = ["闭门吐纳", "外出访友", "夜探山径", "随缘静候"]
+        narratives: list[tuple[str, int]] = []
+        infos: list[str] = []
+        calls: list[tuple[str, str]] = []
+        engine.on_narrative = lambda text, turn: narratives.append((text, turn))
+        engine.on_info = lambda msg: infos.append(msg)
+        engine.on_model_failure_choice = lambda source, reason: "fallback"
+
+        def runner(agent_name, user_input, session, **kw):
+            calls.append((agent_name, user_input))
+            if agent_name == "narrator" and len([call for call in calls if call[0] == "narrator"]) == 1:
+                return {"narrative": "", "state_delta": {}, "choices": [], "llm_error": ""}
+            if agent_name == "narrator":
+                return {
+                    "narrative": "此后一年，许满避开山径纷争，借村落香火安稳调息。",
+                    "state_delta": {"character": {}, "world": {}, "meta": {}},
+                    "choices": ["继续静养", "打听山门消息", "查看旧伤", "随缘等候"],
+                    "llm_error": "",
+                    "retried_after_incomplete_output": True,
+                }
+            return {"approved": True, "corrected_delta": {}, "llm_error": ""}
+
+        with patch("agens_novel.engine.game_engine.run_turn_sync", side_effect=runner):
+            engine.handle_action("D")
+
+        narrator_calls = [call for call in calls if call[0] == "narrator"]
+        assert len(narrator_calls) == 2
+        assert "输出契约提醒" in narrator_calls[1][1]
+        assert engine.game_session.turn_count == 1
+        assert engine.game_session.local_story_active is False
+        assert "local_story" not in engine.game_session.turn_history[-1]
+        assert engine.game_session.turn_history[-1]["delta"]["meta"]["choice_category"] in {"稳妥", "机遇", "风险", "气运"}
+        assert narratives and "村落香火" in narratives[-1][0]
+        assert not any("天道紊乱" in msg or "因果结算" in msg for msg in infos)
+
+    def test_json_only_narrator_delta_settles_by_rules_without_retry_or_local_story(self, monkeypatch) -> None:
+        monkeypatch.setenv("AGNES_API_KEY", "sk-test-1234567890")
+        engine = GameEngine()
+        engine.game_session.game_started = True
+        engine.game_session.last_choices = ["闭门吐纳", "外出访友", "夜探山径", "随缘静候"]
+        narratives: list[tuple[str, int]] = []
+        infos: list[str] = []
+        calls: list[tuple[str, str]] = []
+        engine.on_narrative = lambda text, turn: narratives.append((text, turn))
+        engine.on_info = lambda msg: infos.append(msg)
+        engine.on_model_failure_choice = lambda source, reason: "fallback"
+
+        def runner(agent_name, user_input, session, **kw):
+            calls.append((agent_name, user_input))
+            if agent_name == "narrator":
+                return {
+                    "narrative": "",
+                    "state_delta": {
+                        "character": {
+                            "attributes": {"luck": 9},
+                            "status_effects_add": ["轻躁"],
+                        },
+                        "world": {
+                            "current_scene": "青岚坊市",
+                            "location": "青岚坊市",
+                        },
+                        "meta": {},
+                    },
+                    "choices": [],
+                    "llm_error": "",
+                }
+            return {"approved": True, "corrected_delta": {}, "llm_error": ""}
+
+        with patch("agens_novel.engine.game_engine.run_turn_sync", side_effect=runner):
+            engine.handle_action("B")
+
+        narrator_calls = [call for call in calls if call[0] == "narrator"]
+        assert len(narrator_calls) == 1
+        assert engine.game_session.turn_count == 1
+        assert engine.game_session.local_story_active is False
+        assert "local_story" not in engine.game_session.turn_history[-1]
+        assert engine.game_session.attributes.get("luck") != 9
+        assert "轻躁" not in engine.game_session.status_effects
+        assert engine.game_session.current_scene != "青岚坊市"
+        assert engine.game_session.turn_history[-1]["narrative"]
+        assert len(engine.game_session.last_choices) == 4
+        assert narratives
+        assert not any("天道紊乱" in msg or "因果结算" in msg for msg in infos)
 
     def test_malformed_state_update_with_narrative_recovers_as_rule_settled_turn(self, monkeypatch) -> None:
         monkeypatch.setenv("AGNES_API_KEY", "sk-test-1234567890")
@@ -327,7 +416,7 @@ class TestGameEngineHandleAction:
         assert engine.game_session.turn_history[-1]["delta"]["meta"]["choice_category"] in {"稳妥", "机遇", "风险", "气运"}
         assert "local_story_fallback" not in engine.game_session.turn_history[-1]["delta"]["meta"]
         assert len(engine.game_session.last_choices) == 4
-        assert any("补齐下一步选择" in msg for msg in infos)
+        assert not any("补齐下一步选择" in msg or "因果结算" in msg for msg in infos)
 
     def test_narrative_claim_without_structured_delta_settles_rule_turn(self, monkeypatch) -> None:
         monkeypatch.setenv("AGNES_API_KEY", "sk-test-1234567890")
@@ -358,13 +447,18 @@ class TestGameEngineHandleAction:
         assert engine.game_session.inventory == []
         assert engine.game_session.techniques == []
         assert not hasattr(engine.game_session, "mp")
-        assert narratives == []
-        assert any("因果结算" in msg for msg in infos)
+        assert narratives
+        assert "清灵丹" not in narratives[-1][0]
+        assert "云水诀" not in narratives[-1][0]
+        assert not any("因果结算" in msg or "narrative/state mismatch" in msg for msg in infos)
         assert not any("状态栏为准" in msg or "state_delta" in msg for msg in infos)
         assert all("清灵丹" not in choice and "云水诀" not in choice for choice in engine.game_session.last_choices)
+        assert not any(engine._parse_breakthrough_action(choice) for choice in engine.game_session.last_choices)
         assert engine.game_session.turn_count == 1
         assert engine.game_session.turn_history[-1]["turn"] == 1
-        assert engine.game_session.turn_history[-1]["narrative"] == ""
+        assert engine.game_session.turn_history[-1]["narrative"]
+        assert "清灵丹" not in engine.game_session.turn_history[-1]["narrative"]
+        assert "云水诀" not in engine.game_session.turn_history[-1]["narrative"]
         assert "elapsed_years" in engine.game_session.turn_history[-1]["delta"]["meta"]
 
     def test_minor_narrative_item_claim_does_not_force_inventory_entry(self, monkeypatch) -> None:
@@ -479,6 +573,8 @@ class TestGameEngineHandleAction:
         engine.game_session.last_choices = ["留在山门吐纳", "询问接引弟子", "强闯禁地", "随缘听天命"]
 
         call_log: list[str] = []
+        decisions: list[tuple[str, str]] = []
+        engine.on_model_failure_choice = lambda source, reason: decisions.append((source, reason)) or "end"
 
         def selective_runner(agent_name, user_input, session, **kw):
             call_log.append(agent_name)
@@ -499,6 +595,7 @@ class TestGameEngineHandleAction:
         assert engine.game_session.turn_count == 1
         # Judge exception -> model delta is not applied; v5 rule settlement may still advance the turn.
         assert not hasattr(engine.game_session, "gold")
+        assert decisions == []
 
     def test_judge_rejects(self, monkeypatch) -> None:
         monkeypatch.setenv("AGNES_API_KEY", "sk-test-1234567890")
@@ -565,8 +662,9 @@ class TestGameEngineHandleAction:
         with patch("agens_novel.engine.game_engine.run_turn_sync", side_effect=selective_runner):
             engine.handle_action("修炼")
 
-        assert narratives == []
-        assert any("因果结算" in msg for msg in infos)
+        assert narratives
+        assert "混沌未开" not in narratives[-1][0]
+        assert not any("因果结算" in msg or "narrative/state mismatch" in msg for msg in infos)
         assert engine.game_session.current_scene == "晨雾中的青云山外门"
         assert engine.game_session.turn_count == 1
 

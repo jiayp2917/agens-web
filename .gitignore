@@ -38,6 +38,7 @@ runtime/**/*.log
 .playwright-cli/
 output/playwright/
 output/deploy/
+output/runtime/
 output/*.csv
 output/*.json
 output/*.jsonl

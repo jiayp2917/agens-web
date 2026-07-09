@@ -24,7 +24,7 @@ def test_start_flow_world_builder_exception_can_end_run(monkeypatch) -> None:
     assert game_overs == ["模型不可用导致本局结束。"]
 
 
-def test_turn_flow_judge_llm_error_can_end_run(monkeypatch) -> None:
+def test_turn_flow_judge_llm_error_rejects_delta_without_player_fallback(monkeypatch) -> None:
     monkeypatch.setenv("AGNES_API_KEY", "sk-test-1234567890")
     engine = GameEngine()
     engine.game_session.game_started = True
@@ -49,11 +49,11 @@ def test_turn_flow_judge_llm_error_can_end_run(monkeypatch) -> None:
     with patch("agens_novel.engine.game_engine.run_turn_sync", side_effect=runner):
         engine.handle_action("C")
 
-    assert decisions and decisions[0][0] == "judge_error"
-    assert "天道审判失败" in decisions[0][1]
-    assert engine.game_session.game_over is True
-    assert engine.game_session.turn_count == 0
-    assert game_overs == ["模型不可用导致本局结束。"]
+    assert decisions == []
+    assert engine.game_session.game_over is False
+    assert engine.game_session.turn_count == 1
+    assert game_overs == []
+    assert not any(item.get("name") == "越权秘宝" for item in engine.game_session.inventory)
 
 
 def test_breakthrough_flow_judge_exception_can_end_run(monkeypatch) -> None:
@@ -139,6 +139,32 @@ def test_turn_flow_uses_rule_delta_when_state_update_missing(monkeypatch) -> Non
     assert engine.game_session.age > 16
     assert engine.game_session.turn_history[-1]["delta"]["meta"]["elapsed_years"] >= 1
     assert engine.game_session.turn_history[-1]["narrative"]
+
+
+def test_json_only_terminal_delta_is_rejected_before_choices_are_cleared(monkeypatch) -> None:
+    monkeypatch.setenv("AGNES_API_KEY", "sk-test-1234567890")
+    engine = GameEngine()
+    engine.game_session.game_started = True
+    engine.game_session.last_choices = ["A", "B", "C", "D"]
+    engine.game_session.age = 16
+
+    def runner(agent_name, user_input, session, **kwargs):
+        if agent_name == "narrator":
+            return {
+                "narrative": "",
+                "state_delta": {"meta": {"game_over": True, "game_over_reason": "model-only terminal"}},
+                "choices": [],
+                "llm_error": "",
+            }
+        return {}
+
+    with patch("agens_novel.engine.game_engine.run_turn_sync", side_effect=runner):
+        engine.handle_action("A")
+
+    assert engine.game_session.game_over is False
+    assert engine.game_session.turn_count == 1
+    assert len(engine.game_session.last_choices) == 4
+    assert engine.game_session.turn_history[-1]["delta"]["meta"]["elapsed_years"] >= 1
 
 
 def test_http_404_model_failure_notice_is_actionable_and_secret_safe() -> None:

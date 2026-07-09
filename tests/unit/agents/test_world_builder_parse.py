@@ -69,3 +69,26 @@ def test_parse_world_output_accepts_dynamic_opening_fields_and_strips_internal_d
     assert "raw_prompt" not in data
     assert "api_key" not in data
     assert "state_delta" not in data
+
+
+def test_parse_world_output_accepts_plain_json_fence_without_world_data_tag() -> None:
+    payload = {
+        "world_name": "Test Realm",
+        "regions": [{"name": "Outer Gate"}],
+        "sects": [{"name": "Cloud Sect"}],
+        "current_conflicts": ["border unrest"],
+        "fate_hooks": ["wanderer"],
+        "chronicle_0_16": ["0-16: grew up near the pass"],
+        "initial_situation_16": "At sixteen, the path opens.",
+        "opening_narrative": "The chronicle starts at the pass.",
+        "choices": ["A: stay", "B: ask", "C: risk", "D: wait"],
+    }
+    text = f"Opening prose.\n```json\n{json.dumps(payload, ensure_ascii=False)}\n```"
+
+    data, world_description, opening = _parse_world_output(text)
+
+    assert world_description == "Opening prose."
+    assert opening == "The chronicle starts at the pass."
+    assert data["world_name"] == "Test Realm"
+    assert data["chronicle_0_16"] == ["0-16: grew up near the pass"]
+    assert len(data["choices"]) == 4

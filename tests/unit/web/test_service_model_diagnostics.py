@@ -64,9 +64,25 @@ def test_web_runner_fallback_prompt_uses_current_failure_state() -> None:
 
 def test_web_runner_historical_model_failure_event_does_not_keep_prompt_active() -> None:
     runner = WebRunner(session_id="session-1", user_id="user-1")
-    runner.record("model_failure", text="模型暂不可用，当前以本地故事继续。", source="turn")
+    runner.record("model_failure", text="历史模型不可用提示", source="turn")
 
     assert runner.response()["fallback_prompt"]["active"] is False
+
+
+def test_web_runner_does_not_force_streaming_by_default(monkeypatch) -> None:
+    monkeypatch.delenv("AGENS_WEB_STREAMING", raising=False)
+
+    runner = WebRunner(session_id="session-1", user_id="user-1")
+
+    assert runner.engine.on_stream_chunk is None
+
+
+def test_web_runner_streaming_can_be_enabled_by_env(monkeypatch) -> None:
+    monkeypatch.setenv("AGENS_WEB_STREAMING", "1")
+
+    runner = WebRunner(session_id="session-1", user_id="user-1")
+
+    assert runner.engine.on_stream_chunk is not None
 
 
 def test_web_runner_local_story_still_keeps_fallback_prompt_active() -> None:

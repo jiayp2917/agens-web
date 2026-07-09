@@ -40,13 +40,21 @@ export const cleanChronicleText = (text: string) =>
     .replace(/(^|\n)\s*(?:玄元历|玄历|玄历元年)\s*[元一二三四五六七八九十百千万\d]*\s*年?[，,、：:\s]*/gu, "$1")
     .trim();
 
+const normalizedChronicleText = (event: ChronicleEvent) =>
+  cleanChronicleText(eventText(event)).replace(/\s+/g, "");
+
 export function buildChronicleRecords({
   events,
   age,
   currentTurn,
   explicitChronicleYear,
 }: ChronicleBuildInput): ChronicleRecord[] {
-  const visibleEvents = events.slice(-8);
+  const visibleEvents = events.slice(-12).filter((event, index, list) => {
+    const text = normalizedChronicleText(event);
+    if (!text) return false;
+    if (index === 0) return true;
+    return text !== normalizedChronicleText(list[index - 1]);
+  }).slice(-8);
   const firstKnownStartAge = events.find((event) => recordAge(event) > 0 && recordTurn(event) <= 0);
   const chronicleStartAge = firstKnownStartAge ? recordAge(firstKnownStartAge) : 0;
   const baseAge = Math.max(1, age - Math.max(currentTurn, visibleEvents.length - 1, 0));

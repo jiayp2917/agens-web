@@ -482,6 +482,12 @@ def test_incomplete_narrator_choices_recover_without_local_story_fallback(
     assert body["turn_count"] == 1
     assert body["fallback_prompt"]["active"] is False
     assert len(body["choices"]) == 4
+    visible_texts = [
+        str(event.get("text") or "")
+        for event in body["events"]
+        if event.get("type") in {"narrative", "info", "error", "model_failure"}
+    ]
+    assert not any("补齐下一步选择" in text_value or "因果结算" in text_value for text_value in visible_texts)
     with app.state.service.db.engine.connect() as conn:
         row = conn.execute(
             text(

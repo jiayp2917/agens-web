@@ -346,6 +346,7 @@ def test_settle_turn_records_event_meta_without_forcing_authoritative_rewards() 
 
     assert delta["meta"]["event_id"]
     assert delta["meta"]["event_type"]
+    assert delta["meta"]["event_lore"]
     assert delta["meta"]["stage_goal"]
     assert delta["meta"]["allowed_delta_types"]
     assert "inventory_add" not in delta["character"]
@@ -441,10 +442,11 @@ def test_authoritative_mismatch_is_suppressed_in_turn_flow(monkeypatch) -> None:
     with patch("agens_novel.engine.game_engine.run_turn_sync", side_effect=runner):
         engine.handle_action("强行运功逼毒")
 
-    assert any("因果结算" in msg for msg in infos)
+    assert not any("因果结算" in msg or "narrative/state mismatch" in msg for msg in infos)
     assert engine.game_session.status_effects == []
     assert all("寒毒" not in text for text, _turn in narratives)
-    assert engine.game_session.turn_history[-1]["narrative"] == ""
+    assert engine.game_session.turn_history[-1]["narrative"]
+    assert "narrative/state mismatch" not in engine.game_session.turn_history[-1]["narrative"]
 
 
 def test_model_only_attribute_claim_is_suppressed_after_sanitization(monkeypatch) -> None:
@@ -477,10 +479,11 @@ def test_model_only_attribute_claim_is_suppressed_after_sanitization(monkeypatch
         with patch("agens_novel.engine.game_engine.run_turn_sync", side_effect=runner):
             engine.handle_action("参悟经义")
 
-    assert any("因果结算" in msg for msg in infos)
+    assert not any("因果结算" in msg or "narrative/state mismatch" in msg for msg in infos)
     assert engine.game_session.attributes["comprehension"] == 5
     assert all("悟性大涨" not in text for text, _turn in narratives)
-    assert engine.game_session.turn_history[-1]["narrative"] == ""
+    assert engine.game_session.turn_history[-1]["narrative"]
+    assert "narrative/state mismatch" not in engine.game_session.turn_history[-1]["narrative"]
 
 
 def test_rule_owned_attribute_claim_can_remain_visible(monkeypatch) -> None:

@@ -155,8 +155,8 @@ function buildWorldIntel(world: Record<string, any>) {
   const profile = typeof world.world_profile === "object" && world.world_profile ? world.world_profile : {};
   const rawItems = [
     world.current_scene,
-    ...(Array.isArray(profile.current_conflicts) ? profile.current_conflicts : []),
     ...(Array.isArray(world.lore_facts) ? world.lore_facts.slice(-3) : []),
+    ...(Array.isArray(profile.current_conflicts) ? profile.current_conflicts : []),
   ];
   const seen = new Set<string>();
   const items = rawItems

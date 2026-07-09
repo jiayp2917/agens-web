@@ -149,6 +149,27 @@ def test_loaded_local_story_rebuilds_choices_when_empty() -> None:
     assert any("筑基" in choice for choice in engine.game_session.last_choices)
 
 
+def test_local_story_hides_breakthrough_choices_until_realm_allows() -> None:
+    session = GameSession()
+    session.game_started = True
+    session.local_story_active = True
+    session.local_story_id = DEFAULT_STORY_ID
+    session.local_story_node_id = "preparation"
+    session.realm = "练气"
+    session.realm_stage = 3
+    session.breakthrough_flags = []
+
+    engine = GameEngine()
+    engine.game_session = GameSession.from_save_dict(session.to_save_dict())
+    engine._enter_local_story("unit-test", emit_narrative=False)
+
+    assert len(engine.game_session.last_choices) == 4
+    assert not any(
+        engine._parse_breakthrough_action(choice)
+        for choice in engine.game_session.last_choices
+    )
+
+
 def test_local_story_can_reach_first_major_breakthrough(monkeypatch, tmp_path) -> None:
     from agens_novel import paths
 
