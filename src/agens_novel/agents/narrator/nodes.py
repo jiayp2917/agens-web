@@ -14,16 +14,17 @@ from __future__ import annotations
 import json
 import logging
 import re
-from typing import Any, Callable
+from collections.abc import Callable
+from typing import Any
 
 from ... import paths
 from ...artifacts import store
+from ...engine.choices import clean_visible_text
 from ...llm.client import LLMError, call_llm, call_llm_stream
 from ...llm.types import Message
 from ...utils.timing import utcnow_iso
 from ..common import load_agent_settings, normalize_choices
 from ..common import prompt_metrics as _prompt_metrics
-from ...engine.choices import clean_visible_text
 
 log = logging.getLogger(__name__)
 
@@ -147,7 +148,9 @@ async def call_agnes_llm(state: dict[str, Any]) -> dict[str, Any]:
             narrative, state_delta, choices = _parse_narrator_output(output_text)
             recoverable_content = bool(narrative) or _has_recoverable_state_delta(state_delta)
             if recoverable_content and (state_delta is None or not narrative or not choices):
-                repaired_text, repair_result = await _repair_incomplete_output(state, output_text, narrative, state_delta)
+                repaired_text, repair_result = await _repair_incomplete_output(
+                    state, output_text, narrative, state_delta or {}
+                )
                 repair_elapsed_ms = int(repair_result.get("elapsed_ms") or 0)
                 repair_usage = dict(repair_result.get("usage") or {})
                 if repaired_text:
@@ -177,7 +180,9 @@ def save_artifact(state: dict[str, Any]) -> dict[str, Any]:
     llm_error = state.get("llm_error", "")
 
     if llm_error:
-        narrative, state_delta, choices = "", {}, []
+        narrative: str = ""
+        state_delta: dict[str, Any] | None = {}
+        choices: list[str] = []
     else:
         narrative, state_delta, choices = _parse_narrator_output(text)
     contract_diagnostics = _contract_diagnostics(text, narrative, state_delta, choices)
@@ -317,7 +322,10 @@ def _parse_choices_payload(raw: str) -> Any:
             return ast.literal_eval(raw)
         except (ValueError, SyntaxError, TypeError):
             pass
-        lines = [line.strip(" \t-0123456789.ABCabc、.：:") for line in raw.splitlines()]
+        lines = [
+            re.sub(r"^\s*[-0123456789.ABCabc、.：:]+\s*", "", line).strip()
+            for line in raw.splitlines()
+        ]
         return [line for line in lines if line]
 
 
@@ -335,38 +343,15 @@ def _parse_json_object_with_trailing_braces(raw: str) -> dict[str, Any] | None:
     text = str(raw or "").strip()
     if not text.startswith("{"):
         return None
-    depth = 0
-    in_string = False
-    escaped = False
-    for index, current in enumerate(text):
-        if in_string:
-            if escaped:
-                escaped = False
-            elif current == "\\":
-                escaped = True
-            elif current == '"':
-                in_string = False
-            continue
-        if current == '"':
-            in_string = True
-        elif current == "{":
-            depth += 1
-        elif current == "}":
-            depth -= 1
-            if depth == 0:
-                trailing = text[index + 1:].strip()
-                if trailing and set(trailing) <= {"}"}:
-                    try:
-                        data = json.loads(text[:index + 1])
-                    except (json.JSONDecodeError, ValueError):
-                        return None
-                    if isinstance(data, dict):
-                        log.info("[narrator] repaired extra trailing state_update braces")
-                        return data
-                return None
-            if depth < 0:
-                return None
-    return None
+    try:
+        data, end = json.JSONDecoder().raw_decode(text)
+    except (json.JSONDecodeError, ValueError):
+        return None
+    trailing = text[end:].strip()
+    if not trailing or set(trailing) > {"}"} or not isinstance(data, dict):
+        return None
+    log.info("[narrator] repaired extra trailing state_update braces")
+    return data
 
 
 def _parse_inline_abc_choices(text: str) -> list[str]:
@@ -391,35 +376,12 @@ def _find_embedded_json_object(text: str) -> tuple[int, int, dict[str, Any]] | N
     for start, char in enumerate(text):
         if char != "{":
             continue
-        depth = 0
-        in_string = False
-        escaped = False
-        for index in range(start, len(text)):
-            current = text[index]
-            if in_string:
-                if escaped:
-                    escaped = False
-                elif current == "\\":
-                    escaped = True
-                elif current == '"':
-                    in_string = False
-                continue
-            if current == '"':
-                in_string = True
-            elif current == "{":
-                depth += 1
-            elif current == "}":
-                depth -= 1
-                if depth == 0:
-                    raw_json = text[start:index + 1]
-                    try:
-                        data = json.loads(raw_json)
-                    except (json.JSONDecodeError, ValueError):
-                        log.warning("[narrator] embedded JSON parse failed: %s", raw_json[:200])
-                        break
-                    if isinstance(data, dict) and _is_structured_payload(data):
-                        return start, index + 1, data
-                    break
+        try:
+            data, length = json.JSONDecoder().raw_decode(text[start:])
+        except (json.JSONDecodeError, ValueError):
+            continue
+        if isinstance(data, dict) and _is_structured_payload(data):
+            return start, start + length, data
     return None
 
 

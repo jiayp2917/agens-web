@@ -258,3 +258,42 @@ def test_breakthrough_narrator_exception_keeps_rule_settlement(monkeypatch) -> N
     assert engine.game_session.turn_count == 1
     assert len(engine.game_session.last_choices) == 4
     assert engine.game_session.turn_history[-1]["delta"]["meta"]["breakthrough_result"] == "success"
+
+
+def test_failed_breakthrough_judge_cannot_add_realm_progress(monkeypatch) -> None:
+    monkeypatch.setenv("AGNES_API_KEY", "sk-test-1234567890")
+    engine = GameEngine()
+    session = engine.game_session
+    session.game_started = True
+    session.realm = "练气"
+    session.realm_stage = 9
+    session.breakthrough_flags = ["foundation_aid"]
+
+    def runner(agent_name, user_input, current_session, **kwargs):
+        if agent_name == "narrator":
+            return {
+                "narrative": "冲关未成，灵机反噬。",
+                "state_delta": {},
+                "choices": ["调息", "求助", "检查伤势", "随缘"],
+                "llm_error": "",
+            }
+        if agent_name == "judge":
+            return {
+                "approved": False,
+                "corrected_delta": {
+                    "character": {"realm": "筑基", "realm_stage": 2, "lifespan": 999},
+                    "meta": {"breakthrough_result": "failure"},
+                },
+                "judgment_note": "bad correction",
+                "llm_error": "",
+            }
+        return {}
+
+    with patch("agens_novel.engine.game_engine.run_turn_sync", side_effect=runner):
+        with patch("agens_novel.game.realm.random.random", return_value=1.0):
+            engine.attempt_breakthrough()
+
+    assert session.realm == "练气"
+    assert session.realm_stage == 9
+    assert session.lifespan != 999
+    assert session.turn_history[-1]["delta"]["meta"]["breakthrough_result"] == "failure"

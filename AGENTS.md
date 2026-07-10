@@ -150,3 +150,10 @@ cd <repo>
 - `/api/admin/settings/model` is the admin-only system-default endpoint. Do not mix it with user settings.
 - Stored API keys must be encrypted with `MODEL_CONFIG_SECRET`; PostgreSQL must not store raw keys, and responses/logs must only expose `api_key_set` and masked state.
 - Model calls must receive the resolved per-session config explicitly. Do not inject user keys into `os.environ`.
+
+## 2026-07-10 Runtime Consistency And Model URL Boundary
+
+- User-configurable model endpoints are HTTPS-only. Official hosts are built in; custom hosts must be listed in `AGENS_MODEL_BASE_URL_ALLOWLIST` and must resolve only to public IP addresses. Do not bypass `llm/url_security.py`.
+- `start` / `choice` / `action` / `save` / `load` / `end` requests require `request_id` and `expected_version`. Do not restore server-generated defaults at the API boundary.
+- Session mutations must keep the lock + PostgreSQL CAS + idempotency record + atomic persistence boundary. Do not write game_turns separately from the session snapshot.
+- Guest sessions are PostgreSQL-backed and short-lived. Login/register deletes the current guest session; do not silently migrate it into the account.

@@ -1,16 +1,13 @@
 # Production v5 Migration Checklist
 
-This checklist gates future `agens-web` production actions. The current production P0 batch is accepted, but every future production deploy, model-config change, provider change, or runtime model-call change must rerun the non-fallback gate.
+This checklist gates future `agens-web` production actions. The 2026-07-10 local branch contains schema and runtime changes that have not been deployed or production-validated.
 
-## Current Production State
+## Current Branch Target
 
-- Latest accepted production batch: server thread `019ee2ee-823e-7441-bdaa-881782da7949` deployed commit `25ad3d15`.
-- Alembic is at `20260622_0005`.
-- Required production tables exist, including `game_runs`, `game_turns`, `user_model_configs`, and `player_progress`.
-- `agens-web` container was healthy in the accepted batch.
-- Public/origin health, catalog, container health, and sensitive-marker log scan passed.
-- One-time real-account registration, login, start, choice, save, load, relogin, and cross-session restore passed with sanitized reporting only.
-- Production live-model acceptance passed for that batch: start and at least one choice were non-fallback, and choice advanced to `turn_count=1`.
+- Intended Alembic target: `20260710_0008_runtime_consistency`.
+- New runtime requirements: `MODEL_CONFIG_SECRET`, model URL allowlist policy, total model timeout, guest TTL, mutation request IDs and session versions.
+- Compose uses a one-shot migration service; application replicas no longer run Alembic at startup.
+- Historical production results are recorded in `CHANGELOG.md`; they do not accept this branch.
 
 ## Hard Boundaries
 
@@ -28,10 +25,13 @@ After each production deployment, model-config change, provider change, migratio
    - Confirm intended revision/package/commit.
    - Confirm app and PostgreSQL backup paths or restore points before mutation.
    - Confirm `MODEL_CONFIG_SECRET` present/missing without printing the value.
+   - Confirm model URL allowlist, total timeout and guest TTL present/missing without printing values.
    - Confirm production Alembic current revision and intended target.
+   - Run a read-only orphan check for `game_turns` that cannot link to a run/session; migration `0008` must fail closed rather than delete them.
 2. Deploy or mutate only within the approved scope.
    - Rebuild/recreate only approved services.
-   - Run Alembic only when the approved batch requires it.
+   - Run Alembic through the approved one-shot migration service, not each app replica.
+   - Run Compose with `--env-file deploy/production.env`; service `env_file` does not supply `${...}` interpolation for resource limits.
    - Stop at the first hard failure and report completed/not-completed items.
 3. Read-only verification.
    - Container health.
@@ -40,7 +40,8 @@ After each production deployment, model-config change, provider change, migratio
    - Required tables and Alembic revision.
    - Sensitive-marker log scan.
 4. Account-flow smoke.
-   - Register/login/start/choice/save/load/relogin/cross-session restore with sanitized facts only.
+   - Register/login, verify guest-session deletion, start/choice/save/load/relogin/cross-session restore with sanitized facts only.
+   - Verify duplicate request IDs return the original result and stale expected versions return 409.
 5. Live-model acceptance.
    - Start must be non-fallback.
    - At least one choice must be non-fallback.

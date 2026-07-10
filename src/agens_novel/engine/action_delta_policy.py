@@ -213,50 +213,53 @@ def merge_rule_delta(
         return model_delta
 
     merged = dict(model_delta)
-
-    # ── Character: rule engine authoritative for age, lifespan, and attributes.
-    rule_char = rule_delta.get("character", {})
-    if isinstance(rule_char, dict) and rule_char:
-        merged_char = dict(merged.get("character", {}))
-
-        for key in ("age", "lifespan"):
-            if key in rule_char:
-                merged_char[key] = rule_char[key]
-
-        if "attributes" in rule_char:
-            merged_char["attributes"] = rule_char["attributes"]
-        merged["character"] = merged_char
-
-    # ── World: rule engine may add lightweight chronicle/lore facts.
-    rule_world = rule_delta.get("world", {})
-    if isinstance(rule_world, dict) and rule_world:
-        merged_world = dict(merged.get("world", {}))
-        for key, value in rule_world.items():
-            if key not in merged_world:
-                merged_world[key] = value
-            elif key.endswith("_add") and isinstance(merged_world.get(key), list) and isinstance(value, list):
-                merged_world[key] = [*merged_world[key], *value]
-        merged["world"] = merged_world
-
-    # ── Meta: rule engine authoritative for game-over and turn info ──
-    rule_meta = rule_delta.get("meta", {})
-    if isinstance(rule_meta, dict) and rule_meta:
-        merged_meta = dict(merged.get("meta", {}))
-        for key in (
-            "game_over",
-            "game_over_reason",
-            "elapsed_years",
-            "choice_category",
-            "event_id",
-            "event_type",
-            "stage_goal",
-            "allowed_delta_types",
-        ):
-            if key in rule_meta:
-                merged_meta[key] = rule_meta[key]
-        merged["meta"] = merged_meta
-
+    _merge_authoritative_character(merged, rule_delta.get("character"))
+    _merge_rule_world(merged, rule_delta.get("world"))
+    _merge_authoritative_meta(merged, rule_delta.get("meta"))
     return merged
+
+
+def _merge_authoritative_character(merged: dict[str, Any], value: Any) -> None:
+    if not isinstance(value, dict) or not value:
+        return
+    current = merged.get("character")
+    character = dict(current) if isinstance(current, dict) else {}
+    for key in ("age", "lifespan", "attributes"):
+        if key in value:
+            character[key] = value[key]
+    merged["character"] = character
+
+
+def _merge_rule_world(merged: dict[str, Any], value: Any) -> None:
+    if not isinstance(value, dict) or not value:
+        return
+    current = merged.get("world")
+    world = dict(current) if isinstance(current, dict) else {}
+    for key, item in value.items():
+        if key not in world:
+            world[key] = item
+        elif key.endswith("_add") and isinstance(world[key], list) and isinstance(item, list):
+            world[key] = [*world[key], *item]
+    merged["world"] = world
+
+
+def _merge_authoritative_meta(merged: dict[str, Any], value: Any) -> None:
+    if not isinstance(value, dict) or not value:
+        return
+    current = merged.get("meta")
+    meta = dict(current) if isinstance(current, dict) else {}
+    authoritative = {
+        "game_over",
+        "game_over_reason",
+        "elapsed_years",
+        "choice_category",
+        "event_id",
+        "event_type",
+        "stage_goal",
+        "allowed_delta_types",
+    }
+    meta.update({key: item for key, item in value.items() if key in authoritative})
+    merged["meta"] = meta
 
 
 def _has_path(delta: dict[str, Any], section: str, key: str) -> bool:

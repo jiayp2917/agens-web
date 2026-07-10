@@ -25,6 +25,7 @@ class WebDatabaseProtocol(Protocol):
 
     # ── lifecycle ─────────────────────────────────────────────────────────
     def initialize(self) -> None: ...
+    def ping(self) -> bool: ...
 
     # ── users ─────────────────────────────────────────────────────────────
     def upsert_user(self, username: str) -> dict[str, Any]: ...
@@ -38,6 +39,14 @@ class WebDatabaseProtocol(Protocol):
     def get_user_by_username(self, username: str) -> dict[str, Any] | None: ...
     def get_user_by_id(self, user_id: str) -> dict[str, Any] | None: ...
     def has_admin_user(self) -> bool: ...
+    def register_user_atomic(
+        self,
+        username: str,
+        password_hash: str,
+        *,
+        invite_code_hash: str | None = None,
+        bootstrap_admin: bool = False,
+    ) -> dict[str, Any]: ...
 
     # ── invites ───────────────────────────────────────────────────────────
     def create_invite_code(
@@ -54,12 +63,42 @@ class WebDatabaseProtocol(Protocol):
     def save_session(
         self,
         session_id: str,
-        user_id: str,
+        user_id: str | None,
         title: str,
         snapshot: dict[str, Any],
         events: list[dict[str, Any]],
-    ) -> None: ...
+        *,
+        guest_token_hash: str = "",
+        expires_at: float | None = None,
+    ) -> int: ...
     def load_session(self, session_id: str) -> dict[str, Any] | None: ...
+    def load_guest_session(
+        self, session_id: str, guest_token_hash: str
+    ) -> dict[str, Any] | None: ...
+    def delete_guest_session(self, guest_token_hash: str) -> int: ...
+    def get_session_mutation(
+        self, session_id: str, request_id: str
+    ) -> dict[str, Any] | None: ...
+    def commit_session_mutation(
+        self,
+        *,
+        session_id: str,
+        user_id: str | None,
+        title: str,
+        snapshot: dict[str, Any],
+        events: list[dict[str, Any]],
+        expected_version: int,
+        request_id: str,
+        operation: str,
+        response: dict[str, Any],
+        guest_token_hash: str = "",
+        expires_at: float | None = None,
+        turn: dict[str, Any] | None = None,
+        start_run: dict[str, Any] | None = None,
+        consume_legacy_bonuses: bool = False,
+        terminal: dict[str, Any] | None = None,
+        save_slot: dict[str, Any] | None = None,
+    ) -> dict[str, Any]: ...
     def save_game_slot(
         self,
         user_id: str,

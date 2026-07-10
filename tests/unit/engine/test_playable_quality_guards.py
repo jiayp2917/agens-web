@@ -4,11 +4,17 @@ from __future__ import annotations
 
 from unittest.mock import patch
 
-from agens_novel.engine.game_engine import GameEngine
-from agens_novel.engine.action_delta_policy import merge_rule_delta, validate_narrative_delta_consistency
-from agens_novel.engine.choices import CHOICE_FALLBACK_NOTICE, clean_visible_text, fallback_choices
+from agens_novel.engine.action_delta_policy import (
+    merge_rule_delta,
+    validate_narrative_delta_consistency,
+)
+from agens_novel.engine.choices import clean_visible_text, fallback_choices
 from agens_novel.engine.event_catalog import select_chronicle_event
-from agens_novel.engine.model_fallback_policy import public_model_failure_notice
+from agens_novel.engine.game_engine import GameEngine
+from agens_novel.engine.model_fallback_policy import (
+    MODEL_CONTRACT_UNAVAILABLE_NOTICE,
+    public_model_failure_notice,
+)
 from agens_novel.engine.turn_flow import _has_visible_authoritative_delta
 from agens_novel.engine.turn_rules import classify_choice, settle_turn
 from agens_novel.session.game_session import GameSession
@@ -40,7 +46,7 @@ def test_model_contract_failure_notice_is_public_text() -> None:
         "模型已返回叙事，但未返回恰好 4 个 A/B/C/D 选项。",
     ):
         text = public_model_failure_notice(reason)
-        assert text == CHOICE_FALLBACK_NOTICE
+        assert text == MODEL_CONTRACT_UNAVAILABLE_NOTICE
         assert "模型已返回" not in text
         assert "状态更新格式不完整" not in text
         assert "缺少叙事正文" not in text
@@ -219,7 +225,7 @@ def test_json_only_narrator_output_uses_rule_chronicle_without_local_story(monke
     assert engine.game_session.last_choices == ["继续稳修", "打听消息", "探查边缘", "随缘行事"]
 
 
-def test_local_story_fallback_turn_does_not_claim_unapplied_rule_event(monkeypatch) -> None:
+def test_local_story_fallback_turn_applies_authoritative_rule_event(monkeypatch) -> None:
     monkeypatch.setenv("AGNES_API_KEY", "test-model-key")
     engine = GameEngine()
     engine.game_session.game_started = True
@@ -246,9 +252,9 @@ def test_local_story_fallback_turn_does_not_claim_unapplied_rule_event(monkeypat
 
     last_turn = engine.game_session.turn_history[-1]
     assert last_turn["delta"]["meta"]["local_story_fallback"] is True
-    assert last_turn["delta"]["meta"]["elapsed_years"] == 0
-    assert "药圃账册" not in last_turn["narrative"]
-    assert "3年间" not in last_turn["narrative"]
+    assert last_turn["delta"]["meta"]["elapsed_years"] == 3
+    assert "药圃账册" in last_turn["narrative"]
+    assert "3年间" in last_turn["narrative"]
 
 
 def test_duplicate_model_narrative_is_replaced_by_rule_chronicle(monkeypatch) -> None:

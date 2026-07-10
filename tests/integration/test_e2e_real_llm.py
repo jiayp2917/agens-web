@@ -12,10 +12,14 @@ import pathlib
 import pytest
 
 # Skip the entire module if no real API key is available.
-pytestmark = pytest.mark.skipif(
-    not os.environ.get("AGNES_API_KEY"),
-    reason="AGNES_API_KEY not set — skipping real LLM integration tests",
-)
+pytestmark = [
+    pytest.mark.integration,
+    pytest.mark.llm_real,
+    pytest.mark.skipif(
+        not os.environ.get("AGNES_API_KEY"),
+        reason="AGNES_API_KEY not set — skipping real LLM integration tests",
+    ),
+]
 
 
 @pytest.fixture()
@@ -35,8 +39,7 @@ def test_e2e_new_game_action_save_load(cleanup_saves):
     - Game state transitions work end-to-end
     - Save/load preserves state correctly
 
-    If the LLM returns unparseable output (e.g. bad key, rate limit),
-    the test is marked xfail rather than failing the suite.
+    Provider or contract failures fail this explicit live-model gate.
     """
     from agens_novel.engine.game_engine import GameEngine
     from agens_novel.session.game_session import GameSession
@@ -54,17 +57,13 @@ def test_e2e_new_game_action_save_load(cleanup_saves):
     # Step 1: Create a new game via World Builder.
     engine.new_game("名叫测试的少年修士，想成为剑仙")
 
-    if not engine.game_session.game_started:
-        # LLM returned empty/unparseable data — likely bad key or API issue.
-        pytest.xfail(
-            f"World Builder returned no data. Errors={errors}, Events={events}"
-        )
-
+    assert engine.game_session.game_started, (
+        f"World Builder returned no data. Errors={errors}, Events={events}"
+    )
     assert engine.game_session.char_name, "Character name is empty"
     assert engine.game_session.lifespan > 0, f"Lifespan is {engine.game_session.lifespan}"
 
     char_name = engine.game_session.char_name
-    saved_lifespan = engine.game_session.lifespan
 
     # Step 2: Perform an action via Narrator + Judge.
     engine.handle_action("静坐吐纳，感受天地灵气")

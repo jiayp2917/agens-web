@@ -5,8 +5,8 @@ from __future__ import annotations
 import json
 from typing import Any
 
-from alembic import op
 import sqlalchemy as sa
+from alembic import op
 
 revision = "20260704_0006"
 down_revision = "20260622_0005"

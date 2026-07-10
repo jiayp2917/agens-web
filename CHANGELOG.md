@@ -1,5 +1,47 @@
 # Changelog
 
+## 2026-07-10
+
+### Security and runtime consistency
+
+- Added shared model Base URL validation for stored user/system settings and every outbound request: HTTPS-only official/allowlisted hosts, no credentials/query/fragment/IP literals, all A/AAAA records must be public, redirects and environment proxies disabled.
+- Reworked the HTTPX client to async requests with retryable 408/429/5xx handling, total timeout and cancellation support.
+- Added Alembic `20260710_0008_runtime_consistency`: versioned PostgreSQL sessions, persistent guest sessions with token hash/TTL, active/completed runs, turn foreign keys/request uniqueness, session mutation idempotency, and reward/achievement/legacy uniqueness.
+- Made start/choice/action/save/load/end require `request_id` and `expected_version`; added per-session locking, database CAS, duplicate-result replay and HTTP 409 stale-version handling.
+- Made session snapshot, turn log, run lifecycle, terminal rewards/progress, save slots and legacy consumption atomic. Invite registration and first-admin creation are also transaction-safe.
+
+### Gameplay correctness
+
+- Judge now accepts only JSON booleans for `approved`.
+- Protected breakthrough success/failure, realm, stage, lifespan and finale fields from Judge overrides; finale and death turns are recorded before terminal callbacks.
+- Restored valid choices when a proposed terminal delta is rejected.
+- Removed the dead fallback “continue” action; local-story fallback now advances through A/B/C/D and calls the normal turn settlement.
+- Enforced A/B/C/D semantics by button slot and persisted `GameSession.error` through save/load.
+
+### Architecture and quality
+
+- Split FastAPI auth/catalog/session/settings routers and centralized dependencies/error mapping.
+- Reduced all current Ruff and C901 findings to zero and fixed all mypy errors under `src` and `web/backend` without blanket ignores.
+- Split `GameSession.apply_delta`, turn/world/SSE parsing, settlement, achievement and fate scoring by real responsibilities.
+- Added Vitest/RTL coverage for auth guest cleanup, fallback banner, double-click blocking and modal focus trapping.
+- Added `uv.lock`; CI now enforces compileall, Ruff, mypy, PostgreSQL Web tests, non-live full pytest, frontend tests/build/audit and Docker config/build.
+- Hardened Docker/Compose with a one-shot migration service, locked dependencies, non-root runtime, read-only root, capability drop, no-new-privileges, tmpfs and resource limits.
+
+### Cleanup and docs
+
+- Removed `deploy/docker-entrypoint.sh`, unsafe `scripts/run_with_key.ps1` and unreferenced `ascension_gate.png`.
+- Moved the ignored 723-file `output/` tree (599,683,815 bytes) to `D:\chat\agens-web-artifacts\20260710` and generated `MANIFEST.sha256` plus `INVENTORY.txt`.
+- Rewrote current-facing README/runtime/architecture/security/audit/backlog docs to remove stale LangGraph, in-memory guest, dead fallback-button, old schema and old production-baseline claims.
+
+### Verification
+
+- Empty PostgreSQL database upgraded from base to `20260710_0008`; 18 application tables confirmed, then the temporary database was removed.
+- `compileall` passed; Ruff normal and C901 checks passed with zero findings; mypy passed for 74 source files.
+- PostgreSQL Web suite: 92 passed. Full suite excluding `llm_real`: 594 passed.
+- Frontend: Vitest 5 passed, production build passed, npm audit reported 0 vulnerabilities.
+- Isolated real Chrome fallback smoke passed registration, guest cleanup, user model save/clear with empty Key input after save, double-click suppression, fallback A/B/C/D progression, save/load, terminal reason, and 375/2K overflow checks.
+- Docker build/Compose runtime validation was not run because the local machine has no Docker CLI. Production deployment and production validation were intentionally not run.
+
 ## 2026-07-09
 
 ### Changed - content-audit lessons sync

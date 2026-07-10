@@ -80,87 +80,27 @@ def evaluate_achievements(session: Any) -> list[dict[str, str]]:
     discovered = getattr(session, "discovered_locations", []) or []
     age = max(0, getattr(session, "age", 0))
 
-    achievements: list[dict[str, str]] = []
-
-    # Realm milestone achievements.
     try:
         realm_index = REALM_ORDER.index(realm)
     except ValueError:
         realm_index = 0
-    if realm_index >= 1:
-        achievements.append({
-            "key": "foundation_established",
-            "name": "筑基已成",
-            "description": "本局角色突破至筑基境界。",
-        })
-    if realm_index >= 2:
-        achievements.append({
-            "key": "golden_core_forged",
-            "name": "金丹凝成",
-            "description": "本局角色凝出金丹。",
-        })
-    if realm_index >= 4:
-        achievements.append({
-            "key": "spirit_transformation",
-            "name": "化神有成",
-            "description": "本局角色踏入化神境界。",
-        })
-
-    # Stage milestone (练气层数).
-    if realm == "练气" and realm_stage >= 6:
-        achievements.append({
-            "key": "qi_refinement_persistent",
-            "name": "练气持恒",
-            "description": "本局角色修至练气六层以上。",
-        })
-
-    # Longevity.
-    if age >= 80 and realm == "练气":
-        achievements.append({
-            "key": "long_lived_mortal",
-            "name": "凡人长寿",
-            "description": "本局角色以练气之身撑过八十载寿元。",
-        })
-
-    # Tenure (turn count).
-    if turn_count >= 30:
-        achievements.append({
-            "key": "veteran_wanderer",
-            "name": "历练已久",
-            "description": "本局角色撑过三十回合红尘。",
-        })
-
-    # Inventory / techniques.
-    if isinstance(inventory, list) and len(inventory) >= 5:
-        achievements.append({
-            "key": "well_stocked",
-            "name": "行囊丰盈",
-            "description": "本局收集到五种以上物品。",
-        })
-    if isinstance(techniques, list) and len(techniques) >= 3:
-        achievements.append({
-            "key": "polymath_cultivator",
-            "name": "博学多艺",
-            "description": "本局修习三种以上功法。",
-        })
-
-    # Exploration.
-    if isinstance(discovered, list) and len(discovered) >= 5:
-        achievements.append({
-            "key": "explorer",
-            "name": "足迹遍布",
-            "description": "本局发现五处以上地点。",
-        })
-
-    # Ascension finale.
-    if getattr(session, "finale", False):
-        achievements.append({
-            "key": "ascended",
-            "name": "飞升证道",
-            "description": "本局角色破界飞升，修真之路圆满。",
-        })
-
-    return achievements
+    rules = (
+        (realm_index >= 1, "foundation_established", "筑基已成", "本局角色突破至筑基境界。"),
+        (realm_index >= 2, "golden_core_forged", "金丹凝成", "本局角色凝出金丹。"),
+        (realm_index >= 4, "spirit_transformation", "化神有成", "本局角色踏入化神境界。"),
+        (realm == "练气" and realm_stage >= 6, "qi_refinement_persistent", "练气持恒", "本局角色修至练气六层以上。"),
+        (age >= 80 and realm == "练气", "long_lived_mortal", "凡人长寿", "本局角色以练气之身撑过八十载寿元。"),
+        (turn_count >= 30, "veteran_wanderer", "历练已久", "本局角色撑过三十回合红尘。"),
+        (isinstance(inventory, list) and len(inventory) >= 5, "well_stocked", "行囊丰盈", "本局收集到五种以上物品。"),
+        (isinstance(techniques, list) and len(techniques) >= 3, "polymath_cultivator", "博学多艺", "本局修习三种以上功法。"),
+        (isinstance(discovered, list) and len(discovered) >= 5, "explorer", "足迹遍布", "本局发现五处以上地点。"),
+        (bool(getattr(session, "finale", False)), "ascended", "飞升证道", "本局角色破界飞升，修真之路圆满。"),
+    )
+    return [
+        {"key": key, "name": name, "description": description}
+        for matched, key, name, description in rules
+        if matched
+    ]
 
 
 # ── Reward evaluation ───────────────────────────────────────────────────────
@@ -284,23 +224,13 @@ def apply_legacy_bonuses(
         btype = str(bonus.get("bonus_type") or "")
         bvalue = bonus.get("bonus_value")
         if btype == "attribute_points":
-            # Add points distributed proportionally to the lowest stat.
-            pool = int(bvalue or 0)
-            distributed = 0
-            while distributed < pool and attrs:
-                lowest_key = min(attrs, key=lambda k: attrs.get(k, 0))
-                if attrs[lowest_key] >= ATTRIBUTE_MAX:
-                    break
-                attrs[lowest_key] = clamp_attribute_value(attrs[lowest_key] + 1)
-                distributed += 1
+            _distribute_attribute_points(attrs, int(bvalue or 0))
         elif btype == "extra_lifespan":
             extra_lifespan += int(bvalue or 0)
         elif btype == "legacy_talent":
-            if bvalue and str(bvalue) not in legacy_talents:
-                legacy_talents.append(str(bvalue))
+            _append_unique_bonus(legacy_talents, bvalue)
         elif btype == "opening_title":
-            if bvalue and str(bvalue) not in opening_titles:
-                opening_titles.append(str(bvalue))
+            _append_unique_bonus(opening_titles, bvalue)
 
     out["attributes"] = attrs
     out["legacy_talents"] = legacy_talents
@@ -308,6 +238,22 @@ def apply_legacy_bonuses(
     if extra_lifespan:
         out["extra_lifespan"] = extra_lifespan
     return out
+
+
+def _distribute_attribute_points(attrs: dict[str, int], pool: int) -> None:
+    distributed = 0
+    while distributed < pool and attrs:
+        lowest_key = min(attrs, key=lambda key: attrs.get(key, 0))
+        if attrs[lowest_key] >= ATTRIBUTE_MAX:
+            break
+        attrs[lowest_key] = clamp_attribute_value(attrs[lowest_key] + 1)
+        distributed += 1
+
+
+def _append_unique_bonus(target: list[Any], value: Any) -> None:
+    normalized = str(value) if value else ""
+    if normalized and normalized not in target:
+        target.append(normalized)
 
 
 # ── Run summary ─────────────────────────────────────────────────────────────

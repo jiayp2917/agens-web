@@ -2,7 +2,21 @@
 
 from __future__ import annotations
 
-from agens_novel.llm.client import _resolve_config, _resolve_request_options, mask_key
+import time
+
+import httpx
+import pytest
+
+from agens_novel.llm.client import (
+    LLMBadRequest,
+    _execute_with_retry,
+    _handle_non_stream_response,
+    _resolve_config,
+    _resolve_request_options,
+    _resolve_total_timeout,
+    mask_key,
+)
+from agens_novel.llm.types import LLMResponse
 
 
 class TestResolveConfig:
@@ -107,3 +121,57 @@ class TestResolveRequestOptions:
 
         assert timeout == 30.0
         assert retries == 2
+
+    def test_total_timeout_uses_environment(self, monkeypatch):
+        monkeypatch.setenv("AGNES_TOTAL_TIMEOUT_SECONDS", "17")
+        assert _resolve_total_timeout(None) == 17.0
+
+
+def test_retryable_response_is_not_collapsed_to_bad_request() -> None:
+    response = httpx.Response(
+        429,
+        request=httpx.Request("POST", "https://api.deepseek.com/v1/chat/completions"),
+    )
+
+    with pytest.raises(httpx.HTTPStatusError):
+        _handle_non_stream_response(response, time.monotonic())
+
+
+def test_non_retryable_400_remains_bad_request() -> None:
+    response = httpx.Response(
+        400,
+        text="invalid",
+        request=httpx.Request("POST", "https://api.deepseek.com/v1/chat/completions"),
+    )
+
+    with pytest.raises(LLMBadRequest):
+        _handle_non_stream_response(response, time.monotonic())
+
+
+def test_redirect_response_is_rejected_without_following_location() -> None:
+    response = httpx.Response(
+        307,
+        headers={"location": "http://127.0.0.1/internal"},
+        json={"choices": [{"message": {"content": "must not be accepted"}}]},
+        request=httpx.Request("POST", "https://api.deepseek.com/v1/chat/completions"),
+    )
+
+    with pytest.raises(LLMBadRequest, match="redirect refused"):
+        _handle_non_stream_response(response, time.monotonic())
+
+
+@pytest.mark.asyncio
+async def test_total_timeout_cancels_retry_operation() -> None:
+    async def never_finishes() -> LLMResponse:
+        import asyncio
+
+        await asyncio.sleep(5)
+        raise AssertionError("unreachable")
+
+    with pytest.raises(Exception, match="total timeout exceeded"):
+        await _execute_with_retry(
+            never_finishes,
+            max_retries=0,
+            total_timeout_seconds=0.01,
+            label="test_call",
+        )

@@ -13,7 +13,6 @@ from __future__ import annotations
 import os
 from collections.abc import Iterator
 from pathlib import Path
-from typing import Any
 from unittest.mock import AsyncMock, patch
 
 import pytest
@@ -47,6 +46,7 @@ def _pg_test_url() -> str | None:
 def temp_project_root(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> Iterator[Path]:
     """Isolate runtime/ under tmp_path while keeping the real project root for config."""
     import importlib
+
     from agens_novel import paths as p_mod
     importlib.reload(p_mod)
     runtime_root = tmp_path / "runtime"

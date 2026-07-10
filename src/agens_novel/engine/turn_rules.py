@@ -118,77 +118,17 @@ def settle_turn(
     category = classify_choice(choice_text)
     difficulty = (difficulty_config or {}).get("name") or session.difficulty or "普通"
 
-    # ── Compute elapsed years ──
     realm = session.realm or "练气"
-    year_min, year_max = _REALM_YEAR_RANGES.get(realm, (1, 3))
-    risk_mult = _RISK_YEAR_MULTIPLIER.get(category, 1.0)
-
-    # Adjust for difficulty
-    diff_mult = 1.0
-    if difficulty == "简单":
-        diff_mult = 0.7
-    elif difficulty == "困难":
-        diff_mult = 1.3
-
-    base_years = random.randint(year_min, year_max)
-    elapsed_years = max(1, int(base_years * risk_mult * diff_mult))
-
-    # ── Compute attribute changes ──
-    impact = _CHOICE_ATTRIBUTE_IMPACT.get(category, _CHOICE_ATTRIBUTE_IMPACT["机遇"])
-    char_delta: dict[str, Any] = {}
-
-    # Attribute fluctuations
-    attr_delta: dict[str, int] = {}
-    for attr, (lo, hi) in impact.get("attributes", {}).items():
-        change = random.randint(lo, hi)
-        if change != 0:
-            attr_delta[attr] = change
-    if attr_delta:
-        # Use explicit int values (not "+N" strings) for apply_delta compatibility
-        char_delta["attributes"] = attr_delta
-
-    # Age. ``lifespan`` is the current realm cap, not a decreasing counter.
+    elapsed_years = _elapsed_years(realm, category, difficulty)
+    char_delta = _attribute_changes(category)
     char_delta["age"] = f"+{elapsed_years}"
-
-    # ── Check for lifespan death ──
     new_age = session.age + elapsed_years
-    lifespan_cap = int(getattr(session, "lifespan", 0) or get_realm_lifespan(realm))
-    remaining_lifespan = lifespan_cap - new_age
-    game_over = False
-    game_over_reason = ""
-
-    if remaining_lifespan <= 0 and session.realm != "飞升":
-        game_over = True
-        game_over_reason = "寿元耗尽，坐化而去。"
-    else:
-        pressure = _low_realm_age_pressure(session, new_age)
-        if pressure:
-            if pressure.get("lifespan_delta"):
-                lifespan_delta = int(pressure["lifespan_delta"])
-                char_delta["lifespan"] = f"{lifespan_delta:+d}"
-                lifespan_cap = max(1, lifespan_cap + lifespan_delta)
-                remaining_lifespan = lifespan_cap - new_age
-            if pressure.get("status_effect"):
-                char_delta["status_effects_add"] = [pressure["status_effect"]]
-            if remaining_lifespan <= 0:
-                game_over = True
-                game_over_reason = str(pressure.get("game_over_reason") or "寿元耗尽，坐化而去。")
-
+    remaining_lifespan, game_over_reason = _settle_lifespan(session, realm, new_age, char_delta)
+    game_over = bool(game_over_reason)
     event = select_chronicle_event(session, category, new_age)
-
-    # ── Build turn summary for model prompt ──
-    turn_summary = (
-        f"本回合类别：{category}；"
-        f"时间流逝：{elapsed_years}年；"
-        f"角色年龄：{session.age}→{new_age}岁；"
-        f"剩余寿元：{max(0, remaining_lifespan)}年。"
+    turn_summary = _turn_summary(
+        session.age, new_age, category, elapsed_years, remaining_lifespan, event, game_over_reason
     )
-    event_text = event_summary(event)
-    if event_text:
-        turn_summary += f" {event_text}"
-    if game_over:
-        turn_summary += f" 结局：{game_over_reason}"
-
     world_delta = _stage_feedback_delta(session, event)
 
     # ── Build state_delta ──
@@ -212,6 +152,63 @@ def settle_turn(
         state_delta["meta"]["game_over_reason"] = game_over_reason
 
     return state_delta
+
+
+def _elapsed_years(realm: str, category: str, difficulty: str) -> int:
+    year_min, year_max = _REALM_YEAR_RANGES.get(realm, (1, 3))
+    difficulty_multiplier = {"简单": 0.7, "困难": 1.3}.get(difficulty, 1.0)
+    base_years = random.randint(year_min, year_max)
+    return max(1, int(base_years * _RISK_YEAR_MULTIPLIER.get(category, 1.0) * difficulty_multiplier))
+
+
+def _attribute_changes(category: str) -> dict[str, Any]:
+    impact = _CHOICE_ATTRIBUTE_IMPACT.get(category, _CHOICE_ATTRIBUTE_IMPACT["机遇"])
+    changes = {
+        attr: change
+        for attr, (low, high) in impact.get("attributes", {}).items()
+        if (change := random.randint(low, high)) != 0
+    }
+    return {"attributes": changes} if changes else {}
+
+
+def _settle_lifespan(
+    session: Any, realm: str, new_age: int, char_delta: dict[str, Any]
+) -> tuple[int, str]:
+    lifespan_cap = int(getattr(session, "lifespan", 0) or get_realm_lifespan(realm))
+    remaining = lifespan_cap - new_age
+    if remaining <= 0 and session.realm != "飞升":
+        return remaining, "寿元耗尽，坐化而去。"
+    pressure = _low_realm_age_pressure(session, new_age)
+    if not pressure:
+        return remaining, ""
+    lifespan_delta = int(pressure.get("lifespan_delta") or 0)
+    if lifespan_delta:
+        char_delta["lifespan"] = f"{lifespan_delta:+d}"
+        remaining = max(1, lifespan_cap + lifespan_delta) - new_age
+    if pressure.get("status_effect"):
+        char_delta["status_effects_add"] = [pressure["status_effect"]]
+    reason = str(pressure.get("game_over_reason") or "寿元耗尽，坐化而去。")
+    return (remaining, reason) if remaining <= 0 else (remaining, "")
+
+
+def _turn_summary(
+    start_age: int,
+    end_age: int,
+    category: str,
+    elapsed_years: int,
+    remaining_lifespan: int,
+    event: dict[str, Any],
+    game_over_reason: str,
+) -> str:
+    summary = (
+        f"本回合类别：{category}；时间流逝：{elapsed_years}年；"
+        f"角色年龄：{start_age}→{end_age}岁；剩余寿元：{max(0, remaining_lifespan)}年。"
+    )
+    if event_text := event_summary(event):
+        summary += f" {event_text}"
+    if game_over_reason:
+        summary += f" 结局：{game_over_reason}"
+    return summary
 
 
 def get_realm_lifespan(realm: str) -> int:

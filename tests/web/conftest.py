@@ -8,16 +8,70 @@ isolation; each test's ``create_app()`` then re-seeds catalogs on startup.
 
 from __future__ import annotations
 
+import re
+import uuid
 from collections.abc import Iterator
+from typing import Any
 
 import pytest
+from fastapi.testclient import TestClient
 from sqlalchemy import create_engine, text
+
+_MUTATION_PATH = re.compile(
+    r"^/api/sessions/(?P<session_id>[^/]+)/(?:start|choice|action|save|load|end)$"
+)
+_ORIGINAL_POST = TestClient.post
+
+
+def _response_version(response: Any) -> int | None:
+    if getattr(response, "status_code", 500) >= 400:
+        return None
+    try:
+        body = response.json()
+    except (TypeError, ValueError):
+        return None
+    if not isinstance(body, dict):
+        return None
+    session = body.get("session")
+    source = session if isinstance(session, dict) else body
+    version = source.get("version")
+    return int(version) if isinstance(version, int) else None
+
+
+def _mutation_aware_post(self: TestClient, url: Any, *args: Any, **kwargs: Any):
+    match = _MUTATION_PATH.match(str(url))
+    if match:
+        payload = dict(kwargs.get("json") or {})
+        versions = getattr(self, "_agens_session_versions", {})
+        session_id = match.group("session_id")
+        payload.setdefault("request_id", str(uuid.uuid4()))
+        payload.setdefault("expected_version", int(versions.get(session_id, 0)))
+        kwargs["json"] = payload
+    response = _ORIGINAL_POST(self, url, *args, **kwargs)
+    version = _response_version(response)
+    if version is not None:
+        body = response.json()
+        session = body.get("session") if isinstance(body, dict) else None
+        source = session if isinstance(session, dict) else body
+        session_id = source.get("session_id") if isinstance(source, dict) else None
+        if session_id:
+            versions = dict(getattr(self, "_agens_session_versions", {}))
+            versions[str(session_id)] = version
+            self._agens_session_versions = versions
+    return response
+
+
+@pytest.fixture(autouse=True)
+def _mutation_metadata_client(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Keep API tests concise while production mutation fields stay required."""
+    monkeypatch.setattr(TestClient, "post", _mutation_aware_post)
 
 # All application tables (alembic_version is intentionally excluded).
 _TEST_TABLES = (
     "users",
     "invite_codes",
     "sessions",
+    "session_mutations",
     "saves",
     "model_config",
     "user_model_configs",

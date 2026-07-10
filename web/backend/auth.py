@@ -9,24 +9,27 @@ import os
 import secrets
 import time
 from dataclasses import dataclass
-from typing import Any
-
-try:
-    from argon2 import PasswordHasher
-    from argon2.exceptions import VerifyMismatchError
-except Exception:  # pragma: no cover - exercised only when optional dependency is absent
-    PasswordHasher = None  # type: ignore[assignment]
-
-    class VerifyMismatchError(Exception):
-        pass
+from typing import Any, Protocol
 
 from .database_common import public_user
+
+try:
+    from argon2 import PasswordHasher as Argon2PasswordHasher
+except Exception:  # pragma: no cover - exercised only when optional dependency is absent
+    Argon2PasswordHasher = None  # type: ignore[assignment,misc]
+
+
+class _PasswordHasher(Protocol):
+    def hash(self, password: str) -> str: ...
+    def verify(self, password_hash: str, password: str) -> bool: ...
 
 SESSION_COOKIE_NAME = "agens_session"
 GUEST_COOKIE_NAME = "agens_guest"
 SESSION_MAX_AGE_SECONDS = 60 * 60 * 24 * 14
 DEV_SESSION_SECRET = "dev-session-secret-change-me"
-_PASSWORD_HASHER = PasswordHasher() if PasswordHasher is not None else None
+_PASSWORD_HASHER: _PasswordHasher | None = (
+    Argon2PasswordHasher() if Argon2PasswordHasher is not None else None
+)
 
 
 @dataclass(frozen=True)
@@ -57,7 +60,7 @@ def verify_password(password_hash: str | None, password: str) -> bool:
         return False
     try:
         return _PASSWORD_HASHER.verify(password_hash, password)
-    except VerifyMismatchError:
+    except Exception:
         return False
 
 
@@ -70,7 +73,7 @@ def create_session_token(user_id: str, secret: str | None = None) -> str:
     issued_at = str(int(time.time()))
     payload = f"{user_id}.{issued_at}"
     sig = _sign(payload, secret)
-    raw = f"{payload}.{sig}".encode("utf-8")
+    raw = f"{payload}.{sig}".encode()
     return base64.urlsafe_b64encode(raw).decode("ascii")
 
 
@@ -102,6 +105,11 @@ def cookie_kwargs() -> dict[str, Any]:
 
 def create_guest_token() -> str:
     return secrets.token_urlsafe(32)
+
+
+def hash_guest_token(token: str, secret: str | None = None) -> str:
+    """Return a keyed digest so raw guest credentials never reach PostgreSQL."""
+    return _sign(f"guest:{token}", secret)
 
 
 def public_auth_response(user: dict[str, Any]) -> dict[str, Any]:

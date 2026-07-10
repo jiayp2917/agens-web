@@ -2,6 +2,7 @@ import { useEffect, useState } from "react";
 import { CheckCircle2 } from "lucide-react";
 import {
   api,
+  ApiError,
   ModelSettings,
   SaveRow,
   Session,
@@ -9,6 +10,7 @@ import {
   type AuthMode,
   type DialogMode,
   type View,
+  mutationBody,
 } from "../lib/api";
 import { ModelSettingsPanel } from "./ModelSettingsPanel";
 import { SaveSlotsPanel } from "./SaveSlotsPanel";
@@ -57,12 +59,16 @@ export function SettingsSaveDialog({
     try {
       const payload = await api<{ save: SaveRow; session: Session }>(`/api/sessions/${session.session_id}/save`, {
         method: "POST",
-        body: JSON.stringify({ name }),
+        body: JSON.stringify(mutationBody(session, { name })),
       });
       setSession(payload.session);
       await refreshSaves();
       setMessage(`已保存：${payload.save.name}`);
     } catch (err) {
+      if (err instanceof ApiError && err.status === 409) {
+        const refreshed = await api<Session>(`/api/sessions/${session.session_id}`);
+        setSession(refreshed);
+      }
       setMessage(err instanceof Error ? err.message : "保存失败。");
     }
   };
@@ -71,12 +77,16 @@ export function SettingsSaveDialog({
     try {
       const loaded = await api<Session>(`/api/sessions/${session.session_id}/load`, {
         method: "POST",
-        body: JSON.stringify({ name }),
+        body: JSON.stringify(mutationBody(session, { name })),
       });
       setSession(loaded);
       setView(loaded.game_over || loaded.finale ? "ending" : "game");
       onClose();
     } catch (err) {
+      if (err instanceof ApiError && err.status === 409) {
+        const refreshed = await api<Session>(`/api/sessions/${session.session_id}`);
+        setSession(refreshed);
+      }
       setMessage(err instanceof Error ? err.message : "读档失败。");
     }
   };

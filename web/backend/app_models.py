@@ -20,7 +20,12 @@ class CreateSessionRequest(BaseModel):
     title: str = "新局"
 
 
-class StartRequest(BaseModel):
+class MutationRequest(BaseModel):
+    request_id: str = Field(min_length=8, max_length=128)
+    expected_version: int = Field(ge=0)
+
+
+class StartRequest(MutationRequest):
     char_name: str = ""
     talent: str = ""
     spirit_root: str = ""
@@ -30,20 +35,20 @@ class StartRequest(BaseModel):
     randomize_attributes: bool = False
 
 
-class ChoiceRequest(BaseModel):
+class ChoiceRequest(MutationRequest):
     choice: str = ""
     choice_index: int | None = None
 
 
-class ActionRequest(BaseModel):
+class ActionRequest(MutationRequest):
     action: str
 
 
-class SaveRequest(BaseModel):
+class SaveRequest(MutationRequest):
     name: str = "slot_1"
 
 
-class EndSessionRequest(BaseModel):
+class EndSessionRequest(MutationRequest):
     reason: str = "玩家结束本局。"
 
 

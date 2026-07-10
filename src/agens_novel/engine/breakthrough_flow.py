@@ -64,24 +64,31 @@ class BreakthroughFlow:
             choices = result.get("choices")
             state_delta = self._merge_breakthrough_delta(state_delta, breakthrough_delta, bt_result)
 
-        state_delta = self._judge_breakthrough_delta(action_text, narrative, state_delta)
-        if state_delta is None:
+        judged_delta = self._judge_breakthrough_delta(action_text, narrative, state_delta)
+        if judged_delta is None:
             return
+        state_delta = judged_delta
+        state_delta = self._merge_breakthrough_delta(
+            state_delta,
+            breakthrough_delta,
+            bt_result,
+        )
 
         session.turn_count += 1
         self._ensure_breakthrough_meta(state_delta, bt_result)
         session.apply_delta(state_delta)
         narrative = self._coerce_breakthrough_narrative(narrative, bt_result)
-        if engine.set_choices(
-            choices,
-            source="breakthrough_narrator",
-            fallback_notice=False,
-            require_choice=False,
-            reason="突破叙事未返回可用选项。",
-        ) is False and session.game_over:
-            return
-
         is_finale = session.finale
+        if session.game_over:
+            session.last_choices = []
+        else:
+            engine.set_choices(
+                choices,
+                source="breakthrough_narrator",
+                fallback_notice=False,
+                require_choice=False,
+                reason="突破叙事未返回可用选项。",
+            )
         self._record_breakthrough_turn(action_text, narrative, state_delta)
         self._emit_breakthrough_result(bt_result, narrative, is_finale)
 
@@ -115,18 +122,31 @@ class BreakthroughFlow:
     ) -> dict[str, Any]:
         if bt_result not in {"success", "failure"}:
             return state_delta
-        if "character" not in state_delta:
-            state_delta["character"] = {}
-        if bt_result == "failure" and isinstance(state_delta.get("character"), dict):
-            state_delta["character"].pop("realm", None)
-            state_delta["character"].pop("realm_stage", None)
-        state_delta["character"].update(breakthrough_delta.get("character", {}))
-        state_delta.setdefault("meta", {}).update(breakthrough_delta.get("meta", {}))
-        return state_delta
+        merged = dict(state_delta)
+        character = dict(merged.get("character") or {})
+        for key in ("realm", "realm_stage", "lifespan"):
+            character.pop(key, None)
+        character.update(breakthrough_delta.get("character", {}))
+        merged["character"] = character
+
+        meta = dict(merged.get("meta") or {})
+        for key in (
+            "breakthrough_result",
+            "new_realm",
+            "status_effect_add",
+            "finale",
+            "game_over",
+            "game_over_reason",
+        ):
+            meta.pop(key, None)
+        meta.update(breakthrough_delta.get("meta", {}))
+        merged["meta"] = meta
+        return merged
 
     def _breakthrough_action_text(self, breakthrough_delta: dict[str, Any]) -> str:
         session = self.engine.game_session
-        meta = breakthrough_delta.get("meta") if isinstance(breakthrough_delta.get("meta"), dict) else {}
+        meta_value = breakthrough_delta.get("meta")
+        meta: dict[str, Any] = meta_value if isinstance(meta_value, dict) else {}
         result = str(meta.get("breakthrough_result") or "")
         target = str(meta.get("new_realm") or self.engine.realm_system.get_next_realm(session.realm) or "更高境界")
         if result == "success":
@@ -239,19 +259,30 @@ class BreakthroughFlow:
 
 
 def _conflicts_with_breakthrough_result(corrected: dict[str, Any], original: dict[str, Any]) -> bool:
-    original_meta = original.get("meta") if isinstance(original.get("meta"), dict) else {}
-    corrected_meta = corrected.get("meta") if isinstance(corrected.get("meta"), dict) else {}
+    original_meta_value = original.get("meta")
+    corrected_meta_value = corrected.get("meta")
+    original_meta: dict[str, Any] = original_meta_value if isinstance(original_meta_value, dict) else {}
+    corrected_meta: dict[str, Any] = (
+        corrected_meta_value if isinstance(corrected_meta_value, dict) else {}
+    )
     original_result = original_meta.get("breakthrough_result")
     if not original_result:
         return False
     if corrected_meta.get("breakthrough_result") != original_result:
         return True
 
-    original_character = original.get("character") if isinstance(original.get("character"), dict) else {}
-    corrected_character = corrected.get("character") if isinstance(corrected.get("character"), dict) else {}
-    if not isinstance(corrected_character, dict):
-        return False
+    original_character_value = original.get("character")
+    corrected_character_value = corrected.get("character")
+    original_character: dict[str, Any] = (
+        original_character_value if isinstance(original_character_value, dict) else {}
+    )
+    corrected_character: dict[str, Any] = (
+        corrected_character_value if isinstance(corrected_character_value, dict) else {}
+    )
     for key in ("realm", "realm_stage", "lifespan"):
-        if key in original_character and corrected_character.get(key) != original_character.get(key):
+        if key in corrected_character and corrected_character.get(key) != original_character.get(key):
+            return True
+    for key in ("finale", "game_over", "game_over_reason", "new_realm"):
+        if key in corrected_meta and corrected_meta.get(key) != original_meta.get(key):
             return True
     return False

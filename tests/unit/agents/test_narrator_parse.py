@@ -4,7 +4,11 @@ from __future__ import annotations
 
 import asyncio
 
-from agens_novel.agents.narrator.nodes import _contract_diagnostics, _parse_narrator_output, build_prompt
+from agens_novel.agents.narrator.nodes import (
+    _contract_diagnostics,
+    _parse_narrator_output,
+    build_prompt,
+)
 from agens_novel.engine.model_result import ModelResultKind, classify_narrator_result
 
 

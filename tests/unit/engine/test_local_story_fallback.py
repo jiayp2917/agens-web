@@ -51,6 +51,7 @@ def test_local_story_choice_advances_node_and_delta(monkeypatch, tmp_path) -> No
     engine._enter_local_story("unit-test", emit_narrative=False)
 
     before_willpower = engine.game_session.attributes["willpower"]
+    before_age = engine.game_session.age
     first_choice = engine.game_session.last_choices[0]
     engine.handle_action(first_choice)
 
@@ -58,6 +59,8 @@ def test_local_story_choice_advances_node_and_delta(monkeypatch, tmp_path) -> No
     assert len(engine.game_session.last_choices) == 4
     assert any(quest.get("name") == "外门入门试炼" for quest in engine.game_session.active_quests)
     assert engine.game_session.attributes["willpower"] > before_willpower
+    assert engine.game_session.age > before_age
+    assert engine.game_session.turn_history[-1]["delta"]["meta"]["elapsed_years"] >= 1
 
     # Regression: local-story turns must also feed chat_history (narrator prompt
     # context). Before record_turn, handle_local_story_action wrote only
@@ -101,6 +104,8 @@ def test_local_story_save_round_trip_preserves_node() -> None:
     session.local_story_id = DEFAULT_STORY_ID
     session.local_story_node_id = "outer_gate"
     session.last_choices = ["按执事吩咐完成入门杂役，熟悉宗门规矩"]
+    session.game_over = True
+    session.error = "寿元耗尽，坐化而去。"
 
     loaded = GameSession.from_save_dict(session.to_save_dict())
 
@@ -108,6 +113,7 @@ def test_local_story_save_round_trip_preserves_node() -> None:
     assert loaded.local_story_id == DEFAULT_STORY_ID
     assert loaded.local_story_node_id == "outer_gate"
     assert loaded.last_choices == session.last_choices
+    assert loaded.error == "寿元耗尽，坐化而去。"
 
 
 def test_loaded_local_story_can_continue_from_saved_node(monkeypatch, tmp_path) -> None:

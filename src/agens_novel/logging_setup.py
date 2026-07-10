@@ -10,8 +10,7 @@ from __future__ import annotations
 import logging
 import re
 import sys
-from typing import IO
-from typing import Final
+from typing import IO, Final
 
 # Matches: sk-XXXX (any non-whitespace chars, common API key shape)
 # Tuned to be conservative — match tokens that are at least 8 chars long.

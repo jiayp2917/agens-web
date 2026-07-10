@@ -40,37 +40,9 @@ def fate_profile(profile: dict[str, Any]) -> list[dict[str, Any]]:
         "边地劫数": 0,
     }
 
-    if attrs["root_bone"] >= 7 or attrs["physique"] >= 7 or "雷" in root:
-        scores["苦修"] += 3
-    if attrs["comprehension"] >= 7 or "剑心" in talent or "道胎" in talent:
-        scores["苦修"] += 2
-        scores["天命"] += 1
-    if attrs["luck"] >= 7 or "天命" in talent:
-        scores["天命"] += 4
-    if attrs["luck"] <= 3:
-        scores["灾厄"] += 3
-        scores["边地劫数"] += 2
-    if attrs["willpower"] >= 7:
-        scores["苦修"] += 1
-        scores["边地劫数"] += 1
-    if attrs["soul"] >= 7:
-        scores["神魂异兆"] += 4
-        scores["天命"] += 1
-    if "隐世" in family or "仙族" in family or "世家" in family:
-        scores["贵胄"] += 4
-        scores["宗门"] += 2
-    if "宗门" in family:
-        scores["宗门"] += 4
-    if "农家" in family or "寒门" in family:
-        scores["散修"] += 3
-    if difficulty == "困难":
-        scores["灾厄"] += 3
-        scores["边地劫数"] += 3
-    elif difficulty == "简单":
-        scores["宗门"] += 1
-    if random_mode:
-        scores["天命"] += 1
-        scores["灾厄"] += 1
+    _score_attribute_fates(scores, attrs, talent, root)
+    _score_background_fates(scores, family)
+    _score_difficulty_fates(scores, difficulty, random_mode)
 
     if max(scores.values()) <= 0:
         scores["散修"] = 1
@@ -90,6 +62,48 @@ def fate_profile(profile: dict[str, Any]) -> list[dict[str, Any]]:
             "narrative_keywords": spec["narrative_keywords"],
         })
     return profiles[:4]
+
+
+def _score_attribute_fates(
+    scores: dict[str, int], attrs: dict[str, int], talent: str, root: str
+) -> None:
+    if attrs["root_bone"] >= 7 or attrs["physique"] >= 7 or "雷" in root:
+        scores["苦修"] += 3
+    if attrs["comprehension"] >= 7 or "剑心" in talent or "道胎" in talent:
+        scores["苦修"] += 2
+        scores["天命"] += 1
+    if attrs["luck"] >= 7 or "天命" in talent:
+        scores["天命"] += 4
+    if attrs["luck"] <= 3:
+        scores["灾厄"] += 3
+        scores["边地劫数"] += 2
+    if attrs["willpower"] >= 7:
+        scores["苦修"] += 1
+        scores["边地劫数"] += 1
+    if attrs["soul"] >= 7:
+        scores["神魂异兆"] += 4
+        scores["天命"] += 1
+
+
+def _score_background_fates(scores: dict[str, int], family: str) -> None:
+    if any(marker in family for marker in ("隐世", "仙族", "世家")):
+        scores["贵胄"] += 4
+        scores["宗门"] += 2
+    if "宗门" in family:
+        scores["宗门"] += 4
+    if "农家" in family or "寒门" in family:
+        scores["散修"] += 3
+
+
+def _score_difficulty_fates(scores: dict[str, int], difficulty: str, random_mode: bool) -> None:
+    if difficulty == "困难":
+        scores["灾厄"] += 3
+        scores["边地劫数"] += 3
+    elif difficulty == "简单":
+        scores["宗门"] += 1
+    if random_mode:
+        scores["天命"] += 1
+        scores["灾厄"] += 1
 
 
 def fate_tendency(profile: dict[str, Any]) -> list[str]:

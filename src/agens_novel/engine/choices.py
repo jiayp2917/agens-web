@@ -10,7 +10,7 @@ from typing import Any
 from ..session.game_session import GameSession
 
 CHOICE_LABELS = ("A", "B", "C", "D")
-CHOICE_FALLBACK_NOTICE = "本回合记录暂未续上，请稍后重试或按当前局面继续。"
+CHOICE_FALLBACK_NOTICE = "模型暂不可用，已切换本地故事，请直接选择下方选项继续。"
 # D 语义: "气运" - 随缘/天命，强绑定 luck 属性。UI 固定为第 4 按钮。
 
 _LETTER_PREFIX_RE = re.compile(
@@ -120,7 +120,7 @@ def fallback_choices(session: GameSession) -> list[str]:
     options = (
         (
             f"【稳妥】在{location}稳住气息，观察灵气与地势变化",
-            f"【机遇】寻找附近修士交谈，打听当前机缘与风险",
+            "【机遇】寻找附近修士交谈，打听当前机缘与风险",
             "【风险】外出历练，寻找护持与关键线索",
         ),
         (
@@ -225,28 +225,35 @@ def _strip_embedded_structured_objects(text: str) -> str:
 
 def _balanced_json_object_end(text: str, start: int) -> int:
     depth = 0
-    in_string = False
-    escaped = False
     quote = ""
+    escaped = False
     for index in range(start, len(text)):
-        current = text[index]
-        if in_string:
-            if escaped:
-                escaped = False
-            elif current == "\\":
-                escaped = True
-            elif current == quote:
-                in_string = False
-            continue
-        if current in {"'", '"'}:
-            in_string = True
-            quote = current
-        elif current == "{":
-            depth += 1
-        elif current == "}":
-            depth -= 1
-            if depth == 0:
-                return index + 1
-            if depth < 0:
-                return -1
+        depth, quote, escaped = _advance_object_scan(text[index], depth, quote, escaped)
+        if depth == 0:
+            return index + 1
+        if depth < 0:
+            return -1
     return -1
+
+
+def _advance_object_scan(
+    current: str,
+    depth: int,
+    quote: str,
+    escaped: bool,
+) -> tuple[int, str, bool]:
+    if quote:
+        if escaped:
+            return depth, quote, False
+        if current == "\\":
+            return depth, quote, True
+        if current == quote:
+            return depth, "", False
+        return depth, quote, False
+    if current in {"'", '"'}:
+        return depth, current, False
+    if current == "{":
+        return depth + 1, quote, False
+    if current == "}":
+        return depth - 1, quote, False
+    return depth, quote, False

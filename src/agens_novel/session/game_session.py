@@ -65,7 +65,7 @@ class GameSession:
     attributes: dict[str, int] = field(default_factory=lambda: dict(DEFAULT_ATTRIBUTES))
     breakthrough_flags: list[str] = field(default_factory=list)
     techniques: list[dict] = field(default_factory=list)
-    inventory: list[dict] = field(default_factory=list)
+    inventory: list[Any] = field(default_factory=list)
     status_effects: list[str] = field(default_factory=list)
     lifespan: int = 100
     equipment_slots: dict[str, Any] = field(default_factory=lambda: dict(DEFAULT_EQUIPMENT_SLOTS))
@@ -171,211 +171,9 @@ class GameSession:
         if not isinstance(delta, dict):
             log.warning("apply_delta: expected dict, got %s", type(delta).__name__)
             return
-
-        char_delta = _delta_section(delta, "character")
-        for key in ("lifespan", "realm_stage", "age"):
-            if key in char_delta:
-                val = char_delta[key]
-                current = getattr(self, key)
-                if isinstance(val, bool):
-                    pass  # bool is a subclass of int; skip it
-                elif isinstance(val, str) and val.startswith("+"):
-                    try:
-                        new_val = current + int(val[1:])
-                    except ValueError:
-                        log.warning("apply_delta: cannot parse +%r as int, ignoring", val[1:])
-                        continue
-                    setattr(self, key, new_val)
-                elif isinstance(val, str) and val.startswith("-"):
-                    try:
-                        new_val = current - int(val[1:])
-                    except ValueError:
-                        log.warning("apply_delta: cannot parse -%r as int, ignoring", val[1:])
-                        continue
-                    setattr(self, key, new_val)
-                elif isinstance(val, int):
-                    setattr(self, key, val)
-                # else: silently drop unknown types (None, float, str, list, dict)
-
-        # Floor guards: prevent invalid age/lifespan values.
-        self.lifespan = max(1, self.lifespan)
-        self.age = max(1, self.age)
-
-        if "realm" in char_delta:
-            val = char_delta["realm"]
-            # Whitelist: only allow known realm names.
-            if isinstance(val, str) and val in REALM_ORDER:
-                self.realm = val
-            else:
-                log.warning(
-                    "apply_delta: ignored invalid realm %r (expected one of %s)",
-                    val, REALM_ORDER,
-                )
-        if "name" in char_delta:
-            self.char_name = char_delta["name"]
-        if "spirit_root" in char_delta:
-            self.spirit_root = char_delta["spirit_root"]
-        if "spirit_root_grade" in char_delta:
-            self.spirit_root_grade = char_delta["spirit_root_grade"]
-        if "talent" in char_delta and isinstance(char_delta["talent"], str):
-            self.talent = char_delta["talent"]
-        if "family_background" in char_delta and isinstance(char_delta["family_background"], str):
-            self.family_background = char_delta["family_background"]
-        if "difficulty" in char_delta and isinstance(char_delta["difficulty"], str):
-            self.difficulty = char_delta["difficulty"]
-        if "attributes" in char_delta and isinstance(char_delta["attributes"], dict):
-            merged = {
-                key: normalize_attribute_value(self.attributes.get(key, default))
-                for key, default in DEFAULT_ATTRIBUTES.items()
-            }
-            for key, value in char_delta["attributes"].items():
-                if key not in DEFAULT_ATTRIBUTES:
-                    log.warning("apply_delta: ignored unknown attribute %r", key)
-                    continue
-                if isinstance(key, str) and isinstance(value, int) and not isinstance(value, bool):
-                    current = normalize_attribute_value(merged.get(key, ATTRIBUTE_DEFAULT))
-                    merged[key] = clamp_attribute_value(current + value)
-                elif isinstance(key, str) and isinstance(value, str) and value[:1] in {"+", "-"}:
-                    try:
-                        current = normalize_attribute_value(merged.get(key, ATTRIBUTE_DEFAULT))
-                        merged[key] = clamp_attribute_value(current + int(value))
-                    except ValueError:
-                        log.warning("apply_delta: cannot parse attribute delta %r, ignoring", value)
-            self.attributes = merged
-        if "techniques_add" in char_delta:
-            add = char_delta["techniques_add"]
-            if add is None:
-                log.warning("apply_delta: techniques_add is None, ignoring")
-            elif isinstance(add, list):
-                self.techniques.extend(add)
-            else:
-                log.warning("apply_delta: techniques_add must be list, got %s", type(add).__name__)
-        if "techniques" in char_delta and "techniques_add" not in char_delta:
-            # Full replace only if no _add variant.
-            if isinstance(char_delta["techniques"], list):
-                self.techniques = char_delta["techniques"]
-        if "inventory_add" in char_delta:
-            add = char_delta["inventory_add"]
-            if add is None:
-                log.warning("apply_delta: inventory_add is None, ignoring")
-            elif isinstance(add, list):
-                self.inventory.extend(add)
-            elif isinstance(add, str):
-                # Defensive: a single string (e.g. LLM typo) becomes a single item, not 5 chars.
-                self.inventory.append(add)
-            else:
-                log.warning("apply_delta: inventory_add must be list, got %s", type(add).__name__)
-        if "inventory" in char_delta and "inventory_add" not in char_delta:
-            if isinstance(char_delta["inventory"], list):
-                self.inventory = char_delta["inventory"]
-        if "breakthrough_flags" in char_delta:
-            val = char_delta["breakthrough_flags"]
-            if isinstance(val, list):
-                self.breakthrough_flags = _dedupe_strings(val)
-            else:
-                log.warning("apply_delta: breakthrough_flags must be list, got %s", type(val).__name__)
-        if "breakthrough_flags_add" in char_delta:
-            add = char_delta["breakthrough_flags_add"]
-            if add is None:
-                log.warning("apply_delta: breakthrough_flags_add is None, ignoring")
-            elif isinstance(add, list):
-                for flag in _dedupe_strings(add):
-                    if flag not in self.breakthrough_flags:
-                        self.breakthrough_flags.append(flag)
-            elif isinstance(add, str):
-                if add and add not in self.breakthrough_flags:
-                    self.breakthrough_flags.append(add)
-            else:
-                log.warning("apply_delta: breakthrough_flags_add must be list or str, got %s", type(add).__name__)
-        if "status_effects" in char_delta:
-            val = char_delta["status_effects"]
-            if isinstance(val, list):
-                self.status_effects = val
-            else:
-                log.warning("apply_delta: status_effects must be list, got %s", type(val).__name__)
-        if "status_effects_add" in char_delta:
-            add = char_delta["status_effects_add"]
-            if add is None:
-                log.warning("apply_delta: status_effects_add is None, ignoring")
-            elif isinstance(add, list):
-                for eff in add:
-                    if eff not in self.status_effects:
-                        self.status_effects.append(eff)
-            else:
-                log.warning("apply_delta: status_effects_add must be list")
-        if "equipment_slots" in char_delta:
-            eq_delta = char_delta["equipment_slots"]
-            if isinstance(eq_delta, dict):
-                # Whitelist: only accept known equipment slot keys.
-                _VALID_SLOTS = {"weapon", "armor", "accessory"}
-                for k, v in eq_delta.items():
-                    if k in _VALID_SLOTS:
-                        self.equipment_slots[k] = v
-                    else:
-                        log.warning("apply_delta: unknown equipment slot %r, ignoring", k)
-
-        world_delta = _delta_section(delta, "world")
-        for key in ("location", "region", "current_scene", "day_count"):
-            if key in world_delta:
-                setattr(self, key, world_delta[key])
-        if "npcs_present" in world_delta:
-            val = world_delta["npcs_present"]
-            if isinstance(val, list):
-                self.npcs_present = val
-        if "npcs_present_add" in world_delta:
-            add = world_delta["npcs_present_add"]
-            if add is None:
-                log.warning("apply_delta: npcs_present_add is None, ignoring")
-            elif isinstance(add, list):
-                self.npcs_present.extend(add)
-            else:
-                log.warning("apply_delta: npcs_present_add must be list")
-        if "active_quests" in world_delta:
-            val = world_delta["active_quests"]
-            if isinstance(val, list):
-                self.active_quests = val
-        if "active_quests_add" in world_delta:
-            add = world_delta["active_quests_add"]
-            if add is None:
-                log.warning("apply_delta: active_quests_add is None, ignoring")
-            elif isinstance(add, list):
-                self.active_quests.extend(add)
-            else:
-                log.warning("apply_delta: active_quests_add must be list")
-        if "lore_add" in world_delta:
-            add = world_delta["lore_add"]
-            if add is None:
-                log.warning("apply_delta: lore_add is None, ignoring")
-            elif isinstance(add, list):
-                self.lore_facts.extend(add)
-            else:
-                log.warning("apply_delta: lore_add must be list")
-        if "discovered_add" in world_delta:
-            add = world_delta["discovered_add"]
-            if add is None:
-                log.warning("apply_delta: discovered_add is None, ignoring")
-            elif isinstance(add, list):
-                self.discovered_locations.extend(add)
-            else:
-                log.warning("apply_delta: discovered_add must be list")
-
-        meta = _delta_section(delta, "meta")
-        if "game_over" in meta:
-            val = meta["game_over"]
-            # Only accept bool (or truthy/falsy that maps cleanly).
-            if isinstance(val, bool):
-                self.game_over = val
-            else:
-                log.warning("apply_delta: game_over must be bool, got %r", val)
-        if "game_over_reason" in meta:
-            self.error = meta["game_over_reason"]
-        if "status_effect_add" in meta:
-            eff = meta["status_effect_add"]
-            if eff and eff not in self.status_effects:
-                self.status_effects.append(eff)
-        # Finale flag (v0.4): marks "飞升" (ascension) — used by UI for special ending screen.
-        if "finale" in meta and meta["finale"]:
-            self.finale = True
+        _apply_character_delta(self, _delta_section(delta, "character"))
+        _apply_world_delta(self, _delta_section(delta, "world"))
+        _apply_meta_delta(self, _delta_section(delta, "meta"))
 
     # ─────────────────────────────────────────────────────────────────────────
     # Turn recording
@@ -460,6 +258,7 @@ class GameSession:
                 "node_id": self.local_story_node_id,
             },
             "finale": self.finale,
+            "error": self.error,
         }
 
     @classmethod
@@ -517,17 +316,236 @@ class GameSession:
             session.local_story_id = str(local_story.get("story_id") or "")
             session.local_story_node_id = str(local_story.get("node_id") or "")
         session.finale = data.get("finale", False)
+        session.error = str(data.get("error") or "")
         return session
 
     def reset(self) -> None:
         """Clear all state for a new game."""
-        self.__init__()
+        self.__dict__.update(GameSession().__dict__)
 
     @property
     def remaining_lifespan(self) -> int:
         """Remaining years before natural death under the current realm cap."""
         cap = int(self.lifespan or REALM_LIFESPANS.get(self.realm, 100))
         return max(0, cap - int(self.age or 0))
+
+
+def _apply_character_delta(session: GameSession, delta: dict[str, Any]) -> None:
+    _apply_character_numbers(session, delta)
+    _apply_character_identity(session, delta)
+    _apply_character_attributes(session, delta)
+    _apply_techniques(session, delta)
+    _apply_inventory(session, delta)
+    _apply_breakthrough_flags(session, delta)
+    _apply_status_effects(session, delta)
+    _apply_equipment(session, delta)
+
+
+def _apply_character_numbers(session: GameSession, delta: dict[str, Any]) -> None:
+    for key in ("lifespan", "realm_stage", "age"):
+        if key not in delta:
+            continue
+        parsed = _parse_character_number(delta[key], int(getattr(session, key)), key)
+        if parsed is not None:
+            setattr(session, key, parsed)
+    session.lifespan = max(1, session.lifespan)
+    session.age = max(1, session.age)
+
+
+def _parse_character_number(value: Any, current: int, key: str) -> int | None:
+    if isinstance(value, bool):
+        return None
+    if isinstance(value, int):
+        return value
+    if not isinstance(value, str) or value[:1] not in {"+", "-"}:
+        return None
+    try:
+        return current + int(value)
+    except ValueError:
+        log.warning("apply_delta: cannot parse %s=%r as int, ignoring", key, value)
+        return None
+
+
+def _apply_character_identity(session: GameSession, delta: dict[str, Any]) -> None:
+    if "realm" in delta:
+        realm = delta["realm"]
+        if isinstance(realm, str) and realm in REALM_ORDER:
+            session.realm = realm
+        else:
+            log.warning("apply_delta: ignored invalid realm %r (expected one of %s)", realm, REALM_ORDER)
+    direct_fields = {
+        "name": "char_name",
+        "spirit_root": "spirit_root",
+        "spirit_root_grade": "spirit_root_grade",
+    }
+    for key, attribute in direct_fields.items():
+        if key in delta:
+            setattr(session, attribute, delta[key])
+    string_fields = ("talent", "family_background", "difficulty")
+    for key in string_fields:
+        if isinstance(delta.get(key), str):
+            setattr(session, key, delta[key])
+
+
+def _apply_character_attributes(session: GameSession, delta: dict[str, Any]) -> None:
+    incoming = delta.get("attributes")
+    if not isinstance(incoming, dict):
+        return
+    merged = {
+        key: normalize_attribute_value(session.attributes.get(key, default))
+        for key, default in DEFAULT_ATTRIBUTES.items()
+    }
+    for key, value in incoming.items():
+        if key not in DEFAULT_ATTRIBUTES:
+            log.warning("apply_delta: ignored unknown attribute %r", key)
+            continue
+        change = _parse_attribute_change(value)
+        if change is not None:
+            current = normalize_attribute_value(merged.get(key, ATTRIBUTE_DEFAULT))
+            merged[key] = clamp_attribute_value(current + change)
+    session.attributes = merged
+
+
+def _parse_attribute_change(value: Any) -> int | None:
+    if isinstance(value, int) and not isinstance(value, bool):
+        return value
+    if isinstance(value, str) and value[:1] in {"+", "-"}:
+        try:
+            return int(value)
+        except ValueError:
+            log.warning("apply_delta: cannot parse attribute delta %r, ignoring", value)
+    return None
+
+
+def _apply_techniques(session: GameSession, delta: dict[str, Any]) -> None:
+    if "techniques_add" in delta:
+        additions = delta["techniques_add"]
+        if additions is None:
+            log.warning("apply_delta: techniques_add is None, ignoring")
+        elif isinstance(additions, list):
+            session.techniques.extend(additions)
+        else:
+            log.warning("apply_delta: techniques_add must be list, got %s", type(additions).__name__)
+    elif isinstance(delta.get("techniques"), list):
+        session.techniques = delta["techniques"]
+
+
+def _apply_inventory(session: GameSession, delta: dict[str, Any]) -> None:
+    if "inventory_add" in delta:
+        additions = delta["inventory_add"]
+        if additions is None:
+            log.warning("apply_delta: inventory_add is None, ignoring")
+        elif isinstance(additions, list):
+            session.inventory.extend(additions)
+        elif isinstance(additions, str):
+            session.inventory.append(additions)
+        else:
+            log.warning("apply_delta: inventory_add must be list, got %s", type(additions).__name__)
+    elif isinstance(delta.get("inventory"), list):
+        session.inventory = delta["inventory"]
+
+
+def _apply_breakthrough_flags(session: GameSession, delta: dict[str, Any]) -> None:
+    if "breakthrough_flags" in delta:
+        flags = delta["breakthrough_flags"]
+        if isinstance(flags, list):
+            session.breakthrough_flags = _dedupe_strings(flags)
+        else:
+            log.warning("apply_delta: breakthrough_flags must be list, got %s", type(flags).__name__)
+    if "breakthrough_flags_add" not in delta:
+        return
+    additions = delta["breakthrough_flags_add"]
+    if additions is None:
+        log.warning("apply_delta: breakthrough_flags_add is None, ignoring")
+        return
+    flags_to_add = _dedupe_strings(additions) if isinstance(additions, list) else [additions]
+    if not isinstance(additions, (list, str)):
+        log.warning(
+            "apply_delta: breakthrough_flags_add must be list or str, got %s",
+            type(additions).__name__,
+        )
+        return
+    for flag in flags_to_add:
+        if flag and flag not in session.breakthrough_flags:
+            session.breakthrough_flags.append(flag)
+
+
+def _apply_status_effects(session: GameSession, delta: dict[str, Any]) -> None:
+    if "status_effects" in delta:
+        effects = delta["status_effects"]
+        if isinstance(effects, list):
+            session.status_effects = effects
+        else:
+            log.warning("apply_delta: status_effects must be list, got %s", type(effects).__name__)
+    if "status_effects_add" not in delta:
+        return
+    additions = delta["status_effects_add"]
+    if additions is None:
+        log.warning("apply_delta: status_effects_add is None, ignoring")
+    elif isinstance(additions, list):
+        for effect in additions:
+            if effect not in session.status_effects:
+                session.status_effects.append(effect)
+    else:
+        log.warning("apply_delta: status_effects_add must be list")
+
+
+def _apply_equipment(session: GameSession, delta: dict[str, Any]) -> None:
+    equipment = delta.get("equipment_slots")
+    if not isinstance(equipment, dict):
+        return
+    valid_slots = {"weapon", "armor", "accessory"}
+    for key, value in equipment.items():
+        if key in valid_slots:
+            session.equipment_slots[key] = value
+        else:
+            log.warning("apply_delta: unknown equipment slot %r, ignoring", key)
+
+
+def _apply_world_delta(session: GameSession, delta: dict[str, Any]) -> None:
+    for key in ("location", "region", "current_scene", "day_count"):
+        if key in delta:
+            setattr(session, key, delta[key])
+    _replace_list(session, delta, "npcs_present", "npcs_present")
+    _extend_list(session, delta, "npcs_present_add", "npcs_present")
+    _replace_list(session, delta, "active_quests", "active_quests")
+    _extend_list(session, delta, "active_quests_add", "active_quests")
+    _extend_list(session, delta, "lore_add", "lore_facts")
+    _extend_list(session, delta, "discovered_add", "discovered_locations")
+
+
+def _replace_list(session: GameSession, delta: dict[str, Any], key: str, attribute: str) -> None:
+    value = delta.get(key)
+    if isinstance(value, list):
+        setattr(session, attribute, value)
+
+
+def _extend_list(session: GameSession, delta: dict[str, Any], key: str, attribute: str) -> None:
+    if key not in delta:
+        return
+    value = delta[key]
+    if value is None:
+        log.warning("apply_delta: %s is None, ignoring", key)
+    elif isinstance(value, list):
+        getattr(session, attribute).extend(value)
+    else:
+        log.warning("apply_delta: %s must be list", key)
+
+
+def _apply_meta_delta(session: GameSession, meta: dict[str, Any]) -> None:
+    if "game_over" in meta:
+        value = meta["game_over"]
+        if isinstance(value, bool):
+            session.game_over = value
+        else:
+            log.warning("apply_delta: game_over must be bool, got %r", value)
+    if "game_over_reason" in meta:
+        session.error = meta["game_over_reason"]
+    effect = meta.get("status_effect_add")
+    if effect and effect not in session.status_effects:
+        session.status_effects.append(effect)
+    if meta.get("finale"):
+        session.finale = True
 
 
 def _dedupe_strings(values: list[Any]) -> list[str]:

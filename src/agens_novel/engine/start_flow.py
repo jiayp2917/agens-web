@@ -10,8 +10,8 @@ if TYPE_CHECKING:
     from .game_engine import GameEngine
 
 from ..game.constants import (
-    ATTRIBUTE_MAX,
     ATTRIBUTE_KEYS,
+    ATTRIBUTE_MAX,
     ATTRIBUTE_MIN,
     ATTRIBUTE_TOTAL,
     DIFFICULTY_OPTIONS,
@@ -161,14 +161,6 @@ class StartFlow:
         engine = self.engine
         fallback = build_world_fallback(profile)
 
-        def decline_or_continue(source: str, reason: str) -> dict[str, Any]:
-            """On model failure: return fallback if the user accepts, else end the run."""
-            if engine.confirm_local_fallback(source, reason):
-                engine.emit("on_info", engine.fallback_notice_for(reason))
-                return fallback
-            engine.end_model_failure_run(reason)
-            return {}
-
         use_model = (
             os.environ.get(START_MODEL_WORLD_ENV) == "1"
             or os.environ.get(START_MODEL_OPENING_ENV) == "1"
@@ -177,7 +169,9 @@ class StartFlow:
             return fallback
 
         if not _engine_has_api_key(engine):
-            return decline_or_continue("profile_opening_missing_key", "AGNES_API_KEY 未设置。")
+            return self._decline_or_continue(
+                fallback, "profile_opening_missing_key", "AGNES_API_KEY 未设置。"
+            )
 
         prompt = build_world_prompt(profile)
         try:
@@ -200,7 +194,9 @@ class StartFlow:
                 result = retry_result
         except Exception:
             log.exception("profile opening world_builder error")
-            return decline_or_continue("profile_opening_exception", "开场推演失败（详见日志）。")
+            return self._decline_or_continue(
+                fallback, "profile_opening_exception", "开场推演失败（详见日志）。"
+            )
 
         world_status = classify_world_builder_result(result)
         parsed = parse_world_response(result) if world_status.kind != ModelResultKind.REQUEST_FAILED else {}
@@ -219,13 +215,23 @@ class StartFlow:
         )
         if world_status.kind == ModelResultKind.REQUEST_FAILED:
             reason = world_status.reason.replace("世界生成失败", "开场推演失败", 1)
-            return decline_or_continue("profile_opening_error", reason)
+            return self._decline_or_continue(fallback, "profile_opening_error", reason)
 
         if world_status.kind == ModelResultKind.INCOMPLETE_OUTPUT or not parsed:
             reason = getattr(world_status, "reason", "") or "开场推演数据不可用。"
-            return decline_or_continue("profile_opening_empty", reason)
+            return self._decline_or_continue(fallback, "profile_opening_empty", reason)
 
         return merge_opening_payload(fallback, parsed)
+
+    def _decline_or_continue(
+        self, fallback: dict[str, Any], source: str, reason: str
+    ) -> dict[str, Any]:
+        engine = self.engine
+        if engine.confirm_local_fallback(source, reason):
+            engine.emit("on_info", engine.fallback_notice_for(reason))
+            return fallback
+        engine.end_model_failure_run(reason)
+        return {}
 
     def _emit_opening(self, opening: str) -> None:
         engine = self.engine
@@ -358,32 +364,37 @@ def normalize_profile_attributes(
 
     total = sum(attrs.values())
     if allow_legacy_bonus:
-        if total < PROFILE_ATTRIBUTE_TOTAL:
-            raise ValueError("attributes must not drop below the 30 point pool")
-        for value in attrs.values():
-            if value < PROFILE_RANDOM_ATTRIBUTE_MIN or value > PROFILE_REWARDED_ATTRIBUTE_MAX:
-                raise ValueError("legacy-bonus attributes must stay between 0 and 10")
+        _validate_legacy_attributes(attrs, total)
         return attrs
 
     if total != PROFILE_ATTRIBUTE_TOTAL:
         raise ValueError("manual attributes must sum to 30")
 
     if random_mode:
-        random_range_ok = all(
-            PROFILE_RANDOM_ATTRIBUTE_MIN <= value <= PROFILE_RANDOM_ATTRIBUTE_MAX
-            for value in attrs.values()
+        _validate_attribute_range(
+            attrs, PROFILE_RANDOM_ATTRIBUTE_MIN, PROFILE_RANDOM_ATTRIBUTE_MAX, "random"
         )
-        if not random_range_ok:
-            raise ValueError("random attributes must stay between 0 and 10")
         return attrs
 
-    manual_range_ok = all(
-        PROFILE_MANUAL_ATTRIBUTE_MIN <= value <= PROFILE_MANUAL_ATTRIBUTE_MAX
-        for value in attrs.values()
+    _validate_attribute_range(
+        attrs, PROFILE_MANUAL_ATTRIBUTE_MIN, PROFILE_MANUAL_ATTRIBUTE_MAX, "manual"
     )
-    if not manual_range_ok:
-        raise ValueError("manual attributes must stay between 2 and 8")
     return attrs
+
+
+def _validate_legacy_attributes(attrs: dict[str, int], total: int) -> None:
+    if total < PROFILE_ATTRIBUTE_TOTAL:
+        raise ValueError("attributes must not drop below the 30 point pool")
+    _validate_attribute_range(
+        attrs, PROFILE_RANDOM_ATTRIBUTE_MIN, PROFILE_REWARDED_ATTRIBUTE_MAX, "legacy-bonus"
+    )
+
+
+def _validate_attribute_range(
+    attrs: dict[str, int], minimum: int, maximum: int, label: str
+) -> None:
+    if not all(minimum <= value <= maximum for value in attrs.values()):
+        raise ValueError(f"{label} attributes must stay between {minimum} and {maximum}")
 
 
 def apply_profile_world_profile(session: GameSession, world_profile: dict[str, Any]) -> None:
@@ -400,7 +411,8 @@ def apply_profile_opening_payload(session: GameSession, payload: dict[str, Any])
     if not isinstance(payload, dict):
         return
 
-    world = payload.get("world") if isinstance(payload.get("world"), dict) else {}
+    world_value = payload.get("world")
+    world: dict[str, Any] = world_value if isinstance(world_value, dict) else {}
     world_profile = {
         key: value
         for key, value in payload.items()
@@ -426,10 +438,9 @@ def apply_profile_opening_payload(session: GameSession, payload: dict[str, Any])
     session.day_count = int(world.get("day_count") or session.day_count or 1)
 
     lore_facts = _list_or_existing(world.get("lore_facts"), session.lore_facts)
-    for item in [
-        payload.get("initial_situation"),
-        *(payload.get("chronicle_0_16") if isinstance(payload.get("chronicle_0_16"), list) else []),
-    ]:
+    chronicle_value = payload.get("chronicle_0_16")
+    chronicle_items = chronicle_value if isinstance(chronicle_value, list) else []
+    for item in [payload.get("initial_situation"), *chronicle_items]:
         text = str(item or "").strip()
         if text and text not in lore_facts:
             lore_facts.append(text)
@@ -443,8 +454,14 @@ def merge_opening_payload(fallback: dict[str, Any], parsed: dict[str, Any]) -> d
         if value:
             merged[key] = value
 
-    fallback_world = fallback.get("world") if isinstance(fallback.get("world"), dict) else {}
-    parsed_world = parsed.get("world") if isinstance(parsed.get("world"), dict) else {}
+    fallback_world_value = fallback.get("world")
+    parsed_world_value = parsed.get("world")
+    fallback_world: dict[str, Any] = (
+        fallback_world_value if isinstance(fallback_world_value, dict) else {}
+    )
+    parsed_world: dict[str, Any] = (
+        parsed_world_value if isinstance(parsed_world_value, dict) else {}
+    )
     world = dict(fallback_world)
     for key, value in parsed_world.items():
         if value:
@@ -452,7 +469,8 @@ def merge_opening_payload(fallback: dict[str, Any], parsed: dict[str, Any]) -> d
     merged["world"] = world
 
     if not merged.get("opening_narrative"):
-        chronicle = merged.get("chronicle_0_16") if isinstance(merged.get("chronicle_0_16"), list) else []
+        chronicle_value = merged.get("chronicle_0_16")
+        chronicle = chronicle_value if isinstance(chronicle_value, list) else []
         opening = "\n".join(str(item) for item in chronicle if str(item).strip())
         initial = str(merged.get("initial_situation_16") or merged.get("initial_situation") or "")
         merged["opening_narrative"] = (opening + "\n\n" + initial).strip()

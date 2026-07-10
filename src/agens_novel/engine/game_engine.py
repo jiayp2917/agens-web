@@ -16,31 +16,32 @@ from collections.abc import Callable
 from typing import Any
 
 from agens_novel.settings import Settings
+
 from ..game.realm import RealmSystem
 from ..session.game_session import GameSession
+from .breakthrough_flow import BreakthroughFlow
 from .choices import (
     complete_choices,
     fallback_choices,
     normalize_choices,
 )
-from .breakthrough_flow import BreakthroughFlow
 from .local_story import (
     current_local_story_choices,
     start_local_story,
-)
-from .model_result import (
-    ModelResultKind,
-    result_diagnostics,
 )
 from .model_fallback_policy import (
     SECRET_MARKERS,
     ModelFallbackPolicy,
 )
+from .model_result import (
+    ModelResultKind,
+    result_diagnostics,
+)
 from .start_flow import (
     StartFlow,
 )
-from .turn_runner import run_turn_sync
 from .turn_flow import TurnFlow
+from .turn_runner import run_turn_sync
 
 log = logging.getLogger(__name__)
 
@@ -68,6 +69,54 @@ def _is_sensitive_inventory_item(item: dict[str, Any]) -> bool:
     text = f"{item.get('name') or ''} {item.get('type') or ''} {item.get('tags') or ''}"
     markers = ("筑基", "金丹", "元婴", "破境", "延寿", "续命", "法宝", "秘籍", "玉简", "传承")
     return any(marker in text for marker in markers)
+
+
+def _has_sensitive_character_delta(value: Any) -> bool:
+    if not isinstance(value, dict):
+        return False
+    sensitive = {
+        "name",
+        "realm",
+        "realm_stage",
+        "spirit_root",
+        "spirit_root_grade",
+        "talent",
+        "family_background",
+        "difficulty",
+        "inventory",
+        "techniques",
+        "techniques_add",
+        "breakthrough_flags",
+        "breakthrough_flags_add",
+        "lifespan",
+        "status_effects",
+        "status_effects_add",
+    }
+    if any(key in value for key in sensitive):
+        return True
+    additions = value.get("inventory_add")
+    return isinstance(additions, list) and any(
+        isinstance(item, dict) and _is_sensitive_inventory_item(item) for item in additions
+    )
+
+
+def _has_authoritative_world_delta(value: Any, looks_like_reset: Callable[[Any], bool]) -> bool:
+    if not isinstance(value, dict):
+        return False
+    authoritative = {
+        "active_quests",
+        "active_quests_add",
+        "discovered_add",
+        "discovered_locations",
+        "npcs_present",
+        "npcs_present_add",
+    }
+    if any(key in value for key in authoritative):
+        return True
+    return any(
+        key in value and looks_like_reset(value.get(key))
+        for key in ("location", "region", "current_scene")
+    )
 
 
 class GameEngine:
@@ -407,58 +456,17 @@ class GameEngine:
         """Reserve model judging for risky or continuity-sensitive outcomes."""
         if not isinstance(state_delta, dict):
             return False
-        meta = state_delta.get("meta") if isinstance(state_delta.get("meta"), dict) else {}
-        rule_meta = rule_delta.get("meta") if isinstance(rule_delta.get("meta"), dict) else {}
+        meta_value = state_delta.get("meta")
+        meta: dict[str, Any] = meta_value if isinstance(meta_value, dict) else {}
         if meta.get("game_over") or meta.get("finale") or meta.get("breakthrough_result"):
             return True
         compact = "".join(text.strip().lower().split())
         if any(word in compact for word in ("突破", "破境", "渡劫", "飞升")):
             return True
 
-        char_delta = state_delta.get("character")
-        if isinstance(char_delta, dict):
-            sensitive = {
-                "name",
-                "realm",
-                "realm_stage",
-                "spirit_root",
-                "spirit_root_grade",
-                "talent",
-                "family_background",
-                "difficulty",
-                "inventory",
-                "techniques",
-                "techniques_add",
-                "breakthrough_flags",
-                "breakthrough_flags_add",
-                "lifespan",
-                "status_effects",
-                "status_effects_add",
-            }
-            if any(key in char_delta for key in sensitive):
-                return True
-            additions = char_delta.get("inventory_add")
-            if isinstance(additions, list):
-                for item in additions:
-                    if isinstance(item, dict) and _is_sensitive_inventory_item(item):
-                        return True
-
-        world_delta = state_delta.get("world")
-        if isinstance(world_delta, dict):
-            authoritative_world_keys = {
-                "active_quests",
-                "active_quests_add",
-                "discovered_add",
-                "discovered_locations",
-                "npcs_present",
-                "npcs_present_add",
-            }
-            if any(key in world_delta for key in authoritative_world_keys):
-                return True
-            for key in ("location", "region", "current_scene"):
-                if key in world_delta and self._looks_like_world_reset(world_delta.get(key)):
-                    return True
-        return False
+        if _has_sensitive_character_delta(state_delta.get("character")):
+            return True
+        return _has_authoritative_world_delta(state_delta.get("world"), self._looks_like_world_reset)
 
     def sanitize_action_delta(self, delta: dict[str, Any]) -> dict[str, Any]:
         """Drop ordinary-turn updates that reset character identity or continuity.

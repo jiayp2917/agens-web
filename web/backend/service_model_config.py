@@ -10,15 +10,16 @@ from __future__ import annotations
 import os
 from typing import TYPE_CHECKING, Any
 
+from agens_novel.llm.url_security import validate_model_base_url
 from agens_novel.settings import Settings
 
+from .database import WebDatabaseProtocol
 from .model_config_security import (
     ModelConfigSecretError,
     decrypt_api_key,
     encrypt_api_key,
     mask_api_key,
 )
-from .database import WebDatabaseProtocol
 
 if TYPE_CHECKING:
     from .service import WebRunner
@@ -39,7 +40,10 @@ class ModelConfigService:
         existing: dict[str, Any] | None = None,
     ) -> dict[str, Any]:
         existing = existing or {}
-        base_url = str(payload.get("base_url") or Settings().base_url).strip()
+        base_url = validate_model_base_url(
+            str(payload.get("base_url") or Settings().base_url).strip(),
+            resolve_dns=True,
+        )
         model = str(payload.get("model") or Settings().model).strip()
         provider = str(payload.get("provider") or "Agens").strip()
         api_key = str(payload.get("api_key") or "").strip()
@@ -140,5 +144,5 @@ class ModelConfigService:
             "key_error": key_error,
         }
 
-    def apply_runner(self, runner: "WebRunner") -> None:
+    def apply_runner(self, runner: WebRunner) -> None:
         runner.engine.model_config = self.runtime(runner.user_id)

@@ -7,16 +7,15 @@ breakthrough attempts.
 
 from __future__ import annotations
 
-import random
 import logging
+import random
 from dataclasses import dataclass, field
 from typing import Any
 
 from .constants import (
     ATTRIBUTE_DEFAULT,
-    REALM_ORDER,
     REALM_CONFIGS,
-    REALM_LIFESPANS,
+    REALM_ORDER,
     SPIRIT_ROOT_MAP,
     compute_breakthrough_lifespan,
     format_realm_name,

@@ -4,7 +4,6 @@ from __future__ import annotations
 
 from typing import Any
 
-
 WORLD_PACKS: dict[str, dict[str, Any]] = {
     "frontier": {
         "world_name": "西陲裂土",

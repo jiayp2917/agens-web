@@ -6,18 +6,25 @@ import logging
 import os
 import random
 import re
-import sqlalchemy.exc
+import threading
 import time
 import uuid
 from dataclasses import dataclass, field
 from typing import Any
 
+import sqlalchemy.exc
+
+from agens_novel.engine.choices import clean_choice_text, clean_visible_text
 from agens_novel.engine.death_rewards import (
     apply_legacy_bonuses,
+    bonuses_to_legacy,
 )
-from agens_novel.engine.choices import clean_choice_text, clean_visible_text
 from agens_novel.engine.game_engine import GameEngine
-from agens_novel.engine.model_fallback_policy import MODEL_FAILURE_CONTINUE, public_model_failure_notice, SECRET_MARKERS as _SECRET_MARKERS
+from agens_novel.engine.model_fallback_policy import (
+    MODEL_FAILURE_CONTINUE,
+    public_model_failure_notice,
+)
+from agens_novel.engine.model_fallback_policy import SECRET_MARKERS as _SECRET_MARKERS
 from agens_novel.engine.render import format_status_bar
 from agens_novel.engine.start_flow import normalize_profile_attributes
 from agens_novel.game.constants import (
@@ -29,15 +36,17 @@ from agens_novel.game.constants import (
 )
 from agens_novel.session.game_session import GameSession
 
+from .auth import hash_guest_token
 from .database import WebDatabaseProtocol
 from .database_postgres import PostgresWebDatabase
 from .service_death_rewards import DeathRewardsService
+from .service_errors import SessionVersionConflict
 from .service_model_config import ModelConfigService
 from .service_summaries import build_death_summary
 
 log = logging.getLogger(__name__)
 
-PUBLIC_MODEL_FALLBACK_TEXT = "本回合记录暂未续上，请稍后重试或按当前局面继续。"
+PUBLIC_MODEL_FALLBACK_TEXT = "模型暂不可用，已切换本地故事，请直接选择下方选项继续。"
 _MODEL_FAILURE_PREFIXES = (
     "世界生成失败:",
     "叙述失败:",
@@ -57,6 +66,7 @@ class WebRunner:
     engine: GameEngine = field(default_factory=GameEngine)
     events: list[dict[str, Any]] = field(default_factory=list)
     guest_token: str = ""
+    version: int = 0
     db: Any = field(default=None, repr=False, compare=False)
     fallback_prompt_text: str = PUBLIC_MODEL_FALLBACK_TEXT
     fallback_prompt_active: bool = False
@@ -80,8 +90,8 @@ class WebRunner:
     def _on_game_over(self, text: str) -> None:
         """Record game-over and evaluate rewards (P4).
 
-        Evaluates achievements/rewards even for guest sessions (in-memory only).
-        Registered users get the results persisted to the database.
+        Evaluates achievements/rewards for guest and registered sessions.
+        Registered users also get the results persisted atomically at terminal commit.
         """
         self.record("game_over", text=text)
         summary = build_death_summary(self.engine.game_session)
@@ -95,17 +105,6 @@ class WebRunner:
             headline=summary["headline"],
             final_realm=summary["final_realm"],
         )
-        # Persist for registered users only.
-        if not is_guest_user_id(self.user_id):
-            try:
-                self._persist_death_rewards(
-                    self.engine.game_session,
-                    self.user_id,
-                    self.session_id,
-                    summary,
-                )
-            except Exception:
-                log.exception("death rewards persistence failed")
 
     def _choose_model_failure(self, source: str, reason: str) -> str:
         self.fallback_prompt_text = public_model_failure_notice(reason)
@@ -150,8 +149,16 @@ class WebRunner:
         snapshot: dict[str, Any],
         events: list[dict[str, Any]] | None = None,
         db: Any = None,
-    ) -> "WebRunner":
-        runner = cls(session_id=session_id, user_id=user_id, db=db)
+        guest_token: str = "",
+        version: int = 0,
+    ) -> WebRunner:
+        runner = cls(
+            session_id=session_id,
+            user_id=user_id,
+            guest_token=guest_token,
+            version=version,
+            db=db,
+        )
         runner.engine.game_session = GameSession.from_save_dict(snapshot)
         runner.events = list(events or [])
         (
@@ -172,6 +179,7 @@ class WebRunner:
         state = session.as_game_state()
         return {
             "session_id": self.session_id,
+            "version": self.version,
             "user_id": self.user_id,
             "guest": is_guest_user_id(self.user_id),
             "turn_count": session.turn_count,
@@ -200,19 +208,6 @@ class WebRunner:
 
     def snapshot(self) -> dict[str, Any]:
         return self.engine.game_session.to_save_dict()
-
-    def _persist_death_rewards(
-        self,
-        session: GameSession,
-        user_id: str,
-        session_id: str,
-        summary: dict[str, Any],
-    ) -> None:
-        """Write achievements, account rewards, and legacy bonuses to the DB."""
-        if self.db is None:
-            return
-        DeathRewardsService(self.db).persist(session, user_id, session_id, summary)
-
 
 def _sanitize_event_payload(event_type: str, payload: dict[str, Any]) -> dict[str, Any]:
     sanitized = dict(payload)
@@ -264,7 +259,8 @@ def _fallback_prompt_state_from_events(events: list[dict[str, Any]]) -> tuple[bo
 
 
 def _sanitize_model_result_payload(payload: dict[str, Any]) -> dict[str, Any]:
-    diagnostics = payload.get("diagnostics") if isinstance(payload.get("diagnostics"), dict) else {}
+    diagnostics_value = payload.get("diagnostics")
+    diagnostics: dict[str, Any] = diagnostics_value if isinstance(diagnostics_value, dict) else {}
     safe_diagnostics = {
         str(key): _safe_int_or_bool(value)
         for key, value in diagnostics.items()
@@ -348,6 +344,8 @@ class WebGameService:
         self._runner_last_used: dict[str, float] = {}
         self._model_config = ModelConfigService(self.db)
         self._death_rewards = DeathRewardsService(self.db)
+        self._session_locks: dict[str, threading.RLock] = {}
+        self._session_locks_guard = threading.Lock()
 
     def login(self, username: str = "local") -> dict[str, Any]:
         return self.db.upsert_user(username)
@@ -372,103 +370,220 @@ class WebGameService:
         self._persist(runner, title=title)
         return runner.response()
 
+    def authorize_guest_session(self, session_id: str, guest_token: str) -> bool:
+        if not guest_token:
+            return False
+        cached = self.runners.get(session_id)
+        if cached is not None and is_guest_user_id(cached.user_id):
+            return bool(cached.guest_token and cached.guest_token == guest_token)
+        row = self.db.load_guest_session(session_id, hash_guest_token(guest_token))
+        if row is None:
+            return False
+        runner = WebRunner.from_snapshot(
+            session_id=session_id,
+            user_id=f"{GUEST_USER_PREFIX}{session_id}",
+            snapshot=row["snapshot"],
+            events=row.get("events", []),
+            db=self.db,
+            guest_token=guest_token,
+            version=int(row.get("version") or 0),
+        )
+        self._register_runner(session_id, runner)
+        return True
+
+    def delete_guest_session(self, guest_token: str) -> int:
+        if not guest_token:
+            return 0
+        token_hash = hash_guest_token(guest_token)
+        for session_id, runner in list(self.runners.items()):
+            if is_guest_user_id(runner.user_id) and runner.guest_token == guest_token:
+                self._drop_runner(session_id)
+        return self.db.delete_guest_session(token_hash)
+
     def get_session(self, session_id: str, user_id: str | None = None) -> dict[str, Any]:
         return self._runner(session_id, user_id=user_id).response()
 
     def start_session(
         self, session_id: str, profile: dict[str, Any], user_id: str | None = None
     ) -> dict[str, Any]:
-        runner = self._runner(session_id, user_id=user_id)
-        self._model_config.apply_runner(runner)
-        normalized = self._normalize_profile(profile)
-        # Apply legacy bonuses from prior runs (P4) — registered users only.
-        if user_id and not is_guest_user_id(user_id):
-            bonuses = self.db.list_legacy_bonuses(user_id)
-            if bonuses:
-                normalized = apply_legacy_bonuses(
-                    normalized,
-                    [
-                        {
-                            "bonus_type": b["bonus_type"],
-                            "bonus_value": b["bonus_value"],
-                            "label": b.get("label", ""),
-                        }
-                        for b in bonuses
-                    ],
+        with self._session_lock(session_id):
+            runner = self._runner(session_id, user_id=user_id)
+            request_id, expected_version = self._mutation_context(runner, profile)
+            duplicate = self.db.get_session_mutation(session_id, request_id)
+            if duplicate is not None:
+                return duplicate
+            rollback = self._rollback_state(runner)
+            try:
+                self._model_config.apply_runner(runner)
+                normalized = self._normalize_profile(profile)
+                bonuses: list[dict[str, Any]] = []
+                if user_id and not is_guest_user_id(user_id):
+                    bonuses = self.db.list_legacy_bonuses(user_id)
+                    if bonuses:
+                        normalized = apply_legacy_bonuses(normalized, bonuses)
+                        normalized["_allow_legacy_bonus_attributes"] = True
+                runner.engine.start_from_profile(normalized)
+                session = runner.engine.game_session
+                response = self._commit_runner(
+                    runner,
+                    expected_version=expected_version,
+                    request_id=request_id,
+                    operation="start",
+                    response=runner.response(),
+                    title=session.char_name or "新局",
+                    start_run={
+                        "char_name": session.char_name,
+                        "realm": session.realm,
+                        "turn_count": session.turn_count,
+                    },
+                    consume_legacy_bonuses=bool(bonuses),
+                    terminal=self._terminal_bundle(runner),
                 )
-                normalized["_allow_legacy_bonus_attributes"] = True
-                self.db.consume_legacy_bonuses(user_id)
-        runner.engine.start_from_profile(normalized)
-        self._persist(runner, title=runner.engine.game_session.char_name or "新局")
-        return runner.response()
+                return response
+            except Exception:
+                self._restore_rollback(runner, rollback)
+                raise
 
     def choose(
         self, session_id: str, payload: dict[str, Any], user_id: str | None = None
     ) -> dict[str, Any]:
-        runner = self._runner(session_id, user_id=user_id)
-        action = self._choice_text(runner, payload)
-        return self._advance_turn(runner, action)
+        with self._session_lock(session_id):
+            runner = self._runner(session_id, user_id=user_id)
+            action = self._choice_text(runner, payload)
+            return self._advance_turn(runner, action, payload)
 
-    def act(self, session_id: str, action: str, user_id: str | None = None) -> dict[str, Any]:
-        runner = self._runner(session_id, user_id=user_id)
-        return self._advance_turn(runner, action)
+    def act(
+        self,
+        session_id: str,
+        payload: dict[str, Any],
+        user_id: str | None = None,
+    ) -> dict[str, Any]:
+        with self._session_lock(session_id):
+            runner = self._runner(session_id, user_id=user_id)
+            return self._advance_turn(runner, str(payload.get("action") or ""), payload)
 
-    def _advance_turn(self, runner: WebRunner, action: str) -> dict[str, Any]:
-        self._model_config.apply_runner(runner)
-        before = _turn_start_snapshot(runner.engine.game_session)
-        runner.engine.handle_action(action)
-        self._record_settled_turn(runner, before, action)
-        self._persist(runner)
-        return runner.response()
+    def _advance_turn(
+        self,
+        runner: WebRunner,
+        action: str,
+        payload: dict[str, Any],
+    ) -> dict[str, Any]:
+        request_id, expected_version = self._mutation_context(runner, payload)
+        duplicate = self.db.get_session_mutation(runner.session_id, request_id)
+        if duplicate is not None:
+            return duplicate
+        rollback = self._rollback_state(runner)
+        try:
+            self._model_config.apply_runner(runner)
+            before = _turn_start_snapshot(runner.engine.game_session)
+            runner.engine.handle_action(action)
+            turn = self._settled_turn_payload(runner, before, action)
+            return self._commit_runner(
+                runner,
+                expected_version=expected_version,
+                request_id=request_id,
+                operation="turn",
+                response=runner.response(),
+                turn=turn,
+                terminal=self._terminal_bundle(runner),
+            )
+        except Exception:
+            self._restore_rollback(runner, rollback)
+            raise
 
     def save(
-        self, session_id: str, save_name: str = "slot_1", user_id: str | None = None
+        self, session_id: str, payload: dict[str, Any], user_id: str | None = None
     ) -> dict[str, Any]:
-        runner = self._require_non_guest_runner(session_id, user_id, action="存档")
-        save = self.db.save_game_slot(
-            runner.user_id,
-            save_name,
-            runner.snapshot(),
-            runner.events,
-        )
-        runner.record("info", text=f"进度已保存: {save['name']}")
-        self._persist(runner)
-        return {"save": save, "session": runner.response()}
+        with self._session_lock(session_id):
+            runner = self._require_non_guest_runner(session_id, user_id, action="存档")
+            request_id, expected_version = self._mutation_context(runner, payload)
+            duplicate = self.db.get_session_mutation(session_id, request_id)
+            if duplicate is not None:
+                return duplicate
+            save_name = str(payload.get("name") or "slot_1")
+            slot = {
+                "name": save_name,
+                "snapshot": runner.snapshot(),
+                "events": list(runner.events),
+            }
+            rollback = self._rollback_state(runner)
+            try:
+                runner.record("info", text=f"进度已保存: {save_name}")
+                return self._commit_runner(
+                    runner,
+                    expected_version=expected_version,
+                    request_id=request_id,
+                    operation="save",
+                    response={"save": {}, "session": runner.response()},
+                    save_slot=slot,
+                )
+            except Exception:
+                self._restore_rollback(runner, rollback)
+                raise
 
     def load(
-        self, session_id: str, save_name: str = "slot_1", user_id: str | None = None
+        self, session_id: str, payload: dict[str, Any], user_id: str | None = None
     ) -> dict[str, Any]:
-        runner = self._require_non_guest_runner(session_id, user_id, action="读档")
-        saved = self.db.load_save(runner.user_id, save_name)
-        if saved is None:
-            raise KeyError(f"存档不存在: {save_name}")
-        restored = WebRunner.from_snapshot(
-            session_id=session_id,
-            user_id=runner.user_id,
-            snapshot=saved["snapshot"],
-            events=saved.get("events", []),
-            db=self.db,
-        )
-        restored.record("info", text=f"已加载存档: {saved['name']}")
-        self._register_runner(session_id, restored)
-        self._persist(restored, title=restored.engine.game_session.char_name or saved["name"])
-        return restored.response()
+        with self._session_lock(session_id):
+            runner = self._require_non_guest_runner(session_id, user_id, action="读档")
+            request_id, expected_version = self._mutation_context(runner, payload)
+            duplicate = self.db.get_session_mutation(session_id, request_id)
+            if duplicate is not None:
+                return duplicate
+            save_name = str(payload.get("name") or "slot_1")
+            saved = self.db.load_save(runner.user_id, save_name)
+            if saved is None:
+                raise KeyError(f"存档不存在: {save_name}")
+            restored = WebRunner.from_snapshot(
+                session_id=session_id,
+                user_id=runner.user_id,
+                snapshot=saved["snapshot"],
+                events=saved.get("events", []),
+                db=self.db,
+                version=runner.version,
+            )
+            restored.record("info", text=f"已加载存档: {saved['name']}")
+            response = self._commit_runner(
+                restored,
+                expected_version=expected_version,
+                request_id=request_id,
+                operation="load",
+                response=restored.response(),
+                title=restored.engine.game_session.char_name or saved["name"],
+            )
+            self._register_runner(session_id, restored)
+            return response
 
     def end_session(
-        self, session_id: str, reason: str = "玩家结束本局。", user_id: str | None = None
+        self, session_id: str, payload: dict[str, Any], user_id: str | None = None
     ) -> dict[str, Any]:
-        runner = self._runner(session_id, user_id=user_id)
-        session = runner.engine.game_session
-        session.game_over = True
-        session.finale = False
-        session.error = reason or "玩家结束本局。"
-        # Reuse the engine's on_game_over hook so P4 rewards fire on manual end too.
-        if runner.engine.on_game_over is not None:
-            runner.engine.on_game_over(session.error)
-        else:
-            runner.record("game_over", text=session.error)
-        self._persist(runner)
-        return runner.response()
+        with self._session_lock(session_id):
+            runner = self._runner(session_id, user_id=user_id)
+            request_id, expected_version = self._mutation_context(runner, payload)
+            duplicate = self.db.get_session_mutation(session_id, request_id)
+            if duplicate is not None:
+                return duplicate
+            rollback = self._rollback_state(runner)
+            try:
+                session = runner.engine.game_session
+                session.game_over = True
+                session.finale = False
+                session.error = str(payload.get("reason") or "玩家结束本局。")
+                if runner.engine.on_game_over is not None:
+                    runner.engine.on_game_over(session.error)
+                else:
+                    runner.record("game_over", text=session.error)
+                return self._commit_runner(
+                    runner,
+                    expected_version=expected_version,
+                    request_id=request_id,
+                    operation="end",
+                    response=runner.response(),
+                    terminal=self._terminal_bundle(runner),
+                )
+            except Exception:
+                self._restore_rollback(runner, rollback)
+                raise
 
     def list_saves(self, user_id: str = "") -> list[dict[str, Any]]:
         if not user_id:
@@ -547,6 +662,103 @@ class WebGameService:
         self.db.save_model_config(config)
         return self.admin_model_settings()
 
+    def _session_lock(self, session_id: str) -> threading.RLock:
+        with self._session_locks_guard:
+            return self._session_locks.setdefault(session_id, threading.RLock())
+
+    def _mutation_context(
+        self,
+        runner: WebRunner,
+        payload: dict[str, Any],
+    ) -> tuple[str, int]:
+        request_id = str(payload.get("request_id") or uuid.uuid4())
+        if self.db.get_session_mutation(runner.session_id, request_id) is not None:
+            return request_id, runner.version
+        expected_raw = payload.get("expected_version")
+        expected = runner.version if expected_raw is None else int(expected_raw)
+        if expected != runner.version:
+            raise SessionVersionConflict("局面已更新，请刷新后重试。")
+        return request_id, expected
+
+    def _commit_runner(
+        self,
+        runner: WebRunner,
+        *,
+        expected_version: int,
+        request_id: str,
+        operation: str,
+        response: dict[str, Any],
+        title: str | None = None,
+        turn: dict[str, Any] | None = None,
+        start_run: dict[str, Any] | None = None,
+        consume_legacy_bonuses: bool = False,
+        terminal: dict[str, Any] | None = None,
+        save_slot: dict[str, Any] | None = None,
+    ) -> dict[str, Any]:
+        is_guest = is_guest_user_id(runner.user_id)
+        result = self.db.commit_session_mutation(
+            session_id=runner.session_id,
+            user_id=None if is_guest else runner.user_id,
+            title=title or runner.engine.game_session.char_name or "新局",
+            snapshot=runner.snapshot(),
+            events=runner.events,
+            expected_version=expected_version,
+            request_id=request_id,
+            operation=operation,
+            response=response,
+            guest_token_hash=hash_guest_token(runner.guest_token) if is_guest else "",
+            expires_at=_guest_expiry() if is_guest else None,
+            turn=turn,
+            start_run=start_run,
+            consume_legacy_bonuses=consume_legacy_bonuses,
+            terminal=terminal,
+            save_slot=save_slot,
+        )
+        session_value = result.get("session")
+        session_response: dict[str, Any] = session_value if isinstance(session_value, dict) else result
+        runner.version = int(session_response.get("version") or expected_version + 1)
+        return result
+
+    @staticmethod
+    def _rollback_state(runner: WebRunner) -> dict[str, Any]:
+        return {
+            "snapshot": runner.snapshot(),
+            "events": list(runner.events),
+            "version": runner.version,
+            "fallback_active": runner.fallback_prompt_active,
+            "fallback_text": runner.fallback_prompt_text,
+        }
+
+    def _restore_rollback(self, runner: WebRunner, rollback: dict[str, Any]) -> None:
+        restored = WebRunner.from_snapshot(
+            session_id=runner.session_id,
+            user_id=runner.user_id,
+            snapshot=rollback["snapshot"],
+            events=rollback["events"],
+            db=self.db,
+            guest_token=runner.guest_token,
+            version=int(rollback["version"]),
+        )
+        restored.fallback_prompt_active = bool(rollback["fallback_active"])
+        restored.fallback_prompt_text = str(rollback["fallback_text"])
+        self._register_runner(runner.session_id, restored)
+
+    @staticmethod
+    def _terminal_bundle(runner: WebRunner) -> dict[str, Any] | None:
+        session = runner.engine.game_session
+        if not session.game_over:
+            return None
+        summary = build_death_summary(session) or {}
+        return {
+            "char_name": session.char_name,
+            "realm": session.realm,
+            "death_cause": session.error,
+            "ascended": bool(session.finale),
+            "turn_count": session.turn_count,
+            "summary": summary,
+            "legacy_bonuses": bonuses_to_legacy(summary.get("rewards", []) or []),
+        }
+
     def _require_non_guest_runner(
         self,
         session_id: str,
@@ -582,6 +794,7 @@ class WebGameService:
             snapshot=row["snapshot"],
             events=row.get("events", []),
             db=self.db,
+            version=int(row.get("version") or 0),
         )
         self._register_runner(session_id, runner)
         return runner
@@ -589,9 +802,8 @@ class WebGameService:
     def _register_runner(self, session_id: str, runner: WebRunner) -> None:
         """Cache a runner and bound the in-memory cache (LRU + idle TTL).
 
-        Registered-user runners are rebuilt from the DB on next access, so
-        eviction is near-lossless. Guest runners are not persisted, so evicting
-        one ends that ephemeral session.
+        Registered and guest runners are rebuilt from PostgreSQL on next access,
+        subject to ownership checks and the guest-session expiry time.
         """
         self.runners[session_id] = runner
         self._runner_last_used[session_id] = time.time()
@@ -613,39 +825,35 @@ class WebGameService:
         self._runner_last_used.pop(session_id, None)
 
     def _persist(self, runner: WebRunner, title: str | None = None) -> None:
-        if is_guest_user_id(runner.user_id):
-            return
         session = runner.engine.game_session
-        self.db.save_session(
+        is_guest = is_guest_user_id(runner.user_id)
+        runner.version = self.db.save_session(
             runner.session_id,
-            runner.user_id,
+            None if is_guest else runner.user_id,
             title or session.char_name or "新局",
             runner.snapshot(),
             runner.events,
+            guest_token_hash=hash_guest_token(runner.guest_token) if is_guest else "",
+            expires_at=_guest_expiry() if is_guest else None,
         )
 
-    def _record_settled_turn(
+    def _settled_turn_payload(
         self,
         runner: WebRunner,
         before: dict[str, Any],
         choice_taken: str,
-    ) -> None:
-        """Persist the latest settled turn for registered users.
-
-        This is telemetry/progression state for GAME_MODE_SPEC §8.3; a write
-        failure must not block play because the authoritative session snapshot
-        is still saved through _persist().
-        """
+    ) -> dict[str, Any] | None:
+        """Build the latest settled turn for the atomic persistence unit."""
         if is_guest_user_id(runner.user_id):
-            return
+            return None
         session = runner.engine.game_session
         if session.turn_count <= int(before.get("turn_no") or 0):
-            return
+            return None
         if not session.turn_history:
-            return
+            return None
         turn = session.turn_history[-1]
         if int(turn.get("turn") or 0) != session.turn_count:
-            return
+            return None
 
         delta = turn.get("delta") if isinstance(turn.get("delta"), dict) else {}
         meta = delta.get("meta") if isinstance(delta, dict) else {}
@@ -658,26 +866,22 @@ class WebGameService:
             or _calendar_summary(before, session, elapsed_years)
         )
         event_kind = str(meta.get("choice_category") or turn.get("event_kind") or "event")
-        try:
-            self.db.record_game_turn(
-                runner.session_id,
-                session.turn_count,
-                start_age=int(before.get("age") or session.age),
-                elapsed_years=elapsed_years,
-                end_age=int(session.age),
-                lifespan=int(session.lifespan),
-                remaining_lifespan=session.remaining_lifespan,
-                choice_taken=choice_taken,
-                choices=list(turn.get("choices") or session.last_choices or []),
-                state_delta=delta,
-                state_after=session.as_game_state(),
-                calendar_summary=calendar_summary,
-                narrative=str(turn.get("narrative") or ""),
-                event_kind=event_kind,
-                end_reason=session.error if session.game_over else None,
-            )
-        except Exception:
-            log.exception("game turn persistence failed")
+        return {
+            "turn_no": session.turn_count,
+            "start_age": int(before.get("age") or session.age),
+            "elapsed_years": elapsed_years,
+            "end_age": int(session.age),
+            "lifespan": int(session.lifespan),
+            "remaining_lifespan": session.remaining_lifespan,
+            "choice_taken": choice_taken,
+            "choices": list(turn.get("choices") or session.last_choices or []),
+            "state_delta": delta,
+            "state_after": session.as_game_state(),
+            "calendar_summary": calendar_summary,
+            "narrative": str(turn.get("narrative") or ""),
+            "event_kind": event_kind,
+            "end_reason": session.error if session.game_over else None,
+        }
 
     def _normalize_profile(self, profile: dict[str, Any]) -> dict[str, Any]:
         normalized = dict(profile)
@@ -770,35 +974,29 @@ _CHOICE_SEMANTIC_PREFIXES = (
     ("C", "风险"),
     ("D", "气运"),
 )
+_CHOICE_SEMANTIC_TAG_RE = re.compile(r"^\s*【(?:稳妥|机遇|风险|气运)】\s*")
 
 
 def _with_choice_semantic(index: int, text: str) -> str:
     """Preserve A/B/C/D semantics when model choice text omits route labels."""
-    body = str(text or "").strip()
-    if _has_choice_semantic(body):
-        return body
+    body = clean_choice_text(str(text or "").strip())
+    body = _CHOICE_SEMANTIC_TAG_RE.sub("", body, count=1).strip()
     if 0 <= index < len(_CHOICE_SEMANTIC_PREFIXES):
         letter, label = _CHOICE_SEMANTIC_PREFIXES[index]
         return f"{letter}【{label}】{body}"
     return body
 
 
-def _has_choice_semantic(text: str) -> bool:
-    upper = text.upper()
-    for letter, label in _CHOICE_SEMANTIC_PREFIXES:
-        if (
-            upper.startswith(letter)
-            or text.startswith(label)
-            or text.startswith(f"【{label}】")
-            or text.startswith(f"{label}:")
-            or text.startswith(f"{label}：")
-        ):
-            return True
-    return False
-
-
 def is_guest_user_id(user_id: str | None) -> bool:
     return bool(user_id and user_id.startswith(GUEST_USER_PREFIX))
+
+
+def _guest_expiry() -> float:
+    try:
+        ttl = int(os.environ.get("AGENS_GUEST_SESSION_TTL_SECONDS", "86400"))
+    except ValueError:
+        ttl = 86400
+    return time.time() + max(300, ttl)
 
 
 def _random_attributes() -> dict[str, int]:

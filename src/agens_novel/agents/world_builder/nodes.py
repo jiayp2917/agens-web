@@ -77,7 +77,9 @@ def save_artifact(state: dict[str, Any]) -> dict[str, Any]:
     llm_error = state.get("llm_error", "")
 
     if llm_error:
-        generated_data, world_description, opening_narrative = {}, "", ""
+        generated_data: dict[str, Any] = {}
+        world_description = ""
+        opening_narrative = ""
     else:
         generated_data, world_description, opening_narrative = _parse_world_output(text)
 

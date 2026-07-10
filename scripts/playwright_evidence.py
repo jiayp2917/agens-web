@@ -7,8 +7,8 @@ compact audit trail for turn-by-turn checks.
 
 from __future__ import annotations
 
-import csv
 import argparse
+import csv
 import json
 from pathlib import Path
 from typing import Any

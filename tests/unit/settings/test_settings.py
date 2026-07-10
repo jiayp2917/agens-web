@@ -2,8 +2,6 @@
 
 from __future__ import annotations
 
-import pytest
-
 from agens_novel.settings import Settings, _mask
 
 

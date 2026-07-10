@@ -9,16 +9,13 @@ from __future__ import annotations
 
 from typing import Any
 
-from agens_novel.engine.death_rewards import bonuses_to_legacy
-from agens_novel.session.game_session import GameSession
-
 from .database import WebDatabaseProtocol
 
 _GUEST_PREFIX = "guest:"
 
 
 class DeathRewardsService:
-    """Read persisted achievements/rewards and write new death-reward rows."""
+    """Read persisted achievements, rewards, and legacy bonuses."""
 
     def __init__(self, db: WebDatabaseProtocol) -> None:
         self.db = db
@@ -33,7 +30,11 @@ class DeathRewardsService:
         if not achievements and not rewards:
             return {"session_id": session_id, "is_guest": False, "summary": {}}
         death_cause = achievements[0].get("death_cause", "") if achievements else ""
-        headline_parts = [a.get("achievement_name") for a in achievements[:3] if a.get("achievement_name")]
+        headline_parts = [
+            str(a["achievement_name"])
+            for a in achievements[:3]
+            if a.get("achievement_name")
+        ]
         headline = "、".join(headline_parts) if headline_parts else ""
         return {
             "session_id": session_id,
@@ -59,58 +60,6 @@ class DeathRewardsService:
                 "headline": headline,
             },
         }
-
-    def persist(
-        self,
-        session: GameSession,
-        user_id: str,
-        session_id: str,
-        summary: dict[str, Any],
-    ) -> None:
-        """Write achievements, account rewards, and legacy bonuses to the DB."""
-        existing_rewards = [
-            reward
-            for reward in self.db.list_account_rewards(user_id)
-            if reward.get("source_session_id") == session_id
-        ]
-        if self.db.list_run_achievements(user_id, session_id) or existing_rewards:
-            return
-        self.db.record_game_run(
-            user_id=user_id,
-            run_id=session_id,
-            session_id=session_id,
-            char_name=session.char_name,
-            realm=session.realm,
-            death_cause=str(summary.get("death_cause") or ""),
-            ascended=bool(session.finale),
-            turn_count=int(session.turn_count or 0),
-        )
-        for achievement in summary.get("achievements", []) or []:
-            self.db.save_run_achievement(
-                user_id=user_id,
-                session_id=session_id,
-                achievement_key=str(achievement.get("key") or ""),
-                achievement_name=str(achievement.get("name") or ""),
-                description=str(achievement.get("description") or ""),
-                death_cause=str(summary.get("death_cause") or ""),
-            )
-        for reward in summary.get("rewards", []) or []:
-            self.db.save_account_reward(
-                user_id=user_id,
-                reward_type=str(reward.get("type") or ""),
-                reward_value=str(reward.get("value") or ""),
-                label=str(reward.get("label") or ""),
-                source_session_id=session_id,
-            )
-        for bonus in bonuses_to_legacy(summary.get("rewards", []) or []):
-            self.db.save_legacy_bonus(
-                user_id=user_id,
-                bonus_type=str(bonus.get("bonus_type") or ""),
-                bonus_value=str(bonus.get("bonus_value") or ""),
-                label=str(bonus.get("label") or ""),
-                source_session_id=session_id,
-                runs_remaining=int(bonus.get("runs_remaining") or 1),
-            )
 
     def legacy_bonuses(self, user_id: str) -> list[dict[str, Any]]:
         if not user_id or user_id.startswith(_GUEST_PREFIX):

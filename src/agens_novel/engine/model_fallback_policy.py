@@ -14,7 +14,9 @@ UPSTREAM_NOT_FOUND_NOTICE = "叙事服务配置暂未接通，请检查个人设
 UPSTREAM_AUTH_NOTICE = "叙事服务鉴权未通过，请检查个人设置或切回系统默认后重试。"
 UPSTREAM_TIMEOUT_NOTICE = "叙事服务响应过久，请稍后重试或切换更稳定的设置。"
 MODEL_KEY_UNAVAILABLE_NOTICE = "叙事服务密钥未配置或不可用，请检查个人设置或使用系统默认。"
-MODEL_CONTRACT_UNAVAILABLE_NOTICE = CHOICE_FALLBACK_NOTICE
+MODEL_CONTRACT_UNAVAILABLE_NOTICE = (
+    "模型暂不可用，本回合记录暂未续上，已切换本地故事，请直接选择下方选项继续。"
+)
 MODEL_CONTRACT_MARKERS = (
     "模型已返回",
     "模型输出",
@@ -80,10 +82,10 @@ def public_model_failure_notice(reason: str = "") -> str:
         return UPSTREAM_NOT_FOUND_NOTICE
     if _has_http_status(lowered, 401) or _has_http_status(lowered, 403) or "unauthorized" in lowered or "forbidden" in lowered:
         return UPSTREAM_AUTH_NOTICE
-    if _looks_secret_bearing(text):
-        return CHOICE_FALLBACK_NOTICE
     if any(marker in text for marker in MODEL_CONTRACT_MARKERS):
         return MODEL_CONTRACT_UNAVAILABLE_NOTICE
+    if _looks_secret_bearing(text):
+        return CHOICE_FALLBACK_NOTICE
     return CHOICE_FALLBACK_NOTICE
 
 

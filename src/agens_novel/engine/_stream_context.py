@@ -1,13 +1,12 @@
-"""Thread-local context for passing stream_callback across LangGraph nodes.
+"""Thread-local context for passing stream_callback across agent nodes.
 
-This avoids putting a non-serializable callable into the graph state,
-which would cause msgpack checkpoint failures.
+This keeps a non-serializable callable out of the data-only graph state.
 """
 
 from __future__ import annotations
 
 import threading
-from typing import Callable
+from collections.abc import Callable
 
 _local = threading.local()
 

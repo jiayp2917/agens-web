@@ -13,6 +13,7 @@ from pathlib import Path
 
 import pytest
 from sqlalchemy import create_engine, text
+from sqlalchemy.exc import IntegrityError
 
 pytestmark = pytest.mark.xdist_group("pg_test_db")
 
@@ -151,7 +152,7 @@ class TestGameRunAndTurnStorage:
             narrative="", event_kind="event",
         )
         # Duplicate turn_no for the same run should be rejected by the UNIQUE constraint.
-        with pytest.raises(Exception):
+        with pytest.raises(IntegrityError):
             pg_db.record_game_turn(
                 run_id, turn_no=1, start_age=21, elapsed_years=1, end_age=22,
                 lifespan=200, remaining_lifespan=178, choice_taken=None,

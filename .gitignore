@@ -36,14 +36,7 @@ runtime/**/*.log
 # Tool residues
 .workbuddy/
 .playwright-cli/
-output/playwright/
-output/deploy/
-output/runtime/
-output/*.csv
-output/*.json
-output/*.jsonl
-output/*.ndjson
-output/*.png
+output/
 web/frontend-react/node_modules/
 web/frontend-react/dist/
 web/frontend-react/*.tsbuildinfo

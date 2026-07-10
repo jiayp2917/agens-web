@@ -1,6 +1,6 @@
 # 游戏模式全流程细则（v5）
 
-## 2026-06-27 Implementation Note
+## Current Implementation Note
 
 - A/B/C/D remains the only product input contract. `/choice` accepts
   `choice_index` or A/B/C/D letters; arbitrary free-text `choice` requests are
@@ -15,16 +15,15 @@
   after model-delta sanitization and rule-delta merge. If the model claims
   attribute growth but the rule engine does not grant it, the visible claim is
   suppressed; if the rule engine grants it, the chronicle may describe it.
-- The latest visible-Chrome local validation is
-  `local-visible-chronicle-events-routes-20260708`: 20/20 non-fallback turns,
-  repair 0/20, judge 4, average choice latency about 17.35s, max about 59.3s;
-  DB audit showed A/B/C/D route categories at 5 turns each and continuous
-  `game_turns` 1-20.
 - Current P1 implementation is moving ordinary turns toward a data-driven
   chronicle loop: four fixed world packs, structured fate profile, route event
   catalog, and stricter narrator contract diagnostics.
+- start/choice/action/save/load/end require request ID + expected session version;
+  retries are idempotent and stale versions return HTTP 409.
+- Guest sessions are short-lived PostgreSQL rows. Login/register deletes the
+  current guest run instead of migrating it into the account.
 
-> 状态：**v5 Alpha 本地与当前生产 P0 验收已闭环，下一步进入 P1 游玩质量与模型效率优化**。游戏模式核心规则已切换到 A/B/C/D 四按钮、无 HP/MP、事件判定战斗、寿元寿命表、六维属性、动态流逝年数、PostgreSQL 回合记录和用户级模型配置。
+> 状态：**v5 Alpha 本地一致性与安全修复已落盘，生产部署和真实 Chrome/live-model 复验待独立执行**。游戏模式核心规则已切换到 A/B/C/D 四按钮、无 HP/MP、事件判定战斗、寿元寿命表、六维属性、动态流逝年数、PostgreSQL 回合记录和用户级模型配置。
 > 文档定位：游戏模式的产品 spec + 技术实现规格，是“游戏模式”的单一事实来源。
 >
 > **实现状态**（当前状态见文档顶部说明）
@@ -37,11 +36,11 @@
 > | §3.5 动态开局 | 难度、天赋、灵根、家世、六维和随机/手选模式驱动本局世界观、0-16 岁编年史、16 岁初始局势、外界情报和首次 A/B/C/D | ✅ 后端开局链路已改为统一 opening payload；模型未启用或失败时使用 profile-aware fallback，不再固定青玄宗/东荒云界模板；fallback 不算 live-model 成功 |
 > | §3.6 阶段反馈 / 事件池 | 每 3-5 回合反馈阶段目标、外界变化、路线差异 | ✅ 已推进为“世界包 + 命数画像 + 数据驱动事件表”：每回合选择编年史事件上下文，每 4 回合写入 `world.lore_add`；`local-visible-chronicle-events-routes-20260708` 验证 20 回合中 8 回合写入 lore |
 > | §4 战斗事件化 | 斗法/禁地/心魔/天劫以事件判定表达 | ✅ 已实现（`handle_combat_action` 为安全 no-op；`apply_delta` 丢弃结构化 combat delta） |
-> | §8.3 `game_turns` 表 | JSONB 回合日志 + `game_runs` + `player_progress` | ✅ 已接线（PostgreSQL 单后端（Option C 已移除 SQLite），Alembic `20260622_0003`，Web 回合/终局写入） |
+> | §8.3 `game_turns` 表 | JSONB 回合日志 + active/completed `game_runs` + `player_progress` | ✅ 已接线（PostgreSQL 单后端，Alembic `20260710_0008`，回合/session/终局原子写入） |
 > | §11 稀有度解锁门 | 白/绿/蓝/紫/橙/红 六档 + runs/ascension 门径 | ✅ 已接线（`constants.rarity_unlocked_for`、`/api/catalog/rarities`，终局写入 `player_progress`） |
 > | §11 死亡分类 | finale > karma > event > lifespan > player | ✅ 已实现（`death_rewards.categorize_death`） |
 > | 验证 | compileall + pytest + React build + 密钥审计 | ⏳ 以当前分支最新测试结果为准，不在文档中固化旧计数 |
-> | 待办 | 继续降低本地 live 响应长尾、减少 narrator 契约漂移，并改善长期内容体验 | ⏳ 当前生产批次 start+choice 已 non-fallback；后续生产部署或模型配置变更仍需复跑。当前本地 2026-07-09 `final2` 内容审查已覆盖 base、A/B/C/D 路线和 mixed 长局，所有 final2 证据 fallback 0、P0/P1 0、可见禁用词 0、明显重复 0；剩余风险是 narrator 结构化输出不稳、live 长尾仍到约 64s、终局页证据采集不足 |
+> | 待办 | 独立真实 Chrome、Docker 和 live-model gate；继续降低响应长尾和 narrator 契约漂移 | ⏳ 本地自动化不能替代生产验收，fallback 不能算 live-model 成功 |
 
 ## 0. TL;DR
 
@@ -467,12 +466,12 @@ CREATE TABLE game_turns (
 |---|---|---|---|
 | 1 | 固化 v5 文档和实现边界 | 搜索确认无旧硬规则残留 | ✅ |
 | 2 | 新增游戏模式规则引擎骨架 | 单测覆盖 A/B/C/D 和时间推进 | ✅ |
-| 3 | 新增 PostgreSQL catalog 与 `game_turns` 迁移 | Alembic 空库升级成功 | ✅ catalog/reward bridge 已在 `20260621_0002`；v5 run/turn/progress 已在 `20260622_0003` |
+| 3 | 新增 PostgreSQL catalog、run/turn 与 runtime consistency 迁移 | Alembic 空库升级成功 | ✅ 当前 head `20260710_0008_runtime_consistency` |
 | 4 | 接入角色创建六维属性和内容库读取 | API 返回可选天赋/家世/灵根/难度 | ✅ |
 | 5 | 实现一次关键抉择结算 | 低境界推进 1-3 年，高境界推进十年级以上 | ✅ |
 | 6 | 接入模型润色和本地模板兜底 | 模型失败仍可继续下一回合 | ✅ |
-| 7 | React UI 切到游戏模式入口 | 375px/768px/1440px 无横向滚动 | ⏳ 已切到 A/B/C/D 固定语义，三档断点待终验 |
-| 8 | 游客与账号存档验收 | 游客可玩无云存档，账号可存读档 | ✅ 本地 API 与 Chrome 覆盖；2026-07-02 当前生产批次账号流与 production start+choice non-fallback 已通过。后续生产部署或模型配置变更仍需复跑同一门禁 |
+| 7 | React UI 切到游戏模式入口 | 375px/768px/1440px 无横向滚动 | ⏳ 自动化结构/构建已覆盖，本批真实 Chrome 待验 |
+| 8 | 游客与账号存档验收 | 游客可玩无云存档，账号可存读档 | ⏳ 本地 API 自动化覆盖；生产和本批真实 Chrome 待独立复验 |
 
 ---
 

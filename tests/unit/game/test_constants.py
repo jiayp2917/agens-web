@@ -20,9 +20,9 @@ from agens_novel.game.constants import (
     REALM_LIFESPAN_RANGES,
     REALM_LIFESPANS,
     REALM_ORDER,
-    SPIRIT_ROOTS,
     SPIRIT_ROOT_GRADES,
     SPIRIT_ROOT_MAP,
+    SPIRIT_ROOTS,
     TALENT_OPTIONS,
     TECHNIQUE_TYPES,
     rarity_unlocked_for,
@@ -52,7 +52,7 @@ class TestRealmConstants:
 
     def test_realm_lifespans_are_monotonic_caps(self):
         lifespans = [REALM_LIFESPANS[name] for name in REALM_ORDER]
-        for current, nxt in zip(lifespans, lifespans[1:]):
+        for current, nxt in zip(lifespans, lifespans[1:], strict=False):
             assert current < nxt
 
     def test_realm_lifespan_ranges_cover_legacy_caps(self):

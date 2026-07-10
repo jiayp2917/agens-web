@@ -1,6 +1,6 @@
 # agents/
 
-三个 LangGraph Agent 协作：Narrator（叙事）、World Builder（开局）、Judge（审核）。
+三个 Agent 通过项目内 `SequentialAgentGraph` 协作：Narrator（叙事）、World Builder（开局）、Judge（审核）。
 
 ## 子目录
 
@@ -15,7 +15,7 @@
 ```
 agents/<name>/
 ├── __init__.py
-├── graph.py        # LangGraph 节点编排（START → 节点 → END）
+├── graph.py        # SequentialAgentGraph 节点编排
 └── nodes.py        # LLM 调用 + 响应解析（含 _parse_xxx_output）
 ```
 
@@ -39,7 +39,7 @@ GameEngine.apply_delta  ← 应用审核后的 delta
 |------|------|------|
 | `run_turn_sync(agent_name, input, session)` | `(str, str, GameSession) -> dict` | 调用指定 Agent，详见 `engine/turn_runner.py` |
 | `_parse_narrator_output(text)` | `str -> (narrative, delta, choices)` | Narrator 解析器，提取 `<state_update>` 和 `<choices>` |
-| `build_graph_<agent>()` | `() -> CompiledGraph` | LangGraph 编译图 |
+| `build_<agent>_graph()` | `() -> SequentialAgentGraph` | 构建项目内顺序 Agent 图 |
 
 ## 测试位置
 

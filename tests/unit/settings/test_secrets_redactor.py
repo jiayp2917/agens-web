@@ -6,7 +6,6 @@ import logging
 
 from agens_novel.logging_setup import SafeStreamHandler, SecretRedactor, redact, setup_logging
 
-
 SAMPLE_SECRET = "sk-oDA3g9FPycylI24SIIQXwlkqB3WGEWwtU0TkpTFpkWemurQW"
 
 

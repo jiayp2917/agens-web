@@ -11,18 +11,23 @@ key is never logged, and the repository does not ship a built-in key.
 
 from __future__ import annotations
 
+import asyncio
 import json
 import logging
 import os
 import time
-from typing import Any, Callable
+from collections.abc import Callable
+from dataclasses import dataclass, field
+from typing import Any
 
 import httpx
 
 from agens_novel.settings import Settings
-from .retry import with_retry
+
+from .retry import RetryExhausted, is_retryable_status, with_retry
 from .sse import extract_delta_text
 from .types import LLMResponse, Message, Usage
+from .url_security import UnsafeModelBaseUrl, validate_model_base_url_for_request
 
 log = logging.getLogger(__name__)
 
@@ -104,6 +109,17 @@ def _resolve_request_options(
     return max(1.0, timeout_seconds), max(0, max_retries)
 
 
+def _resolve_total_timeout(total_timeout_seconds: float | None) -> float:
+    if total_timeout_seconds is None:
+        try:
+            total_timeout_seconds = float(
+                os.environ.get("AGNES_TOTAL_TIMEOUT_SECONDS", "90.0")
+            )
+        except ValueError:
+            total_timeout_seconds = 90.0
+    return max(1.0, total_timeout_seconds)
+
+
 async def call_llm(
     messages: list[Message],
     *,
@@ -114,6 +130,7 @@ async def call_llm(
     max_tokens: int = 4096,
     stream: bool = False,
     timeout_seconds: float | None = None,
+    total_timeout_seconds: float | None = None,
     max_retries: int | None = None,
 ) -> LLMResponse:
     """Call the OpenAI-compatible /v1/chat/completions endpoint.
@@ -122,7 +139,9 @@ async def call_llm(
     Raises :class:`LLMError` subclasses on transport / HTTP failures.
     """
     base, key, mdl = _resolve_config(base_url, api_key, model)
+    base = await _safe_request_base_url(base)
     timeout_seconds, max_retries = _resolve_request_options(timeout_seconds, max_retries)
+    total_timeout_seconds = _resolve_total_timeout(total_timeout_seconds)
     log.debug("call_llm: base=%s model=%s key=%s", base, mdl, mask_key(key))
     payload = _build_payload(
         messages,
@@ -136,8 +155,24 @@ async def call_llm(
 
     started = time.monotonic()
     if stream:
-        return await _call_stream(url, headers, payload, timeout_seconds, max_retries, started)
-    return await _call_non_stream(url, headers, payload, timeout_seconds, max_retries, started)
+        return await _call_stream(
+            url,
+            headers,
+            payload,
+            timeout_seconds,
+            total_timeout_seconds,
+            max_retries,
+            started,
+        )
+    return await _call_non_stream(
+        url,
+        headers,
+        payload,
+        timeout_seconds,
+        total_timeout_seconds,
+        max_retries,
+        started,
+    )
 
 
 async def call_llm_stream(
@@ -149,6 +184,7 @@ async def call_llm_stream(
     temperature: float = 0.7,
     max_tokens: int = 4096,
     timeout_seconds: float | None = None,
+    total_timeout_seconds: float | None = None,
     max_retries: int | None = None,
     on_chunk: Callable[[str], None] | None = None,
 ) -> LLMResponse:
@@ -159,7 +195,9 @@ async def call_llm_stream(
     final accumulated text is still returned in the LLMResponse.
     """
     base, key, mdl = _resolve_config(base_url, api_key, model)
+    base = await _safe_request_base_url(base)
     timeout_seconds, max_retries = _resolve_request_options(timeout_seconds, max_retries)
+    total_timeout_seconds = _resolve_total_timeout(total_timeout_seconds)
     log.debug("call_llm_stream: base=%s model=%s key=%s", base, mdl, mask_key(key))
     payload = _build_payload(
         messages,
@@ -176,6 +214,7 @@ async def call_llm_stream(
         headers,
         payload,
         timeout_seconds,
+        total_timeout_seconds,
         max_retries,
         started,
         on_chunk=on_chunk,
@@ -187,15 +226,25 @@ async def _call_non_stream(
     headers: dict[str, str],
     payload: dict[str, Any],
     timeout_seconds: float,
+    total_timeout_seconds: float,
     max_retries: int,
     started: float,
 ) -> LLMResponse:
     async def _do() -> LLMResponse:
-        with httpx.Client(timeout=timeout_seconds) as client:
-            resp = client.post(url, headers=headers, json=payload)
+        async with httpx.AsyncClient(
+            timeout=timeout_seconds,
+            follow_redirects=False,
+            trust_env=False,
+        ) as client:
+            resp = await client.post(url, headers=headers, json=payload)
             return _handle_non_stream_response(resp, started)
 
-    return await with_retry(_do, max_retries=max_retries, label="llm_call")
+    return await _execute_with_retry(
+        _do,
+        max_retries=max_retries,
+        total_timeout_seconds=total_timeout_seconds,
+        label="llm_call",
+    )
 
 
 async def _call_stream(
@@ -203,21 +252,40 @@ async def _call_stream(
     headers: dict[str, str],
     payload: dict[str, Any],
     timeout_seconds: float,
+    total_timeout_seconds: float,
     max_retries: int,
     started: float,
     on_chunk: Callable[[str], None] | None = None,
 ) -> LLMResponse:
     async def _do() -> LLMResponse:
-        with httpx.Client(timeout=timeout_seconds) as client:
-            with client.stream("POST", url, headers=headers, json=payload) as resp:
-                return _handle_stream_response(resp, payload["model"], started, on_chunk)
+        async with httpx.AsyncClient(
+            timeout=timeout_seconds,
+            follow_redirects=False,
+            trust_env=False,
+        ) as client:
+            async with client.stream("POST", url, headers=headers, json=payload) as resp:
+                return await _handle_stream_response(
+                    resp,
+                    payload["model"],
+                    started,
+                    on_chunk,
+                )
 
-    return await with_retry(_do, max_retries=max_retries, label="llm_stream")
+    return await _execute_with_retry(
+        _do,
+        max_retries=max_retries,
+        total_timeout_seconds=total_timeout_seconds,
+        label="llm_stream",
+    )
 
 
 def _handle_non_stream_response(resp: httpx.Response, started: float) -> LLMResponse:
     if resp.status_code == 401 or resp.status_code == 403:
         raise LLMAuthError(f"HTTP {resp.status_code}: {resp.text[:300]}")
+    if 300 <= resp.status_code < 400:
+        raise LLMBadRequest(f"HTTP {resp.status_code}: upstream redirect refused")
+    if is_retryable_status(resp.status_code):
+        resp.raise_for_status()
     if resp.status_code >= 400:
         raise LLMBadRequest(f"HTTP {resp.status_code}: {resp.text[:300]}")
     resp.raise_for_status()
@@ -229,7 +297,7 @@ def _handle_non_stream_response(resp: httpx.Response, started: float) -> LLMResp
         raise LLMError(f"Malformed response: missing 'choices[0]': {body!r}") from e
 
     text = first.get("message", {}).get("content") or first.get("text") or ""
-    usage = body.get("usage") or {}
+    usage = _normalize_usage(body.get("usage"))
     elapsed_ms = int((time.monotonic() - started) * 1000)
 
     return LLMResponse(
@@ -242,71 +310,116 @@ def _handle_non_stream_response(resp: httpx.Response, started: float) -> LLMResp
     )
 
 
-def _handle_stream_response(
+def _normalize_usage(value: Any) -> Usage:
+    if not isinstance(value, dict):
+        return {}
+    return Usage(
+        prompt_tokens=_token_count(value.get("prompt_tokens")),
+        completion_tokens=_token_count(value.get("completion_tokens")),
+        total_tokens=_token_count(value.get("total_tokens")),
+    )
+
+
+def _token_count(value: Any) -> int:
+    return value if isinstance(value, int) and not isinstance(value, bool) else 0
+
+
+@dataclass
+class _StreamState:
+    model_name: str
+    accumulated: list[str] = field(default_factory=list)
+    finish_reason: str = "stop"
+    usage: Usage = field(default_factory=Usage)
+
+    def consume(self, event: dict[str, Any], on_chunk: Callable[[str], None] | None) -> None:
+        text = extract_delta_text(event)
+        if text:
+            self.accumulated.append(text)
+            if on_chunk is not None:
+                on_chunk(text)
+        if event.get("model"):
+            self.model_name = str(event["model"])
+        choices = event.get("choices") or []
+        if choices and isinstance(choices[0], dict) and "finish_reason" in choices[0]:
+            self.finish_reason = str(choices[0]["finish_reason"] or "stop")
+        if event.get("usage"):
+            self.usage = _normalize_usage(event["usage"])
+
+
+async def _handle_stream_response(
     resp: httpx.Response,
     default_model: str,
     started: float,
     on_chunk: Callable[[str], None] | None = None,
 ) -> LLMResponse:
     if resp.status_code == 401 or resp.status_code == 403:
-        raise LLMAuthError(f"HTTP {resp.status_code}: {_read_response_text(resp)[:300]}")
+        raise LLMAuthError(f"HTTP {resp.status_code}: {(await _read_response_text(resp))[:300]}")
+    if 300 <= resp.status_code < 400:
+        raise LLMBadRequest(f"HTTP {resp.status_code}: upstream redirect refused")
+    if is_retryable_status(resp.status_code):
+        await resp.aread()
+        resp.raise_for_status()
     if resp.status_code >= 400:
-        raise LLMBadRequest(f"HTTP {resp.status_code}: {_read_response_text(resp)[:300]}")
+        raise LLMBadRequest(f"HTTP {resp.status_code}: {(await _read_response_text(resp))[:300]}")
     resp.raise_for_status()
 
-    accumulated: list[str] = []
-    model_name = default_model
-    finish_reason = "stop"
-    usage: Usage = {}
+    state = _StreamState(model_name=default_model)
     buffer = ""
 
-    for raw in resp.iter_bytes():
+    async for raw in resp.aiter_bytes():
         buffer += raw.decode("utf-8", errors="replace")
         *lines, buffer = buffer.split("\n")
         for event in _parse_sse_lines(lines):
-            text = extract_delta_text(event)
-            if text:
-                accumulated.append(text)
-                if on_chunk is not None:
-                    on_chunk(text)
-            if "model" in event:
-                model_name = event["model"]
-            choices = event.get("choices") or []
-            if choices and "finish_reason" in choices[0]:
-                finish_reason = choices[0]["finish_reason"] or "stop"
-            if "usage" in event and event["usage"]:
-                usage = event["usage"]  # type: ignore[assignment]
+            state.consume(event, on_chunk)
 
     for event in _parse_sse_lines([buffer]):
-        text = extract_delta_text(event)
-        if text:
-            accumulated.append(text)
-            if on_chunk is not None:
-                on_chunk(text)
-        if "model" in event:
-            model_name = event["model"]
-        choices = event.get("choices") or []
-        if choices and "finish_reason" in choices[0]:
-            finish_reason = choices[0]["finish_reason"] or "stop"
-        if "usage" in event and event["usage"]:
-            usage = event["usage"]  # type: ignore[assignment]
+        state.consume(event, on_chunk)
 
     elapsed_ms = int((time.monotonic() - started) * 1000)
     return LLMResponse(
-        text="".join(accumulated),
-        model=model_name,
-        usage=usage,
-        finish_reason=finish_reason,
+        text="".join(state.accumulated),
+        model=state.model_name,
+        usage=state.usage,
+        finish_reason=state.finish_reason,
         elapsed_ms=elapsed_ms,
         raw={"streamed": True},
     )
 
 
-def _read_response_text(resp: httpx.Response) -> str:
+async def _read_response_text(resp: httpx.Response) -> str:
     try:
-        return resp.read().decode("utf-8", "replace")
+        return (await resp.aread()).decode("utf-8", "replace")
     except Exception:
         return resp.text
+
+
+async def _safe_request_base_url(base_url: str) -> str:
+    try:
+        return await validate_model_base_url_for_request(base_url)
+    except UnsafeModelBaseUrl as exc:
+        raise LLMBadRequest(str(exc)) from exc
+
+
+async def _execute_with_retry(
+    operation: Callable[[], Any],
+    *,
+    max_retries: int,
+    total_timeout_seconds: float,
+    label: str,
+) -> LLMResponse:
+    try:
+        async with asyncio.timeout(total_timeout_seconds):
+            return await with_retry(
+                operation,
+                max_retries=max_retries,
+                label=label,
+            )
+    except TimeoutError as exc:
+        raise LLMError(f"{label}: total timeout exceeded") from exc
+    except RetryExhausted as exc:
+        raise LLMError(f"{label}: upstream transport unavailable") from exc
+    except httpx.HTTPStatusError as exc:
+        raise LLMError(f"{label}: upstream HTTP {exc.response.status_code}") from exc
 
 
 def _parse_sse_lines(lines: list[str]) -> list[dict[str, Any]]:

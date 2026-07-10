@@ -119,6 +119,13 @@ Do not add custom layers before checking whether existing FastAPI, SQLAlchemy/Al
 - Users with no personal config use the system default Agens config. Admins manage that default through `/api/admin/settings/model`.
 - `MODEL_CONFIG_SECRET` is required for encrypted stored keys in production. Never write raw model API keys to docs, logs, frontend code, saves, snapshots, or database plaintext columns.
 
+## 2026-07-10 Runtime Consistency And Model URL Boundary
+
+- User-configurable model endpoints are HTTPS-only. Official hosts are built in; custom hosts must be listed in `AGENS_MODEL_BASE_URL_ALLOWLIST` and must resolve only to public IP addresses. Do not bypass `llm/url_security.py`.
+- `start` / `choice` / `action` / `save` / `load` / `end` requests require `request_id` and `expected_version`. Do not restore server-generated defaults at the API boundary.
+- Session mutations must keep the lock + PostgreSQL CAS + idempotency record + atomic persistence boundary. Do not write game_turns separately from the session snapshot.
+- Guest sessions are PostgreSQL-backed and short-lived. Login/register deletes the current guest session; do not silently migrate it into the account.
+
 ## 文档入口
 
 先读 docs/INDEX.md。当前运行链路见 docs/RUNTIME_FLOW.md，结构边界见 docs/PROJECT_AUDIT.md，生产复验门禁见 docs/PRODUCTION_V5_MIGRATION_CHECKLIST.md。历史变更只看 CHANGELOG.md；不要引用已删除的 docs/archive 旧草案作为当前事实。

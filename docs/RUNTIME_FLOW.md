@@ -1,149 +1,148 @@
 # Web 运行流程
 
-## 当前实现状态
+本文只记录当前运行链路。玩法规则以 `GAME_MODE_SPEC.md` 为准，历史证据以
+`CHANGELOG.md` 为准。
 
-- 产品入口是 React/Vite 浏览器 UI + FastAPI 后端 + PostgreSQL；旧移动端、旧 CLI/REPL、旧 `web/frontend` 不在当前维护范围。
-- 当前玩法是游戏模式 v5 Alpha：A/B/C/D 四按钮固定语义，A 稳妥、B 机遇、C 风险、D 气运；无自由文本主入口，无 HP/MP 常驻 UI。
-- 模型设置为注册用户个人配置 + 系统 Agens 默认兜底；用户 key 加密存储，不写入前端、日志、文档、存档或 session snapshot。
+## 1. 运行边界
 
-最新基线计数、Chrome 验收与生产 P0 状态见 `docs/INDEX.md` 与 `docs/PROJECT_AUDIT.md`；阶段计划见 `docs/PLAYABLE_GAMEPLAY_ROADMAP_20260629.md`，待办见 `docs/NEXT_GOVERNANCE_BACKLOG.md`。本文只记录运行链路，不重复 dated 证据。
-本文记录当前 Web-only 运行链路。产品入口是浏览器 UI + FastAPI 后端，不再包含移动端打包或设备验证路径。
+- React/Vite 浏览器 UI 只调用 API，不直接修改 `GameSession`。
+- `GameEngine` 是玩法门面，外部仍调用 `start_from_profile()`、`handle_action()` 和 `attempt_breakthrough()`。
+- PostgreSQL 是唯一数据库；生产 schema 只由 Alembic 管理。
+- 注册用户模型配置按 `user_id` 隔离；系统默认配置使用独立 admin API。
+- fallback 可继续本地故事，但不是 live-model 成功。
 
-## 本地启动
+## 2. 本地启动
 
 ```powershell
 cd D:\chat\agens-web
 .\scripts\start_local_pg.ps1
 $env:DATABASE_URL = "postgresql+psycopg://agens_test@127.0.0.1:55432/agens_web_test"
-$env:TEST_DATABASE_URL = "postgresql+psycopg://agens_test@127.0.0.1:55432/agens_web_test"
 $env:AGENS_PG_AUTO_DDL = "1"
 $env:SESSION_COOKIE_SECURE = "0"
 $env:PYTHONPATH = "D:\chat\agens-web\src"
 .\.venv\Scripts\python.exe -m uvicorn web.backend.app:app --host 127.0.0.1 --port 8000 --reload
 ```
 
-如果当前虚拟环境尚未完成 editable install，先临时显式设置源码路径：
-
-```powershell
-$env:PYTHONPATH="D:\chat\agens-web\src"
-$env:SESSION_COOKIE_SECURE="0"
-.\.venv\Scripts\python.exe -m uvicorn web.backend.app:app --host 127.0.0.1 --port 8000
-```
-
-浏览器打开：
-
-```text
-http://127.0.0.1:5173/
-```
-
-前端开发服务：
-
 ```powershell
 cd D:\chat\agens-web\web\frontend-react
 npm.cmd run dev -- --host 127.0.0.1 --port 5173
 ```
 
-如果只验证后端静态产物，也可以打开 `http://127.0.0.1:8000/`；日常本地开发优先走 Vite `5173`，由 Vite 代理 `/api` 到后端。
+浏览器访问 `http://127.0.0.1:5173/static/`。
 
-## 业务流程
+## 3. 认证与访客会话
 
-1. 首页
-   - 生产入口加载 `web/frontend-react/dist/index.html`。
-   - 旧 `web/frontend` 已归档删除，不再作为 fallback 或产品入口。
-   - 首页提供新游戏、读档、教程、设置、邀请码注册入口和背景音乐开关。
-   - 新游戏允许访客直接进入角色创建；读档/设置打开弹窗，不再强制跳登录页。
-   - Web 端不执行“关闭程序”，结束本局只清理当前局状态并返回首页。
+1. `POST /api/auth/register` 在一个事务内消费邀请码并创建用户；首管理员创建使用 PostgreSQL advisory transaction lock。
+2. `POST /api/auth/login` 验证账号并设置 HttpOnly `agens_session` Cookie。
+3. 未登录 `POST /api/sessions` 时，后端生成 HttpOnly `agens_guest` Cookie，并把访客 session 写入 PostgreSQL。
+4. 访客 session 以 token hash 绑定，默认 24 小时过期，可跨后端进程恢复。
+5. 登录或注册成功后，后端删除当前访客 session，清除访客 Cookie；前端清除活动 session 并回到账号态，不迁移访客局。
 
-2. 设置
-   - GET /api/settings/model returns the logged-in user effective model config summary with source user/system; guests receive 401.
-   - POST /api/settings/model saves only the current user personal provider/base_url/model/API key. DELETE /api/settings/model clears the personal config and falls back to system Agens.
-   - GET/POST /api/admin/settings/model is admin-only and manages the system default config.
-   - API keys are stored in PostgreSQL as application-encrypted material; responses expose only api_key_set and masked state, never raw keys or process-global environment writes.
+## 4. 模型设置
 
-3. 会话
-   - `POST /api/auth/register` 使用邀请码注册。
-   - `POST /api/auth/login` 登录并设置 HttpOnly Session Cookie。
-   - `GET /api/auth/me` 读取当前登录用户。
-   - 未登录调用 `POST /api/sessions` 创建访客 Web 会话，并设置 HttpOnly 访客 Cookie。
-   - 已登录调用 `POST /api/sessions` 创建账号 Web 会话。
-   - 后端为每个 Web 会话持有一个 `GameEngine` runner。
-   - 账号会话快照写入数据库，可在服务重启后从数据库恢复。
-   - 访客会话只保留在当前后端进程内存中，不写入 `users`、`sessions` 或 `saves`。
+- `GET /api/settings/model`：返回当前用户有效配置摘要及 `source: user|system`。
+- `POST /api/settings/model`：保存当前用户个人配置。
+- `DELETE /api/settings/model`：删除个人配置并回到系统默认。
+- `GET/POST /api/admin/settings/model`：管理员维护系统默认配置。
+- API 只返回 provider、base URL、model、`api_key_set` 和 masked 状态，不返回原始 Key。
+- PostgreSQL 只保存加密 Key；缺少 `MODEL_CONFIG_SECRET` 时解密 fail closed。
+- 用户 Key 通过当前 session 的 runner 显式传入模型调用，不写进进程级 `os.environ`。
 
-4. 角色创建
-   - 前端角色页提交角色名、天赋、灵根、家世、难度和六维属性；不再提交游戏名称或隐藏开局码。
-   - 六维属性遵循 `docs/GAME_MODE_SPEC.md` §4.1：手动模式单项 2-8 且总和必须为 30；随机模式单项 0-10 且总和固定为 30。后端会重新校验角色创建入参。
-   - 运行时六维属性统一按 0-10 解析，5 为中性默认值；旧 0-100 存档、World Builder 输出或 catalog 元数据只作为兼容输入迁移，不再作为新逻辑尺度。
-   - 随机模式提交前端展示的随机属性池；后端只在随机模式未带属性时兜底生成新池，避免“看到的随机值”和实际入局值不一致。
-   - `POST /api/sessions/{id}/start` 调用 `GameEngine.start_from_profile()`。
-   - World Builder 负责开场世界观、0-16 岁编年史、16 岁初始局势和 A/B/C/D；无 key 或模型失败时先走用户 fallback 决策，继续后使用同一 profile 输入生成差异化本地开局，不再默认退回固定 `misty_gate` 本地故事。fallback 仍通过 `fallback_prompt.active=true` 暴露，不能算 live-model 成功。
-   - 特殊开局只由后端识别，前端不明示隐藏规则。
+保存配置与每次请求都会校验模型 Base URL：
 
-5. 回合推进
-   - A/B/C/D 固定按钮调用 `POST /api/sessions/{id}/choice`，D 为气运/天命路线；API 接受 `choice_index`、A/B/C/D 和 `"1"`-`"4"`，任意自由文本继续拒绝。
-   - `POST /api/sessions/{id}/action` 仅保留给兜底“继续本局”和兼容调用，不再作为 React 主入口的自由文本输入。
-   - 后端把行动交给 `GameEngine.handle_action()`，引擎继续负责 Narrator、必要 Judge、状态落账、事件化斗法、突破、死亡和飞升。
-   - 本地故事无效输入只提示并保留当前选项，不消耗回合；重复选择自循环节点会生成变化文本，避免完全相同叙事连发。
-   - 正式突破成功/失败先由 `RealmSystem` 产生权威 delta，再让 Narrator 按结果写叙事；模型失败不会推翻规则结算。成功/失败会写入 `turn_history`，账号局后续可持久化为连续 `game_turns`。
-   - 如果模型文本声称获得关键道具、功法、伤势、寿元或境界变化但缺少结构化 delta，后端会改写或压制该叙事，玩家最多看到自然的因果结算提示，不展示内部 mismatch 文案。
-   - API 响应统一返回叙事事件、角色状态、世界状态、A/B/C/D、回合数和终局状态。
+1. 只允许 HTTPS。
+2. 拒绝用户信息、query、fragment 和 IP 字面量。
+3. 官方域名内置允许；自定义域名必须在 `AGENS_MODEL_BASE_URL_ALLOWLIST`。
+4. 请求前解析全部 A/AAAA，任何 loopback、private、link-local、reserved 或 multicast 地址都拒绝。
+5. HTTPX 使用 `follow_redirects=False`、`trust_env=False` 和整体调用时限。
 
-6. 存读档
-   - `POST /api/sessions/{id}/save` 将当前 `GameSession.to_save_dict()`、事件和 chat_history 写入数据库。
-   - `POST /api/sessions/{id}/load` 从数据库还原 `GameSession.from_save_dict()`。
-   - `GET /api/saves` 返回当前用户存档摘要。
-   - 存读档只对邀请码注册/登录用户开放。
-   - 访客局可以继续当前局，但不提供云端保存、读档或跨刷新恢复。
-
-7. 结束本局
-   - `POST /api/sessions/{id}/end` 将当前会话置为终局，浏览器进入结束页。
-   - Web 端不尝试关闭浏览器或后端进程。
-
-## 代码链路
+## 5. 创建会话与开局
 
 ```text
-Browser UI
-  -> web/backend FastAPI
-  -> WebGameService / WebRunner
-  -> GameEngine
-  -> World Builder / Narrator / Judge
+POST /api/sessions
+  -> WebGameService.create_session()
+  -> WebRunner(GameEngine)
+  -> PostgreSQL sessions snapshot version=0
+```
+
+角色创建调用：
+
+```text
+POST /api/sessions/{id}/start
+  request_id + expected_version + profile
+  -> 每会话 RLock
+  -> 幂等结果查询
+  -> 个人/系统模型配置解析
+  -> profile 校验与遗泽应用
+  -> GameEngine.start_from_profile()
+  -> StartFlow / World Builder 或 profile-aware fallback
+  -> 同一事务写 session snapshot、active game_run、遗泽消费、幂等结果
+  -> version + 1
+```
+
+六维属性由后端重新校验：手动单项 2-8、总和 30；随机单项 0-10、总和 30。运行时尺度统一为 0-10，5 为中性值。
+
+## 6. 普通回合
+
+前端固定使用 A/B/C/D 槽位。后端按槽位重新附加权威语义，模型文本中的错误路线标签不会覆盖：
+
+```text
+A -> 稳妥
+B -> 机遇
+C -> 风险
+D -> 气运
+```
+
+```text
+POST /api/sessions/{id}/choice
+  request_id + expected_version + choice/choice_index
+  -> 会话锁 + 幂等查询 + 版本检查
+  -> TurnFlow.handle_action()
+  -> turn_rules.settle_turn() 计算时间、年龄、属性、寿元、事件和终局
+  -> Narrator 生成短叙事与选项
+  -> 必要时 Judge 审核非规则字段
+  -> 规则 delta 覆盖 age/lifespan/终局等权威字段
   -> GameSession.apply_delta()
-  -> PostgreSQL snapshots / saves
-  -> Browser UI
+  -> 记录 turn_history
+  -> 同一事务写 game_turns、session snapshot、终局 bundle 和幂等结果
+  -> version + 1
 ```
 
-关键约束：
+重复 `request_id` 返回首次结果；`expected_version` 过期返回 409，前端重新读取权威 session。前端用同步 ref 阻止双击在 React 状态更新前重复发送。
 
-- Web 前端只调用 API，不直接修改 `GameSession`。
-- `GameEngine` 仍是唯一游戏逻辑入口。
-- API key 不进入前端包、日志、文档或 Git。
-- 外网首版为访客新局 + 邀请码注册存档，登录态使用 HttpOnly Cookie。
-- 访客局必须持有服务端下发的 HttpOnly 访客 Cookie 才能继续操作该局。
-- 生产数据库通过 `DATABASE_URL=postgresql+psycopg://...` 接入（PostgreSQL 单后端；`DATABASE_BACKEND` 已不再是生产信号）。
-- 生产 PostgreSQL schema 由 Alembic 迁移创建，应用启动不隐式建表；catalog 和死亡奖励表也必须由迁移覆盖。
-- PostgreSQL 启动后可补充 catalog 种子数据，但不能依赖应用隐式建表。
-- 状态变更 API 需要同源/允许来源校验。
-- 生产模式关闭 `/docs`、`/redoc`、`/openapi.json`，并启用 Host 白名单。
-- 当前 React 主入口已切到游戏模式 v5 Alpha：A/B/C/D 四按钮固定语义，支持访客新局、邀请码账号存档，以及注册用户个人模型配置。
-- 境界顺序固定为：练气、筑基、金丹、元婴、化神、合体、大乘、渡劫、飞升。
-- 境界显示固定为：练气使用 1-9 层；筑基及以上使用初期/中期/后期/圆满。
-- 寿元是当前角色的动态上限，来源于境界区间和角色/事件修正，不是固定境界常数。
-- 侧栏“外界情报”只展示现有世界摘要和 lore，不写入状态；权威状态仍由 `GameEngine` 和 `GameSession.apply_delta()` 结算。
+## 7. 突破与终局
 
-## 验证
+- `RealmSystem` 先生成成功/失败权威 delta；Judge 不得修改突破结果、境界、层数、寿元、飞升或终局字段。
+- 飞升、死亡和突破回合先记录叙事与 turn history，再清空 choices 并触发终局回调。
+- `GameSession.error` 随存档序列化和恢复，读档后终局原因保持一致。
+- 终局 run、成就、奖励、玩家进度和遗泽使用同一事务及业务唯一约束；重试不会重复发奖。
 
-```powershell
-.\.venv\Scripts\python.exe -m compileall -q src tests web
-$env:TEST_DATABASE_URL = "postgresql+psycopg://agens_test@127.0.0.1:55432/agens_web_test"
-.\.venv\Scripts\python.exe -m pytest -q tests/web
-.\.venv\Scripts\python.exe -m pytest -q
-```
+## 8. fallback
 
-`tests\web` 的 autouse fixture 会在每个测试前 truncate `TEST_DATABASE_URL` 指向的应用表。真实 Chrome 验收必须避免和 pytest 共用同一个数据库并发运行；否则账号、session、game_turns 被清空属于测试隔离副作用，不足以单独判定为产品 bug。
+模型请求失败或输出契约不完整时：
 
-## 2026-06-28 Model Settings Runtime Flow
+1. 事件流写入脱敏 model failure。
+2. 引擎自动进入本地故事并生成四个选项。
+3. `FallbackBanner` 只提示“已切换本地故事”，不显示无效“继续本局”按钮。
+4. 玩家直接点击下方 A/B/C/D。
+5. 本地故事同样调用 `settle_turn()`，推进年龄、寿元、阶段反馈和突破准备。
 
-- `GET /api/settings/model` returns the logged-in user's effective config summary with `source: "user" | "system"`; guests receive 401.
-- `POST /api/settings/model` saves only the current user's personal config. `DELETE /api/settings/model` clears it and falls back to system Agens.
-- `GET/POST /api/admin/settings/model` manages the system default config and requires admin auth.
-- During gameplay, `WebGameService` resolves the current session user's effective config and passes it into `GameEngine`/agent calls explicitly. User keys are not injected into process-global `os.environ`.
+## 9. 存读档与结束
+
+- save/load/end 同样要求 `request_id` 与 `expected_version`。
+- 存档只对登录用户开放；访客返回 401。
+- save slot 与 session snapshot 在一个 mutation transaction 中写入。
+- load 用存档恢复 runner，再通过 CAS 提交新 session version。
+- end 写终局 bundle；手动重试通过幂等表返回原结果。
+
+## 10. 健康与部署
+
+- `/api/health` 会 ping PostgreSQL；不可用返回 503。
+- `AGENS_ENV=prod` 和 `AGENS_ENV=production` 都按生产模式处理。
+- 生产禁止 `AGENS_PG_AUTO_DDL=1`。
+- Compose 先运行一次性 `agens-web-migrate`，成功后才启动应用副本。
+- 应用镜像不在 entrypoint 中执行 Alembic。
+
+## 11. 验证隔离
+
+`tests\web` 会 truncate `TEST_DATABASE_URL` 指向的表。真实 Chrome 验收必须使用另一数据库，且不要与 pytest 并发运行。fallback 不能算 live-model 成功，本地成功也不能替代生产验收。

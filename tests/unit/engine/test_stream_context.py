@@ -1,6 +1,6 @@
 """Tests for the stream callback context (msgpack-friendly state).
 
-Verifies that the streaming callback does not enter the LangGraph state
+Verifies that the streaming callback does not enter the sequential agent state
 dict (msgpack cannot serialize callables) and that the thread-local
 ``_stream_context`` accessor works as expected.
 """
@@ -11,12 +11,13 @@ from agens_novel.session.game_session import GameSession
 
 
 class TestStreamCallbackNotInState:
-    """Verify stream_callback never enters the LangGraph state dict."""
+    """Verify stream_callback never enters the sequential agent state dict."""
 
     def test_state_dict_has_no_stream_callback_key(self):
         """run_turn_sync source must not inject stream_callback into state."""
-        import agens_novel.engine.turn_runner as tr
         import inspect
+
+        import agens_novel.engine.turn_runner as tr
 
         source = inspect.getsource(tr.run_turn_sync)
         # The old code had: state["stream_callback"] = stream_callback

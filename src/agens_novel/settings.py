@@ -32,6 +32,7 @@ class Settings(BaseSettings):
     temperature: float = 0.7
     max_tokens: int = 4096
     request_timeout_seconds: float = 60.0
+    total_timeout_seconds: float = 90.0
     max_retries: int = 3
     retry_initial_backoff_seconds: float = 1.0
     retry_max_backoff_seconds: float = 8.0
@@ -53,6 +54,7 @@ class Settings(BaseSettings):
             "temperature": self.temperature,
             "max_tokens": self.max_tokens,
             "request_timeout_seconds": self.request_timeout_seconds,
+            "total_timeout_seconds": self.total_timeout_seconds,
             "max_retries": self.max_retries,
         }
 

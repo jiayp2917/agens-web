@@ -137,73 +137,90 @@ def parse_world_response(result: dict[str, Any]) -> dict[str, Any]:
     or 'world_profile'. This function finds and validates the structured
     world profile.
     """
-    # Try common nesting patterns
-    generated = result.get("generated_data")
-    if isinstance(generated, dict) and generated:
-        data = generated
-    elif isinstance(result.get("world_profile"), dict) and result["world_profile"]:
-        data = result["world_profile"]
-    else:
+    data = _world_payload(result)
+    if not data:
         log.warning("World builder returned no usable data")
         return {}
-
-    data = dict(data)
-    if isinstance(data.get("world_profile"), dict):
-        nested_profile = data.pop("world_profile")
-        for key, value in nested_profile.items():
-            data.setdefault(key, value)
-    if isinstance(data.get("opening"), dict):
-        opening = data.pop("opening")
-        data.setdefault("opening_narrative", opening.get("opening_narrative") or opening.get("narrative"))
-        data.setdefault("chronicle_0_16", opening.get("chronicle_0_16"))
-        data.setdefault("initial_situation_16", opening.get("initial_situation_16") or opening.get("initial_situation"))
-        data.setdefault("choices", opening.get("choices"))
-
-    # Validate required keys
+    data = _flatten_world_payload(data)
     required = ["world_name", "regions", "sects", "initial_situation"]
     missing = [k for k in required if k not in data]
     if missing:
         log.warning("World builder response missing keys: %s", missing)
+    _normalize_world_lists(data)
+    if not data.get("initial_situation_16"):
+        data["initial_situation_16"] = data.get("initial_situation", "")
+    _complete_world_state(data)
+    choices = normalize_choices(data.get("choices"))
+    if choices:
+        data["choices"] = choices
+    if "world_rules" not in data or not isinstance(data["world_rules"], dict):
+        data["world_rules"] = {}
+    for key in ("llm_error", "_error", "llm_calls", "state_delta", "raw_prompt", "api_key"):
+        data.pop(key, None)
+    return data
 
-    # Ensure lists for list fields
-    for field in ("regions", "sects", "current_conflicts", "fate_hooks", "chronicle_0_16", "matched_fates"):
+
+def _world_payload(result: dict[str, Any]) -> dict[str, Any]:
+    generated = result.get("generated_data")
+    if isinstance(generated, dict) and generated:
+        return dict(generated)
+    profile = result.get("world_profile")
+    return dict(profile) if isinstance(profile, dict) and profile else {}
+
+
+def _flatten_world_payload(data: dict[str, Any]) -> dict[str, Any]:
+    flattened = dict(data)
+    nested_profile = flattened.pop("world_profile", None)
+    if isinstance(nested_profile, dict):
+        for key, value in nested_profile.items():
+            flattened.setdefault(key, value)
+    opening = flattened.pop("opening", None)
+    if isinstance(opening, dict):
+        flattened.setdefault(
+            "opening_narrative", opening.get("opening_narrative") or opening.get("narrative")
+        )
+        flattened.setdefault("chronicle_0_16", opening.get("chronicle_0_16"))
+        flattened.setdefault(
+            "initial_situation_16",
+            opening.get("initial_situation_16") or opening.get("initial_situation"),
+        )
+        flattened.setdefault("choices", opening.get("choices"))
+    return flattened
+
+
+def _normalize_world_lists(data: dict[str, Any]) -> None:
+    fields = (
+        "regions",
+        "sects",
+        "current_conflicts",
+        "fate_hooks",
+        "chronicle_0_16",
+        "matched_fates",
+    )
+    for field in fields:
         if field in data and not isinstance(data[field], list):
             data[field] = [data[field]] if data[field] else []
     if "fate_profile" in data and not isinstance(data["fate_profile"], list):
         data["fate_profile"] = []
 
-    if not data.get("initial_situation_16"):
-        data["initial_situation_16"] = data.get("initial_situation", "")
 
-    if not isinstance(data.get("world"), dict):
-        data["world"] = {}
-    world = dict(data["world"])
+def _complete_world_state(data: dict[str, Any]) -> None:
+    world_value = data.get("world")
+    world = dict(world_value) if isinstance(world_value, dict) else {}
     if data.get("world_name"):
         world.setdefault("region", data["world_name"])
-    if data.get("initial_situation_16") or data.get("initial_situation"):
-        world.setdefault("current_scene", data.get("initial_situation_16") or data.get("initial_situation"))
-    lore_facts = world.get("lore_facts")
-    if not isinstance(lore_facts, list):
-        lore_facts = []
-    for fact in [data.get("initial_situation"), *(data.get("chronicle_0_16") or [])]:
+    situation = data.get("initial_situation_16") or data.get("initial_situation")
+    if situation:
+        world.setdefault("current_scene", situation)
+    lore_value = world.get("lore_facts")
+    lore_facts = list(lore_value) if isinstance(lore_value, list) else []
+    chronicle_value = data.get("chronicle_0_16")
+    chronicle = chronicle_value if isinstance(chronicle_value, list) else []
+    for fact in [data.get("initial_situation"), *chronicle]:
         if isinstance(fact, str) and fact.strip() and fact not in lore_facts:
             lore_facts.append(fact.strip())
     world["lore_facts"] = lore_facts
     data["world"] = world
-
-    choices = normalize_choices(data.get("choices"))
-    if choices:
-        data["choices"] = choices
-
-    # Ensure dict for world_rules
-    if "world_rules" not in data or not isinstance(data["world_rules"], dict):
-        data["world_rules"] = {}
-
-    # Strip any model error/internal fields that must not reach the frontend
-    for key in ("llm_error", "_error", "llm_calls", "state_delta", "raw_prompt", "api_key"):
-        data.pop(key, None)
-
-    return data
 
 
 def is_complete_opening_payload(data: dict[str, Any]) -> bool:
@@ -216,7 +233,8 @@ def is_complete_opening_payload(data: dict[str, Any]) -> bool:
     conflicts = data.get("current_conflicts")
     hooks = data.get("fate_hooks")
     choices = normalize_choices(data.get("choices"))
-    world = data.get("world") if isinstance(data.get("world"), dict) else {}
+    world_value = data.get("world")
+    world: dict[str, Any] = world_value if isinstance(world_value, dict) else {}
     scene = str(world.get("current_scene") or "").strip()
     lore = world.get("lore_facts")
     return (

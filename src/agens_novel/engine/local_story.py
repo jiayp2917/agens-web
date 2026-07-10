@@ -387,7 +387,7 @@ def _local_story_result_text(
     count_key = f"{story_key}:{node_key}:{option.text}"
     repeat_count = int(repeat_counts.get(count_key) or 0) + 1
     repeat_counts[count_key] = repeat_count
-    setattr(session, "_local_story_repeat_counts", repeat_counts)
+    session._local_story_repeat_counts = repeat_counts
 
     if repeat_count <= 1:
         return option.result

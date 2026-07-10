@@ -2,7 +2,9 @@ from __future__ import annotations
 
 import json
 import os
+import socket
 from pathlib import Path
+from typing import Any
 from unittest.mock import patch
 
 import pytest
@@ -14,7 +16,6 @@ from agens_novel.game.constants import ATTRIBUTE_KEYS
 from web.backend.app import create_app
 from web.backend.auth import hash_invite_code
 from web.backend.service import _with_choice_semantic
-
 
 pytestmark = pytest.mark.xdist_group("pg_test_db")
 
@@ -431,8 +432,8 @@ def test_local_story_fallback_records_turn(
     assert body["turn_count"] == 1
     assert body["fallback_prompt"]["active"] is True
     fallback_text = body["fallback_prompt"]["text"]
-    assert "本回合记录暂未续上" in fallback_text
-    assert "模型" not in fallback_text
+    assert "已切换本地故事" in fallback_text
+    assert "模型暂不可用" in fallback_text
     assert "状态更新格式不完整" not in fallback_text
     with app.state.service.db.engine.connect() as conn:
         row = conn.execute(
@@ -446,9 +447,9 @@ def test_local_story_fallback_records_turn(
             {"run_id": session_id},
         ).mappings().one()
     assert row["turn_no"] == 1
-    assert row["elapsed_years"] == 0
-    assert row["event_kind"] == "fallback"
-    assert "模型" not in row["narrative"]
+    assert row["elapsed_years"] >= 1
+    assert row["event_kind"] in {"稳妥", "event"}
+    assert row["narrative"]
     assert row["state_delta"]["meta"]["local_story_fallback"] is True
 
 
@@ -788,7 +789,17 @@ def _model_payload(api_key: str = "") -> dict[str, str]:
     }
 
 
+def _use_public_model_dns(monkeypatch) -> None:
+    monkeypatch.setattr(
+        "agens_novel.llm.url_security.socket.getaddrinfo",
+        lambda *_args, **_kwargs: [
+            (socket.AF_INET, socket.SOCK_STREAM, 6, "", ("8.8.8.8", 443))
+        ],
+    )
+
+
 def test_user_model_settings_save_read_clear_and_encrypts_key(tmp_path: Path, monkeypatch) -> None:
+    _use_public_model_dns(monkeypatch)
     monkeypatch.setenv("SESSION_COOKIE_SECURE", "0")
     monkeypatch.setenv("MODEL_CONFIG_SECRET", "test-model-config-secret")
     app = create_app()
@@ -830,6 +841,7 @@ def test_user_model_settings_save_read_clear_and_encrypts_key(tmp_path: Path, mo
 
 
 def test_model_settings_are_isolated_per_user(tmp_path: Path, monkeypatch) -> None:
+    _use_public_model_dns(monkeypatch)
     monkeypatch.setenv("SESSION_COOKIE_SECURE", "0")
     monkeypatch.setenv("MODEL_CONFIG_SECRET", "test-model-config-secret")
     app = create_app()
@@ -851,6 +863,7 @@ def test_model_settings_are_isolated_per_user(tmp_path: Path, monkeypatch) -> No
 
 
 def test_user_model_settings_reject_empty_initial_key_and_keep_existing_key(tmp_path: Path, monkeypatch) -> None:
+    _use_public_model_dns(monkeypatch)
     monkeypatch.setenv("SESSION_COOKIE_SECURE", "0")
     monkeypatch.setenv("MODEL_CONFIG_SECRET", "test-model-config-secret")
     monkeypatch.setenv("AGNES_API_KEY", "test-system-key-123456")
@@ -887,6 +900,7 @@ def test_user_model_settings_reject_empty_initial_key_and_keep_existing_key(tmp_
 
 
 def test_guest_model_settings_rejected_and_admin_system_endpoint_is_admin_only(tmp_path: Path, monkeypatch) -> None:
+    _use_public_model_dns(monkeypatch)
     monkeypatch.setenv("SESSION_COOKIE_SECURE", "0")
     monkeypatch.setenv("MODEL_CONFIG_SECRET", "test-model-config-secret")
     monkeypatch.setenv("INVITE_ADMIN_CODE", "admin-invite-123")
@@ -916,6 +930,7 @@ def test_guest_model_settings_rejected_and_admin_system_endpoint_is_admin_only(t
 
 
 def test_model_settings_missing_secret_fails_closed(tmp_path: Path, monkeypatch) -> None:
+    _use_public_model_dns(monkeypatch)
     monkeypatch.setenv("SESSION_COOKIE_SECURE", "0")
     monkeypatch.setenv("MODEL_CONFIG_SECRET", "test-model-config-secret")
     monkeypatch.setenv("AGNES_API_KEY", "test-env-key-must-not-be-used")
@@ -937,6 +952,7 @@ def test_model_settings_missing_secret_fails_closed(tmp_path: Path, monkeypatch)
 
 
 def test_runtime_model_config_uses_current_user_without_env_pollution(tmp_path: Path, monkeypatch) -> None:
+    _use_public_model_dns(monkeypatch)
     monkeypatch.setenv("SESSION_COOKIE_SECURE", "0")
     monkeypatch.setenv("MODEL_CONFIG_SECRET", "test-model-config-secret")
     monkeypatch.setenv("AGNES_API_KEY", "test-env-key-should-not-win")
@@ -1189,6 +1205,17 @@ def test_production_hides_openapi_and_rejects_untrusted_host(tmp_path: Path, mon
     assert blocked.get("/api/health").status_code == 400
 
 
+@pytest.mark.parametrize("environment", ["prod", "production"])
+def test_production_aliases_reject_runtime_auto_ddl(monkeypatch, environment: str) -> None:
+    from web.backend.database_postgres import PostgresWebDatabase
+
+    monkeypatch.setenv("AGENS_ENV", environment)
+    monkeypatch.setenv("AGENS_PG_AUTO_DDL", "1")
+
+    with pytest.raises(RuntimeError, match="prod/production"):
+        PostgresWebDatabase(os.environ["TEST_DATABASE_URL"])
+
+
 def test_origin_mismatch_is_rejected_for_state_changes(tmp_path: Path, monkeypatch) -> None:
     monkeypatch.setenv("SESSION_COOKIE_SECURE", "0")
     monkeypatch.setenv("AGENS_ALLOWED_ORIGINS", "https://game.example.test")
@@ -1390,7 +1417,7 @@ def test_model_failure_events_are_public_safe(tmp_path: Path, monkeypatch) -> No
 
     body = json.dumps(payload, ensure_ascii=False)
     assert "sk-secret" not in body
-    assert "本回合记录暂未续上，请稍后重试或按当前局面继续。" in body
+    assert "模型暂不可用，已切换本地故事，请直接选择下方选项继续。" in body
 
 
 def test_start_accepts_seeded_catalog_character_options(tmp_path: Path, monkeypatch) -> None:

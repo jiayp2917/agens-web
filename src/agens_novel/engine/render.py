@@ -11,6 +11,7 @@ from __future__ import annotations
 from ..game.constants import format_realm_name
 from ..session.game_session import GameSession
 
+
 def public_realm_label(session: GameSession) -> str:
     return format_realm_name(session.realm or "练气", int(session.realm_stage or 1))
 

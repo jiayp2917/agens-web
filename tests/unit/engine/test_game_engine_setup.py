@@ -5,12 +5,9 @@ from __future__ import annotations
 from typing import Any
 from unittest.mock import patch
 
-import pytest
-
-from agens_novel.engine.game_engine import GameEngine, fallback_choices
 from agens_novel.engine.choices import normalize_choices
+from agens_novel.engine.game_engine import GameEngine
 from agens_novel.session.game_session import GameSession
-
 
 # ═══════════════════════════════════════════════════════════════════════════════
 # Canned helpers

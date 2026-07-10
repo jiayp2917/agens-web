@@ -1,6 +1,14 @@
 import { api } from "../api/client";
-export { api };
-export type { ModelSettings, SaveRow, Session, User } from "../api/client";
+export { ApiError, api, mutationBody } from "../api/client";
+export type {
+  CharacterState,
+  ModelSettings,
+  SaveRow,
+  Session,
+  SessionEvent,
+  User,
+  WorldState,
+} from "../api/client";
 
 export type View = "home" | "auth" | "character" | "game" | "ending";
 export type AuthMode = "login" | "register";
@@ -25,4 +33,3 @@ export async function fetchDeathSummary(sessionId: string): Promise<DeathSummary
     return null;
   }
 }
-

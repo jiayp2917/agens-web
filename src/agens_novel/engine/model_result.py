@@ -3,13 +3,13 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
-from enum import Enum
+from enum import StrEnum
 from typing import Any
 
 from .choices import normalize_choices
 
 
-class ModelResultKind(str, Enum):
+class ModelResultKind(StrEnum):
     """High-level result categories exposed to UI prompts and logs."""
 
     OK = "ok"
@@ -115,10 +115,16 @@ def result_diagnostics(result: dict[str, Any]) -> dict[str, Any]:
     narrative = result.get("narrative") or result.get("opening_narrative") or result.get("world_description") or ""
     state_delta = result.get("state_delta")
     raw_choices = result.get("choices")
-    usage = result.get("usage") if isinstance(result.get("usage"), dict) else {}
-    repair_usage = result.get("repair_usage") if isinstance(result.get("repair_usage"), dict) else {}
-    prompt_metrics = result.get("prompt_metrics") if isinstance(result.get("prompt_metrics"), dict) else {}
-    contract = result.get("contract_diagnostics") if isinstance(result.get("contract_diagnostics"), dict) else {}
+    usage_value = result.get("usage")
+    repair_usage_value = result.get("repair_usage")
+    prompt_metrics_value = result.get("prompt_metrics")
+    contract_value = result.get("contract_diagnostics")
+    usage: dict[str, Any] = usage_value if isinstance(usage_value, dict) else {}
+    repair_usage: dict[str, Any] = repair_usage_value if isinstance(repair_usage_value, dict) else {}
+    prompt_metrics: dict[str, Any] = (
+        prompt_metrics_value if isinstance(prompt_metrics_value, dict) else {}
+    )
+    contract: dict[str, Any] = contract_value if isinstance(contract_value, dict) else {}
     if isinstance(generated, dict):
         raw_choices = generated.get("choices", raw_choices)
         narrative = generated.get("opening_narrative") or narrative

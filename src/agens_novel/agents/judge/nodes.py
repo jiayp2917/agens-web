@@ -97,7 +97,10 @@ def save_artifact(state: dict[str, Any]) -> dict[str, Any]:
 
     if llm_error:
         # LLM error: reject by default to prevent bad state updates.
-        approved, corrected_delta, judgment_note, score = False, {}, "LLM 调用失败，拒绝状态更新", 0
+        approved = False
+        corrected_delta: dict[str, Any] = {}
+        judgment_note = "LLM 调用失败，拒绝状态更新"
+        score = 0
     else:
         approved, corrected_delta, judgment_note, score = _parse_judge_output(text)
 
@@ -176,12 +179,14 @@ def _parse_judge_output(text: str) -> tuple[bool, dict, str, int]:
             data = json.loads(c)
             if not isinstance(data, dict):
                 continue
-            approved = bool(data.get("approved", False))
+            approved_value = data.get("approved")
+            approved = approved_value if isinstance(approved_value, bool) else False
             corrected_delta = data.get("corrected_delta", {})
             if not isinstance(corrected_delta, dict):
                 corrected_delta = {}
             judgment_note = str(data.get("judgment_note", "ok")).strip() or "ok"
-            score = int(data.get("review_score", data.get("score", 5)))
+            raw_score = data.get("review_score", data.get("score", 5))
+            score = int(5 if raw_score is None else raw_score)
             return approved, corrected_delta, judgment_note, max(0, min(score, 10))
         except (json.JSONDecodeError, ValueError, TypeError):
             continue

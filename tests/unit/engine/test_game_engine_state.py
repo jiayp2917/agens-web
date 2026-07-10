@@ -5,11 +5,8 @@ from __future__ import annotations
 from typing import Any
 from unittest.mock import patch
 
-import pytest
-
-from agens_novel.engine.game_engine import GameEngine, fallback_choices
+from agens_novel.engine.game_engine import GameEngine
 from agens_novel.session.game_session import GameSession
-
 
 # ═══════════════════════════════════════════════════════════════════════════════
 # Canned helpers
@@ -134,6 +131,10 @@ class TestFinaleCallback:
         assert engine.game_session.finale is True
         assert engine.game_session.game_over is True
         assert engine.game_session.realm == "飞升"
+        assert engine.game_session.turn_count == 1
+        assert len(engine.game_session.turn_history) == 1
+        assert engine.game_session.turn_history[-1]["delta"]["meta"]["finale"] is True
+        assert engine.game_session.last_choices == []
 
     def test_death_screen_no_finale_for_normal_death(self, monkeypatch) -> None:
         """Game-mode v5: a normal death (game_over set, no finale) does not

@@ -6,10 +6,10 @@
 
 当前项目不建议重做，也不建议继续主动扩大功能架构。正确路线是：
 
-1. P0 底座验收当前批次已经闭环。
-2. 下一步进入 P1：模型效率、20 回合内容体验、叙事与权威状态落账。
-3. 除非发现阻塞性 bug，否则不再做账号、存档、模型配置、部署流程、数据库主结构或大规模路由拆分。
-4. 玩法改造优先通过现有 `GameEngine`、规则、事件池、prompt、配置数据和小范围 helper 完成。
+1. 2026-07-10 本地代码已修复 SSRF、状态一致性、事务、幂等和 fallback P0/P1；当前还需要 Docker、真实 Chrome、live-model 和生产迁移门禁。
+2. 门禁完成后再继续 P1：模型效率、20 回合内容体验、叙事与权威状态落账。
+3. 不再扩大账号、存档、模型配置和数据库主结构；后续只按已登记风险做小批次修复。
+4. 玩法改造优先通过现有 `GameEngine` 门面、flow、规则、事件池、prompt 和配置数据完成。
 
 ## 文档边界
 
@@ -24,17 +24,16 @@
 
 目标：证明当前底座可以支撑后续玩法迭代。
 
-当前状态：已闭环。
+当前状态：本地代码实现已闭环，完整发布门禁未闭环。
 
-- 本地真实可见 Chrome 跟进验收已通过：2026-07-09 `final2` 内容审查覆盖 base 20 回合、A/B/C/D 路线和 mixed 长局；base/A/B/D 均 20/20 live，C 路线第 19 回合自然终局，mixed 第 49 回合自然终局；所有 final2 证据均 fallback 0、P0/P1 0、可见禁用词 0、明显重复 0。`local-visible-history-softcap-c1d8628-20260707`、`local-visible-p1-final-20260706` 与 `local-visible-dynamic-opening-20260706-strict-live5` 降级为历史对比证据。
-- 本地自动化基线已通过：`compileall`、`tests\web` 74 passed、全量 `pytest -q` 555 passed、前端 build、`git diff --check`。2026-07-07 防御性运行修复、P1 事件池/最终 delta 一致性切片、2026-07-08 编年史内容切片和 2026-07-09 内容审查/重复叙事去重切片均已通过自动化。
-- 生产部署与迁移已完成：Alembic 已到 `20260622_0005`，`user_model_configs` 存在。
-- 生产账号注册、登录、存档、读档、跨会话恢复已通过。
-- production live model P0 已通过：服务器线程部署 `25ad3d15` 后，生产 start 和至少 1 次 choice 均为 non-fallback，choice 后 `turn_count=1`。
+- 已实现：SSRF 防护、严格 Judge/突破/终局、fallback 本地故事结算、固定 A/B/C/D、存档终局原因、访客 PG 持久化、CAS/幂等/事务、路由拆分、静态质量零错误、锁文件和容器加固。
+- 已验证：本地 PostgreSQL migration 和定向自动化；最终全量门禁以当前批次 `CHANGELOG.md` 为准。
+- 未验证：本批真实 Chrome、真实 LLM、Docker build 和生产 `20260710_0008` 升级。
+- 旧 2026-07-09 Chrome 与旧生产结果只作为 `CHANGELOG.md` 历史证据，不能接受当前未部署代码。
 
 后续触发条件：
 
-- 生产部署、模型配置变更、provider 变更或运行时模型调用链改动后，必须由服务器线程复跑 production start+choice non-fallback。
+- 生产部署 `20260710_0008`、模型配置变更、provider 变更或运行时模型调用链改动后，必须复跑 production start+choice non-fallback。
 - 玩法节奏、状态落账、选项约束、模型效率或重大 UI 流程变更后，必须复跑本地真实 Chrome 20 回合。
 - fallback 不能算 live-model 成功，HTTP 200 也不能单独算成功。
 

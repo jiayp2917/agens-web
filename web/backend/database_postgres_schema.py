@@ -29,12 +29,16 @@ POSTGRES_SCHEMA_STATEMENTS = (
     """
     CREATE TABLE IF NOT EXISTS sessions (
         id TEXT PRIMARY KEY,
-        user_id TEXT NOT NULL REFERENCES users(id),
+        user_id TEXT REFERENCES users(id),
+        guest_token_hash TEXT,
+        expires_at DOUBLE PRECISION,
+        version INTEGER NOT NULL DEFAULT 0,
         title TEXT NOT NULL,
         snapshot JSONB NOT NULL,
         events JSONB NOT NULL,
         created_at DOUBLE PRECISION NOT NULL,
-        updated_at DOUBLE PRECISION NOT NULL
+        updated_at DOUBLE PRECISION NOT NULL,
+        CHECK ((user_id IS NOT NULL) <> (guest_token_hash IS NOT NULL))
     )
     """,
     """
@@ -144,7 +148,8 @@ POSTGRES_SCHEMA_STATEMENTS = (
         achievement_name TEXT NOT NULL,
         description TEXT NOT NULL DEFAULT '',
         death_cause TEXT NOT NULL DEFAULT '',
-        achieved_at DOUBLE PRECISION NOT NULL
+        achieved_at DOUBLE PRECISION NOT NULL,
+        UNIQUE(user_id, session_id, achievement_key)
     )
     """,
     """
@@ -155,7 +160,8 @@ POSTGRES_SCHEMA_STATEMENTS = (
         reward_value TEXT NOT NULL,
         label TEXT NOT NULL DEFAULT '',
         source_session_id TEXT NOT NULL DEFAULT '',
-        granted_at DOUBLE PRECISION NOT NULL
+        granted_at DOUBLE PRECISION NOT NULL,
+        UNIQUE(user_id, source_session_id, reward_type, reward_value)
     )
     """,
     """
@@ -167,7 +173,8 @@ POSTGRES_SCHEMA_STATEMENTS = (
         label TEXT NOT NULL DEFAULT '',
         runs_remaining INTEGER NOT NULL DEFAULT 1,
         source_session_id TEXT NOT NULL DEFAULT '',
-        granted_at DOUBLE PRECISION NOT NULL
+        granted_at DOUBLE PRECISION NOT NULL,
+        UNIQUE(user_id, source_session_id, bonus_type, bonus_value)
     )
     """,
     """
@@ -180,13 +187,20 @@ POSTGRES_SCHEMA_STATEMENTS = (
         death_cause TEXT NOT NULL DEFAULT '',
         ascended BOOLEAN NOT NULL DEFAULT FALSE,
         turn_count INTEGER NOT NULL DEFAULT 0,
-        finished_at DOUBLE PRECISION NOT NULL
+        started_at DOUBLE PRECISION,
+        finished_at DOUBLE PRECISION,
+        completed BOOLEAN NOT NULL DEFAULT FALSE
     )
+    """,
+    """
+    CREATE UNIQUE INDEX IF NOT EXISTS uq_game_runs_session
+    ON game_runs(session_id) WHERE session_id <> ''
     """,
     """
     CREATE TABLE IF NOT EXISTS game_turns (
         id TEXT PRIMARY KEY,
         run_id TEXT NOT NULL,
+        request_id TEXT,
         turn_no INTEGER NOT NULL,
         start_age INTEGER NOT NULL,
         elapsed_years INTEGER NOT NULL,
@@ -202,7 +216,21 @@ POSTGRES_SCHEMA_STATEMENTS = (
         event_kind TEXT NOT NULL,
         end_reason TEXT,
         created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
-        UNIQUE(run_id, turn_no)
+        UNIQUE(run_id, turn_no),
+        UNIQUE(run_id, request_id),
+        FOREIGN KEY(run_id) REFERENCES game_runs(id) ON DELETE CASCADE
+    )
+    """,
+    """
+    CREATE TABLE IF NOT EXISTS session_mutations (
+        session_id TEXT NOT NULL REFERENCES sessions(id) ON DELETE CASCADE,
+        request_id TEXT NOT NULL,
+        operation TEXT NOT NULL,
+        expected_version INTEGER NOT NULL,
+        result_version INTEGER NOT NULL,
+        response JSONB NOT NULL,
+        created_at DOUBLE PRECISION NOT NULL,
+        PRIMARY KEY(session_id, request_id)
     )
     """,
     """

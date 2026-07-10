@@ -2,11 +2,12 @@
 
 from __future__ import annotations
 
-import pytest
 from unittest.mock import MagicMock, patch
 
-from agens_novel.game.realm import RealmSystem, RealmConfig
-from agens_novel.game.constants import REALM_ORDER, REALM_CONFIGS, SPIRIT_ROOTS
+import pytest
+
+from agens_novel.game.constants import REALM_CONFIGS, REALM_ORDER, SPIRIT_ROOTS
+from agens_novel.game.realm import RealmConfig, RealmSystem
 
 
 class TestRealmConfig:

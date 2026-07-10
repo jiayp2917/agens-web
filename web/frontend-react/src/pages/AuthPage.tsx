@@ -5,13 +5,13 @@ import { api, type AuthMode, type User, type View } from "../lib/api";
 export function AuthPage({
   mode,
   setMode,
-  setUser,
+  onAuthenticated,
   setView,
   setError,
 }: {
   mode: AuthMode;
   setMode: (mode: AuthMode) => void;
-  setUser: (user: User) => void;
+  onAuthenticated: (user: User) => void;
   setView: (view: View) => void;
   setError: (message: string) => void;
 }) {
@@ -28,9 +28,7 @@ export function AuthPage({
           invite_code: String(form.get("invite_code") || ""),
         }),
       });
-      setUser(payload.user);
-      setView("home");
-      setError("");
+      onAuthenticated(payload.user);
     } catch (err) {
       setError(err instanceof Error ? err.message : "认证失败。");
     }

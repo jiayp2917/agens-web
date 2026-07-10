@@ -1,56 +1,46 @@
 # 项目文档索引
 
-后续智能体先读本文，再按任务读取对应文档。本仓库是 Web-only 项目：浏览器 UI + FastAPI 后端 + PostgreSQL，移动端、旧 CLI/REPL、旧 `web/frontend` 都不是当前维护入口。
+本仓库是 Web-only 项目：React/Vite + FastAPI + PostgreSQL。移动端、旧 CLI/REPL 和旧 SQLite 不属于当前维护范围。
 
-## 当前状态
+## 当前事实
 
-- 当前主线：游戏模式 v5 Alpha，A/B/C/D 四按钮固定语义（A 稳妥 / B 机遇 / C 风险 / D 气运），无自由文本主入口，无 HP/MP 常驻 UI。
-- 数据库路线：PostgreSQL-only，本地测试和生产都以 Alembic schema 为准；SQLite 已删除，仅作为历史记录保留在 `CHANGELOG.md`。
-- 模型设置：注册用户可配置个人模型；访客不可配置；无个人配置时使用系统 Agens 默认。用户 key 只允许后端加密存储和脱敏展示。
-- 最新本地代码基线：已包含脱敏模型性能观测、narrator prompt history soft-cap、2026-07-04 属性尺度清理、动态开局生成链路、2026-07-06 治理审计执行、2026-07-07 防御性运行修复、P1 编年史内容切片，以及 2026-07-09 真实浏览器内容审查/重复叙事去重/玩家可见兜底文案清理。
-- 最新本地真实 Chrome 内容审查：2026-07-09 `final2` 批次通过本地内容审查。base、A、B、D 均为 20/20 live；C 路线在第 19 回合自然终局；mixed 长局在第 49 回合自然终局。最终证据为 `local-content-basic-cycle-final2-20260709`、`local-content-route-{a,b,c,d}-final2-20260709`、`local-content-mixed-60-final2-20260709`，均 fallback 0、P0/P1 0、可见禁用词 0、明显重复 0，strict JSON/NDJSON/CSV 可解析。证据位于 `output/playwright/`，默认不提交。
-- 最新生产批次：服务器线程部署 `25ad3d15` 后，Alembic 为 `20260622_0005`，`user_model_configs` 存在，public/origin health、catalog、容器健康、日志敏感标记扫描、一次性真实账号注册/登录/存档/读档/跨会话恢复均通过；生产 start 和至少 1 次 choice 均为 non-fallback，choice 后 `turn_count=1`。
-- 当前剩余重点：P1 游玩质量和治理，包括 live 响应长尾、narrator 输出结构不完整依赖规则兜底、终局页证据采集不足、20 回合内容深度继续扩展，以及 `tests/web/test_web_api.py`、`web/backend/service.py`、`web/backend/database_postgres.py`、`src/agens_novel/engine/game_engine.py` 的小步复杂度治理。动态开局 fallback 可玩但不等于 live-model 成功，后续 Chrome 验收仍需记录 fallback 布尔。
+- 游戏模式 v5 Alpha，A/B/C/D 固定语义，无自由文本主入口，无 HP/MP。
+- PostgreSQL-only，Alembic head `20260710_0008_runtime_consistency`。
+- 用户个人模型配置 + 系统默认兜底，Key 加密存储且不回显。
+- 模型 Base URL 使用 HTTPS 官方域名/服务器 allowlist，并在请求前做公网 DNS 校验。
+- 访客 session 写入 PostgreSQL，默认 24 小时；登录/注册后删除访客局。
+- mutation API 强制 request ID + version，使用锁、CAS、幂等记录和事务提交。
+- Agent 编排是项目内 `SequentialAgentGraph`，不是 LangGraph。
+- fallback 自动切换本地故事，但不能算 live-model 成功。
+- 本轮仅本地代码与自动化验证；生产未部署、未复验。
 
-## 当前权威文档
+## Source Of Truth
 
-- `README.md`：项目入口、启动和当前状态摘要。
-- `AGENTS.md`：项目硬约束、玩法契约、代码治理规则。
-- `CLAUDE.md`：Claude/Claude Code 接手本项目时的边界说明。
-- `docs/RUNTIME_FLOW.md`：当前运行链路、API 流程、本地启动和模型配置流。
-- `docs/GAME_MODE_SPEC.md`：游戏模式 v5 的产品与规则规格。
-- `docs/PLAYABLE_GAMEPLAY_ROADMAP_20260629.md`：当前阶段路线；P0 当前批次已闭环，下一步进入 P1 玩法质量和模型效率。
-- `docs/ARCHITECTURE.md`：模块地图和后端/引擎/前端分层说明。
-- `docs/security.md`：密钥、账号、生产环境和公网 Alpha 安全边界。
-- `docs/PROJECT_AUDIT.md`：当前结构边界、已清理内容、剩余技术债。
-- `docs/NEXT_GOVERNANCE_BACKLOG.md`：下一批 P0/P1/P2 工作队列。
-- `docs/USER_TUTORIAL.md`：面向玩家的中文入门说明。
-- `docs/PRODUCTION_V5_MIGRATION_CHECKLIST.md`：生产复验门禁和只读验收清单。
-- `CHANGELOG.md`：按日期保留历史变更，不作为当前状态唯一来源。
-
-## 历史内容策略
-
-- 旧 `docs/archive/` 草案、复盘和原型资产已清理，不再作为当前事实或执行计划来源。
-- 需要追溯历史时优先看 `CHANGELOG.md`；需要当前状态时只看上方权威文档。
-- 文档更新必须区分当前事实、历史证据、未来计划和 TODO，避免把旧计划写成当前状态。
-
-## 按任务阅读
-
-| 任务 | 优先阅读 |
+| 文档 | 用途 |
 | --- | --- |
-| 当前运行链路 / 本地启动 | `docs/RUNTIME_FLOW.md`、`README.md` |
-| 游戏规则 / 游玩内容设计 | `docs/GAME_MODE_SPEC.md`、`docs/USER_TUTORIAL.md` |
-| 阶段计划 / 玩法迭代执行 | `docs/PLAYABLE_GAMEPLAY_ROADMAP_20260629.md`、`docs/NEXT_GOVERNANCE_BACKLOG.md` |
-| 模块地图 / 接手项目 | `docs/ARCHITECTURE.md`、`docs/PROJECT_AUDIT.md` |
-| 代码复杂度治理 | `docs/PROJECT_AUDIT.md`、`docs/NEXT_GOVERNANCE_BACKLOG.md` |
-| 公网部署 / 密钥 / 安全 | `docs/security.md`、`docs/PRODUCTION_V5_MIGRATION_CHECKLIST.md` |
-| 生产账号流 / live model 复核 | `docs/PRODUCTION_V5_MIGRATION_CHECKLIST.md`、服务器线程 `019ee2ee-823e-7441-bdaa-881782da7949` |
-| UI 后续细修 | `docs/PROJECT_AUDIT.md`、`web/frontend-react/src/` |
-| 历史核对 | `CHANGELOG.md` |
+| `README.md` | 项目入口、安装、启动和验证 |
+| `AGENTS.md` / `CLAUDE.md` | 仓库执行约束 |
+| `docs/GAME_MODE_SPEC.md` | 玩法规则 source of truth |
+| `docs/RUNTIME_FLOW.md` | 当前端到端运行链路 |
+| `docs/ARCHITECTURE.md` | 模块、依赖和 schema 边界 |
+| `docs/security.md` | 安全与部署边界 |
+| `docs/PROJECT_AUDIT.md` | 当前审计结论和剩余风险 |
+| `docs/NEXT_GOVERNANCE_BACKLOG.md` | 仅当前未完成项 |
+| `docs/USER_TUTORIAL.md` | 玩家操作说明 |
+| `docs/PRODUCTION_V5_MIGRATION_CHECKLIST.md` | 生产迁移/验收清单 |
+| `CHANGELOG.md` | 历史变更与旧证据 |
 
-## 执行边界
+## 阅读顺序
 
-- fallback 不能算 live-model 成功，即使 HTTP 200。
-- 本地自动化测试不等于生产验收；生产验证归服务器线程处理。
-- API key、数据库密码、Session Secret、邀请码真实值不得写入仓库、前端包、文档或日志。
-- 真实 Chrome 验收不要和 `tests\web` 共用同一个数据库并发运行；Web 测试会清空测试库。
+1. 开发/启动：`README.md` -> `docs/RUNTIME_FLOW.md`
+2. 玩法：`docs/GAME_MODE_SPEC.md` -> `docs/USER_TUTORIAL.md`
+3. 架构/治理：`docs/ARCHITECTURE.md` -> `docs/PROJECT_AUDIT.md` -> `docs/NEXT_GOVERNANCE_BACKLOG.md`
+4. 安全/生产：`docs/security.md` -> `docs/PRODUCTION_V5_MIGRATION_CHECKLIST.md`
+
+## 验证原则
+
+- `tests\web` 会清空其 `TEST_DATABASE_URL`；不要与真实浏览器共享数据库并发运行。
+- 默认 pytest 排除 `llm_real`；真实模型验收单独执行。
+- 本地自动化不等于生产验收。
+- HTTP 200 不等于模型成功；fallback 状态一律视为 live-model 失败。
+- 生成证据不写入仓库。旧 `output/` 已归档到 `D:\chat\agens-web-artifacts\20260710`。

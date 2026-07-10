@@ -4,7 +4,6 @@ from pathlib import Path
 
 import pytest
 
-
 pytestmark = pytest.mark.xdist_group("pg_test_db")
 
 
@@ -87,7 +86,7 @@ def test_react_homepage_buttons_have_handlers() -> None:
     assert "onTutorial" in source
     assert "onSettings" in source
     assert "TutorialDialog" in source
-    assert "本回合记录暂未续上，请稍后重试或按当前局面继续。" in source
+    assert "模型暂不可用，已切换本地故事，请直接选择下方选项继续。" in source
     assert "A 稳妥、B 机遇、C 风险、D 气运" in source
     assert "D 代表随缘与天命路线，不是自由输入" in source
     assert "D 输入框可以写自由行动" not in source
@@ -113,7 +112,6 @@ def test_react_public_assets_are_present() -> None:
     for relative in (
         "paper_texture.png",
         "ink_mountain_gate.png",
-        "ascension_gate.png",
         "qq_group.png",
         "audio/bgm.flac",
         "xian-game-icon-256.png",
@@ -291,7 +289,8 @@ def test_react_turn_actions_disable_while_busy() -> None:
         assert label in source
     assert "FallbackBanner session={session} busy={busy} runTurn={runTurn}" in source
     assert "function FallbackBanner({ session, busy, runTurn }" in source
-    assert "disabled={busy} onClick={() => runTurn(`/api/sessions/${session.session_id}/action`" in source
+    assert "继续本局" not in source
+    assert "disabled={busy} onClick={() => runTurn(`/api/sessions/${session.session_id}/end`" in source
     assert "disabled={busy} onClick={() => runTurn(`/api/sessions/${session.session_id}/end`" in source
 
 

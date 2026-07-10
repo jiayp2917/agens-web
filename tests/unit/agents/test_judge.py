@@ -2,9 +2,6 @@
 
 from __future__ import annotations
 
-import json
-import pytest
-
 from agens_novel.agents.judge.nodes import _parse_judge_output
 
 

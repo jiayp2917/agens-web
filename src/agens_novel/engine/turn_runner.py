@@ -10,9 +10,11 @@ import asyncio
 import json
 import logging
 import uuid
-from typing import Any, Callable
+from collections.abc import Callable
+from typing import Any
 
 from agens_novel.settings import Settings
+
 from ..session.game_session import GameSession
 
 log = logging.getLogger(__name__)
@@ -76,7 +78,7 @@ def run_turn_sync(
     """
     import os
 
-    # Extract stream_callback before building state (not serializable for LangGraph).
+    # Extract stream_callback before building the data-only agent state.
     stream_callback: Callable[[str], None] | None = kwargs.pop("stream_callback", None)
 
     state: dict[str, Any] = {

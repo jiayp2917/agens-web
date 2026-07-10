@@ -5,8 +5,40 @@ export type User = {
   created_at?: number;
 };
 
+export type CharacterState = {
+  name?: string;
+  realm?: string;
+  realm_stage?: number;
+  age?: number;
+  lifespan?: number;
+  remaining_lifespan?: number;
+  talent?: string;
+  spirit_root?: string;
+  family_background?: string;
+  luck?: number | string;
+  attributes?: Record<string, number>;
+};
+
+export type WorldState = {
+  calendar_year?: number;
+  year?: number;
+  day_count?: number;
+  current_scene?: string;
+  lore_facts?: string[];
+  world_profile?: Record<string, unknown>;
+};
+
+export type SessionEvent = {
+  type: string;
+  text?: string;
+  age?: number;
+  turn?: number;
+  [key: string]: unknown;
+};
+
 export type Session = {
   session_id: string;
+  version: number;
   user_id: string;
   guest?: boolean;
   turn_count: number;
@@ -16,11 +48,18 @@ export type Session = {
   error?: string;
   choices: string[];
   fallback_prompt?: { active: boolean; text: string };
-  character: Record<string, any>;
-  world: Record<string, any>;
-  events: Array<Record<string, any>>;
+  character: CharacterState;
+  world: WorldState;
+  events: SessionEvent[];
   panels?: Record<string, string>;
 };
+
+export class ApiError extends Error {
+  constructor(message: string, public readonly status: number) {
+    super(message);
+    this.name = "ApiError";
+  }
+}
 
 export type SaveRow = {
   id: string;
@@ -57,7 +96,15 @@ export async function api<T>(path: string, init: RequestInit = {}): Promise<T> {
     } catch {
       // keep status text
     }
-    throw new Error(String(detail));
+    throw new ApiError(String(detail), response.status);
   }
   return response.json() as Promise<T>;
+}
+
+export function mutationBody(session: Session, body: Record<string, unknown>) {
+  return {
+    ...body,
+    request_id: globalThis.crypto?.randomUUID?.() || `${Date.now()}-${Math.random()}`,
+    expected_version: session.version,
+  };
 }

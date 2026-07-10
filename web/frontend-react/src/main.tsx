@@ -1,8 +1,10 @@
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { createRoot } from "react-dom/client";
 import { LogOut, UserRound } from "lucide-react";
 import {
   api,
+  ApiError,
+  mutationBody,
   type AuthMode,
   type DialogMode,
   type Session,
@@ -30,7 +32,7 @@ const assetVars = {
 
 const ACTIVE_SESSION_KEY = "agens-web.active-session-id";
 
-function App() {
+export function App() {
   const [user, setUser] = useState<User | null>(null);
   const [session, setSession] = useState<Session | null>(null);
   const [view, setView] = useState<View>("home");
@@ -39,6 +41,7 @@ function App() {
   const [busy, setBusy] = useState(false);
   const [dialogMode, setDialogMode] = useState<DialogMode | null>(null);
   const [tutorialOpen, setTutorialOpen] = useState(false);
+  const mutationInFlight = useRef(false);
 
   useEffect(() => {
     api<{ user: User }>("/api/auth/me")
@@ -107,17 +110,43 @@ function App() {
   };
 
   const runTurn = async (path: string, body: unknown) => {
+    if (mutationInFlight.current || !session) return;
+    mutationInFlight.current = true;
     setBusy(true);
     setError("");
     try {
-      const next = await api<Session>(path, { method: "POST", body: JSON.stringify(body) });
+      const payload = body && typeof body === "object" ? body as Record<string, unknown> : {};
+      const next = await api<Session>(path, {
+        method: "POST",
+        body: JSON.stringify(mutationBody(session, payload)),
+      });
       setSession(next);
       setView(next.game_over || next.finale ? "ending" : "game");
     } catch (err) {
-      setError(err instanceof Error ? err.message : "请求失败。");
+      if (err instanceof ApiError && err.status === 409) {
+        try {
+          const refreshed = await api<Session>(`/api/sessions/${session.session_id}`);
+          setSession(refreshed);
+          setView(refreshed.game_over || refreshed.finale ? "ending" : refreshed.game_started ? "game" : "character");
+        } catch {
+          setError("局面已更新，但刷新失败，请返回首页重试。");
+        }
+      } else {
+        setError(err instanceof Error ? err.message : "请求失败。");
+      }
     } finally {
+      mutationInFlight.current = false;
       setBusy(false);
     }
+  };
+
+  const authenticated = (nextUser: User) => {
+    clearActiveSessionId();
+    setSession(null);
+    setDialogMode(null);
+    setUser(nextUser);
+    setView("home");
+    setError("");
   };
 
   const logout = async () => {
@@ -168,7 +197,7 @@ function App() {
         <AuthPage
           mode={authMode}
           setMode={setAuthMode}
-          setUser={setUser}
+          onAuthenticated={authenticated}
           setView={setView}
           setError={setError}
         />
@@ -209,7 +238,8 @@ function App() {
   );
 }
 
-createRoot(document.getElementById("root")!).render(<App />);
+const rootElement = document.getElementById("root");
+if (rootElement) createRoot(rootElement).render(<App />);
 
 function readActiveSessionId() {
   try {

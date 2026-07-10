@@ -2,9 +2,9 @@
 
 from __future__ import annotations
 
-from difflib import SequenceMatcher
 import logging
 import re
+from difflib import SequenceMatcher
 from typing import TYPE_CHECKING, Any
 
 if TYPE_CHECKING:
@@ -16,8 +16,7 @@ from .action_delta_policy import (
     merge_rule_delta,
     validate_narrative_delta_consistency,
 )
-from .choices import fallback_choices, normalize_choices
-from .choices import clean_visible_text
+from .choices import clean_visible_text, fallback_choices, normalize_choices
 from .model_result import (
     ModelResultKind,
     classify_judge_result,
@@ -51,16 +50,15 @@ class TurnFlow:
             return
 
         session.turn_count += 1
-
-        if result.delta:
-            session.apply_delta(result.delta)
-            stage_delta = self._try_emit_stage_advance()
-            if stage_delta is not None:
-                result_delta = self._merge_state_delta(result.delta, stage_delta)
-            else:
-                result_delta = result.delta
-        else:
-            result_delta = result.delta
+        rule_delta = settle_turn(text, session)
+        result_delta = self._merge_local_story_rule_delta(
+            result.delta if isinstance(result.delta, dict) else {},
+            rule_delta,
+        )
+        session.apply_delta(result_delta)
+        stage_delta = self._try_emit_stage_advance()
+        if stage_delta is not None:
+            result_delta = self._merge_state_delta(result_delta, stage_delta)
 
         if result.breakthrough:
             breakthrough_delta = engine.attempt_local_story_breakthrough()
@@ -68,6 +66,9 @@ class TurnFlow:
                 session.apply_delta(breakthrough_delta)
                 self._emit_local_story_breakthrough_result(breakthrough_delta)
                 result_delta = self._merge_state_delta(result_delta, breakthrough_delta)
+
+        if session.game_over:
+            session.last_choices = []
 
         if result.narrative:
             engine.emit("on_narrative", result.narrative, session.turn_count)
@@ -83,8 +84,7 @@ class TurnFlow:
         )
         engine.emit("on_status_bar", format_status_bar(session))
 
-        if engine.check_game_over():
-            return
+        engine.check_game_over()
 
     def handle_action(self, text: str) -> None:
         """Process one ordinary player action through rules, narrator and judge."""
@@ -103,6 +103,7 @@ class TurnFlow:
         narrator_result = self._run_narrator(text, turn_summary)
         if narrator_result is None:
             session.turn_count -= 1
+            engine.emit("on_info", "本回合记录暂未续上，已切换本地故事，请直接选择下方选项继续。")
             return
 
         narrator_status = classify_narrator_result(narrator_result)
@@ -132,55 +133,14 @@ class TurnFlow:
         state_delta = raw_state_delta if isinstance(raw_state_delta, dict) else {}
         choices = narrator_result.get("choices", [])
         if narrator_status.kind == ModelResultKind.INCOMPLETE_OUTPUT:
-            if (
-                not str(narrative or "").strip()
-                and isinstance(state_delta, dict)
-                and _has_nonempty_structured_delta(state_delta)
-                and not normalize_choices(choices)
-            ):
-                log.info("narrator returned JSON-only delta; rejecting model delta and settling by rules")
-                narrative = self._narrative_from_rule_delta(rule_delta)
-                state_delta = self._empty_delta_from_rule(rule_delta)
-                choices = fallback_choices(session)
-                malformed_state_delta = False
-            if not str(narrative or "").strip() and isinstance(state_delta, dict) and normalize_choices(choices):
-                narrative = self._narrative_from_rule_delta(rule_delta)
-                state_delta = self._empty_delta_from_rule(rule_delta)
-                malformed_state_delta = False
-            recovered_choices = self._recover_incomplete_narrator_choices(narrative, choices)
-            if recovered_choices:
-                choices = recovered_choices
-                log.info("narrator choices recovered from rule context")
-                if malformed_state_delta:
-                    state_delta = self._empty_delta_from_rule(rule_delta)
-                    malformed_state_delta = False
-            else:
-                choices = []
-                engine.emit("on_info", narrator_status.reason)
-        is_terminal_delta = _is_terminal_state_delta(state_delta)
-        if is_terminal_delta:
-            session.last_choices = []
-        else:
-            fallback_used = engine.set_choices(
+            narrative, state_delta, choices = self._recover_incomplete_payload(
+                narrative,
+                state_delta,
                 choices,
-                source="narrator",
-                fallback_notice=True,
-                require_choice=True,
-                reason=narrator_status.reason if narrator_status.kind == ModelResultKind.INCOMPLETE_OUTPUT else "叙事模型未返回可用选项。",
-                emit_local_story_narrative=True,
+                malformed_state_delta,
+                rule_delta,
+                narrator_status.reason,
             )
-            if fallback_used:
-                self._record_local_story_fallback_turn(
-                    text,
-                    rule_delta,
-                    reason=narrator_status.reason,
-                )
-                engine.emit("on_status_bar", format_status_bar(session))
-                return
-            if session.game_over:
-                session.turn_count -= 1
-                return
-
         judge_result = self._run_judge_if_needed(text, narrative, state_delta, rule_delta)
         if judge_result is None and session.game_over:
             return
@@ -192,10 +152,68 @@ class TurnFlow:
             return
         narrative, applied_delta = applied
 
+        self._commit_turn_choices(choices, narrator_status, applied_delta)
+
         self._record_and_emit_turn(text, narrative, applied_delta)
 
         if session.game_over:
-            engine.emit("on_game_over", session.error or "游戏结束。")
+            engine.check_game_over()
+
+    def _recover_incomplete_payload(
+        self,
+        narrative: Any,
+        state_delta: dict[str, Any],
+        choices: Any,
+        malformed_state_delta: bool,
+        rule_delta: dict[str, Any],
+        failure_reason: str,
+    ) -> tuple[str, dict[str, Any], Any]:
+        has_narrative = bool(str(narrative or "").strip())
+        normalized_choices = normalize_choices(choices)
+        if not has_narrative and _has_nonempty_structured_delta(state_delta) and not normalized_choices:
+            log.info("narrator returned JSON-only delta; rejecting model delta and settling by rules")
+            narrative = self._narrative_from_rule_delta(rule_delta)
+            state_delta = self._empty_delta_from_rule(rule_delta)
+            choices = fallback_choices(self.engine.game_session)
+            malformed_state_delta = False
+        elif not has_narrative and normalized_choices:
+            narrative = self._narrative_from_rule_delta(rule_delta)
+            state_delta = self._empty_delta_from_rule(rule_delta)
+            malformed_state_delta = False
+        recovered = self._recover_incomplete_narrator_choices(str(narrative or ""), choices)
+        if recovered:
+            log.info("narrator choices recovered from rule context")
+            if malformed_state_delta:
+                state_delta = self._empty_delta_from_rule(rule_delta)
+            return str(narrative or ""), state_delta, recovered
+        self.engine.emit("on_info", failure_reason)
+        return str(narrative or ""), state_delta, []
+
+    def _commit_turn_choices(
+        self, choices: Any, narrator_status: Any, applied_delta: dict[str, Any]
+    ) -> None:
+        engine = self.engine
+        if engine.game_session.game_over:
+            engine.game_session.last_choices = []
+            return
+        reason = (
+            narrator_status.reason
+            if narrator_status.kind == ModelResultKind.INCOMPLETE_OUTPUT
+            else "叙事模型未返回可用选项。"
+        )
+        if not engine.set_choices(
+            choices,
+            source="narrator",
+            fallback_notice=True,
+            require_choice=True,
+            reason=reason,
+            emit_local_story_narrative=True,
+        ):
+            return
+        meta = applied_delta.setdefault("meta", {})
+        if isinstance(meta, dict):
+            meta["local_story_fallback"] = True
+            meta["fallback_reason"] = narrator_status.reason
 
     def _run_narrator(self, text: str, turn_summary: str) -> dict[str, Any] | None:
         engine = self.engine
@@ -265,7 +283,7 @@ class TurnFlow:
         narrative: str,
         state_delta: dict[str, Any],
         rule_delta: dict[str, Any],
-    ) -> tuple[str, dict[str, Any]] | None:
+    ) -> dict[str, Any] | None:
         engine = self.engine
         session = engine.game_session
         if not state_delta or not engine.should_run_judge(text, state_delta, rule_delta):
@@ -318,7 +336,6 @@ class TurnFlow:
         state_delta: dict[str, Any],
         judge_result: dict[str, Any],
     ) -> tuple[str, dict[str, Any]]:
-        engine = self.engine
         if judge_result.get("approved") is False:
             corrected = judge_result.get("corrected_delta", {})
             if corrected:
@@ -371,44 +388,10 @@ class TurnFlow:
         if stage_delta is not None:
             state_delta = self._merge_state_delta(state_delta, stage_delta)
 
-        if engine.check_game_over():
-            return None
-
         if not str(narrative or "").strip():
             narrative = self._narrative_from_rule_delta(state_delta)
 
         return narrative, state_delta
-
-    def _record_local_story_fallback_turn(
-        self,
-        text: str,
-        rule_delta: dict[str, Any],
-        *,
-        reason: str,
-    ) -> None:
-        session = self.engine.game_session
-        narrative = "验真者暂循旧路收束心神，静候下一步抉择。"
-        fallback_meta = {
-            "elapsed_years": 0,
-            "calendar_summary": "本回合记录按当前局面保留。",
-            "choice_category": "fallback",
-            "local_story_fallback": True,
-            "fallback_reason": reason,
-        }
-        state_delta = {
-            "character": {},
-            "world": {},
-            "meta": fallback_meta,
-        }
-        session.record_turn(
-            text,
-            narrative,
-            state_delta,
-            local_story={
-                "story_id": session.local_story_id,
-                "node_id": session.local_story_node_id,
-            },
-        )
 
     def _record_and_emit_turn(
         self,
@@ -476,6 +459,30 @@ class TurnFlow:
                 merged[section] = section_delta
             else:
                 merged[section] = value
+        return merged
+
+    @staticmethod
+    def _merge_local_story_rule_delta(
+        story_delta: dict[str, Any],
+        rule_delta: dict[str, Any],
+    ) -> dict[str, Any]:
+        """Keep authored local-story gains while applying rule-owned time facts."""
+        merged = merge_rule_delta(story_delta, rule_delta)
+        story_char = story_delta.get("character") if isinstance(story_delta, dict) else {}
+        rule_char = rule_delta.get("character") if isinstance(rule_delta, dict) else {}
+        if not isinstance(story_char, dict) or not isinstance(rule_char, dict):
+            return merged
+        story_attrs = story_char.get("attributes")
+        rule_attrs = rule_char.get("attributes")
+        if not isinstance(story_attrs, dict) or not isinstance(rule_attrs, dict):
+            return merged
+        combined = dict(rule_attrs)
+        for key, value in story_attrs.items():
+            if isinstance(value, int) and not isinstance(value, bool):
+                combined[key] = int(combined.get(key) or 0) + value
+        character = dict(merged.get("character") or {})
+        character["attributes"] = combined
+        merged["character"] = character
         return merged
 
     def _recover_incomplete_narrator_choices(self, narrative: str, choices: Any) -> list[str]:
@@ -623,54 +630,49 @@ def _has_visible_authoritative_delta(state_delta: dict[str, Any], narrative: str
     """
     if not isinstance(state_delta, dict):
         return False
-    char = state_delta.get("character")
-    world = state_delta.get("world")
-    meta = state_delta.get("meta")
-    if isinstance(char, dict):
-        for key in (
-            "breakthrough_flags",
-            "breakthrough_flags_add",
-            "equipment_slots",
-            "inventory",
-            "inventory_add",
-            "relationship_add",
-            "status_effects",
-            "status_effects_add",
-            "techniques",
-            "techniques_add",
-            "title_add",
-        ):
-            if _meaningful_delta_value(char.get(key)):
-                return True
-        if _meaningful_delta_value(char.get("lifespan")) and _narrative_claims_lifespan(narrative):
-            return True
-        if _meaningful_delta_value(char.get("attributes")) and _narrative_claims_attributes(narrative):
-            return True
-        if (
-            _meaningful_delta_value(char.get("realm"))
-            or _meaningful_delta_value(char.get("realm_stage"))
-        ) and _narrative_claims_realm_progress(narrative):
-            return True
-    if isinstance(world, dict):
-        for key in (
-            "active_quests",
-            "active_quests_add",
-            "current_scene",
-            "discovered_add",
-            "discovered_locations",
-            "location",
-            "npcs_present",
-            "npcs_present_add",
-            "region",
-        ):
-            if _meaningful_delta_value(world.get(key)):
-                return True
-    if isinstance(meta, dict):
-        if _meaningful_delta_value(meta.get("breakthrough_result")):
-            return True
-        if meta.get("game_over") or meta.get("finale"):
-            return True
-    return False
+    if _visible_character_delta(state_delta.get("character"), narrative):
+        return True
+    if _visible_world_delta(state_delta.get("world")):
+        return True
+    return _visible_meta_delta(state_delta.get("meta"))
+
+
+def _visible_character_delta(value: Any, narrative: str) -> bool:
+    if not isinstance(value, dict):
+        return False
+    direct_keys = (
+        "breakthrough_flags", "breakthrough_flags_add", "equipment_slots", "inventory",
+        "inventory_add", "relationship_add", "status_effects", "status_effects_add",
+        "techniques", "techniques_add", "title_add",
+    )
+    if any(_meaningful_delta_value(value.get(key)) for key in direct_keys):
+        return True
+    if _meaningful_delta_value(value.get("lifespan")) and _narrative_claims_lifespan(narrative):
+        return True
+    if _meaningful_delta_value(value.get("attributes")) and _narrative_claims_attributes(narrative):
+        return True
+    realm_changed = _meaningful_delta_value(value.get("realm")) or _meaningful_delta_value(
+        value.get("realm_stage")
+    )
+    return realm_changed and _narrative_claims_realm_progress(narrative)
+
+
+def _visible_world_delta(value: Any) -> bool:
+    if not isinstance(value, dict):
+        return False
+    keys = (
+        "active_quests", "active_quests_add", "current_scene", "discovered_add",
+        "discovered_locations", "location", "npcs_present", "npcs_present_add", "region",
+    )
+    return any(_meaningful_delta_value(value.get(key)) for key in keys)
+
+
+def _visible_meta_delta(value: Any) -> bool:
+    return isinstance(value, dict) and (
+        _meaningful_delta_value(value.get("breakthrough_result"))
+        or bool(value.get("game_over"))
+        or bool(value.get("finale"))
+    )
 
 
 def _narrative_claims_lifespan(text: str) -> bool:

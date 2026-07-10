@@ -21,32 +21,18 @@ class BodySizeLimitMiddleware:
             await self.app(scope, receive, send)
             return
 
-        headers = {key.lower(): value for key, value in scope.get("headers") or []}
-        content_length = headers.get(b"content-length")
-        if content_length:
-            try:
-                if int(content_length.decode("ascii")) > self.max_bytes:
-                    response = JSONResponse({"detail": "请求内容过大。"}, status_code=413)
-                    await response(scope, receive, send)
-                    return
-            except (UnicodeDecodeError, ValueError):
-                response = JSONResponse({"detail": "请求头无效。"}, status_code=400)
-                await response(scope, receive, send)
-                return
-
-        body = bytearray()
-        while True:
-            message = await receive()
-            if message.get("type") != "http.request":
-                await self.app(scope, receive, send)
-                return
-            body.extend(message.get("body", b""))
-            if len(body) > self.max_bytes:
-                response = JSONResponse({"detail": "请求内容过大。"}, status_code=413)
-                await response(scope, receive, send)
-                return
-            if not message.get("more_body", False):
-                break
+        header_error = _content_length_error(scope, self.max_bytes)
+        if header_error is not None:
+            await header_error(scope, receive, send)
+            return
+        body, valid_request = await _read_limited_body(receive, self.max_bytes)
+        if not valid_request:
+            await self.app(scope, receive, send)
+            return
+        if body is None:
+            response = JSONResponse({"detail": "请求内容过大。"}, status_code=413)
+            await response(scope, receive, send)
+            return
 
         replayed = False
 
@@ -55,9 +41,34 @@ class BodySizeLimitMiddleware:
             if replayed:
                 return {"type": "http.request", "body": b"", "more_body": False}
             replayed = True
-            return {"type": "http.request", "body": bytes(body), "more_body": False}
+            return {"type": "http.request", "body": body, "more_body": False}
 
         await self.app(scope, replay_receive, send)
+
+
+def _content_length_error(scope, max_bytes: int) -> JSONResponse | None:
+    headers = {key.lower(): value for key, value in scope.get("headers") or []}
+    content_length = headers.get(b"content-length")
+    if not content_length:
+        return None
+    try:
+        too_large = int(content_length.decode("ascii")) > max_bytes
+    except (UnicodeDecodeError, ValueError):
+        return JSONResponse({"detail": "请求头无效。"}, status_code=400)
+    return JSONResponse({"detail": "请求内容过大。"}, status_code=413) if too_large else None
+
+
+async def _read_limited_body(receive, max_bytes: int) -> tuple[bytes | None, bool]:
+    body = bytearray()
+    while True:
+        message = await receive()
+        if message.get("type") != "http.request":
+            return bytes(body), False
+        body.extend(message.get("body", b""))
+        if len(body) > max_bytes:
+            return None, True
+        if not message.get("more_body", False):
+            return bytes(body), True
 
 
 class RateLimiter:

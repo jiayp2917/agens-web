@@ -20,7 +20,7 @@ async def test_parses_basic_event() -> None:
         "choices": [{"delta": {"content": "你好"}}],
         "model": "agnes-2.0-flash",
     })
-    chunks = [f"data: {payload}\n\n".encode("utf-8")]
+    chunks = [f"data: {payload}\n\n".encode()]
     events = []
     async for ev in iter_sse_events(_to_async(chunks)):
         events.append(ev)
@@ -61,7 +61,7 @@ async def test_ignores_malformed_json() -> None:
 @pytest.mark.asyncio
 async def test_handles_crlf() -> None:
     payload = json.dumps({"choices": [{"delta": {"content": "Y"}}]})
-    chunks = [f"data: {payload}\r\n\r\n".encode("utf-8")]
+    chunks = [f"data: {payload}\r\n\r\n".encode()]
     events = []
     async for ev in iter_sse_events(_to_async(chunks)):
         events.append(ev)
