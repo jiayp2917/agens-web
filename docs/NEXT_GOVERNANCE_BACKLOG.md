@@ -16,6 +16,7 @@
 
 2. **Extended real Chrome gate**
    - 2026-07-10 isolated fallback smoke 已覆盖访客清局、角色创建、双击、fallback、存读档、终局和 375/2K overflow。
+   - 2026-07-11 素材细节验收已覆盖 1440x900、1920x1080、2560x1440、390x844、桌面/移动弹窗和六态组件；相关截图不提交仓库。
    - 后续只需补真实 provider 20 回合、显式 409 可见提示、内容质量和终局长局证据。
    - 不与 pytest 共用数据库。
 
@@ -45,7 +46,7 @@
 2. 拆 `tests/web/test_web_api.py`：按 auth、model settings、session、save/load、turn persistence 分类。
 3. 评估把应用内 RateLimiter 换成 Redis/反代限流；Alpha 单实例仍可保留现实现。
 4. 为模型 URL 校验增加可插拔的固定解析/连接层，进一步消除 DNS rebinding 窗口。
-5. 扩展前端测试到完整账号流程和 409 可见提示；当前已有认证回调、fallback、双击和 focus trap 覆盖。
+5. 扩展前端测试到完整账号流程和 409 可见提示；当前已有认证回调、fallback、双击、focus trap、选择按钮 loading 和游戏工具栏覆盖。
 
 ## Stable Invariants
 

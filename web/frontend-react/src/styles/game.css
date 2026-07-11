@@ -23,11 +23,6 @@
   font-size: 34px;
 }
 
-.summary-actions .icon-btn {
-  border-radius: var(--radius-sm);
-  width: 54px;
-}
-
 .mobile-top-summary {
   display: none;
 }
@@ -95,7 +90,7 @@
 .rail-stats {
   display: grid;
   grid-template-columns: 1fr 1fr;
-  border: 1px solid rgba(185, 162, 125, 0.4);
+  border: 1px solid var(--border-soft);
 }
 
 .rail-stats span {
@@ -130,18 +125,27 @@
 }
 
 .stat-meter {
-  height: 8px;
+  height: 18px;
+  padding: 3px;
   overflow: hidden;
-  border: 1px solid rgba(79, 118, 104, 0.28);
+  border: 1px solid var(--line-strong);
   border-radius: 999px;
-  background: rgba(255, 250, 240, 0.62);
+  background: #fffaf0;
+  box-shadow:
+    inset 0 0 0 1px rgba(95, 85, 72, 0.18),
+    0 1px 2px rgba(72, 58, 36, 0.08);
 }
 
 .stat-meter i {
   display: block;
   height: 100%;
+  border: 1px solid rgba(49, 92, 81, 0.44);
   border-radius: inherit;
-  background: var(--jade);
+  background: linear-gradient(90deg, #4f7668, #315c51);
+  box-shadow:
+    inset 0 1px rgba(255, 250, 240, 0.24),
+    inset 0 -1px rgba(32, 27, 21, 0.12);
+  transition: width 320ms ease;
 }
 
 .character-meta,
@@ -155,8 +159,8 @@
 
 .character-meta {
   padding: 10px 0;
-  border-top: 1px solid rgba(185, 162, 125, 0.34);
-  border-bottom: 1px solid rgba(185, 162, 125, 0.34);
+  border-top: 1px solid var(--border-soft);
+  border-bottom: 1px solid var(--border-soft);
 }
 
 .character-meta dt,
@@ -224,11 +228,12 @@
 }
 
 .chronicle-heading {
+  position: relative;
   display: flex;
   align-items: end;
   justify-content: space-between;
   gap: 14px;
-  border-bottom: 1px solid rgba(185, 162, 125, 0.38);
+  border-bottom: 1px solid var(--border-soft);
   padding-bottom: 10px;
 }
 
@@ -250,67 +255,157 @@
 
 .chronicle-item {
   display: grid;
-  grid-template-columns: minmax(82px, 0.16fr) minmax(0, 1fr);
+  grid-template-columns: minmax(74px, auto) minmax(0, 1fr);
   align-items: start;
   gap: 18px;
   min-width: 0;
-  padding: 14px 12px;
-  border-bottom: 1px solid rgba(95, 85, 72, 0.24);
+  padding: 16px 12px;
+  border-bottom: 1px solid var(--border-ink);
 }
 
 .chronicle-item.latest {
   background:
+    repeating-linear-gradient(135deg, rgba(95, 85, 72, 0.05) 0 1px, transparent 1px 7px),
     linear-gradient(90deg, rgba(255, 248, 232, 0.8), rgba(255, 250, 240, 0.36)),
     var(--paper-texture) center / 420px auto repeat;
+  animation: chronicle-in 200ms ease-out;
 }
 
 .chronicle-age {
   color: var(--ink);
-  font-size: clamp(19px, 1.25vw, 25px);
+  font-size: 21px;
   font-weight: 700;
-  line-height: 1.58;
+  line-height: 1.5;
   white-space: nowrap;
 }
 
 .chronicle-item p {
   min-width: 0;
+  max-width: 42em;
   margin: 0;
   color: var(--ink);
-  font-size: clamp(19px, 1.25vw, 25px);
-  line-height: 1.58;
+  font-size: 18px;
+  line-height: 1.8;
   overflow-wrap: anywhere;
 }
 
 .choice-list {
   display: grid;
   grid-template-columns: repeat(2, minmax(0, 1fr));
+  grid-auto-rows: 44px;
   gap: 10px 14px;
 }
 
 .choice-button {
+  position: relative;
+  isolation: isolate;
+  width: 100%;
+  height: 44px;
   min-width: 0;
-  min-height: 78px;
+  min-height: 44px;
   display: grid;
-  grid-template-columns: 58px minmax(0, 1fr) auto;
+  grid-template-columns: 38px minmax(0, 1fr) 32px;
   align-items: center;
-  gap: 14px;
-  padding: 10px 14px;
+  gap: 0;
+  padding: 2px 14px;
   text-align: left;
+  border: 0;
+  border-radius: 0;
+  background: transparent;
+  transition: none;
+}
+
+.choice-button::before {
+  content: "";
+  position: absolute;
+  inset: 2px 0;
+  z-index: -1;
+  border: 1px solid var(--line-strong);
+  border-radius: 5px;
   background:
-    linear-gradient(90deg, rgba(255, 250, 240, 0.92), rgba(255, 250, 240, 0.72)),
+    linear-gradient(180deg, rgba(255, 250, 240, 0.86), rgba(248, 241, 226, 0.78)),
     var(--paper-texture) center / 420px auto repeat;
+  box-shadow: 0 1px 2px rgba(72, 58, 36, 0.07);
+  transition: border-color 140ms ease, background-color 140ms ease, transform 100ms ease, box-shadow 140ms ease;
+}
+
+.choice-button:hover:not(:disabled)::before {
+  border-color: #8f7957;
+  background:
+    linear-gradient(180deg, rgba(255, 252, 245, 0.96), rgba(248, 241, 226, 0.88)),
+    var(--paper-texture) center / 420px auto repeat;
+  box-shadow: 0 3px 7px rgba(72, 58, 36, 0.18);
+}
+
+.choice-button:active:not(:disabled) {
+  transform: none;
+}
+
+.choice-button:active:not(:disabled)::before {
+  transform: translateY(1px);
+  border-color: #8f7957;
+  background:
+    linear-gradient(180deg, rgba(242, 234, 218, 0.9), rgba(247, 240, 225, 0.82)),
+    var(--paper-texture) center / 420px auto repeat;
+  box-shadow:
+    inset 0 2px 4px rgba(72, 58, 36, 0.2),
+    0 1px 1px rgba(72, 58, 36, 0.06);
+}
+
+.choice-button:focus-visible {
+  outline: none;
+}
+
+.choice-button:focus-visible::after {
+  content: "";
+  position: absolute;
+  inset: 0 -2px;
+  z-index: 2;
+  border: 1px solid var(--jade-strong);
+  border-radius: 7px;
+  box-shadow: inset 0 0 0 2px rgba(255, 250, 240, 0.94);
+  pointer-events: none;
+}
+
+.choice-button:disabled {
+  cursor: not-allowed;
+  opacity: 1;
+}
+
+.choice-button:disabled::before {
+  border-color: rgba(185, 162, 125, 0.42);
+  background: rgba(255, 250, 240, 0.52);
+  box-shadow: none;
+}
+
+.choice-button:disabled:not(.is-loading) > * {
+  opacity: 0.38;
+}
+
+.choice-button.is-loading {
+  cursor: progress;
+  opacity: 1;
+}
+
+.choice-button:disabled:not(.is-loading) .choice-mark {
+  filter: saturate(0.35);
 }
 
 .choice-mark {
-  width: 48px;
-  height: 48px;
+  width: 28px;
+  height: 28px;
   display: inline-grid;
   place-items: center;
-  border: 2px solid rgba(255, 250, 240, 0.72);
+  justify-self: start;
+  border: 1px solid rgba(255, 250, 240, 0.9);
   border-radius: 50%;
   color: #fffaf0;
-  font-size: 30px;
-  font-weight: 700;
+  font-size: 17px;
+  font-weight: 600;
+  line-height: 1;
+  box-shadow:
+    0 0 0 1px rgba(32, 27, 21, 0.18),
+    inset 0 0 0 1px rgba(255, 250, 240, 0.2);
 }
 
 .choice-a .choice-mark {
@@ -326,7 +421,7 @@
 }
 
 .choice-d .choice-mark {
-  background: #4c4943;
+  background: #8a8478;
 }
 
 .choice-copy {
@@ -336,13 +431,24 @@
 }
 
 .choice-copy em {
+  min-width: 0;
   overflow: hidden;
   color: var(--ink);
-  font-size: 18px;
+  font-size: 17px;
   font-style: normal;
-  line-height: 1.45;
+  line-height: 1.2;
   text-overflow: ellipsis;
   white-space: nowrap;
+}
+
+.choice-arrow,
+.choice-spinner {
+  width: 20px;
+  height: 20px;
+  display: block;
+  justify-self: end;
+  object-fit: contain;
+  pointer-events: none;
 }
 
 .fallback {
@@ -351,12 +457,83 @@
   align-items: center;
   gap: 12px;
   padding: 10px 14px;
-  border: 1px solid rgba(185, 162, 125, 0.5);
+  border: 1px solid var(--border-soft);
   border-radius: var(--radius-sm);
-  background: rgba(255, 250, 240, 0.78);
+  background:
+    repeating-linear-gradient(135deg, rgba(95, 85, 72, 0.05) 0 1px, transparent 1px 7px),
+    rgba(255, 250, 240, 0.78);
+  animation: chronicle-in 200ms ease-out;
 }
 
 .fallback span {
   color: var(--ink-soft);
   overflow-wrap: anywhere;
+}
+
+/* 素材图九宫边框：固定四个内收角，只拉伸四条直边。 */
+.status-panel,
+.story-panel,
+.creation-panel,
+.settings-dialog {
+  position: relative;
+  border: 0;
+  border-radius: 0;
+  outline: 0;
+  -webkit-mask-box-image-source: url("../assets/ui/inset-panel-mask.svg");
+  -webkit-mask-box-image-slice: 25 fill;
+  -webkit-mask-box-image-width: 20px;
+  -webkit-mask-box-image-repeat: stretch;
+}
+
+@supports not (-webkit-mask-box-image-source: url("../assets/ui/inset-panel-mask.svg")) {
+  .status-panel,
+  .story-panel,
+  .creation-panel,
+  .settings-dialog {
+    clip-path: polygon(
+      18px 3px,
+      calc(100% - 18px) 3px,
+      calc(100% - 18px) 7px,
+      calc(100% - 10px) 15px,
+      calc(100% - 3px) 15px,
+      calc(100% - 3px) calc(100% - 15px),
+      calc(100% - 10px) calc(100% - 15px),
+      calc(100% - 18px) calc(100% - 7px),
+      calc(100% - 18px) calc(100% - 3px),
+      18px calc(100% - 3px),
+      18px calc(100% - 7px),
+      10px calc(100% - 15px),
+      3px calc(100% - 15px),
+      3px 15px,
+      10px 15px,
+      18px 7px
+    );
+  }
+}
+
+.status-panel::before,
+.story-panel::before,
+.creation-panel::before,
+.settings-dialog::before {
+  content: "";
+  position: absolute;
+  inset: 0;
+  z-index: 2;
+  box-sizing: border-box;
+  border: 20px solid transparent;
+  border-image: url("../assets/ui/inset-panel-frame.svg") 31.25% stretch;
+  pointer-events: none;
+}
+
+/* 素材中的八点加载图形，保持箭头槽位尺寸不变。 */
+.choice-spinner {
+  width: 20px;
+  height: 20px;
+  animation: choice-spin 900ms steps(8) infinite;
+}
+
+@keyframes choice-spin {
+  to {
+    transform: rotate(360deg);
+  }
 }

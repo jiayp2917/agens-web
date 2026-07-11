@@ -42,6 +42,19 @@ export function App() {
   const [dialogMode, setDialogMode] = useState<DialogMode | null>(null);
   const [tutorialOpen, setTutorialOpen] = useState(false);
   const mutationInFlight = useRef(false);
+  // On mobile the global topbar is empty in the game view (brand/user/login are
+  // hidden), so the single BGM player would float over scrolling story text.
+  // Instead we render the one BgmToggle into the in-flow game toolbar on mobile;
+  // on desktop it stays in the global topbar. Exactly one player either way.
+  const [mobileGameTools, setMobileGameTools] = useState(false);
+  useEffect(() => {
+    if (typeof window === "undefined" || typeof window.matchMedia !== "function") return;
+    const query = window.matchMedia("(max-width: 900px)");
+    const update = () => setMobileGameTools(query.matches);
+    update();
+    query.addEventListener("change", update);
+    return () => query.removeEventListener("change", update);
+  }, []);
 
   useEffect(() => {
     api<{ user: User }>("/api/auth/me")
@@ -172,11 +185,12 @@ export function App() {
           jiayp
         </a>
         <div className="topbar-actions">
-          <BgmToggle />
+          {/* Move the BGM player into the mobile game toolbar; keep it here otherwise. */}
+          {!(mobileGameTools && view === "game") && <BgmToggle />}
           {user ? (
             <>
               <span className="user-chip" title={user.username}><UserRound size={16} />{user.username}</span>
-              <button className="icon-btn" onClick={logout} aria-label="退出登录"><LogOut size={18} /></button>
+              <button className="icon-btn" onClick={logout} aria-label="退出登录"><LogOut size={20} /></button>
             </>
           ) : (
             <button className="plain-btn" onClick={() => openAuth("login")}>登录</button>
@@ -217,6 +231,7 @@ export function App() {
           runTurn={runTurn}
           openDialog={openDialog}
           onHome={returnHome}
+          mobileBgm={mobileGameTools ? <BgmToggle /> : null}
         />
       )}
       {view === "ending" && session && (

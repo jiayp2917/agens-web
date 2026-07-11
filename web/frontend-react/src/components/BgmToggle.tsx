@@ -1,6 +1,7 @@
 import { useRef, useState } from "react";
-import { Volume2, VolumeX } from "lucide-react";
 import { assetUrl } from "../lib/assets";
+import bgmOffIcon from "../assets/ui/tool-bgm-off.svg";
+import bgmOnIcon from "../assets/ui/tool-bgm-on.svg";
 
 export function BgmToggle() {
   const audioRef = useRef<HTMLAudioElement | null>(null);
@@ -34,7 +35,7 @@ export function BgmToggle() {
         aria-label={enabled ? "关闭背景音乐" : "播放背景音乐"}
         title={blocked ? "浏览器阻止自动播放，请再点一次" : enabled ? "关闭背景音乐" : "播放背景音乐"}
       >
-        {enabled ? <Volume2 size={18} /> : <VolumeX size={18} />}
+        <img className="tool-icon" src={enabled ? bgmOnIcon : bgmOffIcon} alt="" aria-hidden="true" />
       </button>
       <audio
         ref={audioRef}

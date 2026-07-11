@@ -6,6 +6,7 @@
   place-items: center;
   padding: 22px;
   background: rgba(24, 22, 18, 0.46);
+  animation: scrim-in 200ms ease-out;
 }
 
 .settings-dialog {
@@ -15,6 +16,7 @@
   gap: 14px;
   padding: 22px;
   overflow: auto;
+  animation: dialog-in 220ms ease-out;
 }
 
 .compact-dialog {
@@ -22,10 +24,13 @@
 }
 
 .settings-dialog header {
+  position: relative;
   display: flex;
   align-items: center;
   justify-content: space-between;
   gap: 12px;
+  padding-bottom: 12px;
+  border-bottom: 1px solid var(--border-soft);
 }
 
 .settings-dialog h2,
@@ -81,7 +86,7 @@
   align-items: center;
   gap: 12px;
   padding: 12px;
-  border: 1px solid rgba(185, 162, 125, 0.4);
+  border: 1px solid var(--border-soft);
   border-radius: var(--radius-sm);
   background: rgba(255, 250, 240, 0.58);
 }

@@ -20,7 +20,10 @@
 .status-panel,
 .story-panel,
 .settings-dialog {
-  border: 1px solid rgba(185, 162, 125, 0.72);
+  /* 宣纸双线裱框：外线暖灰金（border）+ 间距 + 内线深墨（outline 负偏移，跟随圆角）。 */
+  border: 1px solid var(--line-strong);
+  outline: 1px solid rgba(95, 85, 72, 0.72);
+  outline-offset: -4px;
   border-radius: var(--radius);
   background:
     linear-gradient(180deg, rgba(255, 250, 240, 0.88), rgba(250, 243, 228, 0.84)),
@@ -40,7 +43,7 @@
 .creation-panel h2,
 .chronicle-heading h2 {
   margin: 0;
-  font-size: clamp(28px, 3vw, 38px);
+  font-size: 38px;
   line-height: 1.1;
 }
 

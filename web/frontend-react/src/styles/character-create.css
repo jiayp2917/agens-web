@@ -35,12 +35,24 @@
 }
 
 .creation-panel header {
+  position: relative;
   display: flex;
   align-items: baseline;
   justify-content: space-between;
   gap: 12px;
-  border-bottom: 1px solid rgba(185, 162, 125, 0.42);
+  border-bottom: 1px solid var(--border-soft);
   padding-bottom: 12px;
+}
+
+.creation-panel header::after {
+  content: "";
+  position: absolute;
+  left: 50%;
+  bottom: -3px;
+  width: 6px;
+  height: 6px;
+  background: var(--ink-soft);
+  transform: translateX(-50%) rotate(45deg);
 }
 
 .creation-panel header p {
@@ -139,7 +151,7 @@
 
 .catalog-group {
   min-height: 0;
-  border: 1px solid rgba(185, 162, 125, 0.56);
+  border: 1px solid var(--border-soft);
   border-radius: var(--radius-sm);
   background: rgba(255, 250, 240, 0.64);
   display: grid;
@@ -190,7 +202,7 @@
   gap: 7px;
   justify-self: end;
   padding: 6px 10px;
-  border: 1px solid rgba(185, 162, 125, 0.5);
+  border: 1px solid var(--border-soft);
   border-radius: 999px;
   background: rgba(79, 118, 104, 0.08);
 }
@@ -208,7 +220,7 @@
   display: inline-grid;
   place-items: center;
   justify-self: end;
-  border: 1px solid rgba(185, 162, 125, 0.58);
+  border: 1px solid var(--border-soft);
   border-radius: 50%;
   color: var(--ink-soft);
   transition: color 160ms ease, transform 160ms ease;
@@ -332,7 +344,7 @@
   gap: 12px;
   min-height: 76px;
   padding: 10px 0;
-  border-bottom: 1px solid rgba(185, 162, 125, 0.34);
+  border-bottom: 1px solid var(--border-soft);
 }
 
 .attr-grid button {
@@ -347,7 +359,7 @@
   height: 46px;
   display: inline-grid;
   place-items: center;
-  border: 1px solid rgba(185, 162, 125, 0.58);
+  border: 1px solid var(--border-soft);
   border-radius: 50%;
   background: rgba(255, 250, 240, 0.64);
   font-size: 20px;

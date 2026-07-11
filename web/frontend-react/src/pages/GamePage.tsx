@@ -1,5 +1,5 @@
 import { useMemo } from "react";
-import { Home, Save, Settings } from "lucide-react";
+import type { ReactNode } from "react";
 import type { DialogMode, Session } from "../lib/api";
 import { choiceSemantics, formatRealmName, realmLifespanCap } from "../lib/catalog";
 import { buildChronicleRecords, getCurrentChronicleYear } from "../lib/chronicle";
@@ -10,6 +10,9 @@ import { ChoiceButton } from "../components/ChoiceButton";
 import { ChronicleItem } from "../components/ChronicleItem";
 import { LifespanBar } from "../components/LifespanBar";
 import { RarityDot } from "../components/RarityDot";
+import homeIcon from "../assets/ui/tool-home.svg";
+import saveIcon from "../assets/ui/tool-save.svg";
+import settingsIcon from "../assets/ui/tool-settings.svg";
 
 export function GamePage({
   session,
@@ -17,12 +20,14 @@ export function GamePage({
   runTurn,
   openDialog,
   onHome,
+  mobileBgm = null,
 }: {
   session: Session;
   busy: boolean;
   runTurn: (path: string, body: unknown) => Promise<void>;
   openDialog: (mode: DialogMode) => void;
   onHome: () => void;
+  mobileBgm?: ReactNode;
 }) {
   const character = session.character || {};
   const world = session.world || {};
@@ -82,9 +87,10 @@ export function GamePage({
       <header className="game-summary game-topbar">
         <a className="page-brand game-brand" href="https://www.jiayp2917.xyz/" target="_blank" rel="noreferrer">jiayp</a>
         <div className="summary-actions">
-          <button className="plain-btn return-home-btn" type="button" onClick={onHome}><Home size={16} />返回首页</button>
-          <button className="icon-btn" onClick={() => openDialog("saves")} aria-label="存档"><Save size={20} /></button>
-          <button className="icon-btn" onClick={() => openDialog("settings")} aria-label="设置"><Settings size={20} /></button>
+          <button className="icon-btn return-home-btn" type="button" onClick={onHome} aria-label="返回首页" title="返回首页"><img className="tool-icon" src={homeIcon} alt="" aria-hidden="true" /></button>
+          <button className="icon-btn" onClick={() => openDialog("saves")} aria-label="存档" title="存档"><img className="tool-icon" src={saveIcon} alt="" aria-hidden="true" /></button>
+          <button className="icon-btn" onClick={() => openDialog("settings")} aria-label="设置" title="设置"><img className="tool-icon" src={settingsIcon} alt="" aria-hidden="true" /></button>
+          {mobileBgm}
         </div>
       </header>
       <section className="mobile-top-summary">

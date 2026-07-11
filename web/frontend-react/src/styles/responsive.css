@@ -32,9 +32,14 @@
     font-size: 32px;
   }
 
+  .auth-panel h2,
+  .ending-card h2,
+  .creation-panel h2 {
+    font-size: 34px;
+  }
+
   .topbar-actions .plain-btn,
-  .user-chip,
-  .game-topbar {
+  .user-chip {
     display: none;
   }
 
@@ -115,10 +120,32 @@
   .game-page {
     height: auto;
     min-height: 100dvh;
-    grid-template-rows: auto minmax(0, 1fr);
+    grid-template-rows: auto auto minmax(0, 1fr);
     gap: 10px;
-    padding: 12px;
+    padding: max(12px, env(safe-area-inset-top)) max(12px, env(safe-area-inset-right)) max(12px, env(safe-area-inset-bottom)) max(12px, env(safe-area-inset-left));
     overflow: visible;
+  }
+
+  /* 移动端游戏工具栏：取代浮动固定 BGM，sticky 进流且占位，滚动时不遮挡正文。
+     返回/存档/设置/BGM 统一为圆形 icon-btn。桌面返回文字按钮与品牌在此隐藏。 */
+  .game-topbar {
+    position: sticky;
+    top: 0;
+    z-index: 20;
+    min-height: 0;
+    padding: 8px 6px;
+    padding-top: max(8px, env(safe-area-inset-top));
+    justify-content: flex-end;
+    background:
+      linear-gradient(180deg, rgba(244, 236, 220, 0.96), rgba(244, 236, 220, 0.88));
+    backdrop-filter: blur(6px);
+    border: 1px solid var(--border-soft);
+    border-radius: 14px;
+    box-shadow: 0 2px 10px rgba(72, 58, 36, 0.08);
+  }
+
+  .game-topbar .game-brand {
+    display: none;
   }
 
   .mobile-top-summary {
@@ -127,7 +154,7 @@
     align-items: center;
     gap: 14px;
     min-height: 136px;
-    padding: 12px 120px 12px 12px;
+    padding: 12px;
     border: 1px solid rgba(185, 162, 125, 0.58);
     border-radius: 28px 28px 0 0;
     background:
@@ -162,8 +189,6 @@
   }
 
   .story-panel {
-    border-top: 0;
-    border-radius: 0 0 28px 28px;
     padding: 18px 14px 14px;
   }
 
@@ -191,9 +216,13 @@
     padding: 12px 8px;
   }
 
-  .chronicle-age,
+  .chronicle-age {
+    font-size: 22px;
+  }
+
   .chronicle-item p {
-    font-size: 24px;
+    font-size: 18px;
+    max-width: none;
   }
 
 
@@ -203,19 +232,17 @@
     margin-top: 4px;
   }
 
+  /* 移动端仍保持三列：圆标 + 文字 + 箭头/spinner 共用第 3 槽位，不隐藏右箭头，
+     状态切换不换行、不跳高。 */
   .choice-button {
-    min-height: 64px;
-    grid-template-columns: 54px minmax(0, 1fr);
-  }
-
-  .choice-button > svg {
-    display: none;
+    height: 44px;
+    min-height: 44px;
   }
 
   .choice-copy em {
     color: var(--ink);
-    font-size: 20px;
-    white-space: normal;
+    font-size: 17px;
+    white-space: nowrap;
   }
 
   .fallback {
@@ -233,8 +260,8 @@
 
 @media (max-width: 520px) {
   .icon-btn {
-    width: 48px;
-    height: 48px;
+    width: 44px;
+    height: 44px;
   }
 
   .home-actions button {
@@ -262,10 +289,6 @@
     font-size: 18px;
   }
 
-  .mobile-top-summary {
-    padding-right: 112px;
-  }
-
   .mobile-top-summary h2 {
     font-size: 30px;
   }
@@ -278,9 +301,12 @@
     font-size: 38px;
   }
 
-  .chronicle-age,
+  .chronicle-age {
+    font-size: 20px;
+  }
+
   .chronicle-item p {
-    font-size: 22px;
+    font-size: 17px;
   }
 
   .save-row {
@@ -357,6 +383,8 @@
   *::before,
   *::after {
     transition-duration: 1ms !important;
+    animation-duration: 1ms !important;
+    animation-iteration-count: 1 !important;
     scroll-behavior: auto !important;
   }
 }

@@ -239,6 +239,11 @@ def test_react_game_page_has_escape_route_and_stable_meters() -> None:
     assert "ChoiceButton" in source
     assert "cleanChoiceText" in source
     assert "[A-Da-d]" in source and "：、)）" in source
+    assert 'choice-arrow.svg' in source
+    assert 'tool-home.svg' in source
+    assert 'tool-save.svg' in source
+    assert 'tool-settings.svg' in source
+    assert "ChevronRight" not in source
     assert "往事时间轴" in source
     assert ".stat-meter" in css
     assert ".page-brand" in css
@@ -246,7 +251,11 @@ def test_react_game_page_has_escape_route_and_stable_meters() -> None:
     assert "height: 100dvh;" in css
     assert "overflow: hidden;" in css
     assert "grid-template-rows: auto minmax(0, 1fr) auto auto;" in css
-    assert "grid-template-columns: 58px minmax(0, 1fr) auto;" in css
+    assert "grid-template-columns: 38px minmax(0, 1fr) 32px;" in css
+    assert 'border-image: url("../assets/ui/inset-panel-frame.svg") 31.25% stretch;' in css
+    assert '-webkit-mask-box-image-source: url("../assets/ui/inset-panel-mask.svg");' in css
+    assert "-webkit-mask-box-image-slice: 25 fill;" in css
+    assert "grid-auto-rows: 44px;" in css
     assert "tool-grid" not in source
     assert "panel-summary" not in source
     assert "panel-output" not in source

@@ -1,5 +1,21 @@
 # Changelog
 
+## 2026-07-11
+
+### Frontend material-detail replication
+
+- Replaced approximate panel decoration with local SVG nine-slice frames for the character creation columns, game status/chronicle panels, and settings/save dialogs. The matching SVG mask now clips the paper background to the inset-corner contour instead of leaving rectangular corner fill.
+- Reworked lifespan meters, thin scrollbars, centered diamond separators, current-entry ink stripes, fixed typography sizes, and restrained dialog/chronicle motion to match the approved material boards without changing gameplay or copy.
+- Replaced the relevant Lucide controls with local home/save/settings/BGM SVGs and a shared 44 px hit area containing a 40 px visible double-ring button.
+- Rebuilt A/B/C/D controls with fixed letter/text/arrow columns, local arrow/loading assets, and stable default/hover/pressed/focus-visible/disabled/loading states. Mobile keeps the same geometry and moves BGM into the in-flow sticky toolbar.
+- Added focused Vitest coverage for choice loading and the game toolbar plus frontend contract locks for the frame, mask and local assets.
+
+### Verification
+
+- Vitest: 9 passed; React production build passed; `git diff --check` passed with LF/CRLF warnings only.
+- Real Chrome visual checks covered 1440x900, 1920x1080, 2560x1440 and 390x844, including character creation, gameplay, dialogs and the six-state fixture. Evidence remains untracked under `output/playwright` and is not part of the commit.
+- This batch changed frontend visuals only. It did not run production deployment or production validation.
+
 ## 2026-07-10
 
 ### Security and runtime consistency

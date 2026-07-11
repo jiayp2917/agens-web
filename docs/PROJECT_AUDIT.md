@@ -2,7 +2,7 @@
 
 ## Scope
 
-本审计描述 2026-07-10 本地工作树。未连接生产环境、未读取 secrets、未执行生产迁移或部署。旧生产和旧 Chrome 证据不作为当前分支通过结论。
+本审计描述 2026-07-11 本地工作树。未连接生产环境、未读取 secrets、未执行生产迁移或部署。旧生产证据不作为当前分支通过结论。
 
 ## Current Architecture
 
@@ -56,6 +56,13 @@
 - Ruff 普通规则、Ruff C901 和 mypy 当前均为零错误。
 - CI 不再 `continue-on-error`，覆盖 Python/PG/React/lock/Docker 配置门禁。
 
+### 前端视觉一致性
+
+- 角色创建栏、游戏状态栏、编年史面板和设置/存档弹窗共用本地 SVG 九宫双线内收角；同轮廓 mask 会裁切实际宣纸背景，角部不再保留矩形底色。
+- 首页/存档/设置/BGM 使用 44 px 交互区和 40 px 可见双环按钮；本地 SVG 保持统一描边重量，移动端 BGM 进入随页面流动的 sticky 工具栏。
+- A/B/C/D 使用固定圆标、文本和箭头列，并覆盖 default、hover、pressed、focus-visible、disabled、loading 六态；状态变化不改变按钮尺寸。
+- 寿元条、细滚动条、菱形分隔线、当前编年史淡墨条纹及固定字号 token 已按批准素材收敛；未替换字体文件、未改业务结构或文案。
+
 ## Database State
 
 当前 18 张应用表：
@@ -103,8 +110,9 @@ run_achievements, account_rewards, legacy_bonuses
 - Ruff 普通检查 0；C901 0；mypy 74 source files 0 errors。
 - PostgreSQL `tests\web -n0`：92 passed。
 - 全量非 live pytest：594 passed。
-- Vitest：5 passed；React production build passed；npm audit：0 vulnerabilities。
+- Vitest：9 passed；React production build passed；npm audit：0 vulnerabilities。
 - 真实 Chrome fallback smoke 通过：注册、访客局删除、个人模型设置保存/清除且 Key 输入清空、双击 start/choice 单请求、fallback 无“继续本局”、A/B/C/D 年龄推进、save/load、终局原因、375 和 2K 无横向溢出。
+- 真实 Chrome UI 视觉检查覆盖 1440x900、1920x1080、2560x1440 和 390x844；角色创建、游戏页、桌面/移动弹窗及六态夹具均已截图核对。证据不进入 Git。
 - Chrome smoke 后数据库事实：guest sessions 0、save 1、game_turns 2、completed run 1、user model config 清除后 0。
 
 ## Residual Risks

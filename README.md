@@ -15,7 +15,8 @@ Web-only 文字修仙模拟器。当前主线由 React/Vite、FastAPI、PostgreS
 - 回合日志、session snapshot、活跃/终局 run、奖励和遗泽消费使用同一数据库事务；失败恢复内存 runner。
 - fallback 会自动切换本地故事，玩家直接使用下方 A/B/C/D；fallback 不能算 live-model 成功。
 - FastAPI 路由已拆为 auth/catalog/session/settings；`GameEngine` 仍是玩法门面，开局、普通回合、突破和 fallback 分别由 flow/policy 模块承担。
-- 当前本地门禁：空库 Alembic 18 表升级通过；Ruff/C901/mypy 零错误；`tests\web` 92 passed；非 live 全量 pytest 594 passed；Vitest 5 passed；前端 build 通过；npm audit 0 vulnerabilities；真实 Chrome smoke 通过。
+- 前端关键面板使用 SVG 九宫双线内收角与同轮廓背景蒙版；工具按钮、寿元条、细滚动条和 A/B/C/D 六态已按当前素材规范统一，移动端保留同一视觉语言。
+- 当前本地门禁：空库 Alembic 18 表升级通过；Ruff/C901/mypy 零错误；`tests\web` 92 passed；非 live 全量 pytest 594 passed；Vitest 9 passed；前端 build 通过；npm audit 0 vulnerabilities；真实 Chrome smoke 与多视口视觉检查通过。
 
 本轮只做本地实现和验证，未执行生产部署或生产验收。真实 Chrome smoke 使用无真实 Key 的 fallback 路径，不是 live-model 验收。历史生产证据只保留在 `CHANGELOG.md`，不能代表当前未部署工作树。
 
