@@ -405,16 +405,3 @@ body::-webkit-scrollbar-thumb:hover,
   from { opacity: 0; transform: translateY(4px); }
   to { opacity: 1; transform: none; }
 }
-
-/* Board1 淡墨分隔线中点菱形：落在编年史标题与弹窗头部分隔线中央。 */
-.chronicle-heading::after,
-.settings-dialog header::after {
-  content: "";
-  position: absolute;
-  left: 50%;
-  bottom: -3px;
-  width: 6px;
-  height: 6px;
-  background: var(--ink-soft);
-  transform: translateX(-50%) rotate(45deg);
-}

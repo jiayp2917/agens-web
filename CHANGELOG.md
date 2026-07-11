@@ -5,7 +5,7 @@
 ### Frontend material-detail replication
 
 - Replaced approximate panel decoration with local SVG nine-slice frames for the character creation columns, game status/chronicle panels, and settings/save dialogs. The matching SVG mask now clips the paper background to the inset-corner contour instead of leaving rectangular corner fill.
-- Reworked lifespan meters, thin scrollbars, centered diamond separators, current-entry ink stripes, fixed typography sizes, and restrained dialog/chronicle motion to match the approved material boards without changing gameplay or copy.
+- Reworked lifespan meters, thin scrollbars, fine divider lines, current-entry ink stripes, fixed typography sizes, and restrained dialog/chronicle motion to match the approved material boards without changing gameplay or copy.
 - Replaced the relevant Lucide controls with local home/save/settings/BGM SVGs and a shared 44 px hit area containing a 40 px visible double-ring button.
 - Rebuilt A/B/C/D controls with fixed letter/text/arrow columns, local arrow/loading assets, and stable default/hover/pressed/focus-visible/disabled/loading states. Mobile keeps the same geometry and moves BGM into the in-flow sticky toolbar.
 - Added focused Vitest coverage for choice loading and the game toolbar plus frontend contract locks for the frame, mask and local assets.

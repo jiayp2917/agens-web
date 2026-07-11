@@ -44,17 +44,6 @@
   padding-bottom: 12px;
 }
 
-.creation-panel header::after {
-  content: "";
-  position: absolute;
-  left: 50%;
-  bottom: -3px;
-  width: 6px;
-  height: 6px;
-  background: var(--ink-soft);
-  transform: translateX(-50%) rotate(45deg);
-}
-
 .creation-panel header p {
   margin: 0;
   color: var(--ink-soft);

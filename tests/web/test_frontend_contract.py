@@ -256,6 +256,9 @@ def test_react_game_page_has_escape_route_and_stable_meters() -> None:
     assert '-webkit-mask-box-image-source: url("../assets/ui/inset-panel-mask.svg");' in css
     assert "-webkit-mask-box-image-slice: 25 fill;" in css
     assert "grid-auto-rows: 44px;" in css
+    assert ".creation-panel header::after" not in css
+    assert ".chronicle-heading::after" not in css
+    assert ".settings-dialog header::after" not in css
     assert "tool-grid" not in source
     assert "panel-summary" not in source
     assert "panel-output" not in source
