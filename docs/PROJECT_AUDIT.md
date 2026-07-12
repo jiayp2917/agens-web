@@ -2,7 +2,7 @@
 
 ## Scope
 
-本审计描述 2026-07-12 本地 `master@ea18398` 工作树（clean；本批次新增 `tests/unit/llm/test_llm_error_paths.py`）。自动化门禁在该工作树复跑通过，旧 `master@ea5ab36` 的 dirty 工作树证据只作历史。未连接生产环境、未读取 secrets、未执行生产迁移或部署，旧生产证据不作为当前分支通过结论。
+本审计描述 2026-07-12 本地 `master@019b941` 工作树（clean；在 `ea18398` 之上叠加 LLM 错误路径专项测试、`database_postgres` repository 拆分和 `test_web_api.py` 主题拆分，自动化门禁在该提交链复跑通过）。本批次新增真实模型矩阵证据：独立 `agens_web_live` PG 库 + headed Chrome 在 `019b941`(clean) 重跑 A/B/C/D 各 20 回合 + mixed 60 回合。旧 `master@ea5ab36` 的 dirty 工作树证据只作历史。未连接生产环境、未读取 secrets、未执行生产迁移或部署，旧生产证据不作为当前分支通过结论。
 
 ## Current Architecture
 
@@ -135,6 +135,7 @@ run_achievements, account_rewards, legacy_bonuses
 - 最新证据为 fallback 0、contract recovery 0、repair 0、incomplete retry 0、可见禁词 0、P0/P1 0；Judge 1 次，外界情报变化 9 次。第 20 主回合结束并读档后为 53 岁、筑基初期、寿元 147/200。
 - 768x900 无横向溢出；真实 HTTP 409 键盘触发、可见提示、权威 session 刷新和焦点恢复通过；双击防重、页面刷新、存档/读档及读档后继续 3 回合通过。
 - 最新 choice 平均 8.98s、p50 8.80s、p95 10.32s、最大 16.64s。更早的 A/B/C/D 各 20 回合和 mixed 60 回合矩阵属于前一工作树 fingerprint，只作为 `CHANGELOG.md` 中的历史证据，不冒充当前工作树完整矩阵。
+- 2026-07-12 真实模型矩阵（`master@019b941` clean + 独立 `agens_web_live` PG 库 + headed Chrome，`AGENS_START_MODEL_WORLD=1` 强制 live 开场）：A/B/C/D 各 20 回合 + mixed 60 回合，证据绑定 HEAD `019b941f`、dirty=False、`agens_web_live` 库标签与脚本哈希（`output/playwright/matrix-*` 证据集，gitignored）。140/140 choice 回合严格 live 通过（Narrator `ok`、provider JSON schema envelope ok、0 fallback、0 contract recovery、0 repair、save/load 通过）。全 live 回合 choice **p50=9069ms、p95=17529ms、max=26234ms**（目标 p50≤5s/p95≤15s 均未达）。延迟拆分：Narrator 主导 ~8.5–9.4s/回合（每回合必调，占 90%+），residual（持久化+网络+页面渲染+规则结算+Judge 摊销）仅 ~0.1–1.3s，证明瓶颈在 provider 单次调用延迟而非本地编排；Judge 间歇触发（0–6 次/局，~5.3–8.6s/次），触发回合被推到 17–26s，对应 p95/max 尖峰。开场 World Builder 7 次尝试中 2 次 `incomplete_output` 回退确定性开场（两次失败 `completion_tokens` 均为 1673，疑似截断），重跑均成功，属瞬态；开场不走 provider JSON schema（靠解析），Narrator 因强制 schema 而 140/140 稳定。fixed-c 出现 2 次 Narrator incomplete retry（已恢复，非 fallback）。mixed-60 跑满 60 回合但 `game_over` 未触发，规则终局样本本批未捕获。
 
 ## Residual Risks
 
@@ -142,8 +143,9 @@ run_achievements, account_rewards, legacy_bonuses
 | --- | --- | --- |
 | DNS 校验与连接之间存在 rebinding TOCTOU | P1 | 应在公网部署层增加出站 ACL/代理，阻止私网和 metadata 地址 |
 | 本机无 Docker CLI | P1 | Docker build/compose config 只能在 CI 或具备 Docker 的本地环境补验 |
-| live 响应仍高于 5 秒目标 | P1 | 最新运行 p50 8.80s、p95 10.32s、最大 16.64s；后续应区分 provider 首响应、Judge 和本地处理成本 |
-| 最新工作树未重跑完整路线矩阵 | P1 | 当前 fingerprint 已完成 23 回合综合验收；A/B/C/D 各 20 回合与规则终局长局仍需在玩法/内容再次变化或公开试玩前重跑 |
+| live 响应仍高于 5 秒目标 | P1 | 2026-07-12 矩阵全 live 回合 choice p50=9.07s、p95=17.5s、max=26.2s（目标 p50≤5s/p95≤15s 均未达）。Narrator 主导 ~8.5–9.4s/回合，residual 仅 ~0.1–1.3s，瓶颈在 provider 单次调用延迟而非本地编排；Judge 触发回合推高 p95/max。降延迟需 provider/模型侧或并发化，非本地编排能单独解决 |
+| 最新工作树矩阵已重跑，规则终局样本未捕获 | P1 | 2026-07-12 已在 `019b941`(clean) + 独立 `agens_web_live` 库重跑 A/B/C/D 各 20 + mixed 60，140/140 choice live；mixed-60 跑满 60 回合未触发 `game_over`，规则终局长局样本本批未捕获，待内容侧确认 60 回合主线收束触发条件 |
+| 开场 World Builder 偶发回退 | P1 | 矩阵 7 次开场中 2 次 `incomplete_output`（两次失败 `completion_tokens` 一致为 1673，疑似截断）回退确定性开场；重跑均成功，瞬态。开场不走 provider JSON schema（靠解析），Narrator 因强制 schema 而 140/140 稳定。可评估为开场启用 provider JSON schema 或放宽开场契约重试 |
 | 标准 90 回合目标未实现 | P1 | 当前四套内容版本在第 60 回合收束；90 回合是长期产品目标，不是当前完成事实 |
 | 生产未部署 `0008` | P1 | 当前只证明本地迁移；生产需单独备份、孤儿检查、迁移和 smoke |
 | `database_postgres.py` 仍偏大 | P2 | catalog/rewards/session_mutation 已抽到独立 repository（1332→727 行）；run/turn/progress 跟踪为剩余的最大 SQL 块，可在文件再增长时提取 |

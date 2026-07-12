@@ -2,6 +2,15 @@
 
 ## 2026-07-12
 
+### Live model matrix on the current worktree fingerprint
+
+- Ran the real-model acceptance matrix on `master@019b941` (clean) against an isolated `agens_web_live` PostgreSQL database (kept separate from the `tests\web` DB) with headed Chrome and `AGENS_START_MODEL_WORLD=1` forcing a live opening. A/B/C/D each ×20 turns plus a mixed ×60 long run; evidence is bound to HEAD `019b941f`, `dirty=False`, the `agens_web_live` label and the playtest script hash (`output/playwright/matrix-*`, gitignored).
+- 140/140 choice turns were strict live (Narrator `ok`, provider JSON-schema envelope ok, 0 fallback, 0 contract recovery, 0 repair, save/load passed). Aggregate over all live turns: choice **p50=9069 ms, p95=17529 ms, max=26234 ms** — the p50≤5 s / p95≤15 s target is NOT met.
+- Latency attribution: Narrator dominates at ~8.5–9.4 s per mandatory turn (~90%+); residual (persistence + network + page render + rule settlement + amortized Judge) is only ~0.1–1.3 s, so the bottleneck is provider per-call latency, not local orchestration. Judge fires intermittently (0–6 times per run, ~5.3–8.6 s) and pushes those turns to 17–26 s (the p95/max spikes).
+- Opening reliability: 2 of 7 World Builder openings returned `incomplete_output` (both failures had `completion_tokens` 1673, suggesting truncation) and fell back to the deterministic opening; reruns succeeded, so it is transient. The opening does not use the provider JSON schema (parses instead), unlike Narrator which is 140/140 stable. `fixed-c` had 2 Narrator incomplete retries that recovered (not fallback).
+- Content observation: the mixed ×60 run reached turn 60 without `game_over`, so a rule-ending long-run sample was not captured this batch (the 60-turn mainline closure did not trigger for this run).
+- Verification-only batch; no product code changed. Neither the latency nor the rule-ending milestone is marked complete — the gaps are recorded honestly in `PROJECT_AUDIT.md` / `NEXT_GOVERNANCE_BACKLOG.md`.
+
 ### Model error-path verification suite
 
 - Added `tests/unit/llm/test_llm_error_paths.py` locking the model-call error classification and propagation contract for the unfinished latency/error milestone. Coverage: all retryable statuses (408/425/429/500/502/503/504) raise `httpx.HTTPStatusError` instead of collapsing to `LLMBadRequest`; 401/403 raise `LLMAuthError`; 3xx redirects are refused without following `Location`; total timeout, `RetryExhausted` and retryable-status exhaustion surface as distinct `LLMError` messages; external `asyncio` cancellation propagates instead of being swallowed.
