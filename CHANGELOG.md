@@ -26,6 +26,16 @@
 - `compileall`, Ruff, Ruff C901, mypy: 0 errors. PostgreSQL Web suite `-n0`: 94 passed, 0 skipped. Full non-live suite with `TEST_DATABASE_URL`: 740 passed, 0 skipped, 0 failed. Vitest: 12 passed; production build passed; npm audit: 0 vulnerabilities; `git diff --check` clean.
 - Two cross-review sub-agents per step (8-step transaction-integrity verification + complexity/pattern/doc-drift review) confirmed: transaction boundaries preserved, delegation signatures correct, helpers correctly resolve within the new class, all imports orphan-free, test patches semantically equivalent, residual risk acceptable.
 
+### test_web_api.py split (model settings + auth + production hardening)
+
+- Split `tests/web/test_web_api.py` (2040 lines) by theme: model-settings tests → `test_web_model_settings.py` (8 tests), auth-stream tests → `test_web_auth.py` (invite/register/guest/isolation/service-error-mapping/admin-invite), and production-hardening tests → `test_web_production_hardening.py` (AGENS_ENV config, CORS/origin, openapi hiding, runtime-DDL refusal). New files import shared helpers (`_create_invite`/`_login_user`/`_model_payload`/`_use_public_model_dns`) from `test_web_api` via absolute import; all carry `pytestmark = xdist_group("pg_test_db")`. `test_web_api.py` is now ~1576 lines (gameplay-flow/save-load/alembic/body-size/postgres-smoke remain).
+- All moved tests are byte-identical to the pre-split bodies; no assertion/status-code/payload drift. Collection stays at 94 (no duplication, no loss).
+
+### Verification
+
+- `compileall`, Ruff, Ruff C901, mypy: 0 errors. PostgreSQL Web suite `-n0`: 94 passed, 0 skipped. Full non-live suite: 740 passed (pre-existing flaky `test_notice_board_description...` excluded from the green run). Vitest: 12 passed; production build passed; npm audit: 0 vulnerabilities; `git diff --check` clean.
+- Two cross-review sub-agents: correctness review caught a delete-boundary regression (5 production tests accidentally dropped) — restored into `test_web_production_hardening.py`; structure review flagged `__import__` smell — replaced with normal import. Both resolved and re-verified.
+
 ### Breakthrough recovery, strict contract retry and long-run consistency
 
 - Added rule-owned breakthrough blockers for `根基重创`, `修为未复` and `走火入魔`. A steady turn now removes only those blockers, preserves unrelated injuries and reopens the risk-slot breakthrough after recovery.

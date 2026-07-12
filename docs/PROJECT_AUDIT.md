@@ -147,7 +147,7 @@ run_achievements, account_rewards, legacy_bonuses
 | 标准 90 回合目标未实现 | P1 | 当前四套内容版本在第 60 回合收束；90 回合是长期产品目标，不是当前完成事实 |
 | 生产未部署 `0008` | P1 | 当前只证明本地迁移；生产需单独备份、孤儿检查、迁移和 smoke |
 | `database_postgres.py` 仍偏大 | P2 | catalog/rewards/session_mutation 已抽到独立 repository（1332→727 行）；run/turn/progress 跟踪为剩余的最大 SQL 块，可在文件再增长时提取 |
-| `tests/web/test_web_api.py` 仍偏大 | P2 | 后续按 auth/settings/session/save/turn 拆文件，不应和玩法改动混做 |
+| `tests/web/test_web_api.py` 仍偏大 | P2 | model settings/auth/production-hardening 已拆出（2040→~1576 行）；session/save/turn 主题仍与 gameplay flow 混在原文件，待后续批次连同 helper 迁 conftest 一起拆 |
 | 应用内 RateLimiter 为单进程 | P2 | 多副本公网应使用反代/Redis 分布式限流 |
 | 初始 `/api/auth/me` 访客探测返回 401 | P2 | UI 正常处理，但 Chrome console 会记录一次预期资源错误；可后续评估匿名 me 返回 200/null |
 | `test_notice_board_description_is_not_treated_as_claimed_reward` 非确定性 | P2 | pre-existing flaky：仅当回合 1 随机推进 stage 时，`_narrative_conflicts_with_stage_delta`（turn_flow.py:418-420）把含「练气N层」任务等级描述的叙事误判为玩家境界声明，用规则编年史覆盖 narrator 叙事。5 次孤立运行为 3 通过 / 2 失败。属叙事一致性产品行为，修复需谨慎（正则/上下文消歧或产品判定），与模型错误路径批次无关 |
