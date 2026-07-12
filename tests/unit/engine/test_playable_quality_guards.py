@@ -5,17 +5,28 @@ from __future__ import annotations
 from unittest.mock import patch
 
 from agens_novel.engine.action_delta_policy import (
+    enforce_event_delta_policy,
     merge_rule_delta,
     validate_narrative_delta_consistency,
 )
 from agens_novel.engine.choices import clean_visible_text, fallback_choices
-from agens_novel.engine.event_catalog import select_chronicle_event
+from agens_novel.engine.event_catalog import (
+    CHRONICLE_EVENTS,
+    _format_event_lore,
+    select_chronicle_event,
+)
 from agens_novel.engine.game_engine import GameEngine
 from agens_novel.engine.model_fallback_policy import (
     MODEL_CONTRACT_UNAVAILABLE_NOTICE,
     public_model_failure_notice,
 )
-from agens_novel.engine.turn_flow import _has_visible_authoritative_delta
+from agens_novel.engine.turn_flow import (
+    _generic_distinct_chronicle,
+    _has_visible_authoritative_delta,
+    _narrative_conflicts_with_stage_delta,
+    _narrative_key,
+    _narrative_keys_overlap,
+)
 from agens_novel.engine.turn_rules import classify_choice, settle_turn
 from agens_novel.session.game_session import GameSession
 
@@ -139,8 +150,11 @@ def test_relationship_title_and_karma_claims_need_authoritative_record() -> None
         assert "narrative/state mismatch" in reason
 
     passing = [
-        ("你获封青云外门魁首称号。", {"world": {"lore_add": ["获封青云外门魁首"]}}),
-        ("你与陈师兄结为盟友。", {"world": {"npcs_present_add": [{"name": "陈师兄", "relation": "盟友"}]}}),
+        ("你获封青云外门魁首称号。", {"character": {"title_add": ["青云外门魁首"]}}),
+        (
+            "你与陈师兄结为盟友。",
+            {"character": {"relationship_add": [{"name": "陈师兄", "relation": "盟友"}]}},
+        ),
         ("旧日因果缠身，你的气运开始折损。", {"character": {"status_effects_add": ["因果缠身"]}}),
     ]
 
@@ -148,6 +162,29 @@ def test_relationship_title_and_karma_claims_need_authoritative_record() -> None
         ok, reason = validate_narrative_delta_consistency(narrative, delta)
         assert ok is True, narrative
         assert reason == ""
+
+
+def test_title_claim_must_match_final_rule_owned_title() -> None:
+    merged = merge_rule_delta(
+        {"character": {"title_add": ["青云外门魁首"]}},
+        {"character": {"title_add": ["外门勤修弟子"]}},
+    )
+
+    ok, reason = validate_narrative_delta_consistency(
+        "宗门记功，验真者获封青云外门魁首称号。",
+        merged,
+    )
+
+    assert ok is False
+    assert "narrative/state mismatch" in reason
+
+    ok, reason = validate_narrative_delta_consistency(
+        "宗门记功，验真者获封外门勤修弟子称号。",
+        merged,
+    )
+
+    assert ok is True
+    assert reason == ""
 
 
 def test_chronicle_rumor_desire_and_condition_do_not_force_authoritative_delta() -> None:
@@ -301,7 +338,7 @@ def test_duplicate_model_narrative_is_replaced_by_rule_chronicle(monkeypatch) ->
     assert "新讲席" in engine.game_session.turn_history[-1]["narrative"]
 
 
-def test_duplicate_narrative_with_visible_delta_is_not_replaced_by_unrelated_rule_text(monkeypatch) -> None:
+def test_duplicate_narrative_with_visible_delta_is_replaced_without_hiding_delta(monkeypatch) -> None:
     monkeypatch.setenv("AGNES_API_KEY", "test-model-key")
     engine = GameEngine()
     engine.game_session.game_started = True
@@ -340,7 +377,8 @@ def test_duplicate_narrative_with_visible_delta_is_not_replaced_by_unrelated_rul
             engine.handle_action("A")
 
     last_turn = engine.game_session.turn_history[-1]
-    assert last_turn["narrative"] == duplicate
+    assert last_turn["narrative"] != duplicate
+    assert "旧伤复发" in last_turn["narrative"]
     assert "旧伤复发" in engine.game_session.status_effects
 
 
@@ -427,6 +465,92 @@ def test_realm_stage_delta_blocks_duplicate_replacement_only_when_visible() -> N
 
     assert _has_visible_authoritative_delta(delta, "数年苦修后，其修为提升至练气二层。")
     assert not _has_visible_authoritative_delta(delta, "青岚谷重定名册，验真者按册修行。")
+
+
+def test_generic_replacement_chronicles_remain_distinct_across_repeated_stage_goal() -> None:
+    session = GameSession()
+    delta = {
+        "character": {"age": "+1"},
+        "world": {},
+        "meta": {
+            "elapsed_years": 1,
+            "choice_category": "机遇",
+            "story_goal": "判断边境裂脉的影响范围，并选择可信的同行者",
+        },
+    }
+    keys = []
+    for turn in (5, 10, 15, 20, 25):
+        session.turn_count = turn
+        keys.append(_narrative_key(_generic_distinct_chronicle(delta, session)))
+
+    assert len(set(keys)) == 5
+    assert all(
+        not _narrative_keys_overlap(left, right)
+        for index, left in enumerate(keys)
+        for right in keys[index + 1:]
+    )
+
+
+def test_generic_replacement_has_no_exact_reuse_across_sixty_turns() -> None:
+    session = GameSession()
+    delta = {
+        "character": {"age": "+1"},
+        "world": {},
+        "meta": {
+            "elapsed_years": 1,
+            "choice_category": "气运",
+            "story_goal": "判断边境裂脉的影响范围，并选择可信的同行者",
+        },
+    }
+
+    keys = []
+    for turn in range(1, 61):
+        session.turn_count = turn
+        keys.append(_narrative_key(_generic_distinct_chronicle(delta, session)))
+
+    assert len(set(keys)) == 60
+
+
+def test_post_settlement_stage_claim_must_match_authoritative_stage() -> None:
+    session = GameSession(realm="练气", realm_stage=9)
+    delta = {"character": {"realm_stage": 9}, "meta": {"stage_advanced": True}}
+
+    assert _narrative_conflicts_with_stage_delta("练气八层根基愈发扎实。", delta, session)
+    assert not _narrative_conflicts_with_stage_delta("其由练气八层迈入练气九层。", delta, session)
+    assert not _narrative_conflicts_with_stage_delta("其根基又有精进，外界局势随之变化。", delta, session)
+
+
+def test_post_settlement_phase_claim_must_match_authoritative_stage() -> None:
+    session = GameSession(realm="筑基", realm_stage=2)
+    delta = {"character": {"realm_stage": 2}, "meta": {"stage_advanced": True}}
+
+    assert _narrative_conflicts_with_stage_delta("其筑基初期根基已经稳固。", delta, session)
+    assert not _narrative_conflicts_with_stage_delta("其由筑基初期迈入筑基中期。", delta, session)
+
+
+def test_browser_threshold_near_duplicate_narrative_is_detected() -> None:
+    previous = (
+        "三十九岁，验真者循着断云古道旧路重开的消息，在接引营中物色起色。"
+        "同门多畏惧妖兽，唯有一落魄散修愿结伴探路。"
+        "商栈传言古道深处或有低阶灵材，足以弥补修为短板，众人议论纷纷，气氛微妙。"
+    )
+    repeated = (
+        "四十岁，验真者循着驼铃商栈的线索，在接引营中物色起色。"
+        "同门多畏惧妖兽，唯有一落魄散修愿结伴探路。"
+        "商栈传言古道深处或有低阶灵材，足以弥补修为短板，众人议论纷纷，气氛微妙。"
+    )
+
+    assert _narrative_keys_overlap(_narrative_key(previous), _narrative_key(repeated))
+
+
+def test_short_narrative_reusing_previous_ending_is_detected() -> None:
+    previous = (
+        "八十九岁，砺锋院重修低阶课业簿，荒岭接引营弟子开始按月比对吐纳进度。"
+        "练气九层的根基有了可见标尺，验真者依循新规，于喧嚣中理清头绪，静待清算。"
+    )
+    repeated = "九十岁，验真者依循新规，于喧嚣中理清头绪，静待清算。"
+
+    assert _narrative_keys_overlap(_narrative_key(previous), _narrative_key(repeated))
 
 
 def test_age_variant_duplicate_model_narrative_is_replaced(monkeypatch) -> None:
@@ -670,6 +794,18 @@ def test_judge_not_triggered_for_plain_risk_word_without_authoritative_delta(mon
 
 def test_judge_retryable_provider_failure_retries_once(monkeypatch) -> None:
     monkeypatch.setenv("AGNES_API_KEY", "test-model-key")
+    monkeypatch.setattr(
+        "agens_novel.engine.turn_rules.select_chronicle_event",
+        lambda session, category, new_age: {
+            "id": "reward-test",
+            "category": category,
+            "event_type": "risk",
+            "stage_goal": "核验护身符来历",
+            "lore": "医修要求核验护身符的真实来历。",
+            "allowed_delta_types": ["techniques_add"],
+            "choice_hints": ["调息", "问药", "试药", "随缘"],
+        },
+    )
     engine = GameEngine()
     engine.game_session.game_started = True
     engine.game_session.last_choices = ["稳妥修行", "拜访同门", "探查禁地边缘", "随缘而行"]
@@ -684,8 +820,12 @@ def test_judge_retryable_provider_failure_retries_once(monkeypatch) -> None:
         calls.append(agent_name)
         if agent_name == "narrator":
             return {
-                "narrative": "验真者服下延寿丹，寿元增加一年。",
-                "state_delta": {"character": {"lifespan": "+1"}, "world": {}, "meta": {}},
+                "narrative": "验真者从医修处习得护身诀。",
+                "state_delta": {
+                    "character": {"techniques_add": [{"name": "护身诀", "level": 1}]},
+                    "world": {},
+                    "meta": {},
+                },
                 "choices": ["继续温养", "打听丹方", "试探禁地", "随缘行事"],
                 "llm_error": "",
             }
@@ -701,7 +841,7 @@ def test_judge_retryable_provider_failure_retries_once(monkeypatch) -> None:
         return {}
 
     with patch("agens_novel.engine.game_engine.run_turn_sync", side_effect=runner):
-        engine.handle_action("服下延寿丹")
+        engine.handle_action("习得护身诀")
 
     assert calls.count("judge") == 2
     assert ("judge", "ok") in model_statuses
@@ -819,6 +959,21 @@ def test_chronicle_event_context_is_selected_every_turn() -> None:
     assert "天命" in event["matched_fates"]
 
 
+def test_event_lore_strips_terminal_punctuation_before_template_suffix() -> None:
+    event = next(item for item in CHRONICLE_EVENTS if item.id == "luck-world-echo")
+    session = GameSession(location="荒岭接引营", region="西陲裂土", turn_count=8)
+    session.world_profile = {
+        "world_name": "西陲裂土",
+        "world_key": "frontier",
+        "current_conflicts": ["镇岳宗与血煞盟在荒岭外围交锋。"],
+    }
+
+    lore = _format_event_lore(event, session, 32, "frontier")
+
+    assert "交锋的传闻" in lore
+    assert "。的传闻" not in lore
+
+
 def test_fixed_route_chronicle_event_avoids_recent_reuse() -> None:
     session = GameSession(location="青岚山门", turn_count=1)
     seen: list[str] = []
@@ -845,6 +1000,80 @@ def test_settle_turn_records_event_meta_without_forcing_authoritative_rewards() 
     assert "inventory_add" not in delta["character"]
 
 
+def test_merit_event_grants_rule_owned_title() -> None:
+    session = GameSession(location="青岚山门", turn_count=8)
+    event = {
+        "id": "steady-merit-recognition",
+        "event_type": "stage",
+        "lore": "宗门将勤勉弟子正式记入榜册。",
+        "stage_goal": "接受宗门记名",
+        "allowed_delta_types": ["lore_add", "title_add"],
+    }
+
+    with patch("agens_novel.engine.turn_rules.select_chronicle_event", return_value=event):
+        delta = settle_turn("A【稳妥】继续修行", session)
+
+    assert delta["character"]["title_add"] == ["外门勤修弟子"]
+
+
+def test_event_delta_policy_drops_changes_outside_selected_event_scope() -> None:
+    filtered = enforce_event_delta_policy(
+        {
+            "character": {
+                "inventory_add": [{"name": "无依据法器"}],
+                "attributes": {"luck": 1},
+            },
+            "world": {
+                "lore_add": ["可保留见闻"],
+                "npcs_present_add": [{"name": "无依据人物"}],
+            },
+            "meta": {"game_over": True},
+        },
+        {"meta": {"allowed_delta_types": ["attributes", "lifespan", "lore_add"]}},
+    )
+
+    assert filtered == {
+        "character": {},
+        "world": {"lore_add": ["可保留见闻"]},
+        "meta": {},
+    }
+
+
+def test_action_delta_sanitizer_drops_model_owned_lifespan() -> None:
+    engine = GameEngine()
+
+    sanitized = engine.sanitize_action_delta(
+        {"character": {"lifespan": "+50"}, "world": {}, "meta": {}}
+    )
+
+    assert "lifespan" not in sanitized["character"]
+
+
+def test_event_delta_policy_preserves_explicitly_allowed_reward() -> None:
+    filtered = enforce_event_delta_policy(
+        {"character": {"inventory_add": [{"name": "护身符"}]}},
+        {"meta": {"allowed_delta_types": ["inventory_add"]}},
+    )
+
+    assert filtered["character"]["inventory_add"] == [{"name": "护身符"}]
+
+
+def test_event_delta_policy_preserves_relationship_but_not_unapproved_title() -> None:
+    filtered = enforce_event_delta_policy(
+        {
+            "character": {
+                "relationship_add": [{"name": "陈师兄", "relation": "盟友"}],
+                "title_add": ["外门魁首"],
+            }
+        },
+        {"meta": {"allowed_delta_types": ["relationship_add"]}},
+    )
+
+    assert filtered["character"] == {
+        "relationship_add": [{"name": "陈师兄", "relation": "盟友"}]
+    }
+
+
 def test_rule_world_delta_survives_model_merge() -> None:
     merged = merge_rule_delta(
         {"character": {}, "world": {"lore_add": ["模型见闻"]}, "meta": {}},
@@ -853,6 +1082,47 @@ def test_rule_world_delta_survives_model_merge() -> None:
 
     assert merged["world"]["lore_add"] == ["模型见闻", "规则阶段反馈"]
     assert merged["meta"]["elapsed_years"] == 2
+
+
+def test_rule_status_effect_removal_survives_model_merge() -> None:
+    merged = merge_rule_delta(
+        {"character": {"status_effects_add": ["旧伤"]}},
+        {"character": {"status_effects_remove": ["走火入魔"]}},
+    )
+
+    assert merged["character"]["status_effects_add"] == ["旧伤"]
+    assert merged["character"]["status_effects_remove"] == ["走火入魔"]
+
+
+def test_rule_story_update_overrides_model_story_mutation() -> None:
+    merged = merge_rule_delta(
+        {"world": {"story_update": {"phase_key": "model-reset"}}},
+        {
+            "world": {"story_update": {"phase_key": "turning", "progress_turns": 9}},
+            "meta": {"story_phase": "转折", "story_goal": "核对旧因"},
+        },
+    )
+
+    assert merged["world"]["story_update"] == {
+        "phase_key": "turning",
+        "progress_turns": 9,
+    }
+    assert merged["meta"]["story_phase"] == "转折"
+    assert merged["meta"]["story_goal"] == "核对旧因"
+
+
+def test_model_cannot_mutate_rule_owned_story_state() -> None:
+    engine = GameEngine()
+
+    sanitized = engine.sanitize_action_delta({
+        "world": {
+            "story_update": {"phase_key": "model-reset"},
+            "lore_add": ["普通见闻"],
+        }
+    })
+
+    assert "story_update" not in sanitized["world"]
+    assert sanitized["world"]["lore_add"] == ["普通见闻"]
 
 
 def test_stage_feedback_is_applied_through_turn_flow(monkeypatch) -> None:

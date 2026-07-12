@@ -5,7 +5,7 @@
   display: grid;
   place-items: center;
   padding: 22px;
-  background: rgba(24, 22, 18, 0.46);
+  background: rgba(24, 22, 18, 0.58);
   animation: scrim-in 200ms ease-out;
 }
 
@@ -16,6 +16,10 @@
   gap: 14px;
   padding: 22px;
   overflow: auto;
+  background:
+    linear-gradient(180deg, rgba(255, 252, 245, 0.99), rgba(248, 240, 224, 0.985)),
+    var(--paper-texture) center / 620px auto repeat;
+  box-shadow: 0 18px 50px rgba(31, 26, 19, 0.24);
   animation: dialog-in 220ms ease-out;
 }
 
@@ -122,6 +126,10 @@
   color: var(--jade-strong);
 }
 
+.dialog-message.error {
+  color: var(--danger);
+}
+
 .toast {
   position: fixed;
   top: calc(var(--topbar-height) + 8px);
@@ -134,4 +142,9 @@
   border-radius: var(--radius-sm);
   background: rgba(255, 250, 240, 0.94);
   box-shadow: var(--shadow-panel);
+}
+
+.toast-notice {
+  border-color: rgba(49, 92, 81, 0.42);
+  color: var(--jade-strong);
 }

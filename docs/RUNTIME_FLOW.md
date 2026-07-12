@@ -99,7 +99,9 @@ POST /api/sessions/{id}/choice
   -> 会话锁 + 幂等查询 + 版本检查
   -> TurnFlow.handle_action()
   -> turn_rules.settle_turn() 计算时间、年龄、属性、寿元、事件和终局
-  -> Narrator 生成短叙事与选项
+  -> story_catalog 推进精确版本绑定的长期主线
+  -> Narrator 生成短叙事、候选 delta 与四个选项；Agens 主调用使用 provider json_schema，应用层渲染兼容标签
+  -> event_catalog.allowed_delta_types 过滤模型可承接状态
   -> 必要时 Judge 审核非规则字段
   -> 规则 delta 覆盖 age/lifespan/终局等权威字段
   -> GameSession.apply_delta()
@@ -117,9 +119,9 @@ POST /api/sessions/{id}/choice
 - `GameSession.error` 随存档序列化和恢复，读档后终局原因保持一致。
 - 终局 run、成就、奖励、玩家进度和遗泽使用同一事务及业务唯一约束；重试不会重复发奖。
 
-## 8. fallback
+## 8. 模型失败与契约恢复
 
-模型请求失败或输出契约不完整时：
+模型请求失败时：
 
 1. 事件流写入脱敏 model failure。
 2. 引擎自动进入本地故事并生成四个选项。
@@ -127,12 +129,16 @@ POST /api/sessions/{id}/choice
 4. 玩家直接点击下方 A/B/C/D。
 5. 本地故事同样调用 `settle_turn()`，推进年龄、寿元、阶段反馈和突破准备。
 
+Narrator 请求成功但缺少叙事、`state_update` 或四个 choices 时，普通回合可以用规则叙事、规则 delta 和本地主线选项继续，但必须记录 `incomplete_output` / `contract_recovery`。这种恢复不激活 provider fallback banner，也不算严格 live-model 成功。
+
 ## 9. 存读档与结束
 
 - save/load/end 同样要求 `request_id` 与 `expected_version`。
 - 存档只对登录用户开放；访客返回 401。
 - save slot 与 session snapshot 在一个 mutation transaction 中写入。
 - load 用存档恢复 runner，再通过 CAS 提交新 session version。
+- load 同一事务截断存档回合之后的 `game_turns` 并同步 active run；已结算终局不允许原地覆盖历史。
+- 旧存档没有 story binding 时按原世界补绑；已有但不可用的精确版本显式拒绝，不静默换线。
 - end 写终局 bundle；手动重试通过幂等表返回原结果。
 
 ## 10. 健康与部署
@@ -145,4 +151,6 @@ POST /api/sessions/{id}/choice
 
 ## 11. 验证隔离
 
-`tests\web` 会 truncate `TEST_DATABASE_URL` 指向的表。真实 Chrome 验收必须使用另一数据库，且不要与 pytest 并发运行。fallback 不能算 live-model 成功，本地成功也不能替代生产验收。
+`tests\web` 会 truncate `TEST_DATABASE_URL` 指向的表。真实 Chrome 验收必须使用另一数据库，且不要与 pytest 并发运行。fallback 或 contract recovery 都不能算 live-model 成功，本地成功也不能替代生产验收。
+
+迁移测试在同一 PostgreSQL 实例创建独立临时数据库，覆盖已有库升级、孤儿/重复数据回滚、downgrade/re-upgrade 和阻塞条件。备份恢复通过 `scripts/verify_pg_backup_restore.py` 使用另两座临时库执行，结束时无条件删除数据库和 dump 文件。

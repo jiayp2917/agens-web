@@ -128,7 +128,7 @@ def test_breakthrough_success_suppresses_conflicting_failure_narrative() -> None
     def runner(agent_name, user_input, session, **kwargs):
         if agent_name == "narrator":
             return {
-                "narrative": "此人冲关失败，修为尽废。",
+                "narrative": "此人破境未成，灵机反噬，继而走火入魔，生死未卜。",
                 "state_delta": {},
                 "choices": ["稳固道台", "拜访师门", "查看新境", "随缘听命"],
                 "llm_error": "",
@@ -147,8 +147,83 @@ def test_breakthrough_success_suppresses_conflicting_failure_narrative() -> None
     assert engine.game_session.realm == "筑基"
     assert engine.game_session.realm_stage == 1
     assert engine.game_session.lifespan >= 160
-    assert "修为尽废" not in narratives[-1][0]
+    assert "走火入魔" not in narratives[-1][0]
+    assert "破境未成" not in narratives[-1][0]
+    assert "灵机反噬" not in narratives[-1][0]
     assert "破境已成" in narratives[-1][0]
+
+
+def test_breakthrough_failure_suppresses_conflicting_stage_drop_claim() -> None:
+    engine = GameEngine()
+    engine.game_session.realm = "筑基"
+    engine.game_session.realm_stage = 4
+
+    narrative = engine._breakthrough_flow._coerce_breakthrough_narrative(
+        "一百一十八载，其强行冲关后走火入魔，修为跌落至筑基初期。",
+        "failure",
+    )
+
+    assert "筑基初期" not in narrative
+    assert narrative == "破境未成，灵机反噬，需先稳住根基再图后续。"
+
+
+def test_breakthrough_model_delta_cannot_inject_authoritative_character_state() -> None:
+    engine = GameEngine()
+    engine.game_session.game_started = True
+    engine.game_session.realm = "练气"
+    engine.game_session.realm_stage = 9
+    engine.game_session.breakthrough_flags = ["foundation_aid"]
+    engine.game_session.status_effects = ["旧伤"]
+
+    def runner(agent_name, user_input, session, **kwargs):
+        if agent_name == "narrator":
+            return {
+                "narrative": "破境已成，道台初立。",
+                "state_delta": {
+                    "character": {
+                        "attributes": {"luck": 10},
+                        "inventory_add": ["天外神丹"],
+                        "title_add": ["天命之子"],
+                        "relationship_add": [{"name": "天道化身", "relation": "盟友"}],
+                        "techniques_add": ["无上仙法"],
+                        "status_effects": [{"name": "走火入魔"}],
+                        "status_effects_add": ["经脉寸断"],
+                        "breakthrough_flags_add": ["ascension_protection"],
+                    },
+                    "world": {"lore_add": ["天象为此番破境留下记载。"]},
+                    "meta": {"status_effect_add": "修为未复"},
+                },
+                "choices": ["稳固道台", "拜访师门", "查看新境", "随缘听命"],
+                "llm_error": "",
+            }
+        if agent_name == "judge":
+            return {"approved": True, "corrected_delta": {}, "judgment_note": "", "llm_error": ""}
+        return {}
+
+    with patch("agens_novel.engine.game_engine.run_turn_sync", side_effect=runner):
+        with patch("agens_novel.game.realm.random.random", return_value=0.0):
+            engine.attempt_breakthrough()
+
+    assert engine.game_session.realm == "筑基"
+    assert engine.game_session.status_effects == ["旧伤"]
+    assert engine.game_session.inventory == []
+    assert engine.game_session.titles == []
+    assert engine.game_session.relationships == []
+    assert engine.game_session.techniques == []
+    assert engine.game_session.breakthrough_flags == ["foundation_aid"]
+    assert "天象为此番破境留下记载。" in engine.game_session.lore_facts
+
+
+def test_steady_turn_recovers_breakthrough_blocker_but_preserves_other_injury() -> None:
+    session = GameSession(realm="练气", realm_stage=9, age=30, lifespan=100)
+    session.status_effects = ["走火入魔", {"name": "旧伤", "severity": "轻"}]
+
+    delta = settle_turn("A【稳妥】疗伤调息，稳住根基", session)
+
+    assert delta["character"]["status_effects_remove"] == ["走火入魔"]
+    assert "已解除：走火入魔" in delta["meta"]["turn_summary"]
+    session.apply_delta(delta)
+    assert session.status_effects == [{"name": "旧伤", "severity": "轻"}]
 
 
 def test_breakthrough_judge_cannot_flip_rule_failure_to_success() -> None:

@@ -3,16 +3,47 @@
 from __future__ import annotations
 
 import asyncio
+import json
 
 from agens_novel.agents.narrator.nodes import (
     _contract_diagnostics,
     _parse_narrator_output,
+    _should_use_narrator_schema,
+    _unwrap_narrator_envelope,
     build_prompt,
 )
 from agens_novel.engine.model_result import ModelResultKind, classify_narrator_result
 
 
 class TestNarratorParse:
+    def test_narrator_schema_auto_enables_only_for_agens_models(self, monkeypatch) -> None:
+        monkeypatch.delenv("AGENS_NARRATOR_RESPONSE_SCHEMA", raising=False)
+
+        assert _should_use_narrator_schema({"model": "agnes-2.0-flash"}) is True
+        assert _should_use_narrator_schema({"model": "deepseek-chat"}) is False
+
+        monkeypatch.setenv("AGENS_NARRATOR_RESPONSE_SCHEMA", "1")
+        assert _should_use_narrator_schema({"model": "deepseek-chat"}) is True
+        monkeypatch.setenv("AGENS_NARRATOR_RESPONSE_SCHEMA", "0")
+        assert _should_use_narrator_schema({"model": "agnes-2.0-flash"}) is False
+
+    def test_unwrap_narrator_envelope_requires_exact_output_field(self) -> None:
+        wrapped = json.dumps(
+            {
+                "narrative": "山门新榜已经贴出。",
+                "state_update_json": "{}",
+                "choices": ["闭关", "拜访", "历练", "随缘"],
+            },
+            ensure_ascii=False,
+        )
+
+        output = _unwrap_narrator_envelope(wrapped)
+        assert output is not None
+        assert "<state_update>{}</state_update>" in output
+        assert "<choices>" in output
+        assert _unwrap_narrator_envelope('{"narrative":"ok","extra":1}') is None
+        assert _unwrap_narrator_envelope("not json") is None
+
     def test_build_prompt_records_size_metrics_without_prompt_text(self, tmp_path, monkeypatch) -> None:
         monkeypatch.setattr(
             "agens_novel.paths.system_prompt_path",
@@ -37,6 +68,63 @@ class TestNarratorParse:
         assert metrics["user_input_chars"] == len("闭关修炼")
         assert metrics["prompt_chars"] > metrics["game_state_chars"]
         assert "闭关修炼" not in metrics.values()
+        assert "<本回合输出契约>" in result["user_message"]
+        assert "<state_update>{}</state_update>" in result["user_message"]
+        assert "两个标签都不得省略" in result["user_message"]
+        assert "第一个字符不得是 <、{、[" in result["user_message"]
+
+    def test_build_prompt_uses_schema_fields_without_tag_contract(self, tmp_path, monkeypatch) -> None:
+        monkeypatch.setattr(
+            "agens_novel.paths.system_prompt_path",
+            lambda _name: tmp_path / "narrator_schema.md",
+        )
+        (tmp_path / "narrator_schema.md").write_text("schema prompt", encoding="utf-8")
+
+        result = build_prompt(
+            {
+                "user_input": "拜访同门",
+                "game_state_json": "{}",
+                "chat_history": [],
+                "model": "agnes-2.0-flash",
+            }
+        )
+
+        assert result["provider_json_schema"] is True
+        assert "narrative、state_update_json、choices" in result["user_message"]
+        assert "非空且互不重复" in result["user_message"]
+        assert "<state_update>{}</state_update>" not in result["user_message"]
+        assert "<choices>[" not in result["user_message"]
+
+    def test_schema_prompt_strips_legacy_tags_from_assistant_history(self, tmp_path, monkeypatch) -> None:
+        monkeypatch.setattr(
+            "agens_novel.paths.system_prompt_path",
+            lambda _name: tmp_path / "narrator_schema.md",
+        )
+        (tmp_path / "narrator_schema.md").write_text("schema prompt", encoding="utf-8")
+        result = build_prompt(
+            {
+                "user_input": "继续修行",
+                "game_state_json": "{}",
+                "model": "agnes-2.0-flash",
+                "chat_history": [
+                    {"role": "user", "content": "拜访同门"},
+                    {
+                        "role": "assistant",
+                        "content": (
+                            "山门名册已有变化。\n"
+                            "<state_update>{}</state_update>\n"
+                            '<choices>["闭关","寻访","历练","随缘"]</choices>'
+                        ),
+                    },
+                ],
+            }
+        )
+
+        assistant_history = [
+            message["content"] for message in result["messages"] if message["role"] == "assistant"
+        ]
+        assert assistant_history == ["山门名册已有变化。"]
+        assert all("<state_update>" not in content for content in assistant_history)
 
     def test_build_prompt_compacts_long_history_but_keeps_opening(self, tmp_path, monkeypatch) -> None:
         monkeypatch.setattr(
@@ -263,6 +351,41 @@ class TestNarratorParse:
             "english_residue": False,
         }
 
+    def test_contract_diagnostics_reject_any_visible_english_word(self) -> None:
+        text = (
+            "他在山门前获得 prowess 提升。\n"
+            '<state_update>{"character":{},"world":{},"meta":{}}</state_update>\n'
+            '<choices>["闭关", "Explore ruins", "历练", "随缘"]</choices>'
+        )
+        narrative, delta, choices = _parse_narrator_output(text)
+
+        diagnostics = _contract_diagnostics(text, narrative, delta, choices)
+
+        assert diagnostics["english_residue"] is True
+
+    def test_contract_diagnostics_do_not_accept_fake_tag_substrings(self) -> None:
+        text = (
+            "山门旧录只把伪标签当作普通字段。\n"
+            '{"state_delta":{"character":{},"world":{},"meta":{}},'
+            '"choices":["闭关","拜访","历练","随缘"],'
+            '"note":"<state_update fake> <choices fake>"}'
+        )
+        narrative, delta, choices = _parse_narrator_output(text)
+
+        diagnostics = _contract_diagnostics(text, narrative, delta, choices)
+        status = classify_narrator_result(
+            {
+                "narrative": narrative,
+                "state_delta": delta,
+                "choices": choices,
+                "contract_diagnostics": diagnostics,
+            }
+        )
+
+        assert diagnostics["raw_has_state_update_tag"] is False
+        assert diagnostics["raw_has_choices_tag"] is False
+        assert status.kind == ModelResultKind.INCOMPLETE_OUTPUT
+
     def test_state_update_with_extra_trailing_brace_is_recovered(self) -> None:
         text = (
             "你在山门前静观灵机。\n"
@@ -325,9 +448,72 @@ class TestNarratorParse:
         narrative, delta, choices = _parse_narrator_output(result["output_text"])
         assert len(calls) == 2
         assert result["repaired_output"] is True
+        assert calls[0]["temperature"] == 0.0
         assert narrative == "山门前风声渐紧。"
         assert delta == {"character": {}, "world": {}, "meta": {}}
         assert choices == ["前往演武堂", "向弟子道谢", "观察阵纹", "随缘看一眼山门"]
+
+    def test_agens_schema_call_unwraps_primary_contract_without_repair(self, monkeypatch) -> None:
+        from agens_novel.agents.narrator import nodes
+
+        calls = []
+
+        async def fake_call_llm(*_args, **kwargs):
+            calls.append(kwargs)
+            output = (
+                "山门执事重排外门名册，验真者依新规稳住根基。\n"
+                '<state_update>{"character":{},"world":{},"meta":{}}</state_update>\n'
+                '<choices>["闭关温养","拜访同门","探查山径","随缘听风"]</choices>'
+            )
+            return {
+                "text": json.dumps(
+                    {
+                        "narrative": output.split("\n", 1)[0],
+                        "state_update_json": '{"character":{},"world":{},"meta":{}}',
+                        "choices": ["闭关温养", "拜访同门", "探查山径", "随缘听风"],
+                    },
+                    ensure_ascii=False,
+                ),
+                "elapsed_ms": 12,
+                "usage": {},
+            }
+
+        async def unexpected_stream(*_args, **_kwargs):
+            raise AssertionError("schema mode must use one non-streaming primary call")
+
+        monkeypatch.setattr(nodes, "call_llm", fake_call_llm)
+        monkeypatch.setattr(nodes, "call_llm_stream", unexpected_stream)
+        result = asyncio.run(
+            nodes.call_agnes_llm(
+                {
+                    "api_key_set": True,
+                    "messages": [{"role": "user", "content": "test"}],
+                    "model": "agnes-2.0-flash",
+                    "base_url": "https://example.com/v1",
+                    "provider_json_schema": True,
+                    "repair_incomplete_output": False,
+                }
+            )
+        )
+
+        narrative, delta, choices = _parse_narrator_output(result["output_text"])
+        assert len(calls) == 1
+        assert calls[0]["response_format"]["type"] == "json_schema"
+        assert result["provider_json_schema"] is True
+        assert result["provider_json_envelope_ok"] is True
+        assert result["repaired_output"] is False
+        assert narrative.startswith("山门执事")
+        assert delta == {"character": {}, "world": {}, "meta": {}}
+        assert len(choices) == 4
+
+    def test_system_prompt_requires_unambiguous_three_part_contract(self) -> None:
+        from agens_novel import paths
+
+        prompt = paths.system_prompt_path("narrator").read_text(encoding="utf-8")
+
+        assert "<state_update>{}</state_update>" in prompt
+        assert '<choices>["行动一", "行动二", "行动三", "行动四"]</choices>' in prompt
+        assert "不要输出 `[\"...\"]`" not in prompt
 
     def test_json_only_state_delta_triggers_repair_for_narrative_and_choices(self, monkeypatch) -> None:
         from agens_novel.agents.narrator import nodes

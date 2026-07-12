@@ -8,12 +8,14 @@ export function HomePage({
   onSettings,
   onTutorial,
   onAuth,
+  busy,
 }: {
   onStart: () => void;
   onLoad: () => void;
   onSettings: () => void;
   onTutorial: () => void;
   onAuth: (mode: AuthMode) => void;
+  busy: boolean;
 }) {
   return (
     <section className="home">
@@ -22,10 +24,17 @@ export function HomePage({
           <h1>文字修仙模拟器<span className="seal">修</span></h1>
           <div className="hero-rule" aria-hidden="true" />
           <div className="home-actions">
-            <button className="primary-btn home-action-main" onClick={onStart}><BookOpen size={22} />新游戏</button>
-            <button onClick={onLoad}><Upload size={20} />读档</button>
+            <button
+              className="primary-btn home-action-main"
+              onClick={onStart}
+              disabled={busy}
+              aria-busy={busy}
+            >
+              <BookOpen size={22} />{busy ? "创建中" : "新游戏"}
+            </button>
+            <button onClick={onLoad} disabled={busy}><Upload size={20} />读档</button>
             <button onClick={onTutorial}><ScrollText size={20} />教程</button>
-            <button onClick={onSettings}><Settings size={20} />设置</button>
+            <button onClick={onSettings} disabled={busy}><Settings size={20} />设置</button>
             <button onClick={() => onAuth("register")}><KeyRound size={20} />邀请码注册</button>
           </div>
           <aside className="community-card" aria-label="玩家交流群">

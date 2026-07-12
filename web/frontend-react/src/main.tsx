@@ -38,10 +38,13 @@ export function App() {
   const [view, setView] = useState<View>("home");
   const [authMode, setAuthMode] = useState<AuthMode>("login");
   const [error, setError] = useState("");
+  const [notice, setNotice] = useState("");
   const [busy, setBusy] = useState(false);
+  const [creatingSession, setCreatingSession] = useState(false);
   const [dialogMode, setDialogMode] = useState<DialogMode | null>(null);
   const [tutorialOpen, setTutorialOpen] = useState(false);
   const mutationInFlight = useRef(false);
+  const sessionCreationInFlight = useRef<Promise<Session> | null>(null);
   // On mobile the global topbar is empty in the game view (brand/user/login are
   // hidden), so the single BGM player would float over scrolling story text.
   // Instead we render the one BgmToggle into the in-flow game toolbar on mobile;
@@ -86,24 +89,36 @@ export function App() {
   }, [session?.session_id]);
 
   const openAuth = (mode: AuthMode = "login") => {
+    setError("");
+    setNotice("");
     setAuthMode(mode);
     setDialogMode(null);
     setView("auth");
   };
 
   const createSession = async (title = "新局") => {
-    const created = await api<Session>("/api/sessions", {
+    if (sessionCreationInFlight.current) return sessionCreationInFlight.current;
+    setCreatingSession(true);
+    const request = api<Session>("/api/sessions", {
       method: "POST",
       body: JSON.stringify({ title }),
     });
-    setSession(created);
-    return created;
+    sessionCreationInFlight.current = request;
+    try {
+      const created = await request;
+      setSession(created);
+      return created;
+    } finally {
+      if (sessionCreationInFlight.current === request) sessionCreationInFlight.current = null;
+      setCreatingSession(false);
+    }
   };
 
   const ensureSession = async (title = "临时局") => session || createSession(title);
 
   const startNewGame = async () => {
     setError("");
+    setNotice("");
     try {
       const created = await createSession();
       if (created) setView("character");
@@ -114,6 +129,7 @@ export function App() {
 
   const openDialog = async (mode: DialogMode) => {
     setError("");
+    setNotice("");
     try {
       const current = await ensureSession(mode === "saves" ? "读档" : "设置");
       if (current) setDialogMode(mode);
@@ -124,9 +140,12 @@ export function App() {
 
   const runTurn = async (path: string, body: unknown) => {
     if (mutationInFlight.current || !session) return;
+    const focusedChoiceIndex = Array.from(document.querySelectorAll<HTMLButtonElement>(".choice-button"))
+      .findIndex((button) => button === document.activeElement);
     mutationInFlight.current = true;
     setBusy(true);
     setError("");
+    setNotice("");
     try {
       const payload = body && typeof body === "object" ? body as Record<string, unknown> : {};
       const next = await api<Session>(path, {
@@ -141,6 +160,8 @@ export function App() {
           const refreshed = await api<Session>(`/api/sessions/${session.session_id}`);
           setSession(refreshed);
           setView(refreshed.game_over || refreshed.finale ? "ending" : refreshed.game_started ? "game" : "character");
+          setNotice("局面已由另一操作更新，已加载最新进度。");
+          restoreChoiceFocus(focusedChoiceIndex);
         } catch {
           setError("局面已更新，但刷新失败，请返回首页重试。");
         }
@@ -160,6 +181,7 @@ export function App() {
     setUser(nextUser);
     setView("home");
     setError("");
+    setNotice("");
   };
 
   const logout = async () => {
@@ -169,6 +191,7 @@ export function App() {
     setSession(null);
     setDialogMode(null);
     setView("home");
+    setNotice("");
   };
 
   const returnHome = () => {
@@ -176,6 +199,7 @@ export function App() {
     setDialogMode(null);
     setSession(null);
     setView("home");
+    setNotice("");
   };
 
   return (
@@ -198,6 +222,7 @@ export function App() {
         </div>
       </header>
       {error && <div className="toast" role="alert">{error}</div>}
+      {notice && <div className="toast toast-notice" role="status">{notice}</div>}
       {view === "home" && (
         <HomePage
           onStart={startNewGame}
@@ -205,6 +230,7 @@ export function App() {
           onSettings={() => openDialog("settings")}
           onTutorial={() => setTutorialOpen(true)}
           onAuth={openAuth}
+          busy={creatingSession}
         />
       )}
       {view === "auth" && (
@@ -235,7 +261,12 @@ export function App() {
         />
       )}
       {view === "ending" && session && (
-        <EndingPage session={session} onHome={() => setView("home")} onRestart={startNewGame} />
+        <EndingPage
+          session={session}
+          busy={creatingSession}
+          onHome={() => setView("home")}
+          onRestart={startNewGame}
+        />
       )}
       {dialogMode && session && (
         <SettingsSaveDialog
@@ -278,4 +309,11 @@ function clearActiveSessionId() {
   } catch {
     // Browser storage can be unavailable in restricted contexts.
   }
+}
+
+function restoreChoiceFocus(index: number) {
+  if (index < 0) return;
+  window.setTimeout(() => {
+    document.querySelectorAll<HTMLButtonElement>(".choice-button").item(index)?.focus();
+  }, 0);
 }

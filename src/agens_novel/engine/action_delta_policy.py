@@ -44,6 +44,11 @@ _REALM_BREAKTHROUGH_FLAGS: dict[str, tuple[str, ...]] = {
     "渡劫": ("tribulation_elixir", "ascension_protection"),
 }
 
+_TITLE_CLAIM_PATTERNS: tuple[re.Pattern[str], ...] = (
+    re.compile(r"(?:获封|得了|获得|被授予)[^，。；\n]{0,18}(?:称号|封号|名号|道号)"),
+    re.compile(r"(?:称号|封号|名号|道号)[^，。；\n]{0,8}(?:为|曰|叫)"),
+)
+
 _CLAIM_RULES: tuple[tuple[tuple[re.Pattern[str], ...], tuple[tuple[str, str], ...]], ...] = (
     (
         (
@@ -97,11 +102,8 @@ _CLAIM_RULES: tuple[tuple[tuple[re.Pattern[str], ...], tuple[tuple[str, str], ..
         (("character", "lifespan"),),
     ),
     (
-        (
-            re.compile(r"(?:获封|得了|获得|被授予)[^，。；\n]{0,18}(?:称号|封号|名号|道号)"),
-            re.compile(r"(?:称号|封号|名号|道号)[^，。；\n]{0,8}(?:为|曰|叫)"),
-        ),
-        (("world", "lore_add"),),
+        _TITLE_CLAIM_PATTERNS,
+        (("character", "title_add"), ("character", "titles")),
     ),
     (
         (
@@ -115,7 +117,10 @@ _CLAIM_RULES: tuple[tuple[tuple[re.Pattern[str], ...], tuple[tuple[str, str], ..
             re.compile(r"(?:结为|拜入|收为|认作)[^，。；\n]{0,18}(?:道侣|师徒|师父|师尊|弟子|盟友|仇敌)"),
             re.compile(r"(?:与|和)[^，。；\n]{1,18}(?:结缘|结仇|立誓|结盟|反目)"),
         ),
-        (("world", "npcs_present_add"), ("world", "npcs_present"), ("world", "lore_add")),
+        (
+            ("character", "relationship_add"),
+            ("character", "relationships"),
+        ),
     ),
     (
         (
@@ -185,12 +190,11 @@ def validate_narrative_delta_consistency(narrative: str, delta: dict[str, Any]) 
         return False, INCONSISTENT_NARRATIVE_NOTICE
 
     text = re.sub(r"\s+", "", narrative)
+    title_matches = _authoritative_claim_matches(text, _TITLE_CLAIM_PATTERNS)
+    if title_matches and not _claim_mentions_structured_title(text, delta):
+        return False, INCONSISTENT_NARRATIVE_NOTICE
     for patterns, required_paths in _CLAIM_RULES:
-        matches = [match for pattern in patterns for match in pattern.finditer(text)]
-        matches = [
-            match for match in matches
-            if not _is_non_authoritative_context(text, match.start(), match.end())
-        ]
+        matches = _authoritative_claim_matches(text, patterns)
         if not matches:
             continue
         if any(_has_path(delta, section, key) for section, key in required_paths):
@@ -219,12 +223,78 @@ def merge_rule_delta(
     return merged
 
 
+def enforce_event_delta_policy(
+    model_delta: dict[str, Any], rule_delta: dict[str, Any]
+) -> dict[str, Any]:
+    """Keep only model changes explicitly allowed by the selected event."""
+    if not isinstance(model_delta, dict):
+        return {"character": {}, "world": {}, "meta": {}}
+    rule_meta = rule_delta.get("meta") if isinstance(rule_delta, dict) else None
+    if not isinstance(rule_meta, dict):
+        return model_delta
+    raw_allowed = rule_meta.get("allowed_delta_types")
+    if not isinstance(raw_allowed, list):
+        return model_delta
+    allowed = {str(item).strip() for item in raw_allowed if str(item).strip()}
+    # Scene wording is presentation context rather than a reward. It remains
+    # subject to GameEngine's world-reset guard.
+    allowed.add("current_scene")
+    return {
+        "character": _allowed_delta_section(
+            model_delta.get("character"),
+            allowed,
+            {
+                "inventory_add",
+                "relationship_add",
+                "techniques_add",
+                "title_add",
+                "status_effects_add",
+                "breakthrough_flags_add",
+            },
+        ),
+        "world": _allowed_delta_section(
+            model_delta.get("world"),
+            allowed,
+            {
+                "lore_add",
+                "npcs_present_add",
+                "active_quests_add",
+                "discovered_add",
+                "location",
+                "current_scene",
+            },
+        ),
+        "meta": {},
+    }
+
+
+def _allowed_delta_section(
+    value: Any,
+    allowed: set[str],
+    supported: set[str],
+) -> dict[str, Any]:
+    if not isinstance(value, dict):
+        return {}
+    return {
+        key: item
+        for key, item in value.items()
+        if key in supported and key in allowed
+    }
+
+
 def _merge_authoritative_character(merged: dict[str, Any], value: Any) -> None:
     if not isinstance(value, dict) or not value:
         return
     current = merged.get("character")
     character = dict(current) if isinstance(current, dict) else {}
-    for key in ("age", "lifespan", "attributes"):
+    for key in (
+        "age",
+        "lifespan",
+        "attributes",
+        "status_effects_remove",
+        "title_add",
+        "relationship_add",
+    ):
         if key in value:
             character[key] = value[key]
     merged["character"] = character
@@ -236,7 +306,9 @@ def _merge_rule_world(merged: dict[str, Any], value: Any) -> None:
     current = merged.get("world")
     world = dict(current) if isinstance(current, dict) else {}
     for key, item in value.items():
-        if key not in world:
+        if key == "story_update":
+            world[key] = item
+        elif key not in world:
             world[key] = item
         elif key.endswith("_add") and isinstance(world[key], list) and isinstance(item, list):
             world[key] = [*world[key], *item]
@@ -255,8 +327,14 @@ def _merge_authoritative_meta(merged: dict[str, Any], value: Any) -> None:
         "choice_category",
         "event_id",
         "event_type",
+        "event_lore",
         "stage_goal",
         "allowed_delta_types",
+        "story_phase",
+        "story_goal",
+        "story_beat",
+        "story_status",
+        "turn_summary",
     }
     meta.update({key: item for key, item in value.items() if key in authoritative})
     merged["meta"] = meta
@@ -271,8 +349,12 @@ def _has_path(delta: dict[str, Any], section: str, key: str) -> bool:
         return isinstance(value, list) or (isinstance(value, str) and bool(value.strip()))
     if key in {
         "inventory",
+        "relationship_add",
+        "relationships",
         "techniques_add",
         "techniques",
+        "title_add",
+        "titles",
         "status_effects_add",
         "status_effects",
         "active_quests_add",
@@ -309,6 +391,31 @@ def _is_meaningful_list_item(item: Any) -> bool:
     if isinstance(item, str):
         return bool(item.strip())
     return item is not None and item != {}
+
+
+def _authoritative_claim_matches(
+    text: str,
+    patterns: tuple[re.Pattern[str], ...],
+) -> list[re.Match[str]]:
+    return [
+        match
+        for pattern in patterns
+        for match in pattern.finditer(text)
+        if not _is_non_authoritative_context(text, match.start(), match.end())
+    ]
+
+
+def _claim_mentions_structured_title(text: str, delta: dict[str, Any]) -> bool:
+    character = delta.get("character")
+    if not isinstance(character, dict):
+        return False
+    titles: list[str] = []
+    for key in ("title_add", "titles"):
+        value = character.get(key)
+        if not isinstance(value, list):
+            continue
+        titles.extend(item.strip() for item in value if isinstance(item, str) and item.strip())
+    return any(re.sub(r"\s+", "", title) in text for title in titles)
 
 
 def _is_non_authoritative_context(text: str, start: int, end: int) -> bool:
@@ -367,7 +474,9 @@ def _has_visible_outcome_delta(delta: dict[str, Any]) -> bool:
         return False
     visible_paths = (
         ("character", "inventory_add"),
+        ("character", "relationship_add"),
         ("character", "techniques_add"),
+        ("character", "title_add"),
         ("character", "status_effects_add"),
         ("world", "active_quests_add"),
         ("world", "discovered_add"),

@@ -12,7 +12,10 @@
 - mutation API 强制 request ID + version，使用锁、CAS、幂等记录和事务提交。
 - Agent 编排是项目内 `SequentialAgentGraph`，不是 LangGraph。
 - fallback 自动切换本地故事，但不能算 live-model 成功。
-- 本轮仅本地代码与自动化验证；生产未部署、未复验。
+- 四套世界包绑定版本化长期主线；当前内容版本按 60 回合收束，标准 90 回合是后续产品目标。
+- gameplay recovery 与 provider fallback 分开记录；Narrator 契约不完整不能计作 live-model 成功。
+- 当前本地验证结果、精确计数和 strict live 证据只在 `PROJECT_AUDIT.md` 维护。
+- 本地工作树与生产状态分开；未执行服务器侧部署和复验时，不得写成生产通过。
 
 ## Source Of Truth
 
@@ -20,6 +23,7 @@
 | --- | --- |
 | `README.md` | 项目入口、安装、启动和验证 |
 | `AGENTS.md` / `CLAUDE.md` | 仓库执行约束 |
+| `docs/plan.md` | 稳定的长期目标、不变量、里程碑状态和分层验收原则 |
 | `docs/GAME_MODE_SPEC.md` | 玩法规则 source of truth |
 | `docs/RUNTIME_FLOW.md` | 当前端到端运行链路 |
 | `docs/ARCHITECTURE.md` | 模块、依赖和 schema 边界 |
@@ -34,7 +38,7 @@
 
 1. 开发/启动：`README.md` -> `docs/RUNTIME_FLOW.md`
 2. 玩法：`docs/GAME_MODE_SPEC.md` -> `docs/USER_TUTORIAL.md`
-3. 架构/治理：`docs/ARCHITECTURE.md` -> `docs/PROJECT_AUDIT.md` -> `docs/NEXT_GOVERNANCE_BACKLOG.md`
+3. 架构/治理：`docs/plan.md` -> `docs/ARCHITECTURE.md` -> `docs/PROJECT_AUDIT.md` -> `docs/NEXT_GOVERNANCE_BACKLOG.md`
 4. 安全/生产：`docs/security.md` -> `docs/PRODUCTION_V5_MIGRATION_CHECKLIST.md`
 
 ## 验证原则
@@ -42,5 +46,5 @@
 - `tests\web` 会清空其 `TEST_DATABASE_URL`；不要与真实浏览器共享数据库并发运行。
 - 默认 pytest 排除 `llm_real`；真实模型验收单独执行。
 - 本地自动化不等于生产验收。
-- HTTP 200 不等于模型成功；fallback 状态一律视为 live-model 失败。
-- 生成证据不写入仓库。旧 `output/` 已归档到 `D:\chat\agens-web-artifacts\20260710`。
+- HTTP 200 不等于模型成功；fallback 或 contract recovery 都视为 live-model 失败。
+- 浏览器脚本可把临时证据写入被 Git 忽略的 `output/playwright/`；普通提交不得包含这些产物，需要长期保留时移到仓库外 artifact 目录并保存清单。

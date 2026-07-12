@@ -141,6 +141,32 @@ def test_turn_flow_uses_rule_delta_when_state_update_missing(monkeypatch) -> Non
     assert engine.game_session.turn_history[-1]["narrative"]
 
 
+def test_visible_english_contract_violation_is_not_shown_to_player(monkeypatch) -> None:
+    monkeypatch.setenv("AGNES_API_KEY", "sk-test-1234567890")
+    engine = GameEngine()
+    engine.game_session.game_started = True
+    engine.game_session.last_choices = ["留在山门吐纳", "询问接引弟子", "外出历练", "随缘听天命"]
+
+    def runner(agent_name, user_input, session, **kwargs):
+        if agent_name == "narrator":
+            return {
+                "narrative": "He gains prowess at the gate.",
+                "state_delta": {"character": {"inventory_add": [{"name": "model gift"}]}},
+                "choices": ["Rest", "Explore", "Fight", "Trust luck"],
+                "contract_diagnostics": {"english_residue": True},
+                "llm_error": "",
+            }
+        return {}
+
+    with patch("agens_novel.engine.game_engine.run_turn_sync", side_effect=runner):
+        engine.handle_action("A")
+
+    turn = engine.game_session.turn_history[-1]
+    assert "prowess" not in turn["narrative"]
+    assert "model gift" not in str(engine.game_session.inventory)
+    assert engine.game_session.local_story_active is True
+
+
 def test_json_only_terminal_delta_is_rejected_before_choices_are_cleared(monkeypatch) -> None:
     monkeypatch.setenv("AGNES_API_KEY", "sk-test-1234567890")
     engine = GameEngine()
@@ -198,13 +224,8 @@ def test_model_failure_notice_matrix_is_actionable_and_secret_safe() -> None:
         assert "https://" not in notice
 
 
-def test_breakthrough_flow_enables_narrator_repair(monkeypatch) -> None:
-    """Breakthrough narrator calls must also enable repair for the same reasons.
-
-    The breakthrough path calls the same narrator agent and faces the same
-    risk of missing <state_update>/<choices> tags. Regression guard: the
-    breakthrough path must keep repair enabled.
-    """
+def test_breakthrough_flow_retries_incomplete_output_without_repair(monkeypatch) -> None:
+    """Breakthroughs retry one strict response instead of invoking repair."""
     monkeypatch.setenv("AGNES_API_KEY", "sk-test-1234567890")
     engine = GameEngine()
     engine.game_session.game_started = True
@@ -212,15 +233,20 @@ def test_breakthrough_flow_enables_narrator_repair(monkeypatch) -> None:
     engine.game_session.realm_stage = 9
     engine.game_session.breakthrough_flags = ["foundation_aid"]
     engine.game_session.last_choices = ["稳固道心", "请护法", "观察瓶颈", "随缘听天命"]
-    captured: dict = {}
+    captured: list[dict] = []
 
     def runner(agent_name, user_input, session, **kwargs):
         if agent_name == "narrator":
-            captured.update(kwargs)
+            captured.append(dict(kwargs))
+            choices = (
+                ["稳固道台", "拜谢护法", "查看新境界"]
+                if len(captured) == 1
+                else ["稳固道台", "拜谢护法", "查看新境界", "静候命数"]
+            )
             return {
                 "narrative": "你引动灵气冲击瓶颈。",
                 "state_delta": {"character": {"attributes": {"willpower": 1}}},
-                "choices": ["稳固道台", "拜谢护法", "查看新境界"],
+                "choices": choices,
                 "llm_error": "",
             }
         if agent_name == "judge":
@@ -231,7 +257,8 @@ def test_breakthrough_flow_enables_narrator_repair(monkeypatch) -> None:
         with patch("agens_novel.game.realm.random.random", return_value=0.001):
             engine.attempt_breakthrough()
 
-    assert captured.get("repair_incomplete_output") is True
+    assert len(captured) == 2
+    assert all(call.get("repair_incomplete_output") is False for call in captured)
 
 
 def test_breakthrough_narrator_exception_keeps_rule_settlement(monkeypatch) -> None:

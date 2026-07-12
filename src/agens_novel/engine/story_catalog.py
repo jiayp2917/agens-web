@@ -1,0 +1,475 @@
+"""Versioned long-form story arcs for chronicle gameplay."""
+
+from __future__ import annotations
+
+from dataclasses import dataclass
+from typing import Any
+
+from .world_catalog import world_key_for_name
+
+STORY_RESOLUTION_TURN = 60
+
+
+@dataclass(frozen=True)
+class StoryPhase:
+    key: str
+    title: str
+    min_turn: int
+    max_turn: int
+    goal: str
+    thread: str
+    beats: dict[str, str]
+
+
+@dataclass(frozen=True)
+class StoryArc:
+    key: str
+    version: int
+    title: str
+    worlds: tuple[str, ...]
+    fate_tags: tuple[str, ...]
+    opening: str
+    unresolved_thread: str
+    ally_faction: str
+    rival_faction: str
+    neutral_faction: str
+    phases: tuple[StoryPhase, ...]
+    commitments: dict[str, str]
+    failure_branch: str
+    endings: dict[str, str]
+
+
+def _phases(subject: str, rival: str, neutral: str) -> tuple[StoryPhase, ...]:
+    return (
+        StoryPhase(
+            "opening",
+            "入局",
+            1,
+            12,
+            f"查清{subject}为何异动，并确认谁在散布最早的消息",
+            f"{subject}的第一份记录来源不明",
+            {
+                "稳妥": f"其从名册和旧档核对{subject}，先排除了最浅的一层误传。",
+                "机遇": f"其沿{neutral}的消息网追问，找到一名曾亲见{subject}异状的人。",
+                "风险": f"其越过告诫逼近{subject}，也因此被{rival}的人记住。",
+                "气运": f"其暂不追逐明面线索，却在偶然征兆中记下{subject}的另一种解释。",
+            },
+        ),
+        StoryPhase(
+            "spread",
+            "扩散",
+            13,
+            24,
+            f"判断{subject}的影响范围，并选择可信的同行者",
+            f"{rival}开始借{subject}扩大影响",
+            {
+                "稳妥": f"其把已知线索交给可信执事，{subject}第一次进入正式议程。",
+                "机遇": f"其借一次交换取得新证词，发现{neutral}内部也有人隐瞒旧账。",
+                "风险": f"其与{rival}的外围人手正面碰撞，换来一条带伤的真线索。",
+                "气运": f"其顺着反常征兆改道，恰好避开假消息并触及{subject}的旧因。",
+            },
+        ),
+        StoryPhase(
+            "turning",
+            "转折",
+            25,
+            36,
+            f"确认{subject}背后的真正受益者，并处理此前留下的人情与敌意",
+            f"最初的盟友与{rival}之间出现身份倒置",
+            {
+                "稳妥": "其逐项复核旧约，发现一名看似可靠的中间人曾改动关键日期。",
+                "机遇": "其以一份新线索换得旧证物，主线矛盾由传闻转为可以查证的事实。",
+                "风险": f"其逼迫{rival}的知情者开口，却让自己背上一笔必须偿还的因果。",
+                "气运": "其在一次无意相逢中认出旧证物的真正主人，先前判断因此反转。",
+            },
+        ),
+        StoryPhase(
+            "choice",
+            "抉择",
+            37,
+            48,
+            f"决定公开、利用、封存或改写{subject}的真相",
+            "各方开始要求其兑现此前的承诺",
+            {
+                "稳妥": "其选择先稳住受波及之人，再把证据交给能够承担后果的势力。",
+                "机遇": "其借真相换取进入核心地点的资格，也把自己推到更显眼的位置。",
+                "风险": f"其主动向{rival}设局，准备以一次高风险行动结束长期试探。",
+                "气运": "其保留最后一份证据，等待命数最有利的时点迫使各方表态。",
+            },
+        ),
+        StoryPhase(
+            "resolution",
+            "收束",
+            49,
+            STORY_RESOLUTION_TURN,
+            f"承担选择的长期后果，使{subject}之争形成明确结局",
+            "主线进入不可回避的收束阶段",
+            {
+                "稳妥": "其以可复核的证据结束争端，所得不多，却保住了最多人的退路。",
+                "机遇": "其把握最后一次交换，让真相与自身前路同时得到兑现。",
+                "风险": "其亲自承担决战代价，以伤势和声名换来主线的强行收束。",
+                "气运": "其没有控制所有结果，却让多年积累的因果在同一日相互抵消。",
+            },
+        ),
+    )
+
+
+STORY_ARCS: tuple[StoryArc, ...] = (
+    StoryArc(
+        key="border-vein-crisis",
+        version=1,
+        title="裂脉边关",
+        worlds=("frontier",),
+        fate_tags=("苦修", "灾厄", "边地劫数", "散修"),
+        opening="西陲灵脉的衰败并非天灾，最早失踪的商队带走了能够证明人为截脉的账册。",
+        unresolved_thread="失踪商队与边境截脉者的关系",
+        ally_faction="砺锋院",
+        rival_faction="黑潮妖寨",
+        neutral_faction="驼铃商栈",
+        phases=_phases("边境裂脉", "黑潮妖寨", "驼铃商栈"),
+        commitments={
+            "稳妥": "护住边营名册中的低阶弟子",
+            "机遇": "找到失踪商队留下的账册",
+            "风险": "亲自查明裂脉源头",
+            "气运": "追索反复出现的黑潮征兆",
+        },
+        failure_branch="裂脉真相被争夺者掩埋，边营以更多低阶修士填补代价。",
+        endings={
+            "稳妥": "账册归档，边营重划灵材道路，裂脉之乱被压回可控范围。",
+            "机遇": "账册成为其进入更高层议事的凭证，边境格局也因此改写。",
+            "风险": "截脉据点被毁，其以重伤换来边关数十年的喘息。",
+            "气运": "黑潮征兆与旧账彼此印证，幕后者在自认得势时暴露。",
+        },
+    ),
+    StoryArc(
+        key="alliance-old-oath",
+        version=1,
+        title="盟境旧契",
+        worlds=("clan",),
+        fate_tags=("宗门", "贵胄", "天命"),
+        opening="玄都盟新一轮评席前，一份被删去姓名的旧契重新出现，寒门与世家都声称自己才是受害者。",
+        unresolved_thread="旧契被删去的签押者是谁",
+        ally_faction="玄都盟外院",
+        rival_faction="离火旁宗",
+        neutral_faction="司契楼",
+        phases=_phases("玄都旧契", "离火旁宗", "司契楼"),
+        commitments={
+            "稳妥": "保证旧契查验不牵连无辜名册",
+            "机遇": "找到旧王城中的原始契印",
+            "风险": "公开挑战篡改旧契之人",
+            "气运": "保留无名签押的最后线索",
+        },
+        failure_branch="评席在互相揭短中失控，旧契成为下一轮清算的借口。",
+        endings={
+            "稳妥": "旧契被重新核验，盟境保住秩序，也为寒门留下可复用的申诉先例。",
+            "机遇": "原始契印换来新的评席资格，其成为盟境规则的直接参与者。",
+            "风险": "篡契者败露，但公开对抗留下了长期政敌。",
+            "气运": "无名签押指向被遗忘的第三方，世家与寒门的旧叙事同时被改写。",
+        },
+    ),
+    StoryArc(
+        key="sunken-star-tide",
+        version=1,
+        title="沉星潮契",
+        worlds=("ocean",),
+        fate_tags=("天命", "神魂异兆", "散修"),
+        opening="沉星礁提前退潮，旧府将现的消息传遍海市，但真正异常的是所有潮图都少了一夜记录。",
+        unresolved_thread="潮图缺失之夜发生了什么",
+        ally_faction="潮音阁",
+        rival_faction="沉星盗盟",
+        neutral_faction="听潮船行",
+        phases=_phases("沉星异潮", "沉星盗盟", "听潮船行"),
+        commitments={
+            "稳妥": "护住同行者并补全潮图",
+            "机遇": "找到旧府出现的真实潮窗",
+            "风险": "抢在盗盟前进入沉星礁",
+            "气运": "追随神魂中反复出现的潮声",
+        },
+        failure_branch="各方误判潮窗，大批灵舟困在退潮后的死礁之间。",
+        endings={
+            "稳妥": "补全的潮图成为群岛公用航册，旧府之争不再以船队性命下注。",
+            "机遇": "其在正确潮窗进入旧府，所得线索足以开启下一段远海生涯。",
+            "风险": "其先一步截断盗盟退路，以灵舟尽毁的代价结束争夺。",
+            "气运": "缺失之夜的潮声重现，旧府主动避开贪求者而向其开启。",
+        },
+    ),
+    StoryArc(
+        key="herb-boundary-blight",
+        version=1,
+        title="药境早凋",
+        worlds=("forest",),
+        fate_tags=("苦修", "宗门", "散修"),
+        opening="青岚药境的灵草提前开放，却有一批药苗在登记后无声枯萎，药圃边界与旧残阵同时受到怀疑。",
+        unresolved_thread="早开灵草与无声枯萎是否出自同一原因",
+        ally_faction="青岚谷",
+        rival_faction="枯藤社",
+        neutral_faction="百草坊",
+        phases=_phases("药境早凋", "枯藤社", "百草坊"),
+        commitments={
+            "稳妥": "保住受影响药圃的低阶苗种",
+            "机遇": "找到雾萝山径残阵的药性记录",
+            "风险": "查清枯藤社是否越界动手",
+            "气运": "追踪只在夜间出现的药香",
+        },
+        failure_branch="药圃互相封锁，早凋蔓延到主谷，低阶弟子失去最稳定的修行来源。",
+        endings={
+            "稳妥": "苗种被分区保全，药境以新规度过早凋，损失止于外圃。",
+            "机遇": "残阵药性被重新利用，其获得进入内谷研习的资格。",
+            "风险": "越界者被揭出，但其也因亲入毒圃留下难消旧伤。",
+            "气运": "夜间药香引出地下旧脉，早开与枯萎终于得到同一解释。",
+        },
+    ),
+)
+
+
+_ARCS_BY_BINDING = {(arc.key, arc.version): arc for arc in STORY_ARCS}
+
+
+def story_arc_for_world(world_key: str, fate_tags: list[str] | tuple[str, ...]) -> StoryArc:
+    """Select the latest compatible arc without depending on model output."""
+    tags = {str(tag).strip() for tag in fate_tags if str(tag).strip()}
+    candidates = [arc for arc in STORY_ARCS if world_key in arc.worlds]
+    if not candidates:
+        candidates = [arc for arc in STORY_ARCS if "forest" in arc.worlds]
+    return max(candidates, key=lambda arc: (len(tags.intersection(arc.fate_tags)), arc.version))
+
+
+def story_arc_for_binding(story_key: str, story_version: int) -> StoryArc | None:
+    """Resolve an exact version; never silently upgrade an existing save."""
+    return _ARCS_BY_BINDING.get((story_key, story_version))
+
+
+def opening_story_binding(world_key: str, fate_tags: list[str] | tuple[str, ...]) -> dict[str, Any]:
+    arc = story_arc_for_world(world_key, fate_tags)
+    first = arc.phases[0]
+    return {
+        "story_key": arc.key,
+        "story_version": arc.version,
+        "story_title": arc.title,
+        "story_opening": arc.opening,
+        "story_state": {
+            "status": "active",
+            "phase_key": first.key,
+            "phase_title": first.title,
+            "stage_goal": first.goal,
+            "progress_turns": 0,
+            "route_counts": {category: 0 for category in ("稳妥", "机遇", "风险", "气运")},
+            "pressure": 0,
+            "unresolved_threads": [arc.unresolved_thread, first.thread],
+            "faction_attitudes": {
+                arc.ally_faction: 0,
+                arc.rival_faction: 0,
+                arc.neutral_faction: 0,
+            },
+            "key_promises": [],
+            "recent_beats": [],
+            "ending": "",
+        },
+    }
+
+
+def ensure_story_binding(session: Any) -> None:
+    """Bind an unversioned session once; preserve every existing exact binding."""
+    if str(getattr(session, "story_key", "") or ""):
+        return
+    profile = getattr(session, "world_profile", None)
+    world_profile = profile if isinstance(profile, dict) else {}
+    world_key = str(world_profile.get("world_key") or "").strip()
+    if not world_key:
+        world_key = world_key_for_name(str(world_profile.get("world_name") or getattr(session, "region", "")))
+    fate_tags = _fate_tags(world_profile)
+    binding = opening_story_binding(world_key, fate_tags)
+    session.story_key = binding["story_key"]
+    session.story_version = binding["story_version"]
+    session.story_state = binding["story_state"]
+
+
+def story_turn_delta(
+    session: Any,
+    category: str,
+    event: dict[str, Any],
+    new_age: int,
+    game_over_reason: str = "",
+) -> dict[str, Any]:
+    """Return the next rule-owned story state without mutating the session."""
+    binding = _session_story_binding(session)
+    if binding is None:
+        return {}
+    arc, state = binding
+    if state.get("status") != "active":
+        return {}
+    turn = max(1, int(getattr(session, "turn_count", 1) or 1))
+    phase = _phase_for_turn(arc, turn)
+    route_counts = _route_counts(state)
+    route_counts[category] = route_counts.get(category, 0) + 1
+    due = turn % 4 == 0
+    pressure_change = _pressure_change(category) if due else 0
+    pressure = max(0, int(state.get("pressure") or 0) + pressure_change)
+    attitudes = _faction_attitudes(state, arc)
+    _adjust_attitudes(attitudes, arc, category)
+    status, ending, beat = _story_outcome(
+        arc, phase, category, route_counts, pressure, turn, due, session, event, new_age,
+        game_over_reason,
+    )
+    next_state = _next_story_state(
+        state, arc, phase, category, route_counts, attitudes, pressure, turn, due,
+        status, ending, beat,
+    )
+    return {
+        "story_update": next_state,
+        "story_phase": phase.title,
+        "story_goal": phase.goal,
+        "story_beat": beat,
+        "story_status": status,
+    }
+
+
+def _session_story_binding(session: Any) -> tuple[StoryArc, dict[str, Any]] | None:
+    story_key = str(getattr(session, "story_key", "") or "")
+    try:
+        story_version = int(getattr(session, "story_version", 0) or 0)
+    except (TypeError, ValueError):
+        story_version = 0
+    arc = story_arc_for_binding(story_key, story_version)
+    if arc is None:
+        return None
+    current = getattr(session, "story_state", None)
+    state = dict(current) if isinstance(current, dict) else opening_story_binding(
+        arc.worlds[0], list(arc.fate_tags)
+    )["story_state"]
+    return arc, state
+
+
+def _story_outcome(
+    arc: StoryArc,
+    phase: StoryPhase,
+    category: str,
+    route_counts: dict[str, int],
+    pressure: int,
+    turn: int,
+    due: bool,
+    session: Any,
+    event: dict[str, Any],
+    new_age: int,
+    game_over_reason: str,
+) -> tuple[str, str, str]:
+    beat = (
+        _format_beat(phase.beats.get(category) or phase.beats["机遇"], session, event, new_age)
+        if due else ""
+    )
+    if game_over_reason:
+        return "failed", arc.failure_branch, f"{game_over_reason}{arc.failure_branch}"
+    if turn < STORY_RESOLUTION_TURN:
+        return "active", "", beat
+    ending = arc.failure_branch if pressure >= 8 else arc.endings[_dominant_route(route_counts)]
+    return "resolved", ending, ending
+
+
+def _next_story_state(
+    state: dict[str, Any],
+    arc: StoryArc,
+    phase: StoryPhase,
+    category: str,
+    route_counts: dict[str, int],
+    attitudes: dict[str, int],
+    pressure: int,
+    turn: int,
+    due: bool,
+    status: str,
+    ending: str,
+    beat: str,
+) -> dict[str, Any]:
+    unresolved = _string_list(state.get("unresolved_threads"))
+    if phase.thread not in unresolved:
+        unresolved.append(phase.thread)
+    promises = _string_list(state.get("key_promises"))
+    promise = arc.commitments.get(category, "") if due else ""
+    if promise and promise not in promises:
+        promises.append(promise)
+    recent_beats = _string_list(state.get("recent_beats"))
+    if beat:
+        recent_beats.append(beat)
+    return {
+        "status": status,
+        "phase_key": phase.key,
+        "phase_title": phase.title,
+        "stage_goal": phase.goal,
+        "progress_turns": turn,
+        "route_counts": route_counts,
+        "pressure": pressure,
+        "unresolved_threads": unresolved[-6:] if status == "active" else [],
+        "faction_attitudes": attitudes,
+        "key_promises": promises[-6:],
+        "recent_beats": recent_beats[-6:],
+        "ending": ending,
+    }
+
+
+def _phase_for_turn(arc: StoryArc, turn: int) -> StoryPhase:
+    for phase in arc.phases:
+        if phase.min_turn <= turn <= phase.max_turn:
+            return phase
+    return arc.phases[-1]
+
+
+def _fate_tags(world_profile: dict[str, Any]) -> list[str]:
+    tags = world_profile.get("fate_hooks")
+    if isinstance(tags, list):
+        return [str(tag) for tag in tags if str(tag).strip()]
+    return []
+
+
+def _route_counts(state: dict[str, Any]) -> dict[str, int]:
+    raw = state.get("route_counts")
+    out = {category: 0 for category in ("稳妥", "机遇", "风险", "气运")}
+    if isinstance(raw, dict):
+        for category in out:
+            value = raw.get(category)
+            if isinstance(value, int) and not isinstance(value, bool):
+                out[category] = max(0, value)
+    return out
+
+
+def _pressure_change(category: str) -> int:
+    # Pressure is charged only on four-turn story beats. Luck already carries
+    # event-level variance, so it does not add unavoidable long-arc pressure.
+    return {"稳妥": -1, "机遇": 0, "风险": 2, "气运": 0}.get(category, 0)
+
+
+def _faction_attitudes(state: dict[str, Any], arc: StoryArc) -> dict[str, int]:
+    defaults = {arc.ally_faction: 0, arc.rival_faction: 0, arc.neutral_faction: 0}
+    raw = state.get("faction_attitudes")
+    if isinstance(raw, dict):
+        for key in defaults:
+            value = raw.get(key)
+            if isinstance(value, int) and not isinstance(value, bool):
+                defaults[key] = max(-10, min(10, value))
+    return defaults
+
+
+def _adjust_attitudes(attitudes: dict[str, int], arc: StoryArc, category: str) -> None:
+    if category == "稳妥":
+        attitudes[arc.ally_faction] = min(10, attitudes[arc.ally_faction] + 1)
+    elif category == "机遇":
+        attitudes[arc.neutral_faction] = min(10, attitudes[arc.neutral_faction] + 1)
+    elif category == "风险":
+        attitudes[arc.rival_faction] = max(-10, attitudes[arc.rival_faction] - 1)
+
+
+def _dominant_route(route_counts: dict[str, int]) -> str:
+    order = ("稳妥", "机遇", "风险", "气运")
+    return max(order, key=lambda category: (route_counts.get(category, 0), -order.index(category)))
+
+
+def _format_beat(template: str, session: Any, event: dict[str, Any], new_age: int) -> str:
+    event_lore = str(event.get("lore") or "").strip()
+    prefix = f"{new_age}岁时，"
+    if event_lore:
+        return f"{prefix}{template} 同期外界记载：{event_lore}"
+    return f"{prefix}{template}"
+
+
+def _string_list(value: Any) -> list[str]:
+    if not isinstance(value, list):
+        return []
+    return [str(item).strip() for item in value if str(item).strip()]

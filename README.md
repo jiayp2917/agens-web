@@ -14,11 +14,13 @@ Web-only 文字修仙模拟器。当前主线由 React/Vite、FastAPI、PostgreS
 - start/choice/action/save/load/end 都要求 `request_id` 与 `expected_version`，后端通过会话锁、CAS 和幂等结果防止双击、重试和并发覆盖。
 - 回合日志、session snapshot、活跃/终局 run、奖励和遗泽消费使用同一数据库事务；失败恢复内存 runner。
 - fallback 会自动切换本地故事，玩家直接使用下方 A/B/C/D；fallback 不能算 live-model 成功。
+- 四套世界包现绑定版本化 60 回合主线；存档保存 `story_key`、`story_version` 和可变进度，20 回合只验证阶段推进。
+- 普通回合由事件表声明模型可承接的 delta 类型；Web `choice_index` 与引擎 A/B/C/D 输入共用同一语义包装。
+- Narrator 缺任一契约段时会记录 `contract_recovery`；即使规则侧能继续结算，也不能计作 live-model 成功。
 - FastAPI 路由已拆为 auth/catalog/session/settings；`GameEngine` 仍是玩法门面，开局、普通回合、突破和 fallback 分别由 flow/policy 模块承担。
 - 前端关键面板使用 SVG 九宫双线内收角与同轮廓背景蒙版；工具按钮、寿元条、细滚动条和 A/B/C/D 六态已按当前素材规范统一，移动端保留同一视觉语言。
-- 当前本地门禁：空库 Alembic 18 表升级通过；Ruff/C901/mypy 零错误；`tests\web` 92 passed；非 live 全量 pytest 594 passed；Vitest 9 passed；前端 build 通过；npm audit 0 vulnerabilities；真实 Chrome smoke 与多视口视觉检查通过。
-
-本轮只做本地实现和验证，未执行生产部署或生产验收。真实 Chrome smoke 使用无真实 Key 的 fallback 路径，不是 live-model 验收。历史生产证据只保留在 `CHANGELOG.md`，不能代表当前未部署工作树。
+当前本地门禁、strict live 证据、性能数据和残余风险统一见
+[docs/PROJECT_AUDIT.md](docs/PROJECT_AUDIT.md)。本地通过不等于生产通过；当前未提交工作树尚未执行生产部署或生产验收。
 
 ## Local PostgreSQL
 
@@ -86,6 +88,8 @@ $env:TEST_DATABASE_URL = "postgresql+psycopg://agens_test@127.0.0.1:55432/agens_
 .\.venv\Scripts\python.exe -m mypy src web\backend
 .\.venv\Scripts\python.exe -m pytest -q tests\web -n0
 .\.venv\Scripts\python.exe -m pytest -q -m "not llm_real"
+$env:PG_BIN = "F:\pg\bin"  # pg_dump/pg_restore 不在 PATH 时设置
+.\.venv\Scripts\python.exe scripts\verify_pg_backup_restore.py
 
 cd web\frontend-react
 npm.cmd test
@@ -93,8 +97,8 @@ npm.cmd run build
 npm.cmd audit --audit-level=high
 ```
 
-真实 LLM 测试标记为 `llm_real`，默认门禁排除；手工执行时仍必须把
-`fallback=true` 视为失败。
+真实 LLM 测试标记为 `llm_real`，默认门禁排除；手工执行时必须同时要求
+Narrator `ok`、`fallback=false`、`fallback_prompt.active=false`、`contract_recovery=false` 和契约完整。
 
 ## Model Settings
 
@@ -122,6 +126,7 @@ npm.cmd audit --audit-level=high
 ## Docs
 
 - [docs/INDEX.md](docs/INDEX.md)：文档入口。
+- [docs/plan.md](docs/plan.md)：长期目标、稳定边界、里程碑状态和验收原则。
 - [docs/RUNTIME_FLOW.md](docs/RUNTIME_FLOW.md)：当前运行链路。
 - [docs/GAME_MODE_SPEC.md](docs/GAME_MODE_SPEC.md)：玩法规则 source of truth。
 - [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md)：模块与依赖边界。

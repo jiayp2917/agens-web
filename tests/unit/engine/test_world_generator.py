@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+from agens_novel.engine.profile_opening import fate_profile, profile_summary, world_key_for_summary
+from agens_novel.engine.start_flow import merge_opening_payload
 from agens_novel.engine.world_generator import (
     build_world_fallback,
     build_world_prompt,
@@ -54,6 +56,50 @@ def test_world_prompt_includes_attributes_and_fate() -> None:
     assert "0-16岁短编年史" in prompt
 
 
+def test_world_builder_prompt_does_not_offer_generic_choice_placeholders() -> None:
+    from agens_novel import paths
+
+    prompt = paths.system_prompt_path("world_builder").read_text(encoding="utf-8")
+
+    assert '"稳妥路径的具体行动"' not in prompt
+    assert '"机遇路径的具体行动"' not in prompt
+    assert "必须引用本次生成的具体地点" in prompt
+
+
+def test_structured_catalog_semantics_drive_fate_without_name_substrings() -> None:
+    profile = _profile(
+        talent="星痕感应",
+        spirit_root="潮汐灵根",
+        family_background="旧族旁门",
+        profile_semantics={
+            "talent": {
+                "description": "能察觉常人忽略的天象变化。",
+                "tags": ["机缘", "神魂"],
+                "attribute_mods": {"soul": 1},
+            },
+            "spirit_root": {
+                "cultivation_tendency": "观潮炼神",
+                "event_tags": ["神魂", "变化"],
+            },
+            "family_background": {
+                "description": "出身没落旧族。",
+                "story_tags": ["世家", "传承"],
+                "initial_risks": ["旧契追索"],
+            },
+        },
+    )
+
+    fates = {item["id"] for item in fate_profile(profile)}
+    summary = profile_summary(profile)
+    prompt = build_world_prompt(profile)
+    opening = build_world_fallback(profile)
+
+    assert {"天命", "神魂异兆", "贵胄"}.issubset(fates)
+    assert world_key_for_summary(summary) in {"ocean", "clan"}
+    assert "能察觉常人忽略的天象变化" in prompt
+    assert "旧契追索" in opening["opening_narrative"]
+
+
 def test_fallback_varies_by_profile_and_contains_opening_payload() -> None:
     calm = build_world_fallback(_profile())
     hard = build_world_fallback(_profile(
@@ -75,6 +121,12 @@ def test_fallback_varies_by_profile_and_contains_opening_payload() -> None:
     assert calm["world_key"] == "forest"
     assert calm["event_weights"]
     assert calm["fate_profile"]
+    assert calm["story_key"] == "herb-boundary-blight"
+    assert calm["story_version"] == 1
+    assert calm["story_state"]["stage_goal"]
+    assert calm["story_opening"] in calm["opening_narrative"]
+    assert calm["world"]["active_quests"][0]["name"] == calm["story_title"]
+    assert hard["story_key"] == "border-vein-crisis"
     assert "long_conflict" in calm
     assert "青玄宗" not in calm["opening_narrative"]
     assert calm["world"]["lore_facts"]
@@ -139,6 +191,28 @@ def test_complete_opening_payload_requires_model_owned_fields() -> None:
     assert is_complete_opening_payload(incomplete) is False
 
 
+def test_complete_opening_payload_rejects_visible_english_in_opening() -> None:
+    parsed = parse_world_response({
+        "generated_data": {
+            "world_name": "归墟潮界",
+            "regions": [{"name": "潮生海市"}],
+            "sects": [{"name": "潮音阁"}],
+            "current_conflicts": ["灵潮提前"],
+            "fate_hooks": ["天命奇遇"],
+            "chronicle_0_16": ["十六岁前，许满多听潮声。"],
+            "initial_situation_16": "十六岁这年，许满抵达潮音渡口。",
+            "opening_narrative": "他在 Harvest 与劳作之间长大。",
+            "world": {
+                "current_scene": "潮音渡口正在登记听潮弟子",
+                "lore_facts": ["归墟潮界灵潮提前。"],
+            },
+            "choices": ["稳住渡口差事", "打听灵潮", "夜探沉星礁", "随潮而行"],
+        }
+    })
+
+    assert is_complete_opening_payload(parsed) is False
+
+
 def test_complete_opening_payload_rejects_choices_completed_by_fallback() -> None:
     parsed = parse_world_response({
         "generated_data": {
@@ -181,3 +255,22 @@ def test_complete_opening_payload_rejects_missing_model_world_name() -> None:
 
     assert "world_name" not in parsed
     assert is_complete_opening_payload(parsed) is False
+
+
+def test_model_opening_cannot_replace_rule_owned_story_binding() -> None:
+    fallback = build_world_fallback(_profile())
+
+    merged = merge_opening_payload(
+        fallback,
+        {
+            "world_name": "模型新世界",
+            "story_key": "model-story",
+            "story_version": 99,
+            "story_state": {"phase_key": "model-reset"},
+        },
+    )
+
+    assert merged["world_name"] == "模型新世界"
+    assert merged["story_key"] == fallback["story_key"]
+    assert merged["story_version"] == fallback["story_version"]
+    assert merged["story_state"] == fallback["story_state"]

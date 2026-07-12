@@ -9,11 +9,32 @@ from typing import TYPE_CHECKING, Any
 if TYPE_CHECKING:
     from .game_engine import GameEngine
 
-from .render import format_realm, format_status_bar
+from ..game.constants import format_realm_name
+from .model_result import ModelResultKind, classify_judge_result, classify_narrator_result
+from .render import format_status_bar
 
 log = logging.getLogger(__name__)
-_BREAKTHROUGH_FAILURE_WORDS = ("修为尽废", "修为未复", "重伤垂死", "未能突破", "突破失败", "功亏一篑")
+_BREAKTHROUGH_FAILURE_WORDS = (
+    "修为尽废",
+    "修为未复",
+    "重伤垂死",
+    "未能突破",
+    "突破失败",
+    "功亏一篑",
+    "破境未成",
+    "未能破境",
+    "走火入魔",
+    "遭反噬",
+    "灵机反噬",
+    "经脉寸断",
+    "生死未卜",
+)
 _BREAKTHROUGH_SUCCESS_WORDS = ("突破成功", "功成", "踏入", "晋入", "进阶", "破境已成")
+_QI_STAGE_CLAIM_RE = re.compile(r"练气\s*(?:第)?\s*([1-9一二三四五六七八九])\s*层")
+_REALM_PHASE_CLAIM_RE = re.compile(
+    r"(筑基|金丹|元婴|化神|合体|大乘|渡劫)\s*(初期|中期|后期|圆满)"
+)
+_CHINESE_STAGE_VALUES = {"一": 1, "二": 2, "三": 3, "四": 4, "五": 5, "六": 6, "七": 7, "八": 8, "九": 9}
 
 
 class BreakthroughFlow:
@@ -39,9 +60,6 @@ class BreakthroughFlow:
         if not can:
             engine.emit("on_info", reason)
             return
-
-        rate = engine.realm_system.calculate_breakthrough_rate(session)
-        engine.emit("on_info", f"突破概率: {rate:.0%}，开始突破...")
 
         engine.emit("on_loading", "突破中...")
 
@@ -103,16 +121,48 @@ class BreakthroughFlow:
     def _run_breakthrough_narrator(self, action_text: str) -> dict[str, Any] | None:
         engine = self.engine
         try:
-            return engine.run_agent(
+            result = engine.run_agent(
                 "narrator",
                 action_text,
                 engine.game_session,
                 stream_callback=engine.stream_callback if engine.on_stream_chunk else None,
-                repair_incomplete_output=True,
+                repair_incomplete_output=False,
             )
+            status = classify_narrator_result(result)
+            if status.kind == ModelResultKind.INCOMPLETE_OUTPUT:
+                retry_input = (
+                    f"{action_text}\n\n"
+                    "[输出契约提醒：必须返回非空突破编年史、合法状态对象，以及四个非空、"
+                    "互不重复、依次对应稳妥/机遇/风险/气运的中文行动选项；"
+                    "突破成败仍以规则判定为准，并继续遵守当前传输格式。]"
+                )
+                retry_result = engine.run_agent(
+                    "narrator",
+                    retry_input,
+                    engine.game_session,
+                    stream_callback=engine.stream_callback if engine.on_stream_chunk else None,
+                    repair_incomplete_output=False,
+                )
+                if not retry_result.get("llm_error"):
+                    retry_result["retried_after_incomplete_output"] = True
+                result = retry_result
         except Exception:
             log.exception("breakthrough narrator error")
-            return {"narrative": "", "state_delta": {}, "choices": [], "llm_error": "突破叙事失败"}
+            result = {
+                "narrative": "",
+                "state_delta": {},
+                "choices": [],
+                "llm_error": "突破叙事失败",
+            }
+        status = classify_narrator_result(result)
+        engine.log_model_result(
+            agent="narrator",
+            source="breakthrough",
+            status=status.kind,
+            reason=status.reason,
+            result=result,
+        )
+        return result
 
     def _merge_breakthrough_delta(
         self,
@@ -122,25 +172,13 @@ class BreakthroughFlow:
     ) -> dict[str, Any]:
         if bt_result not in {"success", "failure"}:
             return state_delta
-        merged = dict(state_delta)
-        character = dict(merged.get("character") or {})
-        for key in ("realm", "realm_stage", "lifespan"):
-            character.pop(key, None)
-        character.update(breakthrough_delta.get("character", {}))
-        merged["character"] = character
-
-        meta = dict(merged.get("meta") or {})
-        for key in (
-            "breakthrough_result",
-            "new_realm",
-            "status_effect_add",
-            "finale",
-            "game_over",
-            "game_over_reason",
-        ):
-            meta.pop(key, None)
-        meta.update(breakthrough_delta.get("meta", {}))
-        merged["meta"] = meta
+        sanitized = self.engine.sanitize_action_delta(state_delta)
+        world = sanitized.get("world") if isinstance(sanitized, dict) else None
+        merged: dict[str, Any] = {}
+        if isinstance(world, dict) and world:
+            merged["world"] = world
+        merged["character"] = dict(breakthrough_delta.get("character") or {})
+        merged["meta"] = dict(breakthrough_delta.get("meta") or {})
         return merged
 
     def _breakthrough_action_text(self, breakthrough_delta: dict[str, Any]) -> str:
@@ -162,7 +200,11 @@ class BreakthroughFlow:
             if not text or any(word in text for word in _BREAKTHROUGH_FAILURE_WORDS):
                 return "破境已成，灵机贯通，境界向前推进。"
         elif bt_result == "failure":
-            if not text or any(word in text for word in _BREAKTHROUGH_SUCCESS_WORDS):
+            if (
+                not text
+                or any(word in text for word in _BREAKTHROUGH_SUCCESS_WORDS)
+                or _claims_conflicting_realm_stage(text, self.engine.game_session)
+            ):
                 return "破境未成，灵机反噬，需先稳住根基再图后续。"
         return text
 
@@ -209,6 +251,14 @@ class BreakthroughFlow:
                 narrative=narrative,
                 state_delta=state_delta,
             )
+            judge_status = classify_judge_result(judge_result)
+            engine.log_model_result(
+                agent="judge",
+                source="breakthrough",
+                status=judge_status.kind,
+                reason=judge_status.reason,
+                result=judge_result,
+            )
             if judge_result.get("llm_error"):
                 reason = f"突破审判失败: {judge_result['llm_error']}"
                 if not engine.confirm_local_fallback("breakthrough_judge_error", reason):
@@ -222,6 +272,15 @@ class BreakthroughFlow:
         except Exception:
             log.exception("breakthrough judge error")
             reason = "突破审判失败（详见日志）"
+            failed_result = {"llm_error": reason}
+            judge_status = classify_judge_result(failed_result)
+            engine.log_model_result(
+                agent="judge",
+                source="breakthrough",
+                status=judge_status.kind,
+                reason=judge_status.reason,
+                result=failed_result,
+            )
             if not engine.confirm_local_fallback("breakthrough_judge_exception", reason):
                 engine.end_model_failure_run(reason)
                 return None
@@ -250,10 +309,8 @@ class BreakthroughFlow:
                     narrative or "突破成功！天地灵气涌动，境界提升！",
                     session.turn_count,
                 )
-                engine.emit("on_info", format_realm(session))
         elif bt_result == "failure":
             engine.emit("on_narrative", narrative or "突破失败...修为受损。", session.turn_count)
-            engine.emit("on_info", "突破失败，受到反噬。")
         else:
             engine.emit("on_narrative", narrative, session.turn_count)
 
@@ -286,3 +343,19 @@ def _conflicts_with_breakthrough_result(corrected: dict[str, Any], original: dic
         if key in corrected_meta and corrected_meta.get(key) != original_meta.get(key):
             return True
     return False
+
+
+def _claims_conflicting_realm_stage(text: str, session: Any) -> bool:
+    realm = str(getattr(session, "realm", "") or "")
+    stage = int(getattr(session, "realm_stage", 1) or 1)
+    expected = format_realm_name(realm, stage)
+    claims: list[str] = []
+    for value in _QI_STAGE_CLAIM_RE.findall(str(text or "")):
+        claim_stage = int(value) if value.isdigit() else _CHINESE_STAGE_VALUES.get(value, 0)
+        if claim_stage:
+            claims.append(format_realm_name("练气", claim_stage))
+    claims.extend(
+        f"{claim_realm}{phase}"
+        for claim_realm, phase in _REALM_PHASE_CLAIM_RE.findall(str(text or ""))
+    )
+    return any(claim != expected for claim in claims)

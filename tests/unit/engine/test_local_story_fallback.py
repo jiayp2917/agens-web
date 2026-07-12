@@ -5,7 +5,11 @@ from __future__ import annotations
 from unittest.mock import patch
 
 from agens_novel.engine.game_engine import GameEngine
-from agens_novel.engine.local_story import DEFAULT_STORY_ID, NO_MATCH_NOTICE
+from agens_novel.engine.local_story import (
+    DEFAULT_STORY_ID,
+    NO_MATCH_NOTICE,
+    current_local_story_choices,
+)
 from agens_novel.session.game_session import GameSession
 
 
@@ -203,3 +207,29 @@ def test_local_story_can_reach_first_major_breakthrough(monkeypatch, tmp_path) -
     last_delta = engine.game_session.turn_history[-1]["delta"]
     assert last_delta["character"]["realm"] == "筑基"
     assert last_delta["meta"]["breakthrough_result"] == "success"
+
+
+def test_local_story_failure_blocks_retry_until_steady_recovery(monkeypatch) -> None:
+    engine = GameEngine()
+    session = engine.game_session
+    session.game_started = True
+    session.local_story_active = True
+    session.local_story_id = DEFAULT_STORY_ID
+    session.local_story_node_id = "foundation_result"
+    session.realm = "练气"
+    session.realm_stage = 9
+    session.breakthrough_flags = ["foundation_aid"]
+    session.last_choices = current_local_story_choices(session)
+
+    monkeypatch.setattr("agens_novel.game.realm.random.random", lambda: 1.0)
+    engine.handle_action("调用正式突破判定，尝试筑基")
+
+    assert "走火入魔" in session.status_effects
+    assert "疗伤" in session.last_choices[0]
+    assert not any(engine._parse_breakthrough_action(choice) for choice in session.last_choices)
+
+    engine.handle_action("A")
+
+    assert "走火入魔" not in session.status_effects
+    assert session.turn_history[-1]["delta"]["character"]["status_effects_remove"] == ["走火入魔"]
+    assert "冲击筑基" in session.last_choices[2]

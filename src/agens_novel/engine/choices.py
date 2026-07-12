@@ -10,6 +10,7 @@ from typing import Any
 from ..session.game_session import GameSession
 
 CHOICE_LABELS = ("A", "B", "C", "D")
+CHOICE_SEMANTICS = ("稳妥", "机遇", "风险", "气运")
 CHOICE_FALLBACK_NOTICE = "模型暂不可用，已切换本地故事，请直接选择下方选项继续。"
 # D 语义: "气运" - 随缘/天命，强绑定 luck 属性。UI 固定为第 4 按钮。
 
@@ -28,6 +29,7 @@ _STRUCTURED_JSON_RE = re.compile(
 _QUOTED_CHOICE_FRAGMENT_RE = re.compile(
     r'(?:[\[\n]\s*)?(?:\\?["“][^"“”\n]{4,160}\\?["”]\s*[,，]\s*){3}\\?["“][^"“”\n]{4,160}\\?["”]\s*(?:\]|$)'
 )
+_VISIBLE_ENGLISH_WORD_RE = re.compile(r"[A-Za-z]{2,}")
 _ENGLISH_VISIBLE_REPLACEMENTS = {
     "prowess": "实战能力",
     "combat": "斗法",
@@ -90,6 +92,11 @@ def clean_visible_text(text: str, *, allow_structured: bool = True) -> str:
     return cleaned.strip(" \t\r\n\"'[]")
 
 
+def has_visible_english(text: str) -> bool:
+    """Return whether player-visible prose still contains an English word."""
+    return bool(_VISIBLE_ENGLISH_WORD_RE.search(str(text or "")))
+
+
 def complete_choices(raw_choices: Any, session: GameSession) -> list[str]:
     """Return exactly 4 choices with stable A/B/C/D semantics.
 
@@ -113,9 +120,21 @@ def complete_choices(raw_choices: Any, session: GameSession) -> list[str]:
     return completed[: len(CHOICE_LABELS)]
 
 
+def choice_with_semantic(index: int, text: str) -> str:
+    """Preserve the route category when a UI submits a choice by index or letter."""
+    body = clean_choice_text(text)
+    if 0 <= index < len(CHOICE_LABELS):
+        return f"{CHOICE_LABELS[index]}【{CHOICE_SEMANTICS[index]}】{body}"
+    return body
+
+
 def fallback_choices(session: GameSession) -> list[str]:
     """Generate 4 grounded fallback choices (A/B/C/D semantics)."""
-    location = session.location or "当前地点"
+    raw_location = str(session.location or "").strip()
+    location = raw_location if raw_location and not has_visible_english(raw_location) else "当前地点"
+    story_choices = _story_grounded_choices(session, location)
+    if story_choices:
+        return story_choices
     phase = max(0, int(getattr(session, "turn_count", 0) or 0)) // 4
     options = (
         (
@@ -136,6 +155,26 @@ def fallback_choices(session: GameSession) -> list[str]:
     )
     steady, opportunity, risk = options[min(phase, len(options) - 1)]
     return [steady, opportunity, risk, "【气运】随缘而行，听天命、赌因果"]
+
+
+def _story_grounded_choices(session: GameSession, location: str) -> list[str]:
+    state = getattr(session, "story_state", None)
+    if not isinstance(state, dict) or state.get("status") != "active":
+        return []
+    goal = str(state.get("stage_goal") or "").strip()
+    threads = state.get("unresolved_threads")
+    thread = ""
+    if isinstance(threads, list):
+        thread = next((str(item).strip() for item in threads if str(item).strip()), "")
+    if not goal and not thread:
+        return []
+    subject = thread or goal
+    return [
+        f"【稳妥】留在{location}核对旧档，稳步推进“{goal or subject}”",
+        f"【机遇】拜访知情者，追问“{subject}”的新线索",
+        f"【风险】亲赴相关地点验证“{subject}”，承担暴露与受伤风险",
+        f"【气运】暂留最后一手，观察“{subject}”是否出现新的命数回响",
+    ]
 
 
 def dedupe_strings(values: list[Any]) -> list[str]:

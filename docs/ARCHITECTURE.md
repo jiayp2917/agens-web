@@ -92,18 +92,20 @@ React/Vite
 | `turn_flow.py` | 普通回合、本地故事、Narrator/Judge、记录与选项提交 |
 | `breakthrough_flow.py` | 规则突破、叙事、Judge 非权威修正、终局回调 |
 | `model_fallback_policy.py` | 失败决策、脱敏玩家提示 |
-| `turn_rules.py` | A/B/C/D 类别、时间、属性、寿元、事件、终局规则 |
+| `turn_rules.py` | A/B/C/D 类别、时间、属性、寿元、事件、长期剧情和终局规则 |
+| `event_catalog.py` | 数据驱动编年史事件、阶段目标、选项提示和允许 delta 类型 |
+| `story_catalog.py` | 四套世界的版本化 60 回合主线、阶段、承诺、关系和结局 |
 | `action_delta_policy.py` | 模型 delta 清洗、叙事/落账一致性、规则字段覆盖 |
 | `game_session.py` | 权威状态、delta 分区应用、存档序列化 |
 
-Judge 的 `approved` 只接受 JSON 布尔值。突破结果、age、lifespan、game_over、finale 等规则字段不接受模型覆盖。
+Judge 的 `approved` 只接受 JSON 布尔值。突破结果、age、lifespan、game_over、finale 和 `story_update` 等规则字段不接受模型覆盖。Session/存档保存 `story_key`、`story_version` 和可变 `story_state`，不会复制不可变剧情定义，也不会静默升级旧存档。
 
 ## 6. Agent 与模型客户端
 
 三个 Agent 使用 `SequentialAgentGraph` 顺序执行 load settings、build prompt、call LLM、save artifact。
 
 - World Builder：本局世界、0-16 岁编年史、16 岁局势和初始 A/B/C/D。
-- Narrator：短编年史、候选 delta 和下一回合选项。
+- Narrator：短编年史、事件允许范围内的候选 delta 和下一回合选项。Agens 模型使用 provider `json_schema` 返回 `narrative`、`state_update_json`、四项 `choices`，应用层再确定性渲染为兼容标签；其他模型保留原标签契约。
 - Judge：只审核高风险或连续性敏感的非规则变化。
 
 `llm/client.py` 使用 `httpx.AsyncClient`：
@@ -114,6 +116,9 @@ Judge 的 `approved` 只接受 JSON 布尔值。突破结果、age、lifespan、
 - `AGNES_TOTAL_TIMEOUT_SECONDS` 整体时限
 - asyncio 取消自然传播
 - 保存配置和请求前共用 `llm/url_security.py` SSRF 校验
+
+Narrator 请求成功但契约不完整时，TurnFlow 可用规则 delta 和本地主线选项维持游戏，但该路径记录为 `contract_recovery`，与 provider fallback 分开，不能计入严格 live 验收。
+兼容 parser 可以读取裸 JSON 或行式选项，但严格分类额外要求原始 `<state_update>` 与 `<choices>` 标签存在；模型历史保存已接受的三段响应骨架，减少后续回合退化成纯正文或纯标签。
 
 ## 7. 模型配置
 
@@ -142,6 +147,8 @@ Key 由 `MODEL_CONFIG_SECRET` 派生的 Fernet 密钥加密。响应只返回 ma
 - session mutation 幂等表；
 - 奖励、成就、遗泽业务唯一约束。
 
+读旧档通过 session mutation 事务回退当前 active run：删除存档回合之后的 `game_turns`，同步 run 摘要，再写 snapshot 和幂等结果。已完成终局拒绝原地回退，避免奖励与历史不一致。
+
 测试 auto-DDL 只用于本地测试。`AGENS_ENV=prod|production` 时禁止 `AGENS_PG_AUTO_DDL=1`。
 
 ## 9. 前端
@@ -167,6 +174,8 @@ Compose：
 - 应用等待 migration 成功；
 - read-only root、cap drop、no-new-privileges、tmpfs、CPU/内存/PID 限制；
 - PostgreSQL 只通过内部网络访问。
+
+本地迁移门禁使用独立临时库验证 0007 已有数据升级、孤儿/重复数据 fail-closed、0008 downgrade/re-upgrade 和 downgrade 阻塞条件。`scripts/verify_pg_backup_restore.py` 只接受 `TEST_DATABASE_URL`，使用 `pg_dump/pg_restore` 验证 head、18 张表和数据标记，不接受生产 `DATABASE_URL` 作为输入。
 
 ## 11. 已删除内容
 

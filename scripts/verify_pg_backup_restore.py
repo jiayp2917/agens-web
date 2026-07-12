@@ -1,0 +1,336 @@
+"""Exercise a PostgreSQL dump/restore against disposable local databases."""
+
+from __future__ import annotations
+
+import json
+import os
+import shutil
+import subprocess
+import tempfile
+import uuid
+from pathlib import Path
+
+from alembic import command
+from alembic.config import Config
+from sqlalchemy import create_engine, text
+from sqlalchemy.engine import URL, make_url
+
+EXPECTED_REVISION = "20260710_0008"
+EXPECTED_TABLES = 18
+ROOT = Path(__file__).resolve().parents[1]
+
+
+def main() -> int:
+    raw_url = os.environ.get("TEST_DATABASE_URL", "").strip()
+    if not raw_url:
+        raise RuntimeError("TEST_DATABASE_URL is required; production DATABASE_URL is not accepted")
+    source_url = make_url(raw_url)
+    if not source_url.drivername.startswith("postgresql"):
+        raise RuntimeError("TEST_DATABASE_URL must use PostgreSQL")
+
+    pg_dump = _pg_tool("pg_dump")
+    pg_restore = _pg_tool("pg_restore")
+    source_name = f"agens_backup_src_{uuid.uuid4().hex[:10]}"
+    target_name = f"agens_backup_dst_{uuid.uuid4().hex[:10]}"
+    admin_url = source_url.set(database="postgres")
+    admin = create_engine(admin_url, isolation_level="AUTOCOMMIT")
+    dump_path = Path(tempfile.gettempdir()) / f"{source_name}.dump"
+
+    try:
+        _create_database(admin, source_name)
+        _create_database(admin, target_name)
+        source = source_url.set(database=source_name)
+        target = source_url.set(database=target_name)
+        os.environ["DATABASE_URL"] = source.render_as_string(hide_password=False)
+        command.upgrade(Config(str(ROOT / "alembic.ini")), "head")
+        _insert_fixture(source)
+        _run_pg_dump(pg_dump, source, dump_path)
+        _run_pg_restore(pg_restore, target, dump_path)
+        result = _verify_restore(target)
+        print(json.dumps(result, ensure_ascii=True, sort_keys=True))
+        return 0 if result["backup_restore_ok"] else 1
+    finally:
+        for database_name in (source_name, target_name):
+            _drop_database(admin, database_name)
+        admin.dispose()
+        dump_path.unlink(missing_ok=True)
+
+
+def _pg_tool(name: str) -> Path:
+    executable = shutil.which(name)
+    if executable:
+        return Path(executable)
+    pg_bin = os.environ.get("PG_BIN", "").strip()
+    candidates = [Path(pg_bin) / f"{name}.exe"] if pg_bin else []
+    candidates.append(Path("F:/pg/bin") / f"{name}.exe")
+    for candidate in candidates:
+        if candidate.is_file():
+            return candidate
+    raise RuntimeError(f"{name} is required; add it to PATH or set PG_BIN")
+
+
+def _create_database(admin, database_name: str) -> None:
+    with admin.connect() as conn:
+        conn.execute(text(f'CREATE DATABASE "{database_name}"'))
+
+
+def _drop_database(admin, database_name: str) -> None:
+    with admin.connect() as conn:
+        conn.execute(
+            text(
+                "SELECT pg_terminate_backend(pid) FROM pg_stat_activity "
+                "WHERE datname = :database_name AND pid <> pg_backend_pid()"
+            ),
+            {"database_name": database_name},
+        )
+        conn.execute(text(f'DROP DATABASE IF EXISTS "{database_name}"'))
+
+
+def _insert_fixture(database_url: URL) -> None:
+    engine = create_engine(database_url)
+    snapshot = json.dumps(
+        {
+            "turn_count": 1,
+            "game_started": True,
+            "game_over": False,
+            "character": {"name": "restore_hero", "realm": "练气", "age": 18},
+            "world": {"story_key": "border-vein-crisis", "story_version": 1},
+        },
+        ensure_ascii=False,
+    )
+    events = json.dumps([{"type": "narrative", "text": "恢复演练"}], ensure_ascii=False)
+    try:
+        with engine.begin() as conn:
+            conn.execute(
+                text(
+                    "INSERT INTO users "
+                    "(id, username, password_hash, is_admin, created_at, updated_at) "
+                    "VALUES ('restore-marker', 'restore_marker', 'hash', FALSE, 1, 1)"
+                )
+            )
+            conn.execute(
+                text(
+                    """
+                    INSERT INTO sessions
+                        (id, user_id, title, snapshot, events, created_at, updated_at)
+                    VALUES
+                        ('restore-session', 'restore-marker', 'restore-run',
+                         CAST(:snapshot AS JSONB), CAST(:events AS JSONB), 1, 1)
+                    """
+                ),
+                {"snapshot": snapshot, "events": events},
+            )
+            conn.execute(
+                text(
+                    """
+                    INSERT INTO saves
+                        (id, user_id, name, snapshot, events, created_at, updated_at)
+                    VALUES
+                        ('restore-save', 'restore-marker', 'slot_restore',
+                         CAST(:snapshot AS JSONB), CAST(:events AS JSONB), 1, 1)
+                    """
+                ),
+                {"snapshot": snapshot, "events": events},
+            )
+            conn.execute(
+                text(
+                    """
+                    INSERT INTO game_runs
+                        (id, user_id, session_id, char_name, realm, turn_count,
+                         started_at, completed)
+                    VALUES
+                        ('restore-session', 'restore-marker', 'restore-session',
+                         'restore_hero', '练气', 1, 1, FALSE)
+                    """
+                )
+            )
+            conn.execute(
+                text(
+                    """
+                    INSERT INTO game_turns
+                        (id, run_id, request_id, turn_no, start_age, elapsed_years,
+                         end_age, lifespan, remaining_lifespan, choice_taken, choices,
+                         state_delta, state_after, calendar_summary, narrative, event_kind)
+                    VALUES
+                        ('restore-turn', 'restore-session', 'restore-turn-request', 1,
+                         16, 2, 18, 100, 82, '稳妥修行', CAST('["A","B","C","D"]' AS JSONB),
+                         CAST('{}' AS JSONB), CAST(:snapshot AS JSONB),
+                         '玄元历一年第1回合', '恢复演练回合', 'event')
+                    """
+                ),
+                {"snapshot": snapshot},
+            )
+            conn.execute(
+                text(
+                    """
+                    INSERT INTO session_mutations
+                        (session_id, request_id, operation, expected_version,
+                         result_version, response, created_at)
+                    VALUES
+                        ('restore-session', 'restore-turn-request', 'turn', 0, 1,
+                         CAST(:response AS JSONB), 1)
+                    """
+                ),
+                {"response": json.dumps({"turn_count": 1, "version": 1})},
+            )
+            conn.execute(
+                text(
+                    """
+                    INSERT INTO run_achievements
+                        (id, user_id, session_id, achievement_key, achievement_name,
+                         achieved_at)
+                    VALUES
+                        ('restore-achievement', 'restore-marker', 'restore-session',
+                         'restore_key', '恢复成就', 1)
+                    """
+                )
+            )
+            conn.execute(
+                text(
+                    """
+                    INSERT INTO account_rewards
+                        (id, user_id, reward_type, reward_value, label,
+                         source_session_id, granted_at)
+                    VALUES
+                        ('restore-reward', 'restore-marker', 'title', 'restore_title',
+                         '恢复奖励', 'restore-session', 1)
+                    """
+                )
+            )
+            conn.execute(
+                text(
+                    """
+                    INSERT INTO legacy_bonuses
+                        (id, user_id, bonus_type, bonus_value, label, runs_remaining,
+                         source_session_id, granted_at)
+                    VALUES
+                        ('restore-bonus', 'restore-marker', 'attribute', 'luck:1',
+                         '恢复遗泽', 1, 'restore-session', 1)
+                    """
+                )
+            )
+            conn.execute(
+                text(
+                    """
+                    INSERT INTO player_progress
+                        (user_id, runs_completed, ascension_count, updated_at)
+                    VALUES ('restore-marker', 1, 0, 1)
+                    """
+                )
+            )
+    finally:
+        engine.dispose()
+
+
+def _pg_connection_args(database_url: URL) -> tuple[list[str], dict[str, str]]:
+    args = [
+        f"--host={database_url.host or '127.0.0.1'}",
+        f"--port={database_url.port or 5432}",
+        f"--username={database_url.username or ''}",
+        f"--dbname={database_url.database or ''}",
+    ]
+    env = dict(os.environ)
+    password = database_url.password
+    if password:
+        env["PGPASSWORD"] = password
+    return args, env
+
+
+def _run_pg_dump(executable: Path, database_url: URL, dump_path: Path) -> None:
+    connection_args, env = _pg_connection_args(database_url)
+    subprocess.run(
+        [str(executable), "--format=custom", f"--file={dump_path}", *connection_args],
+        check=True,
+        capture_output=True,
+        env=env,
+    )
+
+
+def _run_pg_restore(executable: Path, database_url: URL, dump_path: Path) -> None:
+    connection_args, env = _pg_connection_args(database_url)
+    subprocess.run(
+        [
+            str(executable),
+            "--no-owner",
+            "--no-privileges",
+            *connection_args,
+            str(dump_path),
+        ],
+        check=True,
+        capture_output=True,
+        env=env,
+    )
+
+
+def _verify_restore(database_url: URL) -> dict[str, int | str | bool]:
+    engine = create_engine(database_url)
+    try:
+        with engine.connect() as conn:
+            revision = str(conn.execute(text("SELECT version_num FROM alembic_version")).scalar_one())
+            marker_count = int(
+                conn.execute(
+                    text("SELECT count(*) FROM users WHERE id = 'restore-marker'")
+                ).scalar_one()
+            )
+            table_count = int(
+                conn.execute(
+                    text(
+                        "SELECT count(*) FROM information_schema.tables "
+                        "WHERE table_schema = 'public' AND table_type = 'BASE TABLE' "
+                        "AND table_name <> 'alembic_version'"
+                    )
+                ).scalar_one()
+            )
+            graph = conn.execute(
+                text(
+                    """
+                    SELECT
+                        (SELECT count(*) FROM sessions WHERE id = 'restore-session') AS sessions,
+                        (SELECT count(*) FROM saves WHERE id = 'restore-save') AS saves,
+                        (SELECT count(*) FROM game_runs WHERE id = 'restore-session') AS runs,
+                        (SELECT count(*) FROM game_turns gt
+                         JOIN game_runs gr ON gr.id = gt.run_id
+                         WHERE gt.id = 'restore-turn' AND gr.session_id = 'restore-session') AS turns,
+                        (SELECT count(*) FROM session_mutations
+                         WHERE session_id = 'restore-session'
+                           AND request_id = 'restore-turn-request') AS mutations,
+                        (SELECT count(*) FROM run_achievements
+                         WHERE id = 'restore-achievement') AS achievements,
+                        (SELECT count(*) FROM account_rewards
+                         WHERE id = 'restore-reward') AS rewards,
+                        (SELECT count(*) FROM legacy_bonuses
+                         WHERE id = 'restore-bonus') AS bonuses,
+                        (SELECT count(*) FROM player_progress
+                         WHERE user_id = 'restore-marker' AND runs_completed = 1) AS progress,
+                        (SELECT count(*) FROM game_turns gt
+                         LEFT JOIN game_runs gr ON gr.id = gt.run_id
+                         WHERE gr.id IS NULL) AS orphan_turns
+                    """
+                )
+            ).mappings().one()
+    finally:
+        engine.dispose()
+    return {
+        "backup_restore_ok": (
+            revision == EXPECTED_REVISION
+            and table_count == EXPECTED_TABLES
+            and marker_count == 1
+            and all(int(graph[key]) == 1 for key in (
+                "sessions", "saves", "runs", "turns", "mutations",
+                "achievements", "rewards", "bonuses", "progress",
+            ))
+            and int(graph["orphan_turns"]) == 0
+        ),
+        "restored_revision": revision,
+        "restored_tables": table_count,
+        "restored_marker_count": marker_count,
+        "restored_business_graph_ok": all(int(graph[key]) == 1 for key in (
+            "sessions", "saves", "runs", "turns", "mutations",
+            "achievements", "rewards", "bonuses", "progress",
+        )),
+        "restored_orphan_turns": int(graph["orphan_turns"]),
+    }
+
+
+if __name__ == "__main__":
+    raise SystemExit(main())

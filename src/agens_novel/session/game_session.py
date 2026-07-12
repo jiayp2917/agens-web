@@ -6,6 +6,7 @@ world state, and turn history.  Supports serialization for save/load.
 
 from __future__ import annotations
 
+import json
 import logging
 from dataclasses import dataclass, field
 from typing import Any
@@ -66,6 +67,9 @@ class GameSession:
     breakthrough_flags: list[str] = field(default_factory=list)
     techniques: list[dict] = field(default_factory=list)
     inventory: list[Any] = field(default_factory=list)
+    legacy_talents: list[str] = field(default_factory=list)
+    titles: list[str] = field(default_factory=list)
+    relationships: list[dict[str, Any]] = field(default_factory=list)
     status_effects: list[str] = field(default_factory=list)
     lifespan: int = 100
     equipment_slots: dict[str, Any] = field(default_factory=lambda: dict(DEFAULT_EQUIPMENT_SLOTS))
@@ -80,6 +84,9 @@ class GameSession:
     discovered_locations: list[str] = field(default_factory=list)
     lore_facts: list[str] = field(default_factory=list)
     world_profile: dict[str, Any] = field(default_factory=dict)
+    story_key: str = ""
+    story_version: int = 0
+    story_state: dict[str, Any] = field(default_factory=dict)
     # world_profile keys (when generated):
     #   world_name, regions, sects, cultivation_system, current_conflicts,
     #   world_rules (hidden from frontend)
@@ -129,6 +136,9 @@ class GameSession:
                 "breakthrough_flags": self.breakthrough_flags,
                 "techniques": self.techniques,
                 "inventory": self.inventory,
+                "legacy_talents": self.legacy_talents,
+                "titles": self.titles,
+                "relationships": self.relationships,
                 "status_effects": self.status_effects,
                 "lifespan": self.lifespan,
                 "remaining_lifespan": self.remaining_lifespan,
@@ -145,6 +155,9 @@ class GameSession:
                 "turn_events": [],
                 "day_count": self.day_count,
                 "world_profile": self.world_profile,
+                "story_key": self.story_key,
+                "story_version": self.story_version,
+                "story_state": self.story_state,
             },
             "model": self.model,
             "base_url": self.base_url,
@@ -205,7 +218,16 @@ class GameSession:
             entry["local_story"] = local_story
         self.turn_history.append(entry)
         self.chat_history.append({"role": "user", "content": input_text})
-        self.chat_history.append({"role": "assistant", "content": narrative})
+        # Keep an accepted three-part response in model history so later turns
+        # imitate the contract instead of treating visible prose as the whole
+        # assistant response. Current state JSON remains authoritative.
+        history_choices = json.dumps(self.last_choices[:4], ensure_ascii=False)
+        assistant_content = (
+            f"{narrative}\n"
+            "<state_update>{}</state_update>\n"
+            f"<choices>{history_choices}</choices>"
+        )
+        self.chat_history.append({"role": "assistant", "content": assistant_content})
         if len(self.chat_history) > 20:
             from ..engine.history import compact_chat_history
 
@@ -234,6 +256,9 @@ class GameSession:
                 "breakthrough_flags": self.breakthrough_flags,
                 "techniques": self.techniques,
                 "inventory": self.inventory,
+                "legacy_talents": self.legacy_talents,
+                "titles": self.titles,
+                "relationships": self.relationships,
                 "status_effects": self.status_effects,
                 "lifespan": self.lifespan,
                 "remaining_lifespan": self.remaining_lifespan,
@@ -248,6 +273,9 @@ class GameSession:
                 "discovered_locations": self.discovered_locations,
                 "lore_facts": self.lore_facts,
                 "world_profile": self.world_profile,
+                "story_key": self.story_key,
+                "story_version": self.story_version,
+                "story_state": self.story_state,
             },
             "turn_history": self.turn_history[-20:],
             "chat_history": self.chat_history[-20:],
@@ -290,6 +318,14 @@ class GameSession:
         session.breakthrough_flags = _dedupe_strings(flags) if isinstance(flags, list) else []
         session.techniques = char.get("techniques", [])
         session.inventory = char.get("inventory", [])
+        legacy_talents = char.get("legacy_talents", [])
+        session.legacy_talents = (
+            _dedupe_strings(legacy_talents) if isinstance(legacy_talents, list) else []
+        )
+        titles = char.get("titles", [])
+        session.titles = _dedupe_strings(titles) if isinstance(titles, list) else []
+        relationships = char.get("relationships", [])
+        session.relationships = _normalize_relationships(relationships)
         session.status_effects = char.get("status_effects", [])
         session.lifespan = char.get("lifespan", 100)
         session.equipment_slots = char.get("equipment_slots", dict(DEFAULT_EQUIPMENT_SLOTS))
@@ -306,6 +342,15 @@ class GameSession:
         session.world_profile = world.get("world_profile", {})
         if not isinstance(session.world_profile, dict):
             session.world_profile = {}
+        session.story_key = str(world.get("story_key") or "")
+        story_version = world.get("story_version", 0)
+        session.story_version = (
+            story_version
+            if isinstance(story_version, int) and not isinstance(story_version, bool)
+            else 0
+        )
+        story_state = world.get("story_state", {})
+        session.story_state = dict(story_state) if isinstance(story_state, dict) else {}
         session.turn_history = data.get("turn_history", [])
         chat_history = data.get("chat_history", [])
         session.chat_history = chat_history if isinstance(chat_history, list) else []
@@ -336,6 +381,7 @@ def _apply_character_delta(session: GameSession, delta: dict[str, Any]) -> None:
     _apply_character_attributes(session, delta)
     _apply_techniques(session, delta)
     _apply_inventory(session, delta)
+    _apply_titles_and_relationships(session, delta)
     _apply_breakthrough_flags(session, delta)
     _apply_status_effects(session, delta)
     _apply_equipment(session, delta)
@@ -445,6 +491,92 @@ def _apply_inventory(session: GameSession, delta: dict[str, Any]) -> None:
         session.inventory = delta["inventory"]
 
 
+def _apply_titles_and_relationships(session: GameSession, delta: dict[str, Any]) -> None:
+    if "titles" in delta:
+        titles = delta["titles"]
+        if isinstance(titles, list):
+            session.titles = _dedupe_strings(titles)
+        else:
+            log.warning("apply_delta: titles must be list, got %s", type(titles).__name__)
+    if "title_add" in delta:
+        additions = delta["title_add"]
+        if isinstance(additions, str):
+            additions = [additions]
+        if isinstance(additions, list):
+            session.titles = _dedupe_strings([*session.titles, *additions])
+        else:
+            log.warning("apply_delta: title_add must be list or str")
+
+    if "relationships" in delta:
+        relationships = delta["relationships"]
+        if isinstance(relationships, list):
+            session.relationships = _normalize_relationships(relationships)
+        else:
+            log.warning(
+                "apply_delta: relationships must be list, got %s",
+                type(relationships).__name__,
+            )
+    if "relationship_add" in delta:
+        _apply_relationship_additions(session, delta["relationship_add"])
+
+
+def _apply_relationship_additions(session: GameSession, value: Any) -> None:
+    additions = value if isinstance(value, list) else [value]
+    if not isinstance(value, (dict, list)):
+        log.warning("apply_delta: relationship_add must be dict or list")
+        return
+    by_name = {
+        str(item.get("name") or "").strip(): index
+        for index, item in enumerate(session.relationships)
+        if isinstance(item, dict) and str(item.get("name") or "").strip()
+    }
+    for raw in additions:
+        item = _normalize_relationship(raw)
+        if item is None:
+            continue
+        name = item["name"]
+        if name in by_name:
+            session.relationships[by_name[name]] = {
+                **session.relationships[by_name[name]],
+                **item,
+            }
+        else:
+            by_name[name] = len(session.relationships)
+            session.relationships.append(item)
+
+
+def _normalize_relationships(value: Any) -> list[dict[str, Any]]:
+    if not isinstance(value, list):
+        return []
+    relationships: list[dict[str, Any]] = []
+    by_name: dict[str, int] = {}
+    for raw in value:
+        item = _normalize_relationship(raw)
+        if item is None:
+            continue
+        name = item["name"]
+        if name in by_name:
+            relationships[by_name[name]] = {**relationships[by_name[name]], **item}
+        else:
+            by_name[name] = len(relationships)
+            relationships.append(item)
+    return relationships
+
+
+def _normalize_relationship(value: Any) -> dict[str, Any] | None:
+    if not isinstance(value, dict):
+        return None
+    name = str(value.get("name") or "").strip()
+    relation = str(value.get("relation") or "").strip()
+    if not name or not relation:
+        return None
+    normalized: dict[str, Any] = {"name": name, "relation": relation}
+    affinity = value.get("affinity")
+    if isinstance(affinity, int) and not isinstance(affinity, bool):
+        normalized["affinity"] = max(-100, min(100, affinity))
+    return normalized
+
+
 def _apply_breakthrough_flags(session: GameSession, delta: dict[str, Any]) -> None:
     if "breakthrough_flags" in delta:
         flags = delta["breakthrough_flags"]
@@ -477,6 +609,7 @@ def _apply_status_effects(session: GameSession, delta: dict[str, Any]) -> None:
             session.status_effects = effects
         else:
             log.warning("apply_delta: status_effects must be list, got %s", type(effects).__name__)
+    _apply_status_effect_removals(session, delta.get("status_effects_remove"))
     if "status_effects_add" not in delta:
         return
     additions = delta["status_effects_add"]
@@ -488,6 +621,34 @@ def _apply_status_effects(session: GameSession, delta: dict[str, Any]) -> None:
                 session.status_effects.append(effect)
     else:
         log.warning("apply_delta: status_effects_add must be list")
+
+
+def _apply_status_effect_removals(session: GameSession, removals: Any) -> None:
+    if removals is None:
+        return
+    if isinstance(removals, (str, dict)):
+        removals = [removals]
+    if not isinstance(removals, list):
+        log.warning(
+            "apply_delta: status_effects_remove must be list, str, or dict, got %s",
+            type(removals).__name__,
+        )
+        return
+    removal_names = {_status_effect_name(effect) for effect in removals}
+    removal_names.discard("")
+    session.status_effects = [
+        effect
+        for effect in session.status_effects
+        if _status_effect_name(effect) not in removal_names
+    ]
+
+
+def _status_effect_name(effect: Any) -> str:
+    if isinstance(effect, str):
+        return effect.strip()
+    if isinstance(effect, dict):
+        return str(effect.get("name") or effect.get("effect") or effect.get("status") or "").strip()
+    return ""
 
 
 def _apply_equipment(session: GameSession, delta: dict[str, Any]) -> None:
@@ -512,6 +673,9 @@ def _apply_world_delta(session: GameSession, delta: dict[str, Any]) -> None:
     _extend_list(session, delta, "active_quests_add", "active_quests")
     _extend_list(session, delta, "lore_add", "lore_facts")
     _extend_list(session, delta, "discovered_add", "discovered_locations")
+    story_update = delta.get("story_update")
+    if isinstance(story_update, dict):
+        session.story_state = dict(story_update)
 
 
 def _replace_list(session: GameSession, delta: dict[str, Any], key: str, attribute: str) -> None:

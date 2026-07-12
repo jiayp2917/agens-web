@@ -10,8 +10,10 @@ from typing import TYPE_CHECKING, Any
 if TYPE_CHECKING:
     from .game_engine import GameEngine
 
+from ..game.constants import format_realm_name
 from .action_delta_policy import (
     apply_breakthrough_flag_rule,
+    enforce_event_delta_policy,
     is_pure_cultivation,
     merge_rule_delta,
     validate_narrative_delta_consistency,
@@ -23,7 +25,7 @@ from .model_result import (
     classify_narrator_result,
     is_retryable_model_request_failure,
 )
-from .render import format_realm, format_status_bar
+from .render import format_status_bar
 from .turn_rules import settle_turn
 
 log = logging.getLogger(__name__)
@@ -42,9 +44,9 @@ class TurnFlow:
         from .local_story import advance_local_story
 
         result = advance_local_story(session, text)
-        session.last_choices = engine._filter_unavailable_breakthrough_choices(result.choices)
 
         if not result.matched:
+            session.last_choices = engine._filter_unavailable_breakthrough_choices(result.choices)
             engine.emit("on_info", result.narrative)
             engine.emit("on_status_bar", format_status_bar(session))
             return
@@ -69,13 +71,28 @@ class TurnFlow:
 
         if session.game_over:
             session.last_choices = []
+        else:
+            session.last_choices = engine._filter_unavailable_breakthrough_choices(result.choices)
 
-        if result.narrative:
-            engine.emit("on_narrative", result.narrative, session.turn_count)
+        narrative = result.narrative
+        character_delta = result_delta.get("character")
+        recovered = (
+            character_delta.get("status_effects_remove", [])
+            if isinstance(character_delta, dict)
+            else []
+        )
+        if isinstance(recovered, list) and recovered:
+            narrative = (
+                f"其暂缓破境，以一段岁月疗伤调息，化去{'、'.join(map(str, recovered))}。"
+                f"\n\n{narrative}"
+            )
+
+        if narrative:
+            engine.emit("on_narrative", narrative, session.turn_count)
 
         session.record_turn(
             text,
-            result.narrative,
+            narrative,
             result_delta,
             local_story={
                 "story_id": session.local_story_id,
@@ -129,10 +146,16 @@ class TurnFlow:
 
         narrative = narrator_result.get("narrative", "")
         raw_state_delta = narrator_result.get("state_delta", {})
+        attempted_world_reset = engine.action_delta_resets_world(raw_state_delta)
         malformed_state_delta = raw_state_delta is None or not isinstance(raw_state_delta, dict)
         state_delta = raw_state_delta if isinstance(raw_state_delta, dict) else {}
         choices = narrator_result.get("choices", [])
         if narrator_status.kind == ModelResultKind.INCOMPLETE_OUTPUT:
+            if _has_visible_contract_violation(narrator_result):
+                narrative = ""
+                state_delta = {}
+                choices = []
+                malformed_state_delta = False
             narrative, state_delta, choices = self._recover_incomplete_payload(
                 narrative,
                 state_delta,
@@ -141,6 +164,10 @@ class TurnFlow:
                 rule_delta,
                 narrator_status.reason,
             )
+        if attempted_world_reset:
+            narrative = self._narrative_from_rule_delta(rule_delta)
+        state_delta = engine.sanitize_action_delta(state_delta)
+        state_delta = enforce_event_delta_policy(state_delta, rule_delta)
         judge_result = self._run_judge_if_needed(text, narrative, state_delta, rule_delta)
         if judge_result is None and session.game_over:
             return
@@ -245,13 +272,13 @@ class TurnFlow:
                 if not retry_result.get("llm_error"):
                     retry_result["retried_after_request_failed"] = True
                 return retry_result
-            if _should_retry_unrecoverable_narrator_result(result):
-                log.info("narrator output incomplete and unrecoverable; retrying once with strict contract reminder")
+            if _should_retry_incomplete_narrator_result(result):
+                log.info("narrator output incomplete; retrying once with strict contract reminder")
                 retry_input = (
                     f"{narrator_input}\n\n"
-                    "[输出契约提醒：上一轮可能缺少叙事或四个选项。本次必须输出："
-                    "编年史叙事正文、<state_update>JSON</state_update>、"
-                    "<choices>四个中文行动选项JSON数组</choices>。]"
+                    "[输出契约提醒：上一轮输出未满足完整三段合同。"
+                    "本次必须返回非空编年史叙事、合法状态对象，以及四个非空、互不重复、"
+                    "依次对应稳妥/机遇/风险/气运的中文行动选项；继续遵守当前传输格式。]"
                 )
                 retry_result = engine.run_agent(
                     "narrator",
@@ -360,6 +387,7 @@ class TurnFlow:
         engine = self.engine
         session = engine.game_session
         state_delta = engine.sanitize_action_delta(state_delta)
+        state_delta = enforce_event_delta_policy(state_delta, rule_delta)
 
         is_cultivation = is_pure_cultivation(text)
         state_delta = apply_breakthrough_flag_rule(
@@ -387,6 +415,9 @@ class TurnFlow:
         stage_delta = self._try_emit_stage_advance()
         if stage_delta is not None:
             state_delta = self._merge_state_delta(state_delta, stage_delta)
+            if _narrative_conflicts_with_stage_delta(narrative, stage_delta, session):
+                log.info("narrative realm stage contradicted post-settlement stage; using rule chronicle")
+                narrative = self._narrative_from_rule_delta(state_delta)
 
         if not str(narrative or "").strip():
             narrative = self._narrative_from_rule_delta(state_delta)
@@ -402,9 +433,12 @@ class TurnFlow:
         engine = self.engine
         session = engine.game_session
         if _is_recent_duplicate_narrative(session, narrative):
-            replacement = ""
-            if not _has_visible_authoritative_delta(state_delta, narrative):
-                replacement = self._narrative_from_rule_delta(state_delta)
+            replacement = self._narrative_from_rule_delta(state_delta)
+            visible_delta = _visible_delta_chronicle(state_delta)
+            if visible_delta:
+                replacement = f"{replacement}{visible_delta}"
+            if replacement and _is_recent_duplicate_narrative(session, replacement):
+                replacement = f"{_generic_distinct_chronicle(state_delta, session)}{visible_delta}"
             if (
                 replacement
                 and not _is_recent_duplicate_narrative(session, replacement)
@@ -414,6 +448,9 @@ class TurnFlow:
                 narrative = replacement
             elif not _has_visible_authoritative_delta(state_delta, narrative):
                 narrative = _generic_distinct_chronicle(state_delta, session)
+        if _narrative_conflicts_with_stage_delta(narrative, state_delta, session):
+            log.info("visible chronicle contradicted final realm stage; using distinct rule chronicle")
+            narrative = _generic_distinct_chronicle(state_delta, session)
         session.record_turn(text, narrative, state_delta)
 
         if narrative:
@@ -428,12 +465,8 @@ class TurnFlow:
         if stage_delta is not None:
             session.apply_delta(stage_delta)
             new_stage = stage_delta.get("meta", {}).get("new_stage", 0)
-            max_stage = stage_delta.get("meta", {}).get("max_stage", 0)
-            if session.realm == "练气":
-                label = f"{session.realm}第{new_stage}层"
-            else:
-                label = format_realm(session)
-            engine.emit("on_info", f"修为精进！{label}（{new_stage}/{max_stage}）")
+            label = format_realm_name(session.realm, int(new_stage or session.realm_stage))
+            engine.emit("on_info", f"修为精进，已至{label}。")
             return stage_delta
         return None
 
@@ -445,9 +478,12 @@ class TurnFlow:
             if session.finale:
                 engine.emit("on_finale", session.error or "飞升成仙，修真之路圆满。")
             else:
-                engine.emit("on_info", format_realm(session))
+                engine.emit(
+                    "on_info",
+                    f"破境已成，已至{format_realm_name(session.realm, session.realm_stage)}。",
+                )
         elif result == "failure":
-            engine.emit("on_info", "突破失败，受到反噬。")
+            engine.emit("on_info", "破境未成，需先稳住根基。")
 
     @staticmethod
     def _merge_state_delta(base: dict[str, Any], extra: dict[str, Any]) -> dict[str, Any]:
@@ -519,7 +555,10 @@ class TurnFlow:
         if isinstance(meta, dict):
             elapsed = int(meta.get("elapsed_years") or 0)
             lore = str(meta.get("event_lore") or "").strip()
-            stage_goal = str(meta.get("stage_goal") or "").strip()
+            story_beat = str(meta.get("story_beat") or "").strip()
+            if story_beat:
+                lore = story_beat
+            stage_goal = str(meta.get("story_goal") or meta.get("stage_goal") or "").strip()
         if isinstance(world, dict) and isinstance(world.get("lore_add"), list) and world["lore_add"]:
             lore = str(world["lore_add"][0] or "").strip()
         years = f"{elapsed}年间，" if elapsed > 0 else ""
@@ -535,17 +574,22 @@ def _should_retry_narrator_result(result: dict[str, Any]) -> bool:
     return is_retryable_model_request_failure(result)
 
 
-def _should_retry_unrecoverable_narrator_result(result: dict[str, Any]) -> bool:
-    """Retry one live narrator request when TurnFlow cannot recover the shape."""
+def _should_retry_incomplete_narrator_result(result: dict[str, Any]) -> bool:
+    """Retry one strict-schema response, or a wholly unusable legacy response."""
     if not isinstance(result, dict) or result.get("llm_error"):
         return False
+    status = classify_narrator_result(result)
+    if status.kind != ModelResultKind.INCOMPLETE_OUTPUT:
+        return False
+    if result.get("provider_json_schema"):
+        return True
     if _has_nonempty_structured_delta(result.get("state_delta")):
         return False
     if str(result.get("narrative") or "").strip():
         return False
     if normalize_choices(result.get("choices")):
         return False
-    return classify_narrator_result(result).kind == ModelResultKind.INCOMPLETE_OUTPUT
+    return True
 
 
 def _has_nonempty_structured_delta(value: Any) -> bool:
@@ -565,7 +609,7 @@ def _is_terminal_state_delta(state_delta: Any) -> bool:
     return isinstance(meta_delta, dict) and bool(meta_delta.get("game_over") or meta_delta.get("finale"))
 
 
-def _is_recent_duplicate_narrative(session: Any, narrative: str, *, limit: int = 20) -> bool:
+def _is_recent_duplicate_narrative(session: Any, narrative: str, *, limit: int = 60) -> bool:
     key = _narrative_key(narrative)
     if len(key) < 16:
         return False
@@ -596,9 +640,51 @@ def _narrative_keys_overlap(left: str, right: str) -> bool:
     shorter, longer = (left, right) if len(left) <= len(right) else (right, left)
     if shorter in longer and len(shorter) / max(1, len(longer)) >= 0.65:
         return True
-    if len(shorter) >= 48 and SequenceMatcher(None, left, right).ratio() >= 0.90:
+    if len(shorter) >= 48 and SequenceMatcher(None, left, right).ratio() >= 0.86:
         return True
+    if len(shorter) >= 20:
+        left_grams = {left[index:index + 2] for index in range(len(left) - 1)}
+        right_grams = {right[index:index + 2] for index in range(len(right) - 1)}
+        overlap = len(left_grams & right_grams) / max(1, min(len(left_grams), len(right_grams)))
+        if overlap >= 0.86:
+            return True
     return False
+
+
+_QI_STAGE_CLAIM_RE = re.compile(r"练气\s*(?:第)?\s*([1-9一二三四五六七八九])\s*层")
+_REALM_PHASE_CLAIM_RE = re.compile(
+    r"(筑基|金丹|元婴|化神|合体|大乘|渡劫)\s*(初期|中期|后期|圆满)"
+)
+_CHINESE_STAGE_VALUES = {"一": 1, "二": 2, "三": 3, "四": 4, "五": 5, "六": 6, "七": 7, "八": 8, "九": 9}
+
+
+def _narrative_conflicts_with_stage_delta(
+    narrative: str,
+    stage_delta: dict[str, Any],
+    session: Any,
+) -> bool:
+    character = stage_delta.get("character") if isinstance(stage_delta, dict) else None
+    if not isinstance(character, dict) or "realm_stage" not in character:
+        return False
+    try:
+        target_stage = int(character["realm_stage"])
+    except (TypeError, ValueError):
+        return False
+
+    text = str(narrative or "")
+    realm = str(getattr(session, "realm", "") or "")
+    if realm == "练气":
+        claims = {
+            int(value) if value.isdigit() else _CHINESE_STAGE_VALUES.get(value, 0)
+            for value in _QI_STAGE_CLAIM_RE.findall(text)
+        }
+        claims.discard(0)
+        return bool(claims) and target_stage not in claims
+
+    labels = ("初期", "中期", "后期", "圆满")
+    target_label = labels[max(1, min(4, target_stage)) - 1]
+    claims = {phase for claim_realm, phase in _REALM_PHASE_CLAIM_RE.findall(text) if claim_realm == realm}
+    return bool(claims) and target_label not in claims
 
 
 def _generic_distinct_chronicle(state_delta: dict[str, Any], session: Any) -> str:
@@ -608,14 +694,131 @@ def _generic_distinct_chronicle(state_delta: dict[str, Any], session: Any) -> st
     category = ""
     if isinstance(meta, dict):
         elapsed = int(meta.get("elapsed_years") or 0)
-        stage_goal = str(meta.get("stage_goal") or "").strip()
+        stage_goal = str(meta.get("story_goal") or meta.get("stage_goal") or "").strip()
         category = str(meta.get("choice_category") or "").strip()
     years = f"{elapsed}年间，" if elapsed > 0 else ""
     turn = int(getattr(session, "turn_count", 0) or 0)
     route = f"沿{category}之路" if category else "沿所选道路"
+    closures = (
+        "卷末另记山门风声已有转向。",
+        "旁注称坊市议论也随之变化。",
+        "同门对此各有取舍，旧局不再原样延续。",
+        "外界传闻因此出现新的解释。",
+        "势力间的应对已与上一阶段不同。",
+        "此后数年的因果由此改换落点。",
+        "旧有线索被重新排序，后续行止随之调整。",
+        "本阶段留下的新旁证已写入卷册。",
+    )
     if stage_goal:
-        return f"{years}{route}转入第{turn}回合记录，{stage_goal}。"
-    return f"{years}{route}留下新的编年史旁证，外界局势继续变化。"
+        variants = (
+            f"{route}暂收旧议，依当前局势推进{stage_goal}。",
+            f"{route}重新梳理线索，将{stage_goal}列为下一阶段要务。",
+            f"{route}核对前因后果，围绕{stage_goal}调整后续安排。",
+            f"{route}把散落见闻归入本阶段卷册，继续推进{stage_goal}。",
+            f"{route}从外界变化中确认新的侧证，转而处理{stage_goal}。",
+            f"{route}对照旧卷与新讯，重新安排{stage_goal}的先后次序。",
+            f"{route}暂缓沿用旧策，依据眼前局势续办{stage_goal}。",
+            f"{route}将本轮见闻交叉核验，再从新的切口推进{stage_goal}。",
+        )
+        closure = closures[(turn // len(variants)) % len(closures)]
+        return f"{years}{variants[turn % len(variants)]}{closure}"
+    variants = (
+        f"{route}留下新的编年史旁证，外界局势继续变化。",
+        f"{route}重整旧日见闻，山门内外又有新的动向浮现。",
+        f"{route}核对这一阶段的得失，下一段因果随之展开。",
+        f"{route}将零散传闻归档，势力间的暗流仍未停歇。",
+        f"{route}结束本段修行，外界风向已与往日不同。",
+        f"{route}对照新旧消息，确认下一阶段已不能照搬前策。",
+        f"{route}暂收眼前得失，转而观察各方随后作出的回应。",
+        f"{route}把本轮旁证写入卷册，后续因果另有新的落点。",
+    )
+    closure = closures[(turn // len(variants)) % len(closures)]
+    return f"{years}{variants[turn % len(variants)]}{closure}"
+
+
+def _visible_delta_chronicle(state_delta: dict[str, Any]) -> str:
+    """Summarize visible structured outcomes when replacing repeated prose."""
+    if not isinstance(state_delta, dict):
+        return ""
+    character = state_delta.get("character")
+    world = state_delta.get("world")
+    details: list[str] = []
+    _append_character_delta_details(details, character)
+    _append_world_delta_details(details, world)
+    return "" if not details else " 同期，" + "；".join(details) + "。"
+
+
+def _append_character_delta_details(details: list[str], character: Any) -> None:
+    if isinstance(character, dict):
+        inventory = _delta_names(character.get("inventory_add"))
+        techniques = _delta_names(character.get("techniques_add"))
+        titles = _delta_names(character.get("title_add"))
+        relationships = _relationship_delta_text(character.get("relationship_add"))
+        effects = _delta_names(character.get("status_effects_add"))
+        if inventory:
+            details.append(f"本回合入册所得为{'、'.join(inventory)}")
+        if techniques:
+            details.append(f"其新入册功法为{'、'.join(techniques)}")
+        if titles:
+            details.append(f"其新获称号为{'、'.join(titles)}")
+        if relationships:
+            details.append(f"其人物关系更新为{'、'.join(relationships)}")
+        if effects:
+            details.append(f"其身上留下{'、'.join(effects)}")
+
+
+def _append_world_delta_details(details: list[str], world: Any) -> None:
+    if isinstance(world, dict):
+        npcs = _delta_names(world.get("npcs_present_add"))
+        quests = _delta_names(world.get("active_quests_add"))
+        discovered = _delta_names(world.get("discovered_add"))
+        if npcs:
+            details.append(f"其与{'、'.join(npcs)}有了新的往来")
+        if quests:
+            details.append(f"{'、'.join(quests)}被列入后续行程")
+        if discovered:
+            details.append(f"新近确认的地点包括{'、'.join(discovered)}")
+        scene = str(world.get("current_scene") or world.get("location") or "").strip()
+        if scene:
+            details.append(f"其行迹转至{scene}")
+
+
+def _delta_names(value: Any) -> list[str]:
+    if not isinstance(value, list):
+        return []
+    names: list[str] = []
+    for item in value:
+        if isinstance(item, dict):
+            text = str(item.get("name") or item.get("title") or "").strip()
+        else:
+            text = str(item or "").strip()
+        if text and text not in names:
+            names.append(text)
+    return names[:4]
+
+
+def _relationship_delta_text(value: Any) -> list[str]:
+    values = value if isinstance(value, list) else [value]
+    if not isinstance(value, (dict, list)):
+        return []
+    out: list[str] = []
+    for item in values:
+        if not isinstance(item, dict):
+            continue
+        name = str(item.get("name") or "").strip()
+        relation = str(item.get("relation") or "").strip()
+        if name and relation:
+            text = f"{name}（{relation}）"
+            if text not in out:
+                out.append(text)
+    return out[:4]
+
+
+def _has_visible_contract_violation(result: dict[str, Any]) -> bool:
+    diagnostics = result.get("contract_diagnostics")
+    if not isinstance(diagnostics, dict):
+        return False
+    return bool(diagnostics.get("structured_residue") or diagnostics.get("english_residue"))
 
 
 def _has_visible_authoritative_delta(state_delta: dict[str, Any], narrative: str = "") -> bool:

@@ -22,7 +22,7 @@ from ..game.constants import (
     normalize_attribute_value,
 )
 from ..session.game_session import GameSession
-from .choices import complete_choices
+from .choices import complete_choices, dedupe_strings
 from .model_result import (
     ModelResultKind,
     ModelResultStatus,
@@ -31,6 +31,7 @@ from .model_result import (
 )
 from .profile_opening import profile_default_world, profile_opening
 from .render import format_status_bar
+from .story_catalog import ensure_story_binding
 from .world_generator import (
     build_world_fallback,
     build_world_prompt,
@@ -200,6 +201,12 @@ class StartFlow:
 
         world_status = classify_world_builder_result(result)
         parsed = parse_world_response(result) if world_status.kind != ModelResultKind.REQUEST_FAILED else {}
+        result, world_status, parsed = self._retry_incomplete_opening(
+            prompt,
+            result,
+            world_status,
+            parsed,
+        )
         if world_status.kind == ModelResultKind.OK and not is_complete_opening_payload(parsed):
             world_status = ModelResultStatus(
                 ModelResultKind.INCOMPLETE_OUTPUT,
@@ -222,6 +229,41 @@ class StartFlow:
             return self._decline_or_continue(fallback, "profile_opening_empty", reason)
 
         return merge_opening_payload(fallback, parsed)
+
+    def _retry_incomplete_opening(
+        self,
+        prompt: str,
+        result: dict[str, Any],
+        world_status: ModelResultStatus,
+        parsed: dict[str, Any],
+    ) -> tuple[dict[str, Any], ModelResultStatus, dict[str, Any]]:
+        should_retry = (
+            world_status.kind == ModelResultKind.OK
+            and not is_complete_opening_payload(parsed)
+            and not result.get("retried_after_request_failed")
+        )
+        if not should_retry:
+            return result, world_status, parsed
+        log.info("profile opening contract incomplete; retrying world_builder once")
+        try:
+            result = self.engine.run_agent(
+                "world_builder",
+                prompt,
+                self.engine.game_session,
+                generation_type="profile_opening",
+            )
+            if not result.get("llm_error"):
+                result["retried_after_incomplete_output"] = True
+        except Exception:
+            log.exception("profile opening world_builder incomplete retry failed")
+            result = {"generated_data": {}, "llm_error": "开场推演重试失败。"}
+        world_status = classify_world_builder_result(result)
+        parsed = (
+            parse_world_response(result)
+            if world_status.kind != ModelResultKind.REQUEST_FAILED
+            else {}
+        )
+        return result, world_status, parsed
 
     def _decline_or_continue(
         self, fallback: dict[str, Any], source: str, reason: str
@@ -287,6 +329,15 @@ def apply_world_builder_generated_session(
         session.lore_facts = world_data.get("lore_facts", [])
         session.day_count = world_data.get("day_count", 1)
 
+    generated_profile = {
+        key: value
+        for key, value in generated.items()
+        if key not in {"character", "world", "choices", "opening_narrative"}
+    }
+    if generated_profile:
+        session.world_profile = generated_profile
+    ensure_story_binding(session)
+
     session.game_started = True
     session.turn_count = 0
 
@@ -322,6 +373,14 @@ def apply_profile_session(session: GameSession, profile: dict[str, Any]) -> None
     )
     session.techniques = list(profile.get("techniques") or [{"name": "基础吐纳术", "level": 1, "type": "内功"}])
     session.inventory = list(profile.get("inventory") or [{"name": "粗布道袍", "quantity": 1, "type": "防具"}])
+    legacy_talents = profile.get("legacy_talents")
+    opening_titles = profile.get("opening_titles")
+    session.legacy_talents = dedupe_strings(
+        legacy_talents if isinstance(legacy_talents, list) else []
+    )
+    session.titles = dedupe_strings(
+        opening_titles if isinstance(opening_titles, list) else []
+    )
     default_scene, default_location, default_region, default_lore = profile_default_world(profile)
     session.current_scene = str(profile.get("current_scene") or default_scene)
     session.location = str(profile.get("location") or default_location)
@@ -404,6 +463,7 @@ def apply_profile_world_profile(session: GameSession, world_profile: dict[str, A
         session.region = world_profile["world_name"]
     if world_profile.get("initial_situation"):
         session.lore_facts.insert(0, world_profile["initial_situation"])
+    _apply_story_binding(session, world_profile)
 
 
 def apply_profile_opening_payload(session: GameSession, payload: dict[str, Any]) -> None:
@@ -420,6 +480,7 @@ def apply_profile_opening_payload(session: GameSession, payload: dict[str, Any])
     }
     if world_profile:
         session.world_profile = world_profile
+        _apply_story_binding(session, world_profile)
 
     session.current_scene = str(
         world.get("current_scene")
@@ -453,6 +514,9 @@ def merge_opening_payload(fallback: dict[str, Any], parsed: dict[str, Any]) -> d
     for key, value in parsed.items():
         if value:
             merged[key] = value
+    for key in ("story_key", "story_version", "story_title", "story_opening", "story_state"):
+        if key in fallback:
+            merged[key] = fallback[key]
 
     fallback_world_value = fallback.get("world")
     parsed_world_value = parsed.get("world")
@@ -475,6 +539,18 @@ def merge_opening_payload(fallback: dict[str, Any], parsed: dict[str, Any]) -> d
         initial = str(merged.get("initial_situation_16") or merged.get("initial_situation") or "")
         merged["opening_narrative"] = (opening + "\n\n" + initial).strip()
     return merged
+
+
+def _apply_story_binding(session: GameSession, world_profile: dict[str, Any]) -> None:
+    story_key = str(world_profile.get("story_key") or "")
+    story_version = world_profile.get("story_version", 0)
+    story_state = world_profile.get("story_state")
+    if story_key and isinstance(story_version, int) and not isinstance(story_version, bool):
+        session.story_key = story_key
+        session.story_version = story_version
+    if isinstance(story_state, dict):
+        session.story_state = dict(story_state)
+    ensure_story_binding(session)
 
 
 def _list_or_existing(value: Any, existing: list[Any]) -> list[Any]:

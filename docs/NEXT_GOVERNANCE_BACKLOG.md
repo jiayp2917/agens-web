@@ -1,60 +1,45 @@
 # Next Governance Backlog
 
-本文件只列当前未完成项。历史执行记录在 `CHANGELOG.md`，不在 backlog 重复保留。
+本文件只列当前未完成项。已完成工作和历史证据进入 `CHANGELOG.md`；当前本地结果进入 `PROJECT_AUDIT.md`。
 
 ## P0
 
-当前本地代码审计没有未处理的 P0。若生产允许用户自定义模型域名但未部署出站 ACL，DNS rebinding 残余风险应在发布前重新评估为 P0/P1。
+当前本地代码与验证未发现未处理 P0。生产发布前若缺少模型请求出站 ACL，应重新评估 DNS rebinding 残余风险的发布级别。
 
 ## P1 Local Acceptance
 
 1. **Docker gate**
-   - 在具备 Docker 的本地环境运行：
-   - `docker compose --env-file deploy/production.env -f deploy/docker-compose.yml config`
-   - `docker build -t agens-web:local .`
-   - 启动 migration + app，确认非 root、read-only 和健康检查正常。
+   - 在具备 Docker 的环境运行：
+   - `docker compose --env-file deploy/production.env.example -f deploy/docker-compose.yml config --quiet`
+   - `docker build --tag agens-web:local .`
+   - 启动一次性 migration service 与 app，确认非 root、read-only、健康检查和回滚路径。
 
-2. **Extended real Chrome gate**
-   - 2026-07-10 isolated fallback smoke 已覆盖访客清局、角色创建、双击、fallback、存读档、终局和 375/2K overflow。
-   - 2026-07-11 素材细节验收已覆盖 1440x900、1920x1080、2560x1440、390x844、桌面/移动弹窗和六态组件；相关截图不提交仓库。
-   - 后续只需补真实 provider 20 回合、显式 409 可见提示、内容质量和终局长局证据。
-   - 不与 pytest 共用数据库。
+2. **模型延迟与异常响应**
+   - 对同一 provider/model/network 样本拆分首响应、Narrator、Judge、持久化和页面更新耗时。
+   - 继续验证 408/429/5xx、整体时限、取消传播和偶发严格契约重试。
+   - 目标为 choice p50 不高于 5 秒、p95 不高于 15 秒；外部 provider 限制与本地编排成本分开归因。
+   - 不输出 Key、模型地址真值、账号、Cookie、邀请码、原始 prompt 或原始响应。
 
-3. **Live-model gate**
-   - 使用手工 `llm_real` 或真实 Chrome，记录 start/choice 是否 non-fallback。
-   - 记录 408/429/5xx 重试和整体时限行为。
-   - 不输出 Key、URL 真值、账号、Cookie、邀请码或原始模型响应。
+3. **DNS egress defense**
+   - 在部署层增加拒绝 loopback/private/link-local/metadata 的出站 ACL 或受控代理。
+   - 应用 allowlist 与连接前 DNS 校验继续保留，但不能单独视为消除 DNS rebinding TOCTOU。
 
-4. **DNS egress defense**
-   - 在部署层增加禁止 loopback/private/link-local/metadata 的出站策略。
-   - 应用 allowlist 不能单独消除 DNS rebinding TOCTOU。
+4. **标准局长扩展**
+   - 当前内容版本按 60 回合规则终局运行；下一内容批次基于真实玩家反馈扩展到标准 90 回合目标。
+   - 优先增加阶段、分支兑现和结局差异，不以继续增加世界数量作为成果。
+   - 玩法、内容或状态落账再次变化后，在最新工作树 fingerprint 重跑 A/B/C/D 各 20 回合和规则终局长局；浏览器数据库继续与 `tests\web` 隔离。
 
 ## P1 Production Follow-up
 
-生产任务单独执行，不属于本地代码批次：
+生产部署、迁移、备份、回滚和 strict live smoke 按
+`docs/PRODUCTION_V5_MIGRATION_CHECKLIST.md` 单独执行。当前本地工作树未部署，任何历史生产成功都不能替代本次服务器侧复核。
 
-1. 备份应用和 PostgreSQL。
-2. 只读检查无法关联的历史 `game_turns`。
-3. 确认 `MODEL_CONFIG_SECRET`、URL allowlist、总时限和访客 TTL 已配置，但不输出值。
-4. 运行一次性 migration service 升级到 `20260710_0008`。
-5. 验证 health、注册/登录、访客清局、start、choice、save/load、终局和奖励幂等。
-6. live-model start + 至少一次 choice 必须 non-fallback。
+生产 strict live 必须同时满足 Narrator `ok`、无 provider fallback、无 gameplay recovery、契约完整和回合连续；HTTP 200 单独不算通过。
 
 ## P2 Maintainability
 
 1. 拆 `database_postgres.py`：优先抽 session mutation、catalog 和 rewards repository，保持 `WebDatabaseProtocol` 不变。
 2. 拆 `tests/web/test_web_api.py`：按 auth、model settings、session、save/load、turn persistence 分类。
-3. 评估把应用内 RateLimiter 换成 Redis/反代限流；Alpha 单实例仍可保留现实现。
-4. 为模型 URL 校验增加可插拔的固定解析/连接层，进一步消除 DNS rebinding 窗口。
-5. 扩展前端测试到完整账号流程和 409 可见提示；当前已有认证回调、fallback、双击、focus trap、选择按钮 loading 和游戏工具栏覆盖。
-
-## Stable Invariants
-
-- A/B/C/D 语义由后端槽位决定，D 永远是气运。
-- 访客不能设置模型或云存档。
-- 登录/注册后删除访客局，不迁移。
-- 用户模型 Key 不写进环境变量、日志、响应、存档或回合记录。
-- fallback 不算 live-model 成功。
-- PostgreSQL schema 由 Alembic 拥有。
-- 真实浏览器验收不能与 `tests\web` 共用数据库并发运行。
-- 仓库不再保存 `output/`；生成证据写入外部 artifact 目录。
+3. 评估把应用内 RateLimiter 换成 Redis 或反向代理限流；单实例 Alpha 可保留现实现。
+4. 为模型 URL 校验增加可插拔的固定解析/连接层，进一步缩小 DNS rebinding 窗口。
+5. 扩展前端测试到完整账号流程、长文本和恢复后继续游玩；HTTP 409 单元测试与真实键盘/焦点证据已完成。

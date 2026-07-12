@@ -5,6 +5,7 @@ from __future__ import annotations
 from dataclasses import dataclass
 from typing import Any
 
+from ..game.realm import breakthrough_blocking_effects
 from ..session.game_session import GameSession
 from .choices import normalize_choices
 
@@ -314,7 +315,7 @@ def advance_local_story(session: GameSession, action_text: str) -> LocalStoryRes
     story_key = session.local_story_id or DEFAULT_STORY_ID
     node_key = session.local_story_node_id or DEFAULT_NODE_ID
     node = _node(story_key, node_key)
-    option = _match_option(node, action_text)
+    option = _match_option(node, action_text, session)
     if option is None:
         session.last_choices = [choice.text for choice in node.options]
         return LocalStoryResult(
@@ -350,7 +351,11 @@ def _node(story_id: str, node_id: str) -> LocalStoryNode:
     return story.get(node_id) or story[DEFAULT_NODE_ID]
 
 
-def _match_option(node: LocalStoryNode, action_text: str) -> LocalStoryOption | None:
+def _match_option(
+    node: LocalStoryNode,
+    action_text: str,
+    session: GameSession,
+) -> LocalStoryOption | None:
     raw = (action_text or "").strip()
     if not raw:
         return None
@@ -366,6 +371,10 @@ def _match_option(node: LocalStoryNode, action_text: str) -> LocalStoryOption | 
             return option
 
     compact = raw.lower().replace(" ", "")
+    if breakthrough_blocking_effects(session.status_effects) and any(
+        marker in compact for marker in ("疗伤", "调息", "恢复", "稳住根基")
+    ):
+        return next((option for option in node.options if not option.breakthrough), None)
     for option in node.options:
         if any(keyword.lower().replace(" ", "") in compact for keyword in option.keywords):
             return option

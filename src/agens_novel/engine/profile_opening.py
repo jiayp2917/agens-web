@@ -29,6 +29,7 @@ def fate_profile(profile: dict[str, Any]) -> list[dict[str, Any]]:
     family = str(profile.get("family_background") or "")
     difficulty = str(profile.get("difficulty") or "普通")
     random_mode = bool(profile.get("randomize_attributes"))
+    semantics = _profile_semantics(profile)
     scores: dict[str, int] = {
         "苦修": 0,
         "宗门": 0,
@@ -40,8 +41,11 @@ def fate_profile(profile: dict[str, Any]) -> list[dict[str, Any]]:
         "边地劫数": 0,
     }
 
-    _score_attribute_fates(scores, attrs, talent, root)
-    _score_background_fates(scores, family)
+    _score_attribute_fates(scores, attrs)
+    if semantics:
+        _score_semantic_fates(scores, semantics)
+    else:
+        _score_named_fates(scores, talent, root, family)
     _score_difficulty_fates(scores, difficulty, random_mode)
 
     if max(scores.values()) <= 0:
@@ -64,15 +68,13 @@ def fate_profile(profile: dict[str, Any]) -> list[dict[str, Any]]:
     return profiles[:4]
 
 
-def _score_attribute_fates(
-    scores: dict[str, int], attrs: dict[str, int], talent: str, root: str
-) -> None:
-    if attrs["root_bone"] >= 7 or attrs["physique"] >= 7 or "雷" in root:
+def _score_attribute_fates(scores: dict[str, int], attrs: dict[str, int]) -> None:
+    if attrs["root_bone"] >= 7 or attrs["physique"] >= 7:
         scores["苦修"] += 3
-    if attrs["comprehension"] >= 7 or "剑心" in talent or "道胎" in talent:
+    if attrs["comprehension"] >= 7:
         scores["苦修"] += 2
         scores["天命"] += 1
-    if attrs["luck"] >= 7 or "天命" in talent:
+    if attrs["luck"] >= 7:
         scores["天命"] += 4
     if attrs["luck"] <= 3:
         scores["灾厄"] += 3
@@ -85,7 +87,14 @@ def _score_attribute_fates(
         scores["天命"] += 1
 
 
-def _score_background_fates(scores: dict[str, int], family: str) -> None:
+def _score_named_fates(scores: dict[str, int], talent: str, root: str, family: str) -> None:
+    if "雷" in root:
+        scores["苦修"] += 1
+    if "剑心" in talent or "道胎" in talent:
+        scores["苦修"] += 1
+        scores["天命"] += 1
+    if "天命" in talent:
+        scores["天命"] += 2
     if any(marker in family for marker in ("隐世", "仙族", "世家")):
         scores["贵胄"] += 4
         scores["宗门"] += 2
@@ -93,6 +102,26 @@ def _score_background_fates(scores: dict[str, int], family: str) -> None:
         scores["宗门"] += 4
     if "农家" in family or "寒门" in family:
         scores["散修"] += 3
+
+
+def _score_semantic_fates(
+    scores: dict[str, int], semantics: dict[str, dict[str, Any]]
+) -> None:
+    markers = _semantic_markers(semantics)
+    for fate_id, fate_markers in _SEMANTIC_FATE_MARKERS.items():
+        matches = markers.intersection(fate_markers)
+        if matches:
+            scores[fate_id] += min(4, len(matches) + 1)
+    talent = semantics.get("talent", {})
+    mods = talent.get("attribute_mods")
+    if isinstance(mods, dict):
+        luck_mod = _safe_int(mods.get("luck"))
+        if luck_mod > 0:
+            scores["天命"] += 1
+        if luck_mod < 0:
+            scores["灾厄"] += 1
+        if _safe_int(mods.get("soul")) > 0:
+            scores["神魂异兆"] += 1
 
 
 def _score_difficulty_fates(scores: dict[str, int], difficulty: str, random_mode: bool) -> None:
@@ -115,6 +144,7 @@ def profile_summary(profile: dict[str, Any]) -> dict[str, Any]:
     """Build the safe public profile facts used by opening generators."""
     attrs = profile_attributes(profile)
     profile_fates = fate_profile(profile)
+    semantics = _profile_semantics(profile)
     return {
         "char_name": str(profile.get("char_name") or "无名"),
         "talent": str(profile.get("talent") or "平平无奇"),
@@ -125,6 +155,7 @@ def profile_summary(profile: dict[str, Any]) -> dict[str, Any]:
         "attributes": attrs,
         "fate_profile": profile_fates,
         "fate_tendency": [item["label"] for item in profile_fates] or ["散修"],
+        "profile_semantics": semantics,
     }
 
 
@@ -136,7 +167,7 @@ def profile_default_world(profile: dict[str, Any]) -> tuple[str, str, str, str]:
     difficulty = summary["difficulty"]
     attrs = summary["attributes"]
     fate = "、".join(summary["fate_tendency"])
-    world_key = _world_key(summary)
+    world_key = world_key_for_summary(summary)
     pack = world_pack_for_key(world_key)
     region = str(pack["world_name"])
     location = str(pack["location"])
@@ -168,14 +199,24 @@ def profile_opening(session: GameSession) -> str:
     )
 
 
-def _world_key(summary: dict[str, Any]) -> str:
+def world_key_for_summary(summary: dict[str, Any]) -> str:
+    """Choose a world once from attributes and structured fate preferences."""
     attrs = summary["attributes"]
     if summary["difficulty"] == "困难" or attrs["willpower"] >= 7 or attrs["luck"] <= 3:
         return "frontier"
-    if "隐世" in summary["family_background"] or "宗门" in summary["family_background"]:
-        return "clan"
     if attrs["luck"] >= 7 or attrs["soul"] >= 7:
         return "ocean"
+    scores = {key: 0 for key in ("frontier", "clan", "ocean", "forest")}
+    for fate in summary.get("fate_profile", []):
+        if not isinstance(fate, dict):
+            continue
+        weight = int(fate.get("score") or 0)
+        for key in fate.get("preferred_worlds", []):
+            if key in scores:
+                scores[key] += weight
+    if max(scores.values()) > 0:
+        tie_break = {"forest": 3, "clan": 2, "ocean": 1, "frontier": 0}
+        return max(scores, key=lambda key: (scores[key], tie_break[key]))
     return "forest"
 
 
@@ -197,6 +238,49 @@ def _dedupe(values: list[str]) -> list[str]:
         if text and text not in out:
             out.append(text)
     return out
+
+
+def _profile_semantics(profile: dict[str, Any]) -> dict[str, dict[str, Any]]:
+    raw = profile.get("profile_semantics")
+    if not isinstance(raw, dict):
+        return {}
+    return {
+        key: dict(value)
+        for key, value in raw.items()
+        if key in {"talent", "spirit_root", "family_background", "difficulty"}
+        and isinstance(value, dict)
+    }
+
+
+def _semantic_markers(semantics: dict[str, dict[str, Any]]) -> set[str]:
+    markers: set[str] = set()
+    for item in semantics.values():
+        for field in ("tags", "story_tags", "event_tags", "initial_risks"):
+            values = item.get(field)
+            if isinstance(values, list):
+                markers.update(str(value).strip() for value in values if str(value).strip())
+    return markers
+
+
+def _safe_int(value: Any) -> int:
+    if isinstance(value, bool):
+        return 0
+    try:
+        return int(value or 0)
+    except (TypeError, ValueError):
+        return 0
+
+
+_SEMANTIC_FATE_MARKERS: dict[str, set[str]] = {
+    "苦修": {"悟道", "淬体", "突破", "心性", "恢复", "剑道", "阵法", "炼丹", "灵植"},
+    "宗门": {"宗门", "身份", "进阶"},
+    "散修": {"散修", "云游", "草根", "阅历"},
+    "天命": {"机缘", "贵人", "悟道", "因果"},
+    "灾厄": {"天妒", "心魔", "魔道", "追杀", "复仇", "诅咒", "反噬"},
+    "贵胄": {"世家", "家族", "传承"},
+    "神魂异兆": {"神魂", "幻术", "梦兆", "魂灯"},
+    "边地劫数": {"逆境", "危险", "妖兽", "兵戈"},
+}
 
 
 _FATE_DIMENSIONS: dict[str, dict[str, Any]] = {

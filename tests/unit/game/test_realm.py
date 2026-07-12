@@ -139,6 +139,19 @@ class TestCanAttemptBreakthrough:
         assert can is False
         assert "层" in reason
 
+    def test_not_eligible_while_deviation_status_is_active(self):
+        rs = RealmSystem()
+        session = _make_session(
+            realm="练气",
+            realm_stage=9,
+            status_effects=[{"name": "走火入魔", "severity": "重"}],
+        )
+
+        can, reason = rs.can_attempt_breakthrough(session)
+
+        assert can is False
+        assert "恢复" in reason
+
     def test_not_eligible_missing_breakthrough_resource(self):
         rs = RealmSystem()
         session = _make_session(

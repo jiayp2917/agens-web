@@ -9,6 +9,7 @@ import pytest
 
 from agens_novel.llm.client import (
     LLMBadRequest,
+    _build_payload,
     _execute_with_retry,
     _handle_non_stream_response,
     _resolve_config,
@@ -125,6 +126,24 @@ class TestResolveRequestOptions:
     def test_total_timeout_uses_environment(self, monkeypatch):
         monkeypatch.setenv("AGNES_TOTAL_TIMEOUT_SECONDS", "17")
         assert _resolve_total_timeout(None) == 17.0
+
+
+def test_build_payload_includes_optional_response_format() -> None:
+    response_format = {
+        "type": "json_schema",
+        "json_schema": {"name": "result", "schema": {"type": "object"}},
+    }
+
+    payload = _build_payload(
+        [],
+        model="agnes-2.0-flash",
+        temperature=0,
+        max_tokens=256,
+        stream=False,
+        response_format=response_format,
+    )
+
+    assert payload["response_format"] == response_format
 
 
 def test_retryable_response_is_not_collapsed_to_bad_request() -> None:

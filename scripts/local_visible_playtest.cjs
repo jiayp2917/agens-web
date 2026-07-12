@@ -3,6 +3,7 @@
 
 const fs = require("fs");
 const path = require("path");
+const crypto = require("crypto");
 const { spawnSync } = require("child_process");
 
 const ROOT = path.resolve(__dirname, "..");
@@ -14,10 +15,16 @@ const REQUEST_TIMEOUT_MS = Number(process.env.AGENS_PLAYTEST_TIMEOUT_MS || "3000
 const STAMP = process.env.AGENS_PLAYTEST_NAME || `local-visible-20turn-${stamp()}`;
 const CONTENT_AUDIT = process.env.AGENS_PLAYTEST_CONTENT_AUDIT === "1";
 const CONTENT_AUDIT_FAIL_ON_P1 = CONTENT_AUDIT && process.env.AGENS_PLAYTEST_FAIL_ON_P1 !== "0";
+const GENERIC_CHOICE_PATTERNS = [
+  /(?:稳妥|机遇|风险|气运)路径的具体行动/u,
+  /^具体行动$/u,
+];
 const CHOICE_STRATEGY = (process.env.AGENS_PLAYTEST_CHOICE_STRATEGY || "cycle").toLowerCase();
 const POST_LOAD_TURNS = Number(process.env.AGENS_PLAYTEST_POST_LOAD_TURNS || (CONTENT_AUDIT ? "3" : "0"));
 const REFRESH_PROBE = process.env.AGENS_PLAYTEST_REFRESH_PROBE === "1";
 const DOUBLE_CLICK_PROBE = process.env.AGENS_PLAYTEST_DOUBLE_CLICK_PROBE === "1";
+const CONFLICT_PROBE = process.env.AGENS_PLAYTEST_CONFLICT_PROBE === "1";
+const VIEWPORT = parseViewport(process.env.AGENS_PLAYTEST_VIEWPORT || "1440x1000");
 
 const FORBIDDEN_VISIBLE_PATTERNS = [
   ["history_suppression_notice", /此事未入正史/u],
@@ -33,6 +40,8 @@ const FORBIDDEN_VISIBLE_PATTERNS = [
   ["heaven_disorder_notice", /天道紊乱/u],
   ["upstream_model_notice", /上游模型/u],
   ["basic_rule_settlement_notice", /基础规则结算/u],
+  ["breakthrough_probability_notice", /突破概率\s*[:：]|开始突破/u],
+  ["internal_realm_status", /境界\s*[:：].*破境准备/u],
   ["fallback_word", /\bfallback\b/iu],
   ["mismatch_word", /\bmismatch\b/iu],
   ["state_update_tag", /<\/?state_update\b|<state_update>/iu],
@@ -42,6 +51,7 @@ const FORBIDDEN_VISIBLE_PATTERNS = [
   ["json_like_array", /(?:^|[\s：:])\[(?=[^\]]*(?:"|'))[^\]]+\]/u],
   ["quoted_choice_fragment", /(?:\\?["“][^"“”\n]{4,160}\\?["”]\s*[,，]\s*){2,}\\?["“][^"“”\n]{4,160}\\?["”]/u],
   ["english_status_word", /\b(?:prowess|inventory|lifespan|realm|delta|narrative|turn_count|game_turns)\b/iu],
+  ["english_word", /\b(?!(?:jiayp|slot_\d+)\b)[A-Za-z]{2,}(?:_[A-Za-z0-9]+)?\b/iu],
 ];
 
 const ROUTE_HINTS = {
@@ -53,6 +63,40 @@ const ROUTE_HINTS = {
 
 function stamp() {
   return new Date().toISOString().replace(/[:.]/g, "-");
+}
+
+function sha256(value) {
+  return crypto.createHash("sha256").update(value).digest("hex");
+}
+
+function evidenceContext() {
+  const command = (args) => spawnSync("git", args, {
+    cwd: ROOT,
+    encoding: "utf8",
+    maxBuffer: 32 * 1024 * 1024,
+  }).stdout || "";
+  const head = command(["rev-parse", "HEAD"]).trim();
+  const status = command(["status", "--porcelain=v1"]);
+  const diff = command(["diff", "--binary", "--no-ext-diff"]);
+  const databaseLabel = String(process.env.AGENS_PLAYTEST_DATABASE_LABEL || "").trim();
+  return {
+    head,
+    dirty: Boolean(status.trim()),
+    worktree_fingerprint: sha256(`${head}\n${status}\n${diff}`),
+    playtest_script_sha256: sha256(fs.readFileSync(__filename)),
+    database_label: /^[A-Za-z0-9_.-]{1,80}$/u.test(databaseLabel) ? databaseLabel : "",
+  };
+}
+
+function parseViewport(raw) {
+  const match = /^(\d{3,4})x(\d{3,4})$/u.exec(String(raw || "").trim());
+  if (!match) throw new Error(`Invalid AGENS_PLAYTEST_VIEWPORT: ${raw}`);
+  const width = Number(match[1]);
+  const height = Number(match[2]);
+  if (width < 320 || width > 3840 || height < 480 || height > 2160) {
+    throw new Error(`Unsupported AGENS_PLAYTEST_VIEWPORT: ${raw}`);
+  }
+  return { width, height };
 }
 
 function loadPlaywright() {
@@ -237,8 +281,26 @@ function canBreakthroughFromRealmText(realmText) {
   return /圆满/u.test(text);
 }
 
+function normalizedRealmLabel(value) {
+  const digits = { 一: "1", 二: "2", 三: "3", 四: "4", 五: "5", 六: "6", 七: "7", 八: "8", 九: "9" };
+  return String(value || "")
+    .replace(/\s+/g, "")
+    .replace(/第(?=[1-9一二三四五六七八九]层)/g, "")
+    .replace(/[一二三四五六七八九]/g, (char) => digits[char] || char);
+}
+
+function narrativeRealmClaims(text) {
+  const source = String(text || "");
+  const matches = source.match(/[练炼]气\s*(?:第)?\s*[1-9一二三四五六七八九]\s*层|(?:筑基|金丹|元婴|化神|合体|大乘|渡劫)\s*(?:初期|中期|后期|圆满)/gu) || [];
+  return matches.map((match) => normalizedRealmLabel(match).replace(/^炼气/u, "练气"));
+}
+
 function hasBreakthroughIntent(text) {
   const body = String(text || "");
+  if (/[练炼]气\s*(?:第)?(?:[1-9]|[一二三四五六七八九])\s*层/u.test(body)
+      && !/突破|破境|筑基|金丹|元婴|化神|合体|大乘|渡劫|飞升/u.test(body)) {
+    return false;
+  }
   if (/所需|准备|底蕴|线索|打听|寻找|静候|机缘/u.test(body) && !/尝试|正式|强行|开始/u.test(body)) {
     return false;
   }
@@ -316,6 +378,23 @@ async function uiSnapshot(page, label) {
     const snapshot = await page.evaluate((snapshotLabel) => {
       const clean = (value) => String(value || "").replace(/\s+/g, " ").trim();
       const textOf = (selector) => clean(document.querySelector(selector)?.textContent || "");
+      const boundsOf = (selector) => {
+        const element = document.querySelector(selector);
+        if (!element) return null;
+        const rect = element.getBoundingClientRect();
+        return {
+          left: Math.round(rect.left),
+          top: Math.round(rect.top),
+          right: Math.round(rect.right),
+          bottom: Math.round(rect.bottom),
+          width: Math.round(rect.width),
+          height: Math.round(rect.height),
+          within_viewport: rect.left >= -1
+            && rect.top >= -1
+            && rect.right <= window.innerWidth + 1
+            && rect.bottom <= window.innerHeight + 1,
+        };
+      };
       const fullPageText = clean(document.body?.innerText || "");
     const railStats = Array.from(document.querySelectorAll(".rail-stats span")).map((item) => clean(item.textContent || ""));
     const statValue = (labelText) => {
@@ -335,6 +414,8 @@ async function uiSnapshot(page, label) {
       aria: clean(button.getAttribute("aria-label") || ""),
       disabled: Boolean(button.disabled),
     }));
+    const documentWidth = document.documentElement?.scrollWidth || 0;
+    const bodyWidth = document.body?.scrollWidth || 0;
     return {
       label: snapshotLabel,
       captured_at: new Date().toISOString(),
@@ -354,6 +435,18 @@ async function uiSnapshot(page, label) {
       latest_chronicle: chronicle.filter((item) => item.latest),
       choices,
       fallback_banner: textOf(".fallback"),
+        viewport: {
+          inner_width: window.innerWidth,
+          inner_height: window.innerHeight,
+          document_scroll_width: documentWidth,
+          body_scroll_width: bodyWidth,
+          horizontal_overflow: Math.max(documentWidth, bodyWidth) > window.innerWidth + 1,
+        },
+        element_bounds: {
+          game_shell: boundsOf(".game-shell"),
+          dialog: boundsOf(".settings-dialog"),
+          toast: boundsOf(".toast"),
+        },
         full_page_text: fullPageText,
         body_issue_text: [
           fullPageText,
@@ -398,17 +491,37 @@ function redactedUrl(url) {
   return String(url || "").replace(/sessions\/[^/]+/g, "sessions/<id>");
 }
 
-async function routeApiBase(page) {
-  if (!API_BASE_URL) return;
+async function routeApiBase(page, conflictState = null) {
+  if (!API_BASE_URL && !conflictState) return;
   const apiBase = API_BASE_URL.replace(/\/+$/, "");
   await page.route("**/*", (route) => {
-    const requestUrl = new URL(route.request().url());
+    const request = route.request();
+    const requestUrl = new URL(request.url());
+    const options = {};
+    if (
+      conflictState?.armed
+      && request.method() === "POST"
+      && /\/api\/sessions\/[^/]+\/choice$/u.test(requestUrl.pathname)
+    ) {
+      try {
+        const payload = JSON.parse(request.postData() || "{}");
+        payload.expected_version = Math.max(0, Number(payload.expected_version || 0) - 1);
+        options.postData = JSON.stringify(payload);
+        conflictState.armed = false;
+        conflictState.triggered = true;
+      } catch (error) {
+        conflictState.armed = false;
+        conflictState.error = String(error);
+      }
+    }
     if (!requestUrl.pathname.startsWith("/api/")) {
-      route.continue();
+      route.continue(options);
       return;
     }
-    const redirected = `${apiBase}${requestUrl.pathname}${requestUrl.search}`;
-    route.continue({ url: redirected });
+    if (API_BASE_URL) {
+      options.url = `${apiBase}${requestUrl.pathname}${requestUrl.search}`;
+    }
+    route.continue(options);
   });
 }
 
@@ -446,9 +559,14 @@ function latestModelDiagnostics(body, sinceMs = 0) {
     repaired_output: Boolean(narratorDiag.repaired_output),
     retried_after_incomplete_output: Boolean(narratorDiag.retried_after_incomplete_output),
     narrator_incomplete_output: narratorStatus === "incomplete_output",
+    contract_recovery: narratorStatus === "incomplete_output",
     contract_missing_narrative: Boolean(narratorDiag.contract_missing_narrative),
     contract_missing_state_update: Boolean(narratorDiag.contract_missing_state_update),
     contract_choices_count_ok: Boolean(narratorDiag.contract_choices_count_ok),
+    contract_raw_has_state_update_tag: Boolean(narratorDiag.contract_raw_has_state_update_tag),
+    contract_raw_has_choices_tag: Boolean(narratorDiag.contract_raw_has_choices_tag),
+    provider_json_schema: Boolean(narratorDiag.provider_json_schema),
+    provider_json_envelope_ok: Boolean(narratorDiag.provider_json_envelope_ok),
     prompt_chars: numberMetric(narratorDiag.prompt_chars),
     game_state_chars: numberMetric(narratorDiag.game_state_chars),
     history_count: numberMetric(narratorDiag.history_count),
@@ -456,6 +574,12 @@ function latestModelDiagnostics(body, sinceMs = 0) {
     completion_tokens: numberMetric(narratorDiag.completion_tokens),
     total_tokens: numberMetric(narratorDiag.total_tokens),
   };
+}
+
+function genericChoiceTexts(choices) {
+  return (Array.isArray(choices) ? choices : [])
+    .map((choice) => cleanText(typeof choice === "string" ? choice : choice?.text))
+    .filter((text) => text && GENERIC_CHOICE_PATTERNS.some((pattern) => pattern.test(text)));
 }
 
 function startAcceptance(body, httpStatus) {
@@ -533,7 +657,15 @@ function auditVisibleContent({
   ]);
   turnRecord.forbidden_hits = forbidden;
   turnRecord.forbidden_count = forbidden.length;
+  turnRecord.horizontal_overflow = Boolean(afterSnapshot.viewport?.horizontal_overflow);
   const terminalTurn = Boolean(turnRecord.game_over || turnRecord.finale);
+  if (turnRecord.horizontal_overflow) {
+    issue("P1", "page has horizontal overflow at the configured viewport", {
+      turn_index: turnRecord.turn_index,
+      phase: turnRecord.phase || "main",
+      viewport: afterSnapshot.viewport,
+    });
+  }
   if (forbidden.length) {
     issue("P1", "player-visible forbidden/internal text appeared", {
       turn_index: turnRecord.turn_index,
@@ -562,6 +694,20 @@ function auditVisibleContent({
   turnRecord.status_lifespan = afterSnapshot.status?.lifespan || "";
   turnRecord.world_intel = afterSnapshot.world_intel || [];
   turnRecord.choice_texts_after = (afterSnapshot.choices || []).map((choice) => cleanText(choice.text));
+
+  const currentRealm = normalizedRealmLabel(turnRecord.status_realm);
+  for (const entry of newEntries) {
+    const realmClaims = narrativeRealmClaims(entry.text);
+    if (realmClaims.length && currentRealm && !realmClaims.includes(currentRealm)) {
+      issue("P1", "chronicle realm claim contradicts authoritative status", {
+        turn_index: turnRecord.turn_index,
+        phase: turnRecord.phase || "main",
+        realm: turnRecord.status_realm,
+        claims: realmClaims,
+        text: entry.text,
+      });
+    }
+  }
 
   for (const entry of newEntries) {
     const normalized = normalizeForCompare(entry.text);
@@ -595,6 +741,8 @@ function auditVisibleContent({
   }
 
   const intelKey = JSON.stringify(afterSnapshot.world_intel || []);
+  const realmChanged = normalizedRealmLabel(beforeSnapshot.status?.realm || "") !== normalizedRealmLabel(afterSnapshot.status?.realm || "");
+  const majorStageFeedback = realmChanged || hasBreakthroughIntent(turnRecord.choice) || terminalTurn;
   if (intelKey && intelKey !== auditState.lastWorldIntelKey) {
     auditState.lastWorldIntelKey = intelKey;
     auditState.lastWorldIntelChangeTurn = turnRecord.turn_index;
@@ -602,6 +750,10 @@ function auditVisibleContent({
     turnRecord.world_intel_changed = true;
   } else {
     turnRecord.world_intel_changed = false;
+  }
+  if (majorStageFeedback) {
+    auditState.lastWorldIntelChangeTurn = turnRecord.turn_index;
+    turnRecord.stage_feedback_reason = realmChanged ? "realm_changed" : (terminalTurn ? "terminal" : "breakthrough");
   }
   if (!terminalTurn && turnRecord.turn_index - auditState.lastWorldIntelChangeTurn > 5) {
     issue("P1", "world intel did not change within 5 turns", {
@@ -654,18 +806,38 @@ function numberMetric(value) {
   return Number.isFinite(number) && number > 0 ? Math.round(number) : 0;
 }
 
+function percentile(values, ratio) {
+  const sorted = values
+    .map((value) => Number(value || 0))
+    .filter((value) => Number.isFinite(value) && value >= 0)
+    .sort((left, right) => left - right);
+  if (!sorted.length) return 0;
+  const rank = Math.min(sorted.length - 1, Math.max(0, Math.ceil(sorted.length * ratio) - 1));
+  return Math.round(sorted[rank]);
+}
+
 function updateSummaryFromTurns(summary, turns, auditState) {
   summary.turns_completed = turns.length;
-  summary.accepted_live_turns = turns.filter((turn) => turn.http_status >= 200 && turn.http_status < 300 && !turn.fallback).length;
+  summary.accepted_live_turns = turns.filter((turn) => (
+    turn.http_status >= 200
+    && turn.http_status < 300
+    && !turn.fallback
+    && !turn.contract_recovery
+    && turn.narrator_status === "ok"
+    && (!turn.provider_json_schema || turn.provider_json_envelope_ok)
+  )).length;
   summary.fallback_count = turns.filter((turn) => turn.fallback).length;
   summary.max_elapsed_ms = Math.max(0, ...turns.map((turn) => turn.elapsed_ms || 0));
   summary.avg_elapsed_ms = turns.length
     ? Math.round(turns.reduce((total, turn) => total + (turn.elapsed_ms || 0), 0) / turns.length)
     : 0;
+  summary.p50_elapsed_ms = percentile(turns.map((turn) => turn.elapsed_ms), 0.5);
+  summary.p95_elapsed_ms = percentile(turns.map((turn) => turn.elapsed_ms), 0.95);
   summary.repair_attempt_count = turns.filter((turn) => (turn.repair_elapsed_ms || 0) > 0).length;
   summary.repaired_output_count = turns.filter((turn) => turn.repaired_output).length;
   summary.incomplete_retry_count = turns.filter((turn) => turn.retried_after_incomplete_output).length;
   summary.narrator_incomplete_output_count = turns.filter((turn) => turn.narrator_incomplete_output).length;
+  summary.contract_recovery_count = turns.filter((turn) => turn.contract_recovery).length;
   summary.contract_missing_narrative_count = turns.filter((turn) => turn.contract_missing_narrative).length;
   summary.contract_missing_state_update_count = turns.filter((turn) => turn.contract_missing_state_update).length;
   summary.contract_bad_choices_count = turns.filter((turn) => turn.contract_choices_count_ok === false).length;
@@ -705,6 +877,9 @@ function updateIssueCounts(summary, issues) {
     post_load_turns: POST_LOAD_TURNS,
     refresh_probe: REFRESH_PROBE,
     double_click_probe: DOUBLE_CLICK_PROBE,
+    conflict_probe: CONFLICT_PROBE,
+    viewport: VIEWPORT,
+    evidence_context: evidenceContext(),
     base_url: BASE_URL,
     started_at: new Date().toISOString(),
     username_set: true,
@@ -738,6 +913,24 @@ function updateIssueCounts(summary, issues) {
   }
 
   function auditModelDiagnostics(turnRecord, phase) {
+    if (turnRecord.narrator_incomplete_output) {
+      issue("P1", "narrator output required local contract recovery", {
+        turn_index: turnRecord.turn_index,
+        phase,
+        narrator_status: turnRecord.narrator_status,
+        missing_narrative: turnRecord.contract_missing_narrative,
+        missing_state_update: turnRecord.contract_missing_state_update,
+        choices_count_ok: turnRecord.contract_choices_count_ok,
+        raw_has_state_update_tag: turnRecord.contract_raw_has_state_update_tag,
+        raw_has_choices_tag: turnRecord.contract_raw_has_choices_tag,
+      });
+    }
+    if (turnRecord.provider_json_schema && !turnRecord.provider_json_envelope_ok) {
+      issue("P1", "provider JSON schema envelope was not accepted", {
+        turn_index: turnRecord.turn_index,
+        phase,
+      });
+    }
     if (turnRecord.judge_request_failed) {
       issue("P1", "judge model request failed; rule-only settlement used", {
         turn_index: turnRecord.turn_index,
@@ -766,13 +959,14 @@ function updateIssueCounts(summary, issues) {
       throw new Error("No local Chrome/Edge executable found. Set AGENS_CHROME_PATH to a visible browser executable.");
     }
     summary.browser_executable = path.basename(executablePath);
+    const conflictState = CONFLICT_PROBE ? { armed: false, triggered: false, error: "" } : null;
     browser = await chromium.launch({
       headless: false,
       executablePath,
-      args: ["--window-size=1440,1000"],
+      args: [`--window-size=${VIEWPORT.width},${VIEWPORT.height}`],
     });
-    const page = await browser.newPage({ viewport: { width: 1440, height: 1000 } });
-    await routeApiBase(page);
+    const page = await browser.newPage({ viewport: VIEWPORT });
+    await routeApiBase(page, conflictState);
 
     page.on("console", (msg) => {
       consoleMessages.push({ type: msg.type(), text: msg.text().slice(0, 500) });
@@ -806,7 +1000,7 @@ function updateIssueCounts(summary, issues) {
       }),
       page.locator(".auth-panel button[type='submit']").click(),
     ]);
-    await page.waitForSelector(".user-chip", { timeout: 30000 });
+    await page.waitForSelector(".user-chip", { state: "attached", timeout: 30000 });
     summary.registration_passed = true;
 
     await clickFirstVisible(page, [".home-actions button:nth-child(1)", "text=新游戏"], 30000);
@@ -834,7 +1028,18 @@ function updateIssueCounts(summary, issues) {
         fallback_banner_set: Boolean(startUiSnapshot.fallback_banner),
       });
     }
+    if (CONTENT_AUDIT && startUiSnapshot?.viewport?.horizontal_overflow) {
+      issue("P1", "opening page has horizontal overflow at the configured viewport", {
+        viewport: startUiSnapshot.viewport,
+      });
+    }
     summary.start_ui_snapshot = startUiSnapshot;
+    const startGenericChoices = genericChoiceTexts(startUiSnapshot?.choices);
+    if (CONTENT_AUDIT && startGenericChoices.length) {
+      issue("P1", "opening choices contain generic placeholder text", {
+        choices: startGenericChoices,
+      });
+    }
     await page.screenshot({ path: `${screenshotBase}-start.png`, fullPage: true });
     summary.start_passed = true;
 
@@ -861,6 +1066,88 @@ function updateIssueCounts(summary, issues) {
     }
 
     let firstMainTurn = 1;
+    if (summary.result === "running" && CONFLICT_PROBE) {
+      const phase = "version_conflict";
+      const beforeSnapshot = CONTENT_AUDIT ? await uiSnapshot(page, `${phase}-before`) : null;
+      const beforeChoices = await choiceSnapshots(page);
+      const selected = routeIndexForTurn(1, beforeChoices, beforeSnapshot);
+      if (!selected || !cleanText(selected.text)) {
+        issue("P0", "empty choice label before conflict probe", {
+          phase,
+          choices: beforeChoices,
+          ui_snapshot: beforeSnapshot,
+        });
+        summary.result = "failed_script_empty_choice";
+      } else {
+        const requestStartIndex = requests.length;
+        conflictState.armed = true;
+        const choice = page.locator(".choice-button").nth(selected.index);
+        await choice.focus();
+        const focusBefore = await choice.evaluate((element) => element === document.activeElement);
+        const responsePromise = page.waitForResponse(
+          (resp) => resp.url().includes("/api/sessions/") && resp.url().includes("/choice"),
+          { timeout: REQUEST_TIMEOUT_MS },
+        );
+        await page.keyboard.press("Enter");
+        let response = null;
+        try {
+          response = await responsePromise;
+        } catch {
+          // The summary below records the missing 409 as a failed probe.
+        }
+        const notice = page.locator('.toast.toast-notice[role="status"]');
+        let noticeText = "";
+        if (response?.status() === 409) {
+          try {
+            await notice.waitFor({ state: "visible", timeout: 30000 });
+            noticeText = cleanText(await notice.textContent());
+          } catch {
+            // A missing visible conflict notice is part of the probe result.
+          }
+        }
+        await page.waitForTimeout(250);
+        const afterSnapshot = CONTENT_AUDIT ? await uiSnapshot(page, `${phase}-after`) : null;
+        const probeRequests = requests.slice(requestStartIndex);
+        const choiceResponseCount = probeRequests.filter((request) => request.url.includes("/choice")).length;
+        const refreshResponseCount = probeRequests.filter(
+          (request) => request.method === "GET" && request.url.includes("/api/sessions/<id>"),
+        ).length;
+        const focusAfter = await page.evaluate(() => ({
+          tag: document.activeElement?.tagName || "",
+          class_name: document.activeElement?.className || "",
+          text: String(document.activeElement?.textContent || "").replace(/\s+/g, " ").trim().slice(0, 160),
+        }));
+        summary.conflict_probe_passed = Boolean(
+          response?.status() === 409
+          && conflictState.triggered
+          && !conflictState.error
+          && focusBefore
+          && noticeText.includes("已加载最新进度")
+          && choiceResponseCount === 1
+          && refreshResponseCount >= 1
+        );
+        summary.conflict_probe_evidence = {
+          http_status: response?.status() || 0,
+          keyboard_focus_before: focusBefore,
+          focus_after: focusAfter,
+          notice_text: noticeText,
+          choice_response_count: choiceResponseCount,
+          refresh_response_count: refreshResponseCount,
+          route_triggered: conflictState.triggered,
+          route_error: conflictState.error,
+          ui_before: beforeSnapshot,
+          ui_after: afterSnapshot,
+        };
+        await page.screenshot({ path: `${screenshotBase}-version-conflict.png`, fullPage: true });
+        if (!summary.conflict_probe_passed) {
+          issue("P1", "version-conflict probe did not prove keyboard, refresh, and visible feedback", {
+            phase,
+            ...summary.conflict_probe_evidence,
+          });
+          summary.result = "failed_or_partial";
+        }
+      }
+    }
     if (summary.result === "running" && DOUBLE_CLICK_PROBE) {
       const phase = "double_click";
       const beforeSnapshot = CONTENT_AUDIT ? await uiSnapshot(page, `${phase}-turn-1-before`) : null;
@@ -1052,7 +1339,10 @@ function updateIssueCounts(summary, issues) {
 
       const turnAdvanced = turnCount === turn;
       const hasFourChoices = afterChoices.length === 4;
-      const terminalAccepted = response.ok() && !fallback && turnAdvanced && gameOver;
+      const strictModelOk = diagnostics.narrator_status === "ok"
+        && !diagnostics.contract_recovery
+        && (!diagnostics.provider_json_schema || diagnostics.provider_json_envelope_ok);
+      const terminalAccepted = response.ok() && !fallback && strictModelOk && turnAdvanced && gameOver;
       if (terminalAccepted) {
         summary.ended_early_game_over = true;
         summary.ended_at_turn = turn;
@@ -1061,11 +1351,13 @@ function updateIssueCounts(summary, issues) {
         await page.screenshot({ path: `${screenshotBase}-terminal-turn${turn}.png`, fullPage: true });
         break;
       }
-      if (!response.ok() || fallback || !turnAdvanced || !hasFourChoices) {
+      if (!response.ok() || fallback || !strictModelOk || !turnAdvanced || !hasFourChoices) {
         issue("P0", "choice did not satisfy live-model acceptance", {
           turn_index: turn,
           http_status: response.status(),
           fallback,
+          narrator_status: diagnostics.narrator_status,
+          contract_recovery: diagnostics.contract_recovery,
           game_over: gameOver,
           turn_count: turnCount,
           expected_turn_count: turn,
@@ -1080,9 +1372,26 @@ function updateIssueCounts(summary, issues) {
 
     updateSummaryFromTurns(summary, turns, auditState);
 
-    if (summary.accepted_live_turns >= TARGET_TURNS && summary.fallback_count === 0 && !issues.some((item) => item.level === "P0")) {
-      await page.locator('button[aria-label*="存"]').click();
+    if (summary.ended_early_game_over) {
+      summary.save_load_skipped_terminal = true;
+    } else if (summary.accepted_live_turns >= TARGET_TURNS && summary.fallback_count === 0 && !issues.some((item) => item.level === "P0")) {
+      await page.locator('button.icon-btn[aria-label="存档"]').click();
       await page.waitForSelector(".settings-dialog", { timeout: 30000 });
+      await page.waitForTimeout(300);
+      if (CONTENT_AUDIT) {
+        summary.save_dialog_ui_snapshot = await uiSnapshot(page, "save-dialog-open");
+        const dialogSnapshot = summary.save_dialog_ui_snapshot;
+        if (
+          dialogSnapshot.viewport?.horizontal_overflow
+          || dialogSnapshot.element_bounds?.dialog?.within_viewport === false
+        ) {
+          issue("P1", "save dialog does not fit the configured viewport", {
+            viewport: dialogSnapshot.viewport,
+            dialog_bounds: dialogSnapshot.element_bounds?.dialog,
+          });
+        }
+        await page.screenshot({ path: `${screenshotBase}-save-dialog.png`, fullPage: true });
+      }
       await clickFirstVisible(page, [".save-row:nth-child(1) .save-row-actions button:last-child"], 30000);
       await page.waitForTimeout(1000);
       await clickFirstVisible(page, [".save-row:nth-child(1) .save-row-actions button:first-child"], 30000);
@@ -1091,6 +1400,11 @@ function updateIssueCounts(summary, issues) {
       summary.save_load_passed = true;
       if (CONTENT_AUDIT) {
         summary.save_load_ui_snapshot = await uiSnapshot(page, "save-load-after");
+        if (summary.save_load_ui_snapshot.viewport?.horizontal_overflow) {
+          issue("P1", "page has horizontal overflow after save/load", {
+            viewport: summary.save_load_ui_snapshot.viewport,
+          });
+        }
       }
       if (REFRESH_PROBE) {
         try {
@@ -1214,7 +1528,10 @@ function updateIssueCounts(summary, issues) {
         turns.push(turnRecord);
         const turnAdvanced = turnCount === turn;
         const hasFourChoices = afterChoices.length === 4;
-        const terminalAccepted = response.ok() && !fallback && turnAdvanced && gameOver;
+        const strictModelOk = diagnostics.narrator_status === "ok"
+          && !diagnostics.contract_recovery
+          && (!diagnostics.provider_json_schema || diagnostics.provider_json_envelope_ok);
+        const terminalAccepted = response.ok() && !fallback && strictModelOk && turnAdvanced && gameOver;
         if (terminalAccepted) {
           summary.ended_early_game_over = true;
           summary.ended_at_turn = turn;
@@ -1223,12 +1540,14 @@ function updateIssueCounts(summary, issues) {
           await page.screenshot({ path: `${screenshotBase}-terminal-${phase}-turn${turn}.png`, fullPage: true });
           break;
         }
-        if (!response.ok() || fallback || !turnAdvanced || !hasFourChoices) {
+        if (!response.ok() || fallback || !strictModelOk || !turnAdvanced || !hasFourChoices) {
           issue("P0", "post-load choice did not satisfy live-model acceptance", {
             turn_index: turn,
             phase,
             http_status: response.status(),
             fallback,
+            narrator_status: diagnostics.narrator_status,
+            contract_recovery: diagnostics.contract_recovery,
             game_over: gameOver,
             turn_count: turnCount,
             expected_turn_count: turn,

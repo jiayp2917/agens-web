@@ -14,7 +14,7 @@ from typing import Any
 
 import sqlalchemy.exc
 
-from agens_novel.engine.choices import clean_choice_text, clean_visible_text
+from agens_novel.engine.choices import choice_with_semantic, clean_choice_text, clean_visible_text
 from agens_novel.engine.death_rewards import (
     apply_legacy_bonuses,
     bonuses_to_legacy,
@@ -27,6 +27,7 @@ from agens_novel.engine.model_fallback_policy import (
 from agens_novel.engine.model_fallback_policy import SECRET_MARKERS as _SECRET_MARKERS
 from agens_novel.engine.render import format_status_bar
 from agens_novel.engine.start_flow import normalize_profile_attributes
+from agens_novel.engine.story_catalog import ensure_story_binding, story_arc_for_binding
 from agens_novel.game.constants import (
     ATTRIBUTE_KEYS,
     DIFFICULTY_OPTIONS,
@@ -43,6 +44,27 @@ from .service_death_rewards import DeathRewardsService
 from .service_errors import SessionVersionConflict
 from .service_model_config import ModelConfigService
 from .service_summaries import build_death_summary
+
+_PROFILE_SEMANTIC_FIELDS = (
+    "name",
+    "rarity",
+    "description",
+    "attribute_mods",
+    "tags",
+    "initial_resources",
+    "initial_risks",
+    "story_tags",
+    "element",
+    "grade",
+    "cultivation_bonus",
+    "breakthrough_bonus",
+    "cultivation_tendency",
+    "event_tags",
+    "risk_multiplier",
+    "reward_multiplier",
+    "lifespan_modifier",
+    "luck_modifier",
+)
 
 log = logging.getLogger(__name__)
 
@@ -160,6 +182,14 @@ class WebRunner:
             db=db,
         )
         runner.engine.game_session = GameSession.from_save_dict(snapshot)
+        session = runner.engine.game_session
+        if session.game_started:
+            if not session.story_key:
+                ensure_story_binding(session)
+            elif story_arc_for_binding(session.story_key, session.story_version) is None:
+                raise ValueError(
+                    f"存档引用的剧情版本不可用: {session.story_key}@{session.story_version}"
+                )
         runner.events = list(events or [])
         (
             runner.fallback_prompt_active,
@@ -550,6 +580,11 @@ class WebGameService:
                 operation="load",
                 response=restored.response(),
                 title=restored.engine.game_session.char_name or saved["name"],
+                rewind_run={
+                    "turn_count": restored.engine.game_session.turn_count,
+                    "char_name": restored.engine.game_session.char_name,
+                    "realm": restored.engine.game_session.realm,
+                },
             )
             self._register_runner(session_id, restored)
             return response
@@ -694,6 +729,7 @@ class WebGameService:
         consume_legacy_bonuses: bool = False,
         terminal: dict[str, Any] | None = None,
         save_slot: dict[str, Any] | None = None,
+        rewind_run: dict[str, Any] | None = None,
     ) -> dict[str, Any]:
         is_guest = is_guest_user_id(runner.user_id)
         result = self.db.commit_session_mutation(
@@ -713,6 +749,7 @@ class WebGameService:
             consume_legacy_bonuses=consume_legacy_bonuses,
             terminal=terminal,
             save_slot=save_slot,
+            rewind_run=rewind_run,
         )
         session_value = result.get("session")
         session_response: dict[str, Any] = session_value if isinstance(session_value, dict) else result
@@ -897,10 +934,16 @@ class WebGameService:
             normalized["attributes"] = normalize_profile_attributes(normalized.get("attributes", {}))
         normalized["randomize_attributes"] = bool(normalized.get("randomize_attributes"))
 
-        catalog_talents = self._catalog_names("catalog_talents")
-        catalog_families = self._catalog_names("catalog_family_backgrounds")
-        catalog_roots = self._catalog_names("catalog_spirit_roots")
-        catalog_difficulties = self._catalog_names("catalog_difficulties")
+        catalogs = {
+            "talent": self._catalog_rows("catalog_talents"),
+            "family_background": self._catalog_rows("catalog_family_backgrounds"),
+            "spirit_root": self._catalog_rows("catalog_spirit_roots"),
+            "difficulty": self._catalog_rows("catalog_difficulties"),
+        }
+        catalog_talents = _catalog_names(catalogs["talent"])
+        catalog_families = _catalog_names(catalogs["family_background"])
+        catalog_roots = _catalog_names(catalogs["spirit_root"])
+        catalog_difficulties = _catalog_names(catalogs["difficulty"])
 
         normalized["talent"] = _pick(
             str(normalized.get("talent") or ""), TALENT_OPTIONS + catalog_talents
@@ -916,31 +959,23 @@ class WebGameService:
             str(normalized.get("spirit_root") or ""), roots + catalog_roots
         )
         if not normalized.get("spirit_root_grade"):
-            normalized["spirit_root_grade"] = self._catalog_spirit_root_grade(
-                normalized["spirit_root"]
-            )
+            root = _catalog_entry(catalogs["spirit_root"], normalized["spirit_root"])
+            normalized["spirit_root_grade"] = str(root.get("grade") or "")
+        semantics = {
+            key: _catalog_semantics(_catalog_entry(rows, str(normalized.get(key) or "")))
+            for key, rows in catalogs.items()
+        }
+        normalized["profile_semantics"] = {
+            key: value for key, value in semantics.items() if value
+        }
         return normalized
 
-    def _catalog_names(self, table: str) -> list[str]:
+    def _catalog_rows(self, table: str) -> list[dict[str, Any]]:
         try:
-            return [
-                str(row.get("name") or "")
-                for row in self.db.list_catalog(table)
-                if str(row.get("name") or "")
-            ]
+            return [dict(row) for row in self.db.list_catalog(table)]
         except sqlalchemy.exc.SQLAlchemyError as exc:
             logging.getLogger(__name__).warning("catalog %s fetch failed: %s", table, exc)
             return []
-
-    def _catalog_spirit_root_grade(self, name: str) -> str:
-        try:
-            for row in self.db.list_catalog("catalog_spirit_roots"):
-                if row.get("name") == name:
-                    return str(row.get("grade") or "")
-        except sqlalchemy.exc.SQLAlchemyError as exc:
-            logging.getLogger(__name__).warning("catalog spirit_root_grade fetch failed for %s: %s", name, exc)
-            return ""
-        return ""
 
     def _choice_text(self, runner: WebRunner, payload: dict[str, Any]) -> str:
         choices = list(runner.engine.game_session.last_choices or [])
@@ -948,43 +983,40 @@ class WebGameService:
             index = int(payload["choice_index"])
             if index < 0 or index >= len(choices):
                 raise ValueError("选项序号无效。")
-            return _with_choice_semantic(index, choices[index])
+            return choice_with_semantic(index, choices[index])
 
         raw = str(payload.get("choice") or "").strip()
         letter_map = {"A": 0, "B": 1, "C": 2, "D": 3}
         if raw.upper() in letter_map and letter_map[raw.upper()] < len(choices):
             index = letter_map[raw.upper()]
-            return _with_choice_semantic(index, choices[index])
+            return choice_with_semantic(index, choices[index])
         if raw in {"1", "2", "3", "4"}:
             index = int(raw) - 1
             if index < len(choices):
-                return _with_choice_semantic(index, choices[index])
+                return choice_with_semantic(index, choices[index])
         if raw:
             raise ValueError("请选择 A/B/C/D。")
         raise ValueError("请选择 A/B/C/D。")
 
 
+def _catalog_names(rows: list[dict[str, Any]]) -> list[str]:
+    return [str(row.get("name") or "") for row in rows if str(row.get("name") or "")]
+
+
+def _catalog_entry(rows: list[dict[str, Any]], name: str) -> dict[str, Any]:
+    return next((row for row in rows if str(row.get("name") or "") == name), {})
+
+
+def _catalog_semantics(row: dict[str, Any]) -> dict[str, Any]:
+    return {
+        field: row[field]
+        for field in _PROFILE_SEMANTIC_FIELDS
+        if field in row and row[field] not in (None, "", [], {})
+    }
+
+
 def _pick(value: str, options: list[str]) -> str:
     return value if value in options else options[0]
-
-
-_CHOICE_SEMANTIC_PREFIXES = (
-    ("A", "稳妥"),
-    ("B", "机遇"),
-    ("C", "风险"),
-    ("D", "气运"),
-)
-_CHOICE_SEMANTIC_TAG_RE = re.compile(r"^\s*【(?:稳妥|机遇|风险|气运)】\s*")
-
-
-def _with_choice_semantic(index: int, text: str) -> str:
-    """Preserve A/B/C/D semantics when model choice text omits route labels."""
-    body = clean_choice_text(str(text or "").strip())
-    body = _CHOICE_SEMANTIC_TAG_RE.sub("", body, count=1).strip()
-    if 0 <= index < len(_CHOICE_SEMANTIC_PREFIXES):
-        letter, label = _CHOICE_SEMANTIC_PREFIXES[index]
-        return f"{letter}【{label}】{body}"
-    return body
 
 
 def is_guest_user_id(user_id: str | None) -> bool:

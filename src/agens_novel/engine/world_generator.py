@@ -11,11 +11,32 @@ import logging
 from typing import Any
 
 from ..game.constants import ATTRIBUTE_KEYS, ATTRIBUTE_LABELS
-from .choices import normalize_choices
-from .profile_opening import profile_summary
+from .choices import clean_visible_text, has_visible_english, normalize_choices
+from .profile_opening import profile_summary, world_key_for_summary
+from .story_catalog import opening_story_binding, story_arc_for_binding
 from .world_catalog import world_pack_for_key
 
 log = logging.getLogger(__name__)
+
+_OPENING_VISIBLE_FIELDS = (
+    "world_name",
+    "initial_situation",
+    "initial_situation_16",
+    "opening_narrative",
+    "current_conflicts",
+    "fate_hooks",
+    "chronicle_0_16",
+    "regions",
+    "sects",
+    "choices",
+)
+_WORLD_VISIBLE_FIELDS = (
+    "current_scene",
+    "location",
+    "region",
+    "lore_facts",
+    "discovered_locations",
+)
 
 def build_world_prompt(profile: dict[str, Any]) -> str:
     """Build a World Builder prompt from a character creation profile."""
@@ -32,6 +53,17 @@ def build_world_prompt(profile: dict[str, Any]) -> str:
         if isinstance(item, dict)
     )
     random_mode = "随机" if summary["randomize_attributes"] else "手选"
+    semantic_text = _semantic_prompt(summary.get("profile_semantics"))
+    legacy_talents = [
+        str(item).strip()
+        for item in profile.get("legacy_talents", [])
+        if str(item).strip()
+    ] if isinstance(profile.get("legacy_talents"), list) else []
+    opening_titles = [
+        str(item).strip()
+        for item in profile.get("opening_titles", [])
+        if str(item).strip()
+    ] if isinstance(profile.get("opening_titles"), list) else []
 
     parts = [
         f"角色名：{summary['char_name']}",
@@ -44,6 +76,12 @@ def build_world_prompt(profile: dict[str, Any]) -> str:
         f"命数倾向：{fate}",
         f"命数画像：{fate_detail}",
     ]
+    if semantic_text:
+        parts.append(f"命数语义：{semantic_text}")
+    if legacy_talents:
+        parts.append(f"遗泽天赋：{'、'.join(legacy_talents)}")
+    if opening_titles:
+        parts.append(f"开局称号：{'、'.join(opening_titles)}")
     return (
         "；".join(parts)
         + "。请根据以上信息生成该角色的本局修仙世界观、外界情报、0-16岁短编年史、"
@@ -63,6 +101,8 @@ def build_world_fallback(profile: dict[str, Any]) -> dict[str, Any]:
     fate_tags = summary["fate_tendency"]
     fate_profile = summary["fate_profile"]
     variant = _select_variant(summary)
+    story = opening_story_binding(variant["world_key"], fate_tags)
+    story_arc = story_arc_for_binding(story["story_key"], story["story_version"])
     world_name = variant["world_name"]
     sect_name = variant["sect"]
     location = variant["location"]
@@ -82,6 +122,7 @@ def build_world_fallback(profile: dict[str, Any]) -> dict[str, Any]:
     lore_facts = [
         f"{world_name}当前冲突：{conflict}。",
         f"{char_name}的命数倾向：{'、'.join(fate_tags)}。",
+        str(story["story_opening"]),
         *chronicle,
     ]
 
@@ -112,14 +153,26 @@ def build_world_fallback(profile: dict[str, Any]) -> dict[str, Any]:
         "long_conflict": variant["long_conflict"],
         "event_weights": variant["event_weights"],
         "matched_fates": variant["matched_fates"],
-        "opening_narrative": "\n".join(chronicle) + "\n\n" + initial_situation,
+        **story,
+        "opening_narrative": (
+            "\n".join(chronicle)
+            + "\n\n"
+            + str(story["story_opening"])
+            + "\n\n"
+            + initial_situation
+        ),
         "choices": choices,
         "world": {
             "current_scene": initial_situation,
             "location": location,
             "region": world_name,
             "npcs_present": [{"name": variant["mentor"], "relation": "接引", "realm": "练气", "affinity": 0}],
-            "active_quests": [{"name": variant["quest"], "description": conflict, "status": "active", "type": "主线"}],
+            "active_quests": [{
+                "name": story_arc.title if story_arc else variant["quest"],
+                "description": story["story_state"]["stage_goal"],
+                "status": "active",
+                "type": "主线",
+            }],
             "discovered_locations": [location],
             "lore_facts": lore_facts,
             "day_count": 1,
@@ -142,6 +195,7 @@ def parse_world_response(result: dict[str, Any]) -> dict[str, Any]:
         log.warning("World builder returned no usable data")
         return {}
     data = _flatten_world_payload(data)
+    _clean_opening_visible_fields(data)
     required = ["world_name", "regions", "sects", "initial_situation"]
     missing = [k for k in required if k not in data]
     if missing:
@@ -250,19 +304,88 @@ def is_complete_opening_payload(data: dict[str, Any]) -> bool:
         and isinstance(lore, list)
         and len([item for item in lore if str(item).strip()]) >= 1
         and len(choices) == 4
+        and not any(has_visible_english(text) for text in _opening_visible_texts(data))
     )
 
 
+def _clean_opening_visible_fields(data: dict[str, Any]) -> None:
+    for key in _OPENING_VISIBLE_FIELDS:
+        if key in data:
+            data[key] = _clean_visible_value(data[key])
+    world = data.get("world")
+    if not isinstance(world, dict):
+        return
+    for key in (
+        "current_scene",
+        "location",
+        "region",
+        "lore_facts",
+        "discovered_locations",
+        "npcs_present",
+        "active_quests",
+    ):
+        if key in world:
+            world[key] = _clean_visible_value(world[key])
+
+
+def _clean_visible_value(value: Any) -> Any:
+    if isinstance(value, str):
+        return clean_visible_text(value, allow_structured=False)
+    if isinstance(value, list):
+        return [_clean_visible_value(item) for item in value]
+    if isinstance(value, dict):
+        return {key: _clean_visible_value(item) for key, item in value.items()}
+    return value
+
+
+def _opening_visible_texts(data: dict[str, Any]) -> list[str]:
+    values: list[str] = []
+    for key in _OPENING_VISIBLE_FIELDS:
+        values.extend(_visible_strings(data.get(key)))
+    values.extend(_world_visible_texts(data.get("world")))
+    return values
+
+
+def _world_visible_texts(value: Any) -> list[str]:
+    if not isinstance(value, dict):
+        return []
+    values: list[str] = []
+    for key in _WORLD_VISIBLE_FIELDS:
+        values.extend(_visible_strings(value.get(key)))
+    values.extend(_record_visible_texts(value.get("npcs_present"), ("name", "relation", "realm")))
+    values.extend(_record_visible_texts(value.get("active_quests"), ("name", "description", "type")))
+    return values
+
+
+def _record_visible_texts(value: Any, fields: tuple[str, ...]) -> list[str]:
+    if not isinstance(value, list):
+        return []
+    values: list[str] = []
+    for item in value:
+        if isinstance(item, dict):
+            for key in fields:
+                values.extend(_visible_strings(item.get(key)))
+    return values
+
+
+def _visible_strings(value: Any) -> list[str]:
+    if isinstance(value, str):
+        return [value]
+    if isinstance(value, list):
+        out: list[str] = []
+        for item in value:
+            out.extend(_visible_strings(item))
+        return out
+    if isinstance(value, dict):
+        out = []
+        for item in value.values():
+            out.extend(_visible_strings(item))
+        return out
+    return []
+
+
 def _select_variant(summary: dict[str, Any]) -> dict[str, Any]:
-    attrs = summary["attributes"]
-    if summary["difficulty"] == "困难" or attrs["willpower"] >= 7 or attrs["luck"] <= 3:
-        key = "frontier"
-    elif "隐世" in summary["family_background"] or "宗门" in summary["family_background"]:
-        key = "clan"
-    elif attrs["luck"] >= 7 or attrs["soul"] >= 7:
-        key = "ocean"
-    else:
-        key = "forest"
+    key = world_key_for_summary(summary)
     pack = dict(world_pack_for_key(key))
     pack["world_key"] = key
     return pack
@@ -283,9 +406,11 @@ def _fallback_chronicle(summary: dict[str, Any], variant: dict[str, str]) -> lis
     family = summary["family_background"]
     talent = summary["talent"]
     root = summary["spirit_root"]
+    semantics = summary.get("profile_semantics")
+    semantic_context = _chronicle_semantics(semantics)
     return [
-        f"零至六岁，{name}生于{family}，族里只记得他少哭寡言，常望着远处灵光出神。",
-        f"七至十二岁，{root}初显，{talent}也在一次小小变故中露出端倪。",
+        f"零至六岁，{name}生于{family}。{semantic_context['family'] or '家中只留下朴素而克制的早年记载。'}",
+        f"七至十二岁，{root}初显，{talent}也在一次小小变故中露出端倪。{semantic_context['talent_root']}",
         f"十三至十五岁，{variant['world_name']}的局势传到家门，{_attribute_readout(attrs)}逐渐决定他的修行短板。",
         f"十六岁，{fate}的线索把{name}带到{variant['location']}，本局修行由此展开。",
     ]
@@ -304,3 +429,67 @@ def _attribute_readout(attrs: dict[str, int]) -> str:
 
 def _fate_text(tags: list[str]) -> str:
     return "、".join(tags[:2]) if tags else "平稳入道"
+
+
+def _semantic_prompt(value: Any) -> str:
+    if not isinstance(value, dict):
+        return ""
+    parts: list[str] = []
+    for key, label in (
+        ("talent", "天赋"),
+        ("spirit_root", "灵根"),
+        ("family_background", "家世"),
+        ("difficulty", "难度"),
+    ):
+        item = value.get(key)
+        if not isinstance(item, dict):
+            continue
+        description = _short_text(item.get("description"), 56)
+        markers = _semantic_keywords(item)
+        detail = description or "、".join(markers[:4])
+        if detail:
+            parts.append(f"{label}：{detail}")
+    return "；".join(parts)
+
+
+def _chronicle_semantics(value: Any) -> dict[str, str]:
+    if not isinstance(value, dict):
+        return {"family": "", "talent_root": ""}
+    family = value.get("family_background")
+    talent = value.get("talent")
+    root = value.get("spirit_root")
+    family_text = ""
+    if isinstance(family, dict):
+        description = _short_text(family.get("description"), 48)
+        risks = family.get("initial_risks")
+        risk_text = "、".join(str(item) for item in risks[:2]) if isinstance(risks, list) else ""
+        family_text = description
+        if risk_text:
+            family_text = f"{family_text} 早年牵连包括{risk_text}。".strip()
+    talent_root_parts: list[str] = []
+    if isinstance(talent, dict):
+        talent_root_parts.append(_short_text(talent.get("description"), 42))
+    if isinstance(root, dict):
+        tendency = _short_text(root.get("cultivation_tendency"), 24)
+        if tendency:
+            talent_root_parts.append(f"灵根更亲近{tendency}")
+    return {
+        "family": family_text,
+        "talent_root": "；".join(part for part in talent_root_parts if part),
+    }
+
+
+def _semantic_keywords(item: dict[str, Any]) -> list[str]:
+    values: list[str] = []
+    for field in ("tags", "story_tags", "event_tags", "initial_risks"):
+        raw = item.get(field)
+        if isinstance(raw, list):
+            values.extend(str(value).strip() for value in raw if str(value).strip())
+    return list(dict.fromkeys(values))
+
+
+def _short_text(value: Any, limit: int) -> str:
+    text = str(value or "").strip()
+    if len(text) <= limit:
+        return text
+    return text[:limit].rstrip("，。； ") + "。"

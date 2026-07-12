@@ -27,7 +27,24 @@ log = logging.getLogger(__name__)
 _QI_REFINING_BASE_AGE = 16
 _QI_REFINING_YEARS_PER_STAGE = 2
 _QI_REFINING_TURNS_PER_STAGE = 3
-_BREAKTHROUGH_BLOCKING_EFFECTS = ("根基重创", "修为未复")
+BREAKTHROUGH_BLOCKING_EFFECTS = ("根基重创", "修为未复", "走火入魔")
+
+
+def breakthrough_blocking_effects(effects: Any) -> list[str]:
+    """Return active breakthrough blockers from string or structured effects."""
+    if not isinstance(effects, list):
+        return []
+    blockers: list[str] = []
+    for effect in effects:
+        if isinstance(effect, str):
+            name = effect.strip()
+        elif isinstance(effect, dict):
+            name = str(effect.get("name") or effect.get("effect") or effect.get("status") or "").strip()
+        else:
+            name = ""
+        if name in BREAKTHROUGH_BLOCKING_EFFECTS and name not in blockers:
+            blockers.append(name)
+    return blockers
 
 
 @dataclass
@@ -107,8 +124,7 @@ class RealmSystem:
         if game_over:
             return False, "游戏已结束，无法突破。"
         effects = getattr(session, "status_effects", [])
-        effects = effects if isinstance(effects, list) else []
-        if isinstance(effects, list) and any(effect in effects for effect in _BREAKTHROUGH_BLOCKING_EFFECTS):
+        if breakthrough_blocking_effects(effects):
             return False, "根基尚未恢复，需先疗伤稳固后方可突破。"
 
         cfg = self.get_realm_config(realm)
@@ -277,8 +293,7 @@ class RealmSystem:
         if stage >= cfg.stages:
             return None  # at max layer — need breakthrough, not stage advance
         effects = getattr(session, "status_effects", [])
-        effects = effects if isinstance(effects, list) else []
-        if isinstance(effects, list) and any(effect in effects for effect in _BREAKTHROUGH_BLOCKING_EFFECTS):
+        if breakthrough_blocking_effects(effects):
             return None
 
         min_stage = self._minimum_stage_for_chronicle_pace(session, cfg)

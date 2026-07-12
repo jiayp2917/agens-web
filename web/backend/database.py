@@ -98,6 +98,7 @@ class WebDatabaseProtocol(Protocol):
         consume_legacy_bonuses: bool = False,
         terminal: dict[str, Any] | None = None,
         save_slot: dict[str, Any] | None = None,
+        rewind_run: dict[str, Any] | None = None,
     ) -> dict[str, Any]: ...
     def save_game_slot(
         self,

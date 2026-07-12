@@ -74,14 +74,18 @@ def _build_payload(
     temperature: float,
     max_tokens: int,
     stream: bool,
+    response_format: dict[str, Any] | None = None,
 ) -> dict[str, Any]:
-    return {
+    payload: dict[str, Any] = {
         "model": model,
         "messages": [dict(m) for m in messages],
         "temperature": temperature,
         "max_tokens": max_tokens,
         "stream": stream,
     }
+    if response_format:
+        payload["response_format"] = response_format
+    return payload
 
 
 def mask_key(key: str) -> str:
@@ -132,6 +136,7 @@ async def call_llm(
     timeout_seconds: float | None = None,
     total_timeout_seconds: float | None = None,
     max_retries: int | None = None,
+    response_format: dict[str, Any] | None = None,
 ) -> LLMResponse:
     """Call the OpenAI-compatible /v1/chat/completions endpoint.
 
@@ -149,6 +154,7 @@ async def call_llm(
         temperature=temperature,
         max_tokens=max_tokens,
         stream=stream,
+        response_format=response_format,
     )
     headers = _headers(key)
     url = f"{base.rstrip('/')}/chat/completions"
@@ -187,6 +193,7 @@ async def call_llm_stream(
     total_timeout_seconds: float | None = None,
     max_retries: int | None = None,
     on_chunk: Callable[[str], None] | None = None,
+    response_format: dict[str, Any] | None = None,
 ) -> LLMResponse:
     """Stream LLM response with per-chunk callback.
 
@@ -205,6 +212,7 @@ async def call_llm_stream(
         temperature=temperature,
         max_tokens=max_tokens,
         stream=True,
+        response_format=response_format,
     )
     headers = _headers(key)
     url = f"{base.rstrip('/')}/chat/completions"

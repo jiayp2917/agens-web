@@ -33,6 +33,7 @@ DEATH_BY_LIFESPAN = "寿元耗尽"
 DEATH_BY_KARMA = "气运反噬"
 DEATH_BY_PLAYER = "玩家结束本局"
 DEATH_BY_FINALE = "飞升成仙"
+END_BY_STORY = "主线收束"
 
 
 def categorize_death(session: Any) -> str:
@@ -48,6 +49,9 @@ def categorize_death(session: Any) -> str:
         return DEATH_BY_FINALE
     if not getattr(session, "game_over", False):
         return ""
+    story_state = getattr(session, "story_state", None)
+    if isinstance(story_state, dict) and story_state.get("status") in {"resolved", "failed"}:
+        return END_BY_STORY
     error = getattr(session, "error", "") or ""
     lifespan = getattr(session, "lifespan", 1)
     # Karma death: D气运 extreme failure.
@@ -302,4 +306,6 @@ def _summary_headline(session: Any, death_cause: str) -> str:
         return f"{char_name}寿元耗尽，坐化而去，{realm}修为归于尘土。"
     if death_cause == DEATH_BY_PLAYER:
         return f"{char_name}主动退场，{realm}修为暂时封存。"
+    if death_cause == END_BY_STORY:
+        return f"{char_name}走完本局主线，{realm}之路留下定论。"
     return f"{char_name}的修真之路暂告一段落。"

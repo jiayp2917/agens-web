@@ -6,6 +6,7 @@ from typing import Any
 from unittest.mock import patch
 
 from agens_novel.engine.action_delta_policy import is_pure_cultivation
+from agens_novel.engine.choices import fallback_choices
 from agens_novel.engine.game_engine import GameEngine
 from agens_novel.session.game_session import GameSession
 
@@ -136,8 +137,13 @@ class TestGameEngineHandleAction:
         with patch("agens_novel.engine.game_engine.run_turn_sync", side_effect=runner):
             engine.handle_action("B")
 
-        assert seen_inputs[0].startswith("询问接引弟子")
-        assert engine.game_session.last_choices == ["继续询问", "返回山门", "观察弟子神色", "【气运】随缘而行，听天命、赌因果"]
+        assert seen_inputs[0].startswith("B【机遇】询问接引弟子")
+        assert engine.game_session.last_choices == [
+            "继续询问",
+            "返回山门",
+            "观察弟子神色",
+            fallback_choices(engine.game_session)[3],
+        ]
 
     def test_choice_letter_ignores_missing_slot(self, monkeypatch) -> None:
         engine = GameEngine()
@@ -153,7 +159,7 @@ class TestGameEngineHandleAction:
         engine.game_session.last_choices = ["留在山门吐纳", "询问接引弟子", "观察灵气流向", "随缘听天命"]
 
         assert engine._resolve_choice_input("D: 沿石阶寻找隐藏碑文") is None
-        assert engine._resolve_choice_input("D") == "随缘听天命"
+        assert engine._resolve_choice_input("D") == "D【气运】随缘听天命"
 
     def test_action_without_game(self, monkeypatch) -> None:
         monkeypatch.setenv("AGNES_API_KEY", "sk-test-1234567890")
@@ -338,6 +344,43 @@ class TestGameEngineHandleAction:
         assert narratives and "村落香火" in narratives[-1][0]
         assert not any("天道紊乱" in msg or "因果结算" in msg for msg in infos)
 
+    def test_schema_narrator_with_duplicate_choice_retries_live_once(self) -> None:
+        engine = GameEngine()
+        engine.game_session.game_started = True
+        engine.game_session.last_choices = ["闭门吐纳", "外出访友", "夜探山径", "随缘静候"]
+        narrator_calls = 0
+
+        def runner(agent_name, user_input, session, **kw):
+            nonlocal narrator_calls
+            if agent_name == "narrator":
+                narrator_calls += 1
+                if narrator_calls == 1:
+                    return {
+                        "narrative": "此后三年，山门旧案再起波澜，其人循线查访。",
+                        "state_delta": {"character": {}, "world": {}, "meta": {}},
+                        "choices": ["闭门整理", "拜访执事", "夜探山径", "夜探山径"],
+                        "provider_json_schema": True,
+                        "provider_json_envelope_ok": True,
+                        "llm_error": "",
+                    }
+                return {
+                    "narrative": "此后三年，山门旧案再起波澜，其人循线查访并确认新的去向。",
+                    "state_delta": {"character": {}, "world": {}, "meta": {}},
+                    "choices": ["闭门整理", "拜访执事", "夜探山径", "静候命数"],
+                    "provider_json_schema": True,
+                    "provider_json_envelope_ok": True,
+                    "llm_error": "",
+                }
+            return {"approved": True, "corrected_delta": {}, "llm_error": ""}
+
+        with patch("agens_novel.engine.game_engine.run_turn_sync", side_effect=runner):
+            engine.handle_action("A")
+
+        assert narrator_calls == 2
+        assert engine.game_session.turn_count == 1
+        assert engine.game_session.local_story_active is False
+        assert engine.game_session.last_choices == ["闭门整理", "拜访执事", "夜探山径", "静候命数"]
+
     def test_json_only_narrator_delta_settles_by_rules_without_retry_or_local_story(self, monkeypatch) -> None:
         monkeypatch.setenv("AGNES_API_KEY", "sk-test-1234567890")
         engine = GameEngine()
@@ -489,6 +532,16 @@ class TestGameEngineHandleAction:
 
     def test_notice_board_description_is_not_treated_as_claimed_reward(self, monkeypatch) -> None:
         monkeypatch.setenv("AGNES_API_KEY", "sk-test-1234567890")
+        monkeypatch.setattr(
+            "agens_novel.engine.turn_rules.select_chronicle_event",
+            lambda *_args, **_kwargs: {
+                "id": "notice-board",
+                "event_type": "稳妥",
+                "lore": "悬赏榜公布了新一批外门差事。",
+                "stage_goal": "核对可接取的外门差事",
+                "allowed_delta_types": ["location", "current_scene"],
+            },
+        )
         engine = GameEngine()
         engine.game_session.game_started = True
         infos: list[str] = []
@@ -511,7 +564,12 @@ class TestGameEngineHandleAction:
                             "location": "青云小传宗·悬赏榜广场",
                         }
                     },
-                    "choices": ["接下采集凝露草的任务", "接下驱赶噬灵鼠的任务", "先向周围弟子打听"],
+                    "choices": [
+                        "先整理榜上稳妥委托",
+                        "接下采集凝露草的任务",
+                        "接下驱赶噬灵鼠的任务",
+                        "暂且观望榜单变化",
+                    ],
                     "llm_error": "",
                 }
             if agent_name == "judge":
@@ -552,7 +610,23 @@ class TestGameEngineHandleAction:
                 return _canned_judge()
             return {}
 
-        with patch("agens_novel.engine.game_engine.run_turn_sync", side_effect=runner):
+        event = {
+            "id": "reward-test",
+            "event_type": "reward",
+            "lore": "师门按功授予修行资源。",
+            "stage_goal": "验证授权奖励完整落账",
+            "allowed_delta_types": [
+                "inventory_add",
+                "techniques_add",
+                "discovered_add",
+                "active_quests_add",
+            ],
+            "choice_hints": [],
+        }
+        with (
+            patch("agens_novel.engine.turn_rules.select_chronicle_event", return_value=event),
+            patch("agens_novel.engine.game_engine.run_turn_sync", side_effect=runner),
+        ):
             engine.handle_action("接受师兄赠丹并请教功法")
 
         assert any(item.get("name") == "清灵丹" for item in engine.game_session.inventory)
@@ -696,7 +770,12 @@ class TestGameEngineHandleAction:
         with patch("agens_novel.engine.game_engine.run_turn_sync", side_effect=selective_runner):
             engine.handle_action("C")
 
-        assert engine.game_session.last_choices == ["向执事解释来意", "退回山门等候", "寻找外门任务", "【气运】随缘而行，听天命、赌因果"]
+        assert engine.game_session.last_choices == [
+            "向执事解释来意",
+            "退回山门等候",
+            "寻找外门任务",
+            fallback_choices(engine.game_session)[3],
+        ]
         assert not any("天道紊乱" in msg for msg in infos)
         assert engine.game_session.current_scene == "晨雾中的青云山外门"
         assert engine.game_session.turn_count == 1
@@ -741,7 +820,7 @@ class TestGameEngineHandleAction:
         assert s.inventory == [{"name": "粗布道袍", "quantity": 1, "type": "防具"}]
         assert s.techniques == [{"name": "基础吐纳术", "level": 1, "type": "内功"}]
         assert s.current_scene == "晨雾中的青云山外门"
-        assert s.day_count == 2
+        assert s.day_count == 1
         assert not hasattr(s, "experience")
 
     def test_start_from_profile_seeds_opening_chat_history(self, monkeypatch, tmp_path) -> None:
@@ -900,6 +979,34 @@ class TestStageAdvancement:
         assert last_delta["meta"]["stage_advanced"] is True
         assert last_delta["meta"]["stage_advance_reason"] == "chronicle_pace"
 
+    def test_stage_advance_info_uses_public_realm_label_only(self, monkeypatch) -> None:
+        monkeypatch.setenv("AGNES_API_KEY", "sk-test-1234567890")
+        engine = GameEngine()
+        infos: list[str] = []
+        engine.on_info = lambda message: infos.append(message)
+        engine.game_session.game_started = True
+        engine.game_session.realm = "筑基"
+        engine.game_session.realm_stage = 1
+        stage_delta = {
+            "character": {"realm_stage": 2},
+            "meta": {
+                "stage_advanced": True,
+                "stage_advance_reason": "chronicle_pace",
+                "new_stage": 2,
+                "max_stage": 4,
+            },
+        }
+
+        with patch.object(engine.realm_system, "try_advance_stage", return_value=stage_delta):
+            with _patch_turn_runner():
+                engine.handle_action("闭关温养")
+
+        stage_messages = [message for message in infos if "修为精进" in message]
+        assert stage_messages
+        assert "境界:" not in stage_messages[-1]
+        assert "破境准备" not in stage_messages[-1]
+        assert "/" not in stage_messages[-1]
+
 
 class TestBreakthroughRouting:
     """Tests for natural-language breakthrough detection and routing."""
@@ -971,6 +1078,52 @@ class TestBreakthroughRouting:
         assert engine.game_session.last_choices[1] == "请教师兄"
         assert "冲击" not in engine.game_session.last_choices[2]
         assert "突破" not in engine.game_session.last_choices[2]
+
+    def test_eligible_breakthrough_is_exposed_in_risk_slot(self) -> None:
+        engine = GameEngine()
+        engine.game_session.game_started = True
+        engine.game_session.realm = "练气"
+        engine.game_session.realm_stage = 9
+        engine.game_session.breakthrough_flags = ["foundation_aid"]
+
+        choices = engine._filter_unavailable_breakthrough_choices(
+            ["闭关温养根基", "拜访同门问道", "深入古道查探", "静候命数回响"]
+        )
+
+        assert choices[:2] == ["闭关温养根基", "拜访同门问道"]
+        assert "冲击筑基" in choices[2]
+        assert choices[3] == "静候命数回响"
+
+    def test_eligible_breakthrough_is_removed_from_non_risk_slots(self) -> None:
+        engine = GameEngine()
+        engine.game_session.game_started = True
+        engine.game_session.realm = "练气"
+        engine.game_session.realm_stage = 9
+        engine.game_session.breakthrough_flags = ["foundation_aid"]
+
+        choices = engine._filter_unavailable_breakthrough_choices(
+            ["稳妥冲击筑基", "拜访同门问道", "深入古道查探", "随缘突破"]
+        )
+
+        assert "突破" not in choices[0] and "冲击" not in choices[0]
+        assert "冲击筑基" in choices[2]
+        assert "突破" not in choices[3]
+
+    def test_blocked_breakthrough_options_force_healing_and_remove_retry(self) -> None:
+        engine = GameEngine()
+        engine.game_session.game_started = True
+        engine.game_session.realm = "练气"
+        engine.game_session.realm_stage = 9
+        engine.game_session.breakthrough_flags = ["foundation_aid"]
+        engine.game_session.status_effects = ["走火入魔", "旧伤"]
+
+        choices = engine._filter_unavailable_breakthrough_choices(
+            ["闭关温养", "拜访丹师", "再次冲击筑基", "静候命数回响"]
+        )
+
+        assert "疗伤" in choices[0]
+        assert "走火入魔" in choices[0]
+        assert all("突破" not in choice and "冲击筑基" not in choice for choice in choices)
 
 
 class TestBreakthroughPreparationGate:
@@ -1081,13 +1234,20 @@ class TestBreakthroughPreparationGate:
                 engine.attempt_breakthrough()
 
         assert engine.game_session.realm == "筑基"
-        assert engine.game_session.last_choices == ["稳固筑基道台", "拜谢护法长老", "查看新功法", "【气运】随缘而行，听天命、赌因果"]
+        assert engine.game_session.last_choices == [
+            "稳固筑基道台",
+            "拜谢护法长老",
+            "查看新功法",
+            fallback_choices(engine.game_session)[3],
+        ]
 
     def test_breakthrough_narrator_error_keeps_rule_settlement(self, monkeypatch) -> None:
         monkeypatch.setenv("AGNES_API_KEY", "sk-test-1234567890")
         engine = GameEngine()
         infos: list[str] = []
+        narratives: list[str] = []
         engine.on_info = lambda msg: infos.append(msg)
+        engine.on_narrative = lambda text, _turn: narratives.append(text)
 
         with _patch_turn_runner():
             engine.new_game("许满")
@@ -1107,7 +1267,81 @@ class TestBreakthroughPreparationGate:
 
         assert engine.game_session.realm == "筑基"
         assert len(engine.game_session.last_choices) == 4
-        assert any("筑基" in msg for msg in infos)
+        assert any("破境已成" in text for text in narratives)
+        assert not any("突破概率" in msg or "破境准备" in msg for msg in infos)
+
+    def test_breakthrough_emits_model_diagnostics_without_internal_info(self, monkeypatch) -> None:
+        monkeypatch.setenv("AGNES_API_KEY", "sk-test-1234567890")
+        engine = GameEngine()
+        infos: list[str] = []
+        model_results: list[tuple[str, str, str]] = []
+        engine.on_info = lambda msg: infos.append(msg)
+        engine.on_model_result = lambda agent, source, status, *_args: model_results.append(
+            (agent, source, status)
+        )
+        engine.game_session.game_started = True
+        engine.game_session.realm = "练气"
+        engine.game_session.realm_stage = 9
+        engine.game_session.breakthrough_flags = ["foundation_aid"]
+
+        def runner(agent_name, user_input, session, **kw):
+            if agent_name == "narrator":
+                return {
+                    "narrative": "灵机贯通，旧有瓶颈就此松脱，其人稳稳踏入筑基初期。",
+                    "state_delta": {},
+                    "choices": ["稳固道台", "拜访执事", "深入古道", "静候天机"],
+                    "llm_error": "",
+                }
+            if agent_name == "judge":
+                return _canned_judge()
+            return {}
+
+        with patch("agens_novel.engine.game_engine.run_turn_sync", side_effect=runner):
+            with patch("agens_novel.game.realm.random.random", return_value=0.001):
+                engine.attempt_breakthrough()
+
+        assert ("narrator", "breakthrough", "ok") in model_results
+        assert ("judge", "breakthrough", "ok") in model_results
+        assert not any("突破概率" in msg or "破境准备" in msg for msg in infos)
+
+    def test_breakthrough_duplicate_choices_retry_live_once(self) -> None:
+        engine = GameEngine()
+        engine.game_session.game_started = True
+        engine.game_session.realm = "练气"
+        engine.game_session.realm_stage = 9
+        engine.game_session.breakthrough_flags = ["foundation_aid"]
+        narrator_calls = 0
+
+        def runner(agent_name, user_input, session, **kw):
+            nonlocal narrator_calls
+            if agent_name == "narrator":
+                narrator_calls += 1
+                if narrator_calls == 1:
+                    return {
+                        "narrative": "灵机贯通，其人踏入筑基初期。",
+                        "state_delta": {"character": {}, "world": {}, "meta": {}},
+                        "choices": ["稳固道台", "拜访执事", "查看新境", "查看新境"],
+                        "provider_json_schema": True,
+                        "provider_json_envelope_ok": True,
+                        "llm_error": "",
+                    }
+                return {
+                    "narrative": "灵机贯通，其人踏入筑基初期，山门旧局也随之改变。",
+                    "state_delta": {"character": {}, "world": {}, "meta": {}},
+                    "choices": ["稳固道台", "拜访执事", "查看新境", "静候命数"],
+                    "provider_json_schema": True,
+                    "provider_json_envelope_ok": True,
+                    "llm_error": "",
+                }
+            return _canned_judge()
+
+        with patch("agens_novel.engine.game_engine.run_turn_sync", side_effect=runner):
+            with patch("agens_novel.game.realm.random.random", return_value=0.0):
+                engine.attempt_breakthrough()
+
+        assert narrator_calls == 2
+        assert engine.game_session.realm == "筑基"
+        assert engine.game_session.last_choices == ["稳固道台", "拜访执事", "查看新境", "静候命数"]
 
     def test_narrator_retry_recovers_transient_404_without_fallback(self, monkeypatch) -> None:
         monkeypatch.setenv("AGNES_API_KEY", "sk-test-1234567890")

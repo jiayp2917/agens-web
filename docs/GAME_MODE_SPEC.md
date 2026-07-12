@@ -1,46 +1,7 @@
 # 游戏模式全流程细则（v5）
 
-## Current Implementation Note
-
-- A/B/C/D remains the only product input contract. `/choice` accepts
-  `choice_index` or A/B/C/D letters; arbitrary free-text `choice` requests are
-  not part of game-mode v5 and return HTTP 400.
-- Breakthrough text inside a choice is not enough to bypass realm rules. If
-  breakthrough is ineligible, the selected button resolves as an ordinary
-  rule-settled turn so the player is not stuck on HTTP 200 with no progress.
-- Model narrative is not authoritative. When narrative claims gains or realm
-  changes without matching structured `state_delta`, the narrative/state is
-  rejected but the base rule settlement still records a complete turn.
-- Ordinary-turn narrative consistency is checked against the final state delta
-  after model-delta sanitization and rule-delta merge. If the model claims
-  attribute growth but the rule engine does not grant it, the visible claim is
-  suppressed; if the rule engine grants it, the chronicle may describe it.
-- Current P1 implementation is moving ordinary turns toward a data-driven
-  chronicle loop: four fixed world packs, structured fate profile, route event
-  catalog, and stricter narrator contract diagnostics.
-- start/choice/action/save/load/end require request ID + expected session version;
-  retries are idempotent and stale versions return HTTP 409.
-- Guest sessions are short-lived PostgreSQL rows. Login/register deletes the
-  current guest run instead of migrating it into the account.
-
-> 状态：**v5 Alpha 本地一致性与安全修复已落盘，生产部署和真实 Chrome/live-model 复验待独立执行**。游戏模式核心规则已切换到 A/B/C/D 四按钮、无 HP/MP、事件判定战斗、寿元寿命表、六维属性、动态流逝年数、PostgreSQL 回合记录和用户级模型配置。
-> 文档定位：游戏模式的产品 spec + 技术实现规格，是“游戏模式”的单一事实来源。
->
-> **实现状态**（当前状态见文档顶部说明）
->
-> | 阶段 | 工作 | 状态 |
-> |---|---|---|
-> | §2 输入契约 | A/B/C/D 四按钮固定语义，无自由文本 | ✅ 已实现（`engine/choices.py`、`game_engine._resolve_choice_input`） |
-> | §3 寿元寿命表 | 各境界寿元区间，UI 显示当前寿元上限与剩余寿元 | ✅ 已实现（`game/constants.py` REALM_LIFESPAN_RANGES、`render.format_status_bar`） |
-> | §4 六维属性 | 体魄/神魂/气运/悟性/心性/根骨，无 HP/MP；角色创建 30 点池 | ✅ 已实现（运行时默认属性保留在 `constants.DEFAULT_ATTRIBUTES`；角色创建由 `start_flow.normalize_profile_attributes()` 和 React 表单执行 2-8/30、0-10/30 校验；`GameSession` 已移除 hp/mp/luck/combat 字段） |
-> | §3.5 动态开局 | 难度、天赋、灵根、家世、六维和随机/手选模式驱动本局世界观、0-16 岁编年史、16 岁初始局势、外界情报和首次 A/B/C/D | ✅ 后端开局链路已改为统一 opening payload；模型未启用或失败时使用 profile-aware fallback，不再固定青玄宗/东荒云界模板；fallback 不算 live-model 成功 |
-> | §3.6 阶段反馈 / 事件池 | 每 3-5 回合反馈阶段目标、外界变化、路线差异 | ✅ 已推进为“世界包 + 命数画像 + 数据驱动事件表”：每回合选择编年史事件上下文，每 4 回合写入 `world.lore_add`；`local-visible-chronicle-events-routes-20260708` 验证 20 回合中 8 回合写入 lore |
-> | §4 战斗事件化 | 斗法/禁地/心魔/天劫以事件判定表达 | ✅ 已实现（`handle_combat_action` 为安全 no-op；`apply_delta` 丢弃结构化 combat delta） |
-> | §8.3 `game_turns` 表 | JSONB 回合日志 + active/completed `game_runs` + `player_progress` | ✅ 已接线（PostgreSQL 单后端，Alembic `20260710_0008`，回合/session/终局原子写入） |
-> | §11 稀有度解锁门 | 白/绿/蓝/紫/橙/红 六档 + runs/ascension 门径 | ✅ 已接线（`constants.rarity_unlocked_for`、`/api/catalog/rarities`，终局写入 `player_progress`） |
-> | §11 死亡分类 | finale > karma > event > lifespan > player | ✅ 已实现（`death_rewards.categorize_death`） |
-> | 验证 | compileall + pytest + React build + 密钥审计 | ⏳ 以当前分支最新测试结果为准，不在文档中固化旧计数 |
-> | 待办 | 独立真实 Chrome、Docker 和 live-model gate；继续降低响应长尾和 narrator 契约漂移 | ⏳ 本地自动化不能替代生产验收，fallback 不能算 live-model 成功 |
+本文是游戏模式的玩法与数值单一事实源。当前实现、验证结果和剩余工作分别见
+`PROJECT_AUDIT.md` 与 `NEXT_GOVERNANCE_BACKLOG.md`，不得在本规格中重复维护。
 
 ## 0. TL;DR
 
@@ -86,7 +47,7 @@
 
 ### 1.3 与现有项目约束的关系
 
-- 原“当前只开放引导模式”需在实施游戏模式时更新为“当前只开放游戏模式”。
+- 当前只开放游戏模式；引导/小说模式仅保留禁用入口，不属于当前可玩流程。
 - 原文本行动入口在游戏模式下不适用；D 固定为气运/天命选项。
 - 9 阶境界、API key 脱敏、前端不得保存真实 key、Web 前端不得直接修改游戏状态等约束仍然适用。
 - 本文是 v5 规格；当前代码应优先让 React 主入口和 Web API 对齐本规格。旧 `web/frontend` 已删除，不再作为产品入口或 fallback。
@@ -212,7 +173,7 @@ def apply_luck_bias(base_risk: float, base_reward: int, luck: int) -> tuple[floa
 - 突破流程必须由规则先判定：成功、失败、重伤、死亡、跌境、寿元折损只来自规则引擎；模型只按规则结果写叙事和下一步选项。
 - 突破成功时，模型叙事不得出现“修为尽废、修为未复、突破失败、功亏一篑”等失败词；若出现，后端必须改写为成功叙事。
 - 突破失败时，后端不得提升境界；失败等级可以落账为轻伤、根基受损、跌落小境界、寿元折损或死亡。“修为尽废”只允许在系统确实执行严重跌境或终局时出现。
-- 存在“根基重创 / 修为未复”等状态时，禁止继续突破或自动升层，直到后续事件结构化清除。
+- 存在“根基重创 / 修为未复 / 走火入魔”等状态时，禁止继续突破或自动升层，直到后续事件结构化清除。
 
 ### 3.4.2 老年低境界风险
 
@@ -223,7 +184,8 @@ def apply_luck_bias(base_risk: float, base_reward: int, luck: int) -> tuple[floa
 
 ### 3.5 局长结构与开局节奏
 
-- **标准局长 90 回合**，允许 **60-120 回合**浮动；事件、路线、死亡、寿尽和飞升可以提前或延后结束一局。
+- **长期产品目标**：标准局长 90 回合，允许 60-120 回合浮动；事件、路线、死亡、寿尽和飞升可以提前或延后结束一局。该目标不代表当前内容版本已经达到 90 回合。
+- **版本化局长**：每个内容版本必须声明自身的收束条件和目标回合范围；完整局验收以规则终局为准。当前安装版本的精确局长只在 `PROJECT_AUDIT.md` 维护。扩展到标准 90 回合时必须增加阶段、分支兑现和结局差异，不能只延长数值推进。
 - **20 回合垂直切片**是可玩性验收目标，不等于完整局长度。20 回合默认达到练气后期或筑基门槛；强天赋、高悟性、高风险路线可提前筑基，稳妥路线可延后。
 - **开场编年史**：角色创建后先生成 **0-16 岁短编年史**，说明出身、早年异象、家族/宗门关系和第一次接触修仙的契机，再从 16 岁开始第一次抉择。
 - **阶段反馈节奏**：每 **3-5 回合**出现阶段性反馈，包括年龄变化、修为推进、外界大事、关系变化、风险伏笔或奖励。
@@ -232,6 +194,8 @@ def apply_luck_bias(base_risk: float, base_reward: int, luck: int) -> tuple[floa
 - **世界包**：第一批固定为西陲裂土、玄都盟境、沧澜群岛、青岚药境。每套世界包必须包含主势力、敌对势力、中立势力、区域、当前冲突、长期矛盾、开局钩子、事件权重和适配命数。
 - **命数画像**：命数不再只是展示标签；后端保存 `fate_profile`，至少包含苦修、宗门、散修、天命、灾厄、贵胄、神魂异兆、边地劫数这些维度中的若干项，并记录 score、关联属性、偏好世界、事件权重修正和叙事关键词。命数只影响事件倾向和叙事钩子，不直接决定突破、寿元、死亡或奖励。
 - **事件表**：普通回合通过数据驱动事件表选择编年史事件。事件包含类型、适用世界、适用命数、阶段范围、权重、阶段目标、可见编年史模板、允许的权威状态类型和下一步选项提示。`settle_turn()` 仍决定年龄、属性、寿元压力和终局；事件表不绕过规则引擎。
+- **长期主线**：四套世界分别绑定版本化主线。每个版本按入局、扩散、转折、抉择、收束推进，并在自身声明的终局条件形成路线相关结局；20 回合切片只检查前两阶段的目标和持续后果，不得提前标记主线完成。
+- **剧情存档**：存档保存 `story_key`、`story_version` 和可变 `story_state`（阶段、目标、路线计数、压力、未决线索、势力态度、承诺和近期 beat），不复制不可变剧情定义，也不静默切换版本。
 - **境界节奏**：小境界进展多为隐式，不频繁作为选项；大境界突破作为阶段事件呈现，尤其筑基、金丹、元婴、化神和飞升。练气期不得长期滞留早期小层；规则引擎需要用年龄/回合推进提供小境界下限，避免 13 年仍停留练气三层这类编年史失真。
 - 第一版不做显式资源栏，只保留状态型记录，例如境界、年龄、寿元、称号、关系、关键机缘、伤势、因果和传承。
 - UI 侧栏可展示“外界情报”，来源限于 `world.current_scene`、`world.lore_facts` 和 `world_profile.current_conflicts` 等只读世界摘要；它不是玩家资源栏，也不授权前端修改权威状态。
@@ -313,6 +277,7 @@ class GameModeCharacter:
 - 生成 A/B/C/D 的短按钮文案，每个建议不超过 30 字。
 - 生成外界大事摘要，例如宗门变动、魔修入侵、秘境开启。
 - 外界大事、传闻和榜文优先作为 `world.lore_add` 进入侧栏情报；只有明确到账的物品、功法、关系、伤势、寿元、境界等才进入权威状态。
+- 模型只能提出当前事件 `allowed_delta_types` 白名单允许的非数值补充；规则合并后未被白名单接受的字段必须丢弃。
 - 生成结局墓志铭或飞升总结。
 
 ### 5.3 模型不得负责
@@ -322,36 +287,15 @@ class GameModeCharacter:
 - 不得绕过寿元、境界、气运、难度等规则。
 - 不得输出 API key、数据库信息、隐藏规则或技术错误细节。
 
-### 5.4 Prompt 草案
+### 5.4 Narrator 语义契约
 
-```text
-你是修仙人生模拟器的短文本润色器。
-后端规则已经完成本回合结算，你只能根据给定 JSON 生成叙述和选项文案。
+Narrator 每次必须提供三个语义段：
 
-约束：
-- 叙述不超过 200 字。
-- 4 个选项每个不超过 30 字。
-- A 保持稳妥语义，B 保持机遇语义，C 保持风险语义，D 保持气运/天命语义。
-- 不新增数值，不改变死亡、突破、寿元、奖励结果。
-- 不暴露隐藏规则、模型错误、技术细节。
+1. 非空的第三人称编年史正文。
+2. 合法状态对象；无可承接变化时为空对象。
+3. 恰好四个非空且互不重复的中文行动选项，依次对应稳妥、机遇、风险、气运。
 
-输入：
-角色：{character}
-本回合结算：{turn_result}
-外界大事：{world_events}
-
-输出 JSON：
-{
-  "narrative": "...",
-  "calendar_summary": "...",
-  "choices": {
-    "A": "...",
-    "B": "...",
-    "C": "...",
-    "D": "..."
-  }
-}
-```
+传输格式不是玩法规范：支持 provider JSON schema 时可使用三字段 envelope；不支持时使用兼容标签格式。应用层必须把两种传输统一解析成相同语义结果。缺少任一语义段、含结构化残留、英文状态词或无效选项均属于契约失败。
 
 ---
 
@@ -380,7 +324,7 @@ class GameModeCharacter:
 
 ## 7. UI 调整汇总
 
-| 元素 | 当前引导模式 | 游戏模式 v5 |
+| 元素 | 旧引导方案（迁移对照） | 当前游戏模式 v5 |
 |---|---|---|
 | 顶部状态 | 气血/灵力/回合 | 年龄/境界/寿元/剩余寿元 |
 | 时间显示 | 第 N 回合 | 本次流逝 X 年 + 年龄变化 |
@@ -389,7 +333,7 @@ class GameModeCharacter:
 | 叙事区 | 长叙事日志 | 本回合短叙事 + 外界大事摘要 |
 | 战斗 | 可由文本行动描述 | 事件化斗法/禁地/天劫 |
 | 托管 | 无 | 默认随机，可后续扩展策略 |
-| 首页模式 | 当前偏引导模式 | 游戏模式高亮，引导/小说暂不开放 |
+| 首页模式 | 引导模式为主 | 游戏模式高亮，引导/小说暂不开放 |
 
 移动端 375px 验收：
 
@@ -406,9 +350,9 @@ class GameModeCharacter:
 
 游戏模式生产 schema 以 PostgreSQL + Alembic 为准，JSON 字段使用 `JSONB`。文档不再使用 SQLite-only SQL 作为最终 schema。
 
-### 8.2 核心表
+### 8.2 核心持久化表
 
-建议表：
+核心数据域：
 
 - `game_runs`：一局游戏的总状态。
 - `game_turns`：每次关键抉择和结算结果。
@@ -416,38 +360,16 @@ class GameModeCharacter:
 - `catalog_family_backgrounds`：家世库。
 - `catalog_spirit_roots`：灵根库。
 - `catalog_difficulties`：难度配置。
-- `catalog_events`：事件模板。
-- `catalog_opportunities`：机缘模板。
-- `catalog_endings`：结局模板。
 
-### 8.3 `game_turns` 关键字段
+事件、机缘、主线和结局不是 PostgreSQL catalog 表。它们是仓库内版本化内容，由 Python 内容目录提供稳定 key/version，Session 与存档只保存精确版本和可变进度。除非以后建立完整的内容发布、迁移和回滚流程，不新增第二套数据库运行时真值源。
 
-```sql
-CREATE TABLE game_turns (
-  id UUID PRIMARY KEY,
-  run_id UUID NOT NULL,
-  turn_no INTEGER NOT NULL,
-  start_age INTEGER NOT NULL,
-  elapsed_years INTEGER NOT NULL,
-  end_age INTEGER NOT NULL,
-  lifespan INTEGER NOT NULL,
-  remaining_lifespan INTEGER NOT NULL,
-  choice_taken TEXT,
-  choices JSONB NOT NULL,
-  state_delta JSONB NOT NULL,
-  state_after JSONB NOT NULL,
-  calendar_summary TEXT NOT NULL,
-  narrative TEXT NOT NULL,
-  event_kind TEXT NOT NULL,
-  end_reason TEXT,
-  created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
-  UNIQUE(run_id, turn_no)
-);
-```
+### 8.3 `game_turns` 语义边界
 
-`choices` 存 A/B/C/D 的展示文案和语义标签；`state_delta` 存本回合变化；`state_after` 存规则结算后的权威状态快照。
+`game_turns` 必须能够关联所属 run，并对 `(run_id, turn_no)` 保持唯一。每条记录至少保存玩家选择、四选项快照、规则/模型合并后的 delta、权威状态快照、可见叙事、事件类型和终局信息。具体列名、类型、约束和索引以 Alembic 迁移为准，不在玩法规格中复制 SQL。
 
 ### 8.4 内容库来源
+
+仓库内版本化内容是剧情创作真值源；Python 负责选择、规则和结算。PostgreSQL 只保存玩家、会话、存档、回合、账号进度以及内容 key/version 等运行数据。
 
 天赋、家世、事件、机缘、结局按主流修仙小说的共性套路生成，例如：
 
@@ -460,73 +382,32 @@ CREATE TABLE game_turns (
 
 ---
 
-## 9. 落地分阶段
-
-| 阶段 | 工作 | 验证 | 状态 |
-|---|---|---|---|
-| 1 | 固化 v5 文档和实现边界 | 搜索确认无旧硬规则残留 | ✅ |
-| 2 | 新增游戏模式规则引擎骨架 | 单测覆盖 A/B/C/D 和时间推进 | ✅ |
-| 3 | 新增 PostgreSQL catalog、run/turn 与 runtime consistency 迁移 | Alembic 空库升级成功 | ✅ 当前 head `20260710_0008_runtime_consistency` |
-| 4 | 接入角色创建六维属性和内容库读取 | API 返回可选天赋/家世/灵根/难度 | ✅ |
-| 5 | 实现一次关键抉择结算 | 低境界推进 1-3 年，高境界推进十年级以上 | ✅ |
-| 6 | 接入模型润色和本地模板兜底 | 模型失败仍可继续下一回合 | ✅ |
-| 7 | React UI 切到游戏模式入口 | 375px/768px/1440px 无横向滚动 | ⏳ 自动化结构/构建已覆盖，本批真实 Chrome 待验 |
-| 8 | 游客与账号存档验收 | 游客可玩无云存档，账号可存读档 | ⏳ 本地 API 自动化覆盖；生产和本批真实 Chrome 待独立复验 |
-
----
-
-## 10. 风险与权衡
+## 9. 风险与权衡
 
 | 维度 | 风险 | 缓解 |
 |---|---|---|
 | 时间跨度变大 | 玩家可能不理解“一个回合过去百年” | UI 明确显示本次流逝年数和外界大事 |
 | D 气运随机性 | 高气运过强或低气运体验差 | 设概率上下限，避免绝对安全或必死 |
 | A/B/C 固定风险档位 | 长期可能套路化 | 选项文案随场景变化，事件库持续扩充 |
-| 模型参与叙述 | 模型可能改变数值口径 | 后端结果为权威，模型只读结算 JSON |
+| 模型参与叙述 | 模型可能改变数值口径 | 后端结果为权威，模型只读规则结算上下文 |
 | 内容库借鉴修仙套路 | 可能误用具体作品表达 | 只抽象共性，不复制人物、门派、剧情原文 |
-| 规格与当前代码差异大 | 实施周期较长 | 保持引导模式现状，游戏模式独立增量实现 |
 
----
+## 10. 稀有度与解锁
 
-## 11. 决策溯源
+天赋、灵根和家世采用白、绿、蓝、紫、橙、红六档并独立随机。白色不代表最差，红色也不保证无副作用；低稀有度可以触发稳定路线，高稀有度可以伴随代价。
 
-| 决策 | 已确认内容 |
-|---|---|
-| 模式优先级 | 先做游戏模式；小说模式最难暂不开发；引导模式暂时搁置。 |
-| D 选项 | D 改为固定选项，跟气运强相关。 |
-| 回合时间 | 不固定为一年；根据境界寿元、玩家选项和事件波动。 |
-| 日历第一版 | 只做年龄 + 剩余寿元，不做完整纪年。 |
-| A/B/C | 风险档位稳定，文案随剧情变化。 |
-| 属性 | 统一为体魄、神魂、气运、悟性、心性、根骨。 |
-| 内容库 | 按主流修仙小说共性套路生成，不复制具体作品表达。 |
-| 局长与开局 | 标准局长 90 回合，允许 60-120 回合浮动；20 回合切片验收；0-16 岁开场编年史；每 3-5 回合阶段反馈；六属性 30 点池。 |
+- 初始自选开放白、绿、蓝。
+- 紫色：完成一局后开放自选，主动结束也计入完成局数。
+- 橙色：完成一次飞升后开放自选。
+- 红色：完成两次飞升后开放自选；首次游玩不进入随机池。
 
-补充说明：
-天赋、灵根、家世按照白绿蓝紫橙红，白色概率最高，红色概率最低。角色创建界面自选默认只开放紫色以下（不包括紫色）；随机可以抽到更高稀有度，级别越高概率越低。红色第一次游玩不可随机到，完成一次游玩后才进入随机池。天赋、灵根、家世独立随机。白色不代表最差，红色也不代表一定最好；强力词条可以带副作用，低稀有度词条也可以触发稳定路线。
+| 稀有度 | 单抽基础概率 | 整数权重（总和 200） | 定位 |
+| --- | ---: | ---: | --- |
+| 白 | 45% | 90 | 基础泛用，路线稳定 |
+| 绿 | 30% | 60 | 新手期主力，易成型 |
+| 蓝 | 15% | 30 | 前中期核心 |
+| 紫 | 7% | 14 | 常规稀有度上限 |
+| 橙 | 2.5% | 5 | 顶级但可能带明显代价 |
+| 红 | 0.5% | 1 | 极稀有，拉开上限与风险 |
 
-内容来源统一采用抽象修仙套路库，不直接使用真实小说人物、门派、剧情原文或专有设定。特殊剧情可由天赋、家世、灵根组合触发，但应生成原创抽象模板，例如“凡俗出身 + 普通灵根 + 长寿异质”触发长生观察路线，或“凡体 + 没落古族 + 古老血脉”触发肉身证道路线；不得复刻具体作品角色或剧情。
-解锁条件
-紫色：游玩一次之后可以自行选择（主动结束也算）
-橙色：通关一次之后可以自行选择（飞升才算通关）
-红色：通关二次之后可以自行选择（飞升才算通关）
-
-稀有度	单抽基础概率	整数权重（总和 300）	定位说明
-白色	45%	90	过渡级，最基础的泛用天赋
-绿色	30%	60	新手期主力，易获取易成型
-蓝色	15%	30	前中期核心，多数玩家的主力配置
-紫色	7%	14	后期毕业核心，常规稀有度上限
-橙色	2.5%	5	顶级战力，稀有度高，具备收藏价值
-红色	0.5%	1	版本天花板，极稀有，拉开上限差距
-
-## 12. 立项前确认清单
-
-- [√] 同意将产品首要实现目标切为游戏模式。
-- [√] 同意引导模式、小说模式暂不开放。
-- [√] 同意 D 固定为气运/天命选项，不再提供自由输入。
-- [√] 同意回合时间动态推进，不再固定为 1 年。
-- [√] 同意第一版日历只显示年龄、流逝年数、剩余寿元。
-- [√] 同意六维属性为体魄、神魂、气运、悟性、心性、根骨。
-- [√] 同意 HP/MP 不进入游戏模式。
-- [√] 同意按第 9 节分阶段实施。
-
-批准后，本节清单可转为实施里程碑验收清单。
+内容统一使用原创、抽象的修仙题材共性模板，不复制具体作品的人物、门派、剧情原文或专有设定。

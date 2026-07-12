@@ -2,7 +2,7 @@
 
 ## Scope
 
-本审计描述 2026-07-11 本地工作树。未连接生产环境、未读取 secrets、未执行生产迁移或部署。旧生产证据不作为当前分支通过结论。
+本审计描述 2026-07-12 本地 `master@ea5ab36` 工作树。当前为 dirty 状态：53 个已跟踪文件修改、10 个未跟踪文件；所有验证均针对该工作树，不代表 HEAD 单独状态。未连接生产环境、未读取 secrets、未执行生产迁移或部署，旧生产证据不作为当前分支通过结论。
 
 ## Current Architecture
 
@@ -35,6 +35,18 @@
 - 本地故事调用 `settle_turn()`，推进年龄、寿元和阶段反馈。
 - A/B/C/D 语义由后端槽位强制，D 始终为气运。
 - `GameSession.error` 随存档保存和恢复。
+- 四套世界包绑定精确版本主线；Session/存档保存 key、version 和可变剧情进度，主线第 60 回合收束，20 回合不再提前结束。
+- 第 60 回合主线收束会写入终局原因并结束 session；旧存档缺少剧情绑定时按原世界补绑，已有但不可用的精确版本显式拒绝。
+- 已结束主线不重复结算结局；每四回合的阶段反馈继续写入主线 beat 和外界情报。
+- 事件表的 `allowed_delta_types` 在 Judge 前后强制执行；模型世界重置叙事由规则侧压制。
+- Web 选项索引与 `GameEngine` 字母输入共用同一 A/B/C/D 语义 helper，不再因去掉标签把风险路线误判为机遇。
+- Agens Narrator 主调用使用 provider `json_schema` 三字段契约和专用 prompt；应用层确定性渲染为既有标签格式，旧模型仍走标签 prompt。兼容 parser/recovery 保留，但不能进入严格 live 成功。
+- Narrator 温度为 0；普通回合模型不能修改规则权威的 `attributes` 或 `lifespan`。玩家可见选项残留英文时按原 A/B/C/D 槽位替换为中文同语义选项，不移动路线索引。
+- 重复叙事检测与 Chrome 二元组相似度门槛对齐；替换时保留 NPC、伤势、道具、功法和地点等结构化结果。
+- 突破失败状态阻止立即重试和自动升层；稳妥回合确定性清除阻断状态并保留无关伤势。本地故事路径按最终状态生成下一组选项。
+- 突破模型 delta 不再控制境界、寿元、属性、道具、功法、伤势或突破旗标；成功/失败叙事会按最终权威境界再次校验。
+- 严格 Narrator 输出出现重复/无效选项时最多重试一次，不启用普通 repair；provider schema 与兼容标签传输保持同一语义合同。
+- 规则拥有的称号覆盖模型 delta 后，叙事必须明确包含最终结构化称号；模型声称另一个称号时一致性守卫会拒绝该叙事。
 
 ### P1 事务与并发
 
@@ -43,6 +55,7 @@
 - mutation 请求强制 `request_id` 和 `expected_version`。
 - 每 session 锁 + PostgreSQL CAS + 幂等结果表。
 - 回合、snapshot、run、奖励、进度、遗泽和 save slot 原子提交。
+- 读旧档会在同一事务删除存档回合之后的 `game_turns` 并同步 active run，继续游玩不再撞 `(run_id, turn_no)`；已结算终局禁止原地覆盖历史。
 - 邀请码消费与用户创建原子化；首管理员创建加 advisory transaction lock。
 - 终局奖励、成就和遗泽有业务唯一约束。
 - `/api/health` 检查 PostgreSQL。
@@ -104,16 +117,23 @@ run_achievements, account_rewards, legacy_bonuses
 - `pg_isready`：`127.0.0.1:55432` accepting connections。
 - Ruff 普通检查：0。
 - Ruff C901：0。
-- mypy `src + web/backend`：0。
+- mypy `src + web`：76 source files，0 errors。
 - 空库 Alembic 从 base 升级到 `20260710_0008`，确认 18 张应用表后删除临时库。
+- 代表性 0007 已有库可把 session-owned `game_turns` 回填为 active `game_runs` 后建立外键。
+- 孤儿 `game_turns` 和三类重复业务记录会让 0008 事务回滚，revision 保持在 0007，不留下部分 schema。
+- 干净数据库可从 0008 downgrade 到 0007 后重新升级；guest session 或 active run 会阻止 downgrade。
+- `scripts/verify_pg_backup_restore.py` 实际完成临时源库 `pg_dump`、目标库 `pg_restore`，恢复 revision `20260710_0008`、18 张应用表，以及 user/session/save/run/turn/mutation/achievement/reward/legacy/progress 业务关系图；孤儿 turn 为 0，最后清理临时库和 dump。
 - `compileall` passed。
-- Ruff 普通检查 0；C901 0；mypy 74 source files 0 errors。
-- PostgreSQL `tests\web -n0`：92 passed。
-- 全量非 live pytest：594 passed。
-- Vitest：9 passed；React production build passed；npm audit：0 vulnerabilities。
+- PostgreSQL `tests\web -n0`：94 passed，0 skipped。
+- 全量非 live pytest：691 passed。
+- Vitest：12 passed；React production build passed；npm audit：0 vulnerabilities。
 - 真实 Chrome fallback smoke 通过：注册、访客局删除、个人模型设置保存/清除且 Key 输入清空、双击 start/choice 单请求、fallback 无“继续本局”、A/B/C/D 年龄推进、save/load、终局原因、375 和 2K 无横向溢出。
 - 真实 Chrome UI 视觉检查覆盖 1440x900、1920x1080、2560x1440 和 390x844；角色创建、游戏页、桌面/移动弹窗及六态夹具均已截图核对。证据不进入 Git。
 - Chrome smoke 后数据库事实：guest sessions 0、save 1、game_turns 2、completed run 1、user model config 清除后 0。
+- 最新工作树证据 `goal-plan-final-r3-768-20260712.json` 绑定 HEAD、dirty 标记、工作树 fingerprint、脚本哈希和独立数据库标签：20 个主回合 + 3 个读档后回合共 23/23 live，turn count 1-23 连续。
+- 最新证据为 fallback 0、contract recovery 0、repair 0、incomplete retry 0、可见禁词 0、P0/P1 0；Judge 1 次，外界情报变化 9 次。第 20 主回合结束并读档后为 53 岁、筑基初期、寿元 147/200。
+- 768x900 无横向溢出；真实 HTTP 409 键盘触发、可见提示、权威 session 刷新和焦点恢复通过；双击防重、页面刷新、存档/读档及读档后继续 3 回合通过。
+- 最新 choice 平均 8.98s、p50 8.80s、p95 10.32s、最大 16.64s。更早的 A/B/C/D 各 20 回合和 mixed 60 回合矩阵属于前一工作树 fingerprint，只作为 `CHANGELOG.md` 中的历史证据，不冒充当前工作树完整矩阵。
 
 ## Residual Risks
 
@@ -121,8 +141,9 @@ run_achievements, account_rewards, legacy_bonuses
 | --- | --- | --- |
 | DNS 校验与连接之间存在 rebinding TOCTOU | P1 | 应在公网部署层增加出站 ACL/代理，阻止私网和 metadata 地址 |
 | 本机无 Docker CLI | P1 | Docker build/compose config 只能在 CI 或具备 Docker 的本地环境补验 |
-| 未跑 20 回合/真实模型 Chrome | P1 | 本批只完成 fallback smoke；没有验证真实 provider、长尾、20 回合内容质量或 live non-fallback |
-| 本批未跑真实 LLM | P1 | `llm_real` 默认排除；fallback 不能算 live success |
+| live 响应仍高于 5 秒目标 | P1 | 最新运行 p50 8.80s、p95 10.32s、最大 16.64s；后续应区分 provider 首响应、Judge 和本地处理成本 |
+| 最新工作树未重跑完整路线矩阵 | P1 | 当前 fingerprint 已完成 23 回合综合验收；A/B/C/D 各 20 回合与规则终局长局仍需在玩法/内容再次变化或公开试玩前重跑 |
+| 标准 90 回合目标未实现 | P1 | 当前四套内容版本在第 60 回合收束；90 回合是长期产品目标，不是当前完成事实 |
 | 生产未部署 `0008` | P1 | 当前只证明本地迁移；生产需单独备份、孤儿检查、迁移和 smoke |
 | `database_postgres.py` 仍偏大 | P2 | 事务边界已集中，但 SQL/row shaping 仍可按 catalog/session/reward 拆模块 |
 | `tests/web/test_web_api.py` 仍偏大 | P2 | 后续按 auth/settings/session/save/turn 拆文件，不应和玩法改动混做 |
@@ -133,5 +154,5 @@ run_achievements, account_rewards, legacy_bonuses
 
 - 本地自动化通过不等于生产通过。
 - HTTP 200 不等于 live-model 成功。
-- `fallback=true` 或 `fallback_prompt.active=true` 一律不算 live-model 成功。
+- `fallback=true`、`fallback_prompt.active=true`、`contract_recovery=true` 或 Narrator 非 `ok` 一律不算 live-model 成功。
 - 当前工作树的生产部署、数据库升级和真实账号验收必须由独立生产任务完成。

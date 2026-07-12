@@ -10,6 +10,7 @@ from agens_novel.engine.death_rewards import (
     DEATH_BY_KARMA,
     DEATH_BY_LIFESPAN,
     DEATH_BY_PLAYER,
+    END_BY_STORY,
     apply_legacy_bonuses,
     bonuses_to_legacy,
     build_run_summary,
@@ -47,6 +48,12 @@ class TestCategorizeDeath:
     def test_player_quit(self) -> None:
         session = _make_session(game_over=True, lifespan=100, error="玩家结束本局。")
         assert categorize_death(session) == DEATH_BY_PLAYER
+
+    def test_story_resolution_is_not_player_end(self) -> None:
+        session = _make_session(game_over=True, error="西陲旧案至此收束。")
+        session.story_state = {"status": "resolved"}
+
+        assert categorize_death(session) == END_BY_STORY
 
     def test_not_game_over_returns_empty(self) -> None:
         session = _make_session(game_over=False)
@@ -243,3 +250,12 @@ class TestBuildRunSummary:
         session = _make_session(realm="飞升", realm_stage=1, finale=True, char_name="许满")
         summary = build_run_summary(session, [], [], DEATH_BY_FINALE)
         assert "飞升" in summary["headline"]
+
+    def test_story_end_headline(self) -> None:
+        session = _make_session(game_over=True, error="西陲旧案至此收束。")
+        session.story_state = {"status": "resolved"}
+
+        summary = build_run_summary(session, [], [], END_BY_STORY)
+
+        assert summary["death_cause"] == END_BY_STORY
+        assert "走完本局主线" in summary["headline"]

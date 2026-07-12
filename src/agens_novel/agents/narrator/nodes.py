@@ -13,6 +13,7 @@ from __future__ import annotations
 
 import json
 import logging
+import os
 import re
 from collections.abc import Callable
 from typing import Any
@@ -36,6 +37,29 @@ _RECENT_HISTORY_MESSAGES = 6
 # without it, the compression branch never fires and all 20 stored entries are
 # sent verbatim, which correlates with rising repair rates at high history counts.
 _HISTORY_PROMPT_SOFT_CAP = _RECENT_HISTORY_MESSAGES + 1
+_NARRATOR_SCHEMA_ENV = "AGENS_NARRATOR_RESPONSE_SCHEMA"
+_NARRATOR_RESPONSE_FORMAT: dict[str, Any] = {
+    "type": "json_schema",
+    "json_schema": {
+        "name": "narrator_envelope",
+        "strict": True,
+        "schema": {
+            "type": "object",
+            "properties": {
+                "narrative": {"type": "string"},
+                "state_update_json": {"type": "string"},
+                "choices": {
+                    "type": "array",
+                    "items": {"type": "string", "minLength": 1},
+                    "minItems": 4,
+                    "maxItems": 4,
+                },
+            },
+            "required": ["narrative", "state_update_json", "choices"],
+            "additionalProperties": False,
+        },
+    },
+}
 
 
 def load_settings(state: dict[str, Any]) -> dict[str, Any]:
@@ -43,7 +67,9 @@ def load_settings(state: dict[str, Any]) -> dict[str, Any]:
 
 
 def build_prompt(state: dict[str, Any]) -> dict[str, Any]:
-    system_path = paths.system_prompt_path("narrator")
+    provider_json_schema = _should_use_narrator_schema(state)
+    prompt_name = "narrator_schema" if provider_json_schema else "narrator"
+    system_path = paths.system_prompt_path(prompt_name)
     if not system_path.exists():
         raise FileNotFoundError(f"System prompt not found: {system_path}")
     system_message = system_path.read_text(encoding="utf-8").strip()
@@ -57,10 +83,28 @@ def build_prompt(state: dict[str, Any]) -> dict[str, Any]:
     # Build messages: system + compact chat history + current turn.
     history: list[dict] = list(state.get("chat_history") or [])
     prompt_history = _compact_history_for_prompt(history)
+    if provider_json_schema:
+        prompt_history = _schema_safe_history(prompt_history)
 
+    if provider_json_schema:
+        output_contract = (
+            "provider 会强制返回 narrative、state_update_json、choices 三个字段；"
+            "narrative 必须是 80-140 个中文字符的第三人称编年史，"
+            "state_update_json 必须是可解析为 JSON 对象的字符串，"
+            "choices 必须恰好四项、非空且互不重复，并依次对应稳妥、机遇、风险、气运。"
+            "任何字段都不得包含标签、Markdown 或额外包装。"
+        )
+    else:
+        output_contract = (
+            "响应必须以 80-140 个中文字符的第三人称编年史正文开头，第一个字符不得是 <、{、[；随后依次输出 "
+            "<state_update>{}</state_update> 和恰好四项的 "
+            "<choices>[\"...\", \"...\", \"...\", \"...\"]</choices>；"
+            "两个标签都不得省略。"
+        )
     user_content = (
         f"<当前状态>\n{game_state_json}\n</当前状态>\n\n"
-        f"<玩家行动>\n{user_input}\n</玩家行动>"
+        f"<玩家行动>\n{user_input}\n</玩家行动>\n\n"
+        f"<本回合输出契约>\n{output_contract}\n</本回合输出契约>"
     )
 
     messages: list[Message] = [Message(role="system", content=system_message)]
@@ -89,6 +133,7 @@ def build_prompt(state: dict[str, Any]) -> dict[str, Any]:
         "user_message": user_content,
         "messages": messages,
         "prompt_metrics": prompt_metrics,
+        "provider_json_schema": provider_json_schema,
     }
 
 
@@ -118,46 +163,12 @@ async def call_agnes_llm(state: dict[str, Any]) -> dict[str, Any]:
         stream_callback = _get_stream_cb()
 
     try:
-        if stream_callback is not None:
-            # Streaming mode: each chunk pushed to callback.
-            resp = await call_llm_stream(
-                messages,
-                model=state.get("model"),
-                base_url=state.get("base_url"),
-                api_key=state.get("api_key"),
-                temperature=0.8,
-                max_tokens=1536,
-                on_chunk=stream_callback,
-            )
-        else:
-            # Non-streaming fallback.
-            resp = await call_llm(
-                messages,
-                model=state.get("model"),
-                base_url=state.get("base_url"),
-                api_key=state.get("api_key"),
-                temperature=0.8,
-                max_tokens=1536,
-                stream=False,
-            )
-        output_text = resp.get("text", "")
-        repaired_output = False
-        repair_elapsed_ms = 0
-        repair_usage: dict[str, Any] = {}
-        if state.get("repair_incomplete_output"):
-            narrative, state_delta, choices = _parse_narrator_output(output_text)
-            recoverable_content = bool(narrative) or _has_recoverable_state_delta(state_delta)
-            if recoverable_content and (state_delta is None or not narrative or not choices):
-                repaired_text, repair_result = await _repair_incomplete_output(
-                    state, output_text, narrative, state_delta or {}
-                )
-                repair_elapsed_ms = int(repair_result.get("elapsed_ms") or 0)
-                repair_usage = dict(repair_result.get("usage") or {})
-                if repaired_text:
-                    repaired_narrative, repaired_delta, repaired_choices = _parse_narrator_output(repaired_text)
-                    if repaired_narrative and repaired_delta is not None and len(repaired_choices) == 4:
-                        output_text = repaired_text
-                        repaired_output = True
+        resp, output_text, provider_json_schema, provider_json_envelope_ok = (
+            await _primary_narrator_call(state, messages, stream_callback)
+        )
+        output_text, repaired_output, repair_elapsed_ms, repair_usage = (
+            await _maybe_repair_narrator_output(state, output_text)
+        )
         return {
             "output_text": output_text,
             "usage": dict(resp.get("usage") or {}),
@@ -167,10 +178,79 @@ async def call_agnes_llm(state: dict[str, Any]) -> dict[str, Any]:
             "repair_elapsed_ms": repair_elapsed_ms,
             "repair_usage": repair_usage,
             "prompt_metrics": state.get("prompt_metrics") or {},
+            "provider_json_schema": provider_json_schema,
+            "provider_json_envelope_ok": provider_json_envelope_ok,
         }
     except LLMError as e:
         log.error("[narrator.call_agnes_llm] failed: %s", e)
         return {"output_text": "", "llm_error": str(e), "elapsed_ms": 0, "usage": {}}
+
+
+async def _primary_narrator_call(
+    state: dict[str, Any],
+    messages: list[Message],
+    stream_callback: Callable[[str], None] | None,
+) -> tuple[dict[str, Any], str, bool, bool]:
+    provider_json_schema = bool(state.get("provider_json_schema"))
+    if provider_json_schema:
+        resp = await call_llm(
+            messages,
+            model=state.get("model"),
+            base_url=state.get("base_url"),
+            api_key=state.get("api_key"),
+            temperature=0.0,
+            max_tokens=1536,
+            stream=False,
+            response_format=_NARRATOR_RESPONSE_FORMAT,
+        )
+    elif stream_callback is not None:
+        resp = await call_llm_stream(
+            messages,
+            model=state.get("model"),
+            base_url=state.get("base_url"),
+            api_key=state.get("api_key"),
+            temperature=0.0,
+            max_tokens=1536,
+            on_chunk=stream_callback,
+        )
+    else:
+        resp = await call_llm(
+            messages,
+            model=state.get("model"),
+            base_url=state.get("base_url"),
+            api_key=state.get("api_key"),
+            temperature=0.0,
+            max_tokens=1536,
+            stream=False,
+        )
+    output_text = str(resp.get("text") or "")
+    if not provider_json_schema:
+        return dict(resp), output_text, False, False
+    unwrapped = _unwrap_narrator_envelope(output_text)
+    return dict(resp), unwrapped or output_text, True, unwrapped is not None
+
+
+async def _maybe_repair_narrator_output(
+    state: dict[str, Any],
+    output_text: str,
+) -> tuple[str, bool, int, dict[str, Any]]:
+    if not state.get("repair_incomplete_output"):
+        return output_text, False, 0, {}
+    narrative, state_delta, choices = _parse_narrator_output(output_text)
+    recoverable_content = bool(narrative) or _has_recoverable_state_delta(state_delta)
+    if not recoverable_content or (state_delta is not None and narrative and choices):
+        return output_text, False, 0, {}
+    repaired_text, repair_result = await _repair_incomplete_output(
+        state, output_text, narrative, state_delta or {}
+    )
+    repair_elapsed_ms = int(repair_result.get("elapsed_ms") or 0)
+    repair_usage = dict(repair_result.get("usage") or {})
+    if not repaired_text:
+        return output_text, False, repair_elapsed_ms, repair_usage
+    repaired_narrative, repaired_delta, repaired_choices = _parse_narrator_output(repaired_text)
+    if repaired_narrative and repaired_delta is not None and len(repaired_choices) == 4:
+        return repaired_text, True, repair_elapsed_ms, repair_usage
+    return output_text, False, repair_elapsed_ms, repair_usage
 
 
 def save_artifact(state: dict[str, Any]) -> dict[str, Any]:
@@ -203,6 +283,8 @@ def save_artifact(state: dict[str, Any]) -> dict[str, Any]:
         "repaired_output": bool(state.get("repaired_output")),
         "repair_elapsed_ms": int(state.get("repair_elapsed_ms") or 0),
         "contract_diagnostics": contract_diagnostics,
+        "provider_json_schema": bool(state.get("provider_json_schema")),
+        "provider_json_envelope_ok": bool(state.get("provider_json_envelope_ok")),
     }
     audit_path = store.write_audit(AGENT_NAME, run_id, audit)
     store.append_global_log({
@@ -219,6 +301,8 @@ def save_artifact(state: dict[str, Any]) -> dict[str, Any]:
         "repair_usage": dict(state.get("repair_usage") or {}),
         "prompt_metrics": state.get("prompt_metrics") or {},
         "contract_diagnostics": contract_diagnostics,
+        "provider_json_schema": bool(state.get("provider_json_schema")),
+        "provider_json_envelope_ok": bool(state.get("provider_json_envelope_ok")),
         "output_path": str(out_path),
         "audit_path": str(audit_path),
         "finished_at": audit["finished_at"],
@@ -236,10 +320,7 @@ _ABC_LINE_RE = re.compile(
     r"(?im)^\s*(?:[-*]\s*)?(?:选项\s*)?(?:[ABCD]|[1-4])[\.、:：]\s*(?P<text>.+?)\s*$"
 )
 _VISIBLE_STRUCTURED_RE = re.compile(r"(<state_update|</state_update>|<choices|</choices>|```|\{|\}|\[[\"'])", re.IGNORECASE)
-_VISIBLE_ENGLISH_RE = re.compile(
-    r"\b(?:prowess|combat|inventory|technique|techniques|state_delta|state_update|choices|meta)\b",
-    re.IGNORECASE,
-)
+_VISIBLE_ENGLISH_RE = re.compile(r"[A-Za-z]{2,}")
 
 
 def _parse_narrator_output(text: str) -> tuple[str, dict | None, list[str]]:
@@ -293,6 +374,61 @@ def _parse_narrator_output(text: str) -> tuple[str, dict | None, list[str]]:
     return clean_visible_text(narrative, allow_structured=False), state_delta, choices
 
 
+def _should_use_narrator_schema(state: dict[str, Any]) -> bool:
+    configured = os.environ.get(_NARRATOR_SCHEMA_ENV, "auto").strip().lower()
+    if configured in {"1", "true", "yes", "on"}:
+        return True
+    if configured in {"0", "false", "no", "off"}:
+        return False
+    model = str(state.get("model") or os.environ.get("AGNES_MODEL") or "").strip().lower()
+    return model.startswith("agnes-")
+
+
+def _unwrap_narrator_envelope(text: str) -> str | None:
+    try:
+        payload = json.loads(str(text or ""))
+    except (json.JSONDecodeError, TypeError, ValueError):
+        return None
+    required = {"narrative", "state_update_json", "choices"}
+    if not isinstance(payload, dict) or set(payload) != required:
+        return None
+    narrative = payload.get("narrative")
+    state_update_json = payload.get("state_update_json")
+    choices = payload.get("choices")
+    if not isinstance(narrative, str) or not narrative.strip():
+        return None
+    if not isinstance(state_update_json, str):
+        return None
+    try:
+        state_update = json.loads(state_update_json)
+    except (json.JSONDecodeError, TypeError, ValueError):
+        return None
+    if not isinstance(state_update, dict):
+        return None
+    normalized_choices = normalize_choices(choices)
+    if len(normalized_choices) != 4:
+        return None
+    return (
+        f"{narrative.strip()}\n"
+        f"<state_update>{json.dumps(state_update, ensure_ascii=False)}</state_update>\n"
+        f"<choices>{json.dumps(normalized_choices, ensure_ascii=False)}</choices>"
+    )
+
+
+def _schema_safe_history(history: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    """Remove legacy tag examples before sending history to schema-mode models."""
+    cleaned: list[dict[str, Any]] = []
+    for entry in history:
+        role = str(entry.get("role") or "user")
+        content = str(entry.get("content") or "").strip()
+        if role == "assistant":
+            narrative, _delta, _choices = _parse_narrator_output(content)
+            content = narrative or clean_visible_text(content, allow_structured=False)
+        if content:
+            cleaned.append({"role": role, "content": content})
+    return cleaned
+
+
 def _contract_diagnostics(
     raw_text: str,
     narrative: str,
@@ -306,8 +442,8 @@ def _contract_diagnostics(
         "missing_state_update": not isinstance(state_delta, dict),
         "choices_count": len(choices),
         "choices_count_ok": len(choices) == 4,
-        "raw_has_state_update_tag": "<state_update" in str(raw_text or "").lower(),
-        "raw_has_choices_tag": "<choices" in str(raw_text or "").lower(),
+        "raw_has_state_update_tag": bool(_TAG_RE.search(str(raw_text or ""))),
+        "raw_has_choices_tag": bool(_CHOICES_RE.search(str(raw_text or ""))),
         "structured_residue": bool(_VISIBLE_STRUCTURED_RE.search(visible_text)),
         "english_residue": bool(_VISIBLE_ENGLISH_RE.search(visible_text)),
     }

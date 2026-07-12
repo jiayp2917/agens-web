@@ -17,12 +17,14 @@ from typing import Any
 
 from agens_novel.settings import Settings
 
-from ..game.realm import RealmSystem
+from ..game.realm import RealmSystem, breakthrough_blocking_effects
 from ..session.game_session import GameSession
 from .breakthrough_flow import BreakthroughFlow
 from .choices import (
+    choice_with_semantic,
     complete_choices,
     fallback_choices,
+    has_visible_english,
     normalize_choices,
 )
 from .local_story import (
@@ -84,6 +86,8 @@ def _has_sensitive_character_delta(value: Any) -> bool:
         "family_background",
         "difficulty",
         "inventory",
+        "relationship_add",
+        "relationships",
         "techniques",
         "techniques_add",
         "breakthrough_flags",
@@ -91,6 +95,8 @@ def _has_sensitive_character_delta(value: Any) -> bool:
         "lifespan",
         "status_effects",
         "status_effects_add",
+        "title_add",
+        "titles",
     }
     if any(key in value for key in sensitive):
         return True
@@ -195,6 +201,11 @@ class GameEngine:
         """Set current choices from model output, falling back only when empty."""
         choices = complete_choices(raw_choices, self.game_session)
         if choices:
+            semantic_fallbacks = fallback_choices(self.game_session)
+            choices = [
+                semantic_fallbacks[index] if has_visible_english(choice) else choice
+                for index, choice in enumerate(choices)
+            ]
             choices = self._filter_unavailable_breakthrough_choices(choices)
             self.game_session.last_choices = choices
             return False
@@ -369,20 +380,36 @@ class GameEngine:
         return False
 
     def _filter_unavailable_breakthrough_choices(self, choices: list[str]) -> list[str]:
-        """Rewrite breakthrough-looking options when realm rules reject them."""
+        """Keep breakthrough actions in the C slot and aligned with realm rules."""
+        can, _reason = self.realm_system.can_attempt_breakthrough(self.game_session)
+        fallbacks = fallback_choices(self.game_session)
+        blockers = breakthrough_blocking_effects(self.game_session.status_effects)
+
+        if can:
+            rewritten = [
+                fallbacks[index]
+                if index != 2 and self._parse_breakthrough_action(choice)
+                else choice
+                for index, choice in enumerate(choices)
+            ]
+            if len(rewritten) > 2 and not self._parse_breakthrough_action(rewritten[2]):
+                next_realm = self.realm_system.get_next_realm(self.game_session.realm)
+                target = next_realm or "下一境界"
+                rewritten[2] = f"正式冲击{target}，承担破境失败风险"
+            return rewritten
+
+        if blockers:
+            choices = list(choices)
+            choices[0] = f"疗伤调息，先化解{'、'.join(blockers)}并稳住根基"
         if not any(self._parse_breakthrough_action(choice) for choice in choices):
             return choices
-        can, _reason = self.realm_system.can_attempt_breakthrough(self.game_session)
-        if can:
-            return choices
-        fallbacks = fallback_choices(self.game_session)
-        rewritten: list[str] = []
+        filtered: list[str] = []
         for index, choice in enumerate(choices):
             if self._parse_breakthrough_action(choice):
-                rewritten.append(fallbacks[index] if index < len(fallbacks) else fallbacks[-1])
+                filtered.append(fallbacks[index] if index < len(fallbacks) else fallbacks[-1])
             else:
-                rewritten.append(choice)
-        return rewritten
+                filtered.append(choice)
+        return filtered
 
     def _resolve_choice_input(self, text: str) -> str | None:
         """Map A/B/C/D or 1/2/3/4 input to the current model choice.
@@ -400,7 +427,7 @@ class GameEngine:
         mapping = {"A": 0, "B": 1, "C": 2, "D": 3, "1": 0, "2": 1, "3": 2, "4": 3}
         if key in mapping:
             index = mapping[key]
-            return choices[index] if index < len(choices) else None
+            return choice_with_semantic(index, choices[index]) if index < len(choices) else None
 
         return None
 
@@ -492,6 +519,7 @@ class GameEngine:
                 "family_background",
                 "difficulty",
                 "attributes",
+                "lifespan",
                 "inventory",
                 "techniques",
                 "experience",
@@ -510,6 +538,7 @@ class GameEngine:
         world_delta = sanitized.get("world")
         if isinstance(world_delta, dict):
             world_delta = dict(world_delta)
+            world_delta.pop("story_update", None)
             for key in ("location", "region", "current_scene"):
                 value = world_delta.get(key)
                 if self._looks_like_world_reset(value):
@@ -517,6 +546,18 @@ class GameEngine:
             sanitized["world"] = world_delta
 
         return sanitized
+
+    def action_delta_resets_world(self, delta: Any) -> bool:
+        """Return whether model output tries to replace the established world."""
+        if not isinstance(delta, dict):
+            return False
+        world = delta.get("world")
+        if not isinstance(world, dict):
+            return False
+        return any(
+            key in world and self._looks_like_world_reset(world.get(key))
+            for key in ("location", "region", "current_scene")
+        )
 
     def _looks_like_world_reset(self, value: Any) -> bool:
         """Detect common first-scene resets that contradict an established run."""

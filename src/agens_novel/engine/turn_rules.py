@@ -13,7 +13,9 @@ import random
 from typing import Any
 
 from ..game.constants import REALM_LIFESPANS
+from ..game.realm import breakthrough_blocking_effects
 from .event_catalog import event_summary, select_chronicle_event, stage_feedback_due
+from .story_catalog import story_turn_delta
 
 # ── Realm → base years per turn ─────────────────────────────────────────────
 # Higher realms mean longer time spans for each pivotal decision.
@@ -122,14 +124,36 @@ def settle_turn(
     elapsed_years = _elapsed_years(realm, category, difficulty)
     char_delta = _attribute_changes(category)
     char_delta["age"] = f"+{elapsed_years}"
+    recovered_effects = _steady_recovery_effects(session, category)
+    if recovered_effects:
+        char_delta["status_effects_remove"] = recovered_effects
     new_age = session.age + elapsed_years
     remaining_lifespan, game_over_reason = _settle_lifespan(session, realm, new_age, char_delta)
-    game_over = bool(game_over_reason)
     event = select_chronicle_event(session, category, new_age)
+    if event.get("id") == "steady-merit-recognition":
+        char_delta["title_add"] = ["外门勤修弟子"]
+    story = story_turn_delta(session, category, event, new_age, game_over_reason)
+    if not game_over_reason and story.get("story_status") in {"resolved", "failed"}:
+        story_update = story.get("story_update")
+        ending = (
+            str(story_update.get("ending") or "").strip()
+            if isinstance(story_update, dict)
+            else ""
+        )
+        game_over_reason = ending or str(story.get("story_beat") or "主线尘埃落定。").strip()
+    game_over = bool(game_over_reason)
     turn_summary = _turn_summary(
-        session.age, new_age, category, elapsed_years, remaining_lifespan, event, game_over_reason
+        session.age,
+        new_age,
+        category,
+        elapsed_years,
+        remaining_lifespan,
+        recovered_effects,
+        event,
+        story,
+        game_over_reason,
     )
-    world_delta = _stage_feedback_delta(session, event)
+    world_delta = _stage_feedback_delta(session, event, story)
 
     # ── Build state_delta ──
     state_delta: dict[str, Any] = {
@@ -143,6 +167,10 @@ def settle_turn(
             "event_lore": event.get("lore", ""),
             "stage_goal": event.get("stage_goal", ""),
             "allowed_delta_types": event.get("allowed_delta_types", []),
+            "story_phase": story.get("story_phase", ""),
+            "story_goal": story.get("story_goal", ""),
+            "story_beat": story.get("story_beat", ""),
+            "story_status": story.get("story_status", ""),
             "turn_summary": turn_summary,
         },
     }
@@ -197,18 +225,36 @@ def _turn_summary(
     category: str,
     elapsed_years: int,
     remaining_lifespan: int,
+    recovered_effects: list[str],
     event: dict[str, Any],
+    story: dict[str, Any],
     game_over_reason: str,
 ) -> str:
     summary = (
         f"本回合类别：{category}；时间流逝：{elapsed_years}年；"
         f"角色年龄：{start_age}→{end_age}岁；剩余寿元：{max(0, remaining_lifespan)}年。"
     )
+    if recovered_effects:
+        summary += f" 稳妥调息已解除：{'、'.join(recovered_effects)}。"
     if event_text := event_summary(event):
         summary += f" {event_text}"
+    story_phase = str(story.get("story_phase") or "").strip()
+    story_goal = str(story.get("story_goal") or "").strip()
+    story_beat = str(story.get("story_beat") or "").strip()
+    if story_phase and story_goal:
+        summary += f" 主线阶段：{story_phase}；当前目标：{story_goal}。"
+    if story_beat:
+        summary += f" 本轮主线兑现：{story_beat}"
     if game_over_reason:
         summary += f" 结局：{game_over_reason}"
     return summary
+
+
+def _steady_recovery_effects(session: Any, category: str) -> list[str]:
+    """A steady ordinary turn deterministically clears breakthrough backlash."""
+    if category != "稳妥":
+        return []
+    return breakthrough_blocking_effects(getattr(session, "status_effects", []))
 
 
 def get_realm_lifespan(realm: str) -> int:
@@ -216,12 +262,25 @@ def get_realm_lifespan(realm: str) -> int:
     return REALM_LIFESPANS.get(realm, 100)
 
 
-def _stage_feedback_delta(session: Any, event: dict[str, Any]) -> dict[str, Any]:
+def _stage_feedback_delta(
+    session: Any, event: dict[str, Any], story: dict[str, Any]
+) -> dict[str, Any]:
     """Emit lightweight chronicle/world feedback every few turns."""
-    if not event or not stage_feedback_due(session):
-        return {}
-    lore = str(event.get("lore") or "").strip()
-    return {"lore_add": [lore]} if lore else {}
+    world_delta: dict[str, Any] = {}
+    story_update = story.get("story_update")
+    if isinstance(story_update, dict):
+        world_delta["story_update"] = story_update
+    story_terminal = str(story.get("story_status") or "") in {"failed", "resolved"}
+    if not event or (not stage_feedback_due(session) and not story_terminal):
+        return world_delta
+    lore = [
+        str(item).strip()
+        for item in (event.get("lore"), story.get("story_beat"))
+        if str(item or "").strip()
+    ]
+    if lore:
+        world_delta["lore_add"] = list(dict.fromkeys(lore))
+    return world_delta
 
 
 def _low_realm_age_pressure(session: Any, new_age: int) -> dict[str, Any]:

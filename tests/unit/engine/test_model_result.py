@@ -49,6 +49,62 @@ def test_narrator_requires_exactly_four_choices() -> None:
     assert "恰好 4 个" in status.reason
 
 
+def test_narrator_visible_contract_residue_is_incomplete() -> None:
+    base = {
+        "narrative": "山门风起，外门弟子各自择路。",
+        "state_delta": {"character": {}, "world": {}, "meta": {}},
+        "choices": ["闭关", "拜访同门", "探查山径", "随缘而行"],
+        "llm_error": "",
+    }
+
+    structured = classify_narrator_result({
+        **base,
+        "contract_diagnostics": {"structured_residue": True},
+    })
+    english = classify_narrator_result({
+        **base,
+        "contract_diagnostics": {"english_residue": True},
+    })
+
+    assert structured.kind == ModelResultKind.INCOMPLETE_OUTPUT
+    assert "结构化残留" in structured.reason
+    assert english.kind == ModelResultKind.INCOMPLETE_OUTPUT
+    assert "英文残留" in english.reason
+
+
+def test_schema_narrator_requires_accepted_provider_envelope() -> None:
+    result = {
+        "narrative": "山门名册已有变化。",
+        "state_delta": {},
+        "choices": ["闭关", "寻访", "历练", "随缘"],
+        "provider_json_schema": True,
+        "provider_json_envelope_ok": False,
+    }
+
+    status = classify_narrator_result(result)
+
+    assert status.kind == ModelResultKind.INCOMPLETE_OUTPUT
+    assert "JSON schema" in status.reason
+
+
+def test_narrator_compatibility_parse_without_raw_tags_is_not_strict_ok() -> None:
+    result = {
+        "narrative": "山门风起，外门弟子各自择路。",
+        "state_delta": {"character": {}, "world": {}, "meta": {}},
+        "choices": ["闭关", "拜访同门", "探查山径", "随缘而行"],
+        "llm_error": "",
+        "contract_diagnostics": {
+            "raw_has_state_update_tag": False,
+            "raw_has_choices_tag": False,
+        },
+    }
+
+    status = classify_narrator_result(result)
+
+    assert status.kind == ModelResultKind.INCOMPLETE_OUTPUT
+    assert "state_update 标签" in status.reason
+
+
 def test_request_failure_is_separate_from_incomplete_output() -> None:
     result = {"narrative": "", "state_delta": {}, "choices": [], "llm_error": "timeout"}
 
@@ -128,8 +184,12 @@ def test_result_diagnostics_are_non_secret_shape_facts() -> None:
         "contract_missing_narrative": False,
         "contract_missing_state_update": False,
         "contract_choices_count_ok": False,
+        "contract_raw_has_state_update_tag": False,
+        "contract_raw_has_choices_tag": False,
         "contract_structured_residue": False,
         "contract_english_residue": False,
+        "provider_json_schema": False,
+        "provider_json_envelope_ok": False,
     }
 
 

@@ -5,7 +5,7 @@ from __future__ import annotations
 from typing import Any
 from unittest.mock import patch
 
-from agens_novel.engine.choices import normalize_choices
+from agens_novel.engine.choices import fallback_choices, normalize_choices
 from agens_novel.engine.game_engine import GameEngine
 from agens_novel.session.game_session import GameSession
 
@@ -50,25 +50,25 @@ def _canned_world_builder() -> dict[str, Any]:
 def _complete_profile_world_builder() -> dict[str, Any]:
     return {
         "generated_data": {
-            "world_name": "Test Realm",
-            "regions": [{"name": "Outer Gate"}],
-            "sects": [{"name": "Cloud Sect"}],
-            "current_conflicts": ["border unrest"],
-            "fate_hooks": ["wanderer"],
-            "chronicle_0_16": ["0-16: grew up near the pass"],
-            "initial_situation": "At sixteen, the path opens.",
-            "initial_situation_16": "At sixteen, the path opens.",
-            "opening_narrative": "The chronicle starts at the pass.",
-            "choices": ["stay", "ask", "risk", "wait"],
+            "world_name": "归墟潮界",
+            "regions": [{"name": "潮音渡口"}],
+            "sects": [{"name": "潮音阁"}],
+            "current_conflicts": ["边境灵潮提前"],
+            "fate_hooks": ["散修命途"],
+            "chronicle_0_16": ["十六岁前，他在边关听潮长大。"],
+            "initial_situation": "十六岁这年，仙途在潮音渡口开启。",
+            "initial_situation_16": "十六岁这年，仙途在潮音渡口开启。",
+            "opening_narrative": "十六岁这年，他来到潮音渡口，修行编年由此展开。",
+            "choices": ["留守渡口", "打听灵潮", "夜探沉礁", "随潮而行"],
             "world": {
-                "current_scene": "At sixteen, the path opens.",
-                "location": "Outer Gate",
-                "region": "Test Realm",
-                "lore_facts": ["border unrest"],
+                "current_scene": "十六岁这年，仙途在潮音渡口开启。",
+                "location": "潮音渡口",
+                "region": "归墟潮界",
+                "lore_facts": ["边境灵潮提前。"],
             },
         },
-        "world_description": "Opening prose.",
-        "opening_narrative": "The chronicle starts at the pass.",
+        "world_description": "潮声记录着边关旧事。",
+        "opening_narrative": "十六岁这年，他来到潮音渡口，修行编年由此展开。",
         "output_path": "",
         "audit_path": "",
         "finished_at": "",
@@ -130,7 +130,12 @@ class TestGameEngineNewGame:
         assert engine.game_session.attributes["root_bone"] == 5
         assert not hasattr(engine.game_session, "hp")
         assert not hasattr(engine.game_session, "mp")
-        assert engine.game_session.last_choices == ["留在山门吐纳", "询问接引弟子", "观察灵气流向", "【气运】随缘而行，听天命、赌因果"]
+        assert engine.game_session.last_choices == [
+            "留在山门吐纳",
+            "询问接引弟子",
+            "观察灵气流向",
+            fallback_choices(engine.game_session)[3],
+        ]
         assert len(narratives) == 1
 
     def test_model_choices_are_completed_to_four_buttons(self, monkeypatch) -> None:
@@ -150,8 +155,8 @@ class TestGameEngineNewGame:
         assert engine.game_session.last_choices == [
             "请教陈师兄",
             "查看山门规矩",
-            "【风险】外出历练，寻找护持与关键线索",
-            "【气运】随缘而行，听天命、赌因果",
+            fallback_choices(engine.game_session)[2],
+            fallback_choices(engine.game_session)[3],
         ]
 
     def test_profile_opening_retries_transient_world_builder_failure(self, monkeypatch) -> None:
@@ -177,9 +182,30 @@ class TestGameEngineNewGame:
             engine.start_from_profile({"char_name": "许满"})
 
         assert calls.count("world_builder") == 2
-        assert engine.game_session.region == "Test Realm"
-        assert engine.game_session.last_choices == ["stay", "ask", "risk", "wait"]
+        assert engine.game_session.region == "归墟潮界"
+        assert engine.game_session.last_choices == ["留守渡口", "打听灵潮", "夜探沉礁", "随潮而行"]
         assert not any("模型" in msg or "fallback" in msg.lower() for msg in infos)
+
+    def test_profile_opening_retries_visible_english_contract_violation(self, monkeypatch) -> None:
+        monkeypatch.setenv("AGNES_API_KEY", "sk-test-1234567890")
+        monkeypatch.setenv("AGENS_START_MODEL_WORLD", "1")
+        engine = GameEngine()
+        calls: list[str] = []
+        narratives: list[str] = []
+        engine.on_narrative = lambda text, _turn: narratives.append(text)
+
+        def runner(agent_name, user_input, session, **kw):
+            calls.append(agent_name)
+            result = _complete_profile_world_builder()
+            if calls.count("world_builder") == 1:
+                result["generated_data"]["opening_narrative"] = "十六岁前，他在 Harvest 与劳作间长大。"
+            return result
+
+        with patch("agens_novel.engine.game_engine.run_turn_sync", side_effect=runner):
+            engine.start_from_profile({"char_name": "许满"})
+
+        assert calls.count("world_builder") == 2
+        assert narratives == ["十六岁这年，他来到潮音渡口，修行编年由此展开。"]
 
     def test_model_choice_prefixes_are_cleaned(self) -> None:
         assert normalize_choices(["A：A 稳妥：闭关吐纳", "B. B、外出历练"]) == [
@@ -187,6 +213,23 @@ class TestGameEngineNewGame:
             "外出历练",
         ]
         assert normalize_choices(["【气运】随缘而行"]) == ["【气运】随缘而行"]
+
+    def test_visible_english_choice_is_replaced_without_shifting_route_semantics(self) -> None:
+        engine = GameEngine()
+        engine.game_session.location = "荒岭接引营"
+        source = [
+            "留在营中稳固根基",
+            "寻找可能 bypass 常规试炼的门路",
+            "前往山脉边缘承担受伤风险",
+            "随缘等待未知因果显现",
+        ]
+
+        used_fallback = engine.set_choices(source, source="test")
+
+        assert used_fallback is False
+        assert engine.game_session.last_choices[0] == source[0]
+        assert engine.game_session.last_choices[1] == fallback_choices(engine.game_session)[1]
+        assert engine.game_session.last_choices[2:] == source[2:]
 
     def test_empty_model_choices_use_visible_fallback_notice(self, monkeypatch) -> None:
         monkeypatch.setenv("AGNES_API_KEY", "sk-test-1234567890")

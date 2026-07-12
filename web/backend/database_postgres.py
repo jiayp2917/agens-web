@@ -396,6 +396,7 @@ class PostgresWebDatabase:
         consume_legacy_bonuses: bool = False,
         terminal: dict[str, Any] | None = None,
         save_slot: dict[str, Any] | None = None,
+        rewind_run: dict[str, Any] | None = None,
     ) -> dict[str, Any]:
         now = now_ts()
         with self.engine.begin() as conn:
@@ -441,6 +442,8 @@ class PostgresWebDatabase:
             result_response = _response_with_version(response, result_version)
             if start_run and user_id:
                 self._ensure_active_run(conn, session_id, user_id, start_run, now)
+            if rewind_run and user_id:
+                self._rewind_active_run(conn, session_id, user_id, rewind_run, now)
             if turn and user_id:
                 self._insert_turn(conn, session_id, request_id, turn)
             if consume_legacy_bonuses and user_id:
@@ -486,6 +489,49 @@ class PostgresWebDatabase:
                 },
             )
         return result_response
+
+    def _rewind_active_run(
+        self,
+        conn: Connection,
+        session_id: str,
+        user_id: str,
+        data: dict[str, Any],
+        now: float,
+    ) -> None:
+        run = conn.execute(
+            text("SELECT completed FROM game_runs WHERE id = :run_id FOR UPDATE"),
+            {"run_id": session_id},
+        ).mappings().first()
+        if run is not None and bool(run["completed"]):
+            raise SessionVersionConflict("终局已结算，不能在原会话覆盖历史；请新建会话后读取存档。")
+        if run is None:
+            self._ensure_active_run(conn, session_id, user_id, data, now)
+        turn_count = max(0, int(data.get("turn_count") or 0))
+        conn.execute(
+            text("DELETE FROM game_turns WHERE run_id = :run_id AND turn_no > :turn_count"),
+            {"run_id": session_id, "turn_count": turn_count},
+        )
+        conn.execute(
+            text(
+                """
+                UPDATE game_runs
+                SET turn_count = :turn_count,
+                    char_name = :char_name,
+                    realm = :realm
+                WHERE id = :run_id AND completed = FALSE
+                """
+            ),
+            {
+                "run_id": session_id,
+                "turn_count": turn_count,
+                "char_name": str(data.get("char_name") or ""),
+                "realm": str(data.get("realm") or ""),
+            },
+        )
+        conn.execute(
+            text("DELETE FROM session_mutations WHERE session_id = :session_id"),
+            {"session_id": session_id},
+        )
 
     def _mutation_response(
         self,
@@ -587,6 +633,13 @@ class PostgresWebDatabase:
                 "event_kind": str(turn.get("event_kind") or "event"),
                 "end_reason": turn.get("end_reason"),
             },
+        )
+        conn.execute(
+            text(
+                "UPDATE game_runs SET turn_count = :turn_count "
+                "WHERE id = :run_id AND completed = FALSE"
+            ),
+            {"run_id": run_id, "turn_count": int(turn["turn_no"])},
         )
 
     def _save_slot_conn(

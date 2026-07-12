@@ -17,6 +17,9 @@ export type CharacterState = {
   family_background?: string;
   luck?: number | string;
   attributes?: Record<string, number>;
+  legacy_talents?: string[];
+  titles?: string[];
+  relationships?: Array<{ name: string; relation: string; affinity?: number }>;
 };
 
 export type WorldState = {
@@ -61,6 +64,16 @@ export class ApiError extends Error {
   }
 }
 
+function publicApiErrorMessage(detail: unknown, fallback: string) {
+  if (typeof detail === "string" && detail.trim()) return detail.trim();
+  if (Array.isArray(detail)) return "请求参数无效。";
+  if (detail && typeof detail === "object") {
+    const message = (detail as { message?: unknown }).message;
+    if (typeof message === "string" && message.trim()) return message.trim();
+  }
+  return fallback || "请求失败。";
+}
+
 export type SaveRow = {
   id: string;
   name: string;
@@ -89,14 +102,15 @@ export async function api<T>(path: string, init: RequestInit = {}): Promise<T> {
     },
   });
   if (!response.ok) {
-    let detail = response.statusText;
+    const fallback = response.status === 422 ? "请求参数无效。" : response.statusText || "请求失败。";
+    let detail: unknown = fallback;
     try {
       const payload = await response.json();
       detail = payload.detail || detail;
     } catch {
       // keep status text
     }
-    throw new ApiError(String(detail), response.status);
+    throw new ApiError(publicApiErrorMessage(detail, fallback), response.status);
   }
   return response.json() as Promise<T>;
 }

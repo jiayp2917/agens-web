@@ -1,5 +1,5 @@
 import { useEffect, useState } from "react";
-import { CheckCircle2 } from "lucide-react";
+import { CircleAlert, CheckCircle2 } from "lucide-react";
 import {
   api,
   ApiError,
@@ -36,7 +36,18 @@ export function SettingsSaveDialog({
   const [saves, setSaves] = useState<SaveRow[]>([]);
   const [settings, setSettings] = useState<ModelSettings | null>(null);
   const [message, setMessage] = useState("");
+  const [messageKind, setMessageKind] = useState<"status" | "error">("status");
   const [activeTab, setActiveTab] = useState<DialogMode>(mode);
+
+  const showStatus = (text: string) => {
+    setMessageKind("status");
+    setMessage(text);
+  };
+
+  const showError = (text: string) => {
+    setMessageKind("error");
+    setMessage(text);
+  };
 
   const refreshSaves = () => {
     if (!user) {
@@ -63,13 +74,19 @@ export function SettingsSaveDialog({
       });
       setSession(payload.session);
       await refreshSaves();
-      setMessage(`已保存：${payload.save.name}`);
+      showStatus(`已保存：${payload.save.name}`);
     } catch (err) {
       if (err instanceof ApiError && err.status === 409) {
-        const refreshed = await api<Session>(`/api/sessions/${session.session_id}`);
-        setSession(refreshed);
+        try {
+          const refreshed = await api<Session>(`/api/sessions/${session.session_id}`);
+          setSession(refreshed);
+          showStatus("局面已由另一操作更新，已加载最新进度，请再次存档。");
+        } catch {
+          showError("局面已更新，但刷新失败，请关闭面板后重试。");
+        }
+        return;
       }
-      setMessage(err instanceof Error ? err.message : "保存失败。");
+      showError(err instanceof Error ? err.message : "保存失败。");
     }
   };
 
@@ -84,10 +101,16 @@ export function SettingsSaveDialog({
       onClose();
     } catch (err) {
       if (err instanceof ApiError && err.status === 409) {
-        const refreshed = await api<Session>(`/api/sessions/${session.session_id}`);
-        setSession(refreshed);
+        try {
+          const refreshed = await api<Session>(`/api/sessions/${session.session_id}`);
+          setSession(refreshed);
+          showStatus("局面已由另一操作更新，已加载最新进度，请再次读档。");
+        } catch {
+          showError("局面已更新，但刷新失败，请关闭面板后重试。");
+        }
+        return;
       }
-      setMessage(err instanceof Error ? err.message : "读档失败。");
+      showError(err instanceof Error ? err.message : "读档失败。");
     }
   };
 
@@ -109,7 +132,7 @@ export function SettingsSaveDialog({
               user={user}
               settings={settings}
               setSettings={setSettings}
-              setMessage={setMessage}
+              setMessage={showStatus}
               onAuth={onAuth}
             />
           )}
@@ -124,7 +147,12 @@ export function SettingsSaveDialog({
             />
           )}
         </section>
-        {message && <p className="dialog-message"><CheckCircle2 size={16} />{message}</p>}
+        {message && (
+          <p className={`dialog-message ${messageKind}`} role={messageKind === "error" ? "alert" : "status"}>
+            {messageKind === "error" ? <CircleAlert size={16} /> : <CheckCircle2 size={16} />}
+            {message}
+          </p>
+        )}
       </div>
     </div>
   );

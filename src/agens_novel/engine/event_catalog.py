@@ -100,6 +100,7 @@ def _format_event_lore(event: ChronicleEvent, session: Any, new_age: int, world_
     if isinstance(world_profile, dict) and isinstance(world_profile.get("current_conflicts"), list):
         current_conflicts = [str(item) for item in world_profile["current_conflicts"] if str(item).strip()]
     conflict = current_conflicts[0] if current_conflicts else str(pack.get("secondary_conflict") or "")
+    conflict = conflict.rstrip("。！？；;,.， ")
     stage = int(getattr(session, "realm_stage", 1) or 1)
     realm = getattr(session, "realm", "练气") or "练气"
     lore = event.lore_template.format(
@@ -208,7 +209,7 @@ CHRONICLE_EVENTS: tuple[ChronicleEvent, ...] = (
         weight=5,
         stage_goal="稳住根基，积累下一次小境界推进的依据",
         lore_template="{sect}重修低阶课业簿，{location}弟子开始按月比对吐纳进度，{realm_label}根基有了可见标尺。",
-        allowed_delta_types=("attributes", "lore_add"),
+        allowed_delta_types=("lore_add",),
         choice_hints=("继续温养根基", "请教师门课业", "接取低阶差事", "随缘旁听讲法"),
     ),
     ChronicleEvent(
@@ -222,7 +223,7 @@ CHRONICLE_EVENTS: tuple[ChronicleEvent, ...] = (
         weight=4,
         stage_goal="通过宗门秩序获得稳定反馈，而非反复闭关",
         lore_template="{neutral}更新名册，{sect}与{rival}的暗中试探被写进外门告示。",
-        allowed_delta_types=("lore_add", "npcs_present_add"),
+        allowed_delta_types=("lore_add", "npcs_present_add", "relationship_add"),
         choice_hints=("整理名册关系", "拜访司录执事", "查阅旧告示", "随缘留意签押"),
     ),
     ChronicleEvent(
@@ -236,7 +237,7 @@ CHRONICLE_EVENTS: tuple[ChronicleEvent, ...] = (
         weight=4,
         stage_goal="把稳妥路线写成可见的课业、同门与反馈，而不是反复闭关",
         lore_template="{sect}轮值讲师重排低阶课表，{location}弟子被分入不同讲席，{realm_label}修行从独自吐纳转为按册核验。",
-        allowed_delta_types=("lore_add", "npcs_present_add", "attributes"),
+        allowed_delta_types=("lore_add", "npcs_present_add", "relationship_add"),
         choice_hints=("按课表补足短板", "请教师兄课业", "整理同门讲义", "随缘旁听新讲席"),
     ),
     ChronicleEvent(
@@ -250,8 +251,22 @@ CHRONICLE_EVENTS: tuple[ChronicleEvent, ...] = (
         weight=3,
         stage_goal="用稳定差事提供阶段反馈和外界变化",
         lore_template="{neutral}将{outer_region}近月收支抄送{sect}，{location}低阶弟子开始以差事换取讲评名额。",
-        allowed_delta_types=("lore_add", "npcs_present_add", "breakthrough_flags_add"),
+        allowed_delta_types=("lore_add", "npcs_present_add", "relationship_add", "breakthrough_flags_add"),
         choice_hints=("接一桩稳妥差事", "核对外界账册", "护送同门交割", "随缘观察差事流向"),
+    ),
+    ChronicleEvent(
+        id="steady-merit-recognition",
+        category="稳妥",
+        event_type="stage",
+        worlds=(),
+        fate_tags=("苦修", "宗门"),
+        min_turn=8,
+        max_turn=120,
+        weight=2,
+        stage_goal="以长期修行表现换取宗门正式记名与称号",
+        lore_template="{sect}核定本季课业与差事，{location}少数弟子因根基稳固被正式记入勤修榜。",
+        allowed_delta_types=("lore_add", "title_add", "relationship_add"),
+        choice_hints=("接受记名继续修行", "拜访榜中同门", "核对评议依据", "随缘观察后续影响"),
     ),
     ChronicleEvent(
         id="opportunity-market-rumor",
@@ -264,7 +279,9 @@ CHRONICLE_EVENTS: tuple[ChronicleEvent, ...] = (
         weight=5,
         stage_goal="从外界情报中选择下一段修行方向",
         lore_template="{neutral}传出新消息：{conflict}，同门与散修都在打听可入局的门路。",
-        allowed_delta_types=("lore_add", "discovered_add", "npcs_present_add"),
+        allowed_delta_types=(
+            "lore_add", "discovered_add", "npcs_present_add", "relationship_add", "location"
+        ),
         choice_hints=("打听消息来源", "拜访知情修士", "追查传闻地点", "随缘听一则旧签"),
     ),
     ChronicleEvent(
@@ -278,7 +295,7 @@ CHRONICLE_EVENTS: tuple[ChronicleEvent, ...] = (
         weight=4,
         stage_goal="把命数线索转化为可选择的中风险机缘",
         lore_template="{age}岁这一年，{region}星潮有异，{outer_region}的旧闻重新被{neutral}提起。",
-        allowed_delta_types=("lore_add", "discovered_add"),
+        allowed_delta_types=("lore_add", "discovered_add", "location"),
         choice_hints=("核对旧闻", "寻访见证者", "前往边缘查探", "随星潮而行"),
     ),
     ChronicleEvent(
@@ -292,7 +309,7 @@ CHRONICLE_EVENTS: tuple[ChronicleEvent, ...] = (
         weight=4,
         stage_goal="通过人物关系获得下一阶段线索",
         lore_template="{sect}有执事讲评近年低阶弟子的得失，{location}不少人开始寻找可请教的前辈。",
-        allowed_delta_types=("lore_add", "npcs_present_add"),
+        allowed_delta_types=("lore_add", "npcs_present_add", "relationship_add", "location"),
         choice_hints=("请教执事", "结交同门", "接下引荐差事", "随缘旁听"),
     ),
     ChronicleEvent(
@@ -306,7 +323,7 @@ CHRONICLE_EVENTS: tuple[ChronicleEvent, ...] = (
         weight=3,
         stage_goal="把外界地点转化为可追踪的阶段线索",
         lore_template="{outer_region}的旧路重新有人通行，{neutral}称那里或许能补足低阶修士的短板。",
-        allowed_delta_types=("lore_add", "discovered_add"),
+        allowed_delta_types=("lore_add", "discovered_add", "location"),
         choice_hints=("核对路引", "寻找同行者", "前往旧路边缘", "随缘等风声"),
     ),
     ChronicleEvent(
@@ -320,7 +337,7 @@ CHRONICLE_EVENTS: tuple[ChronicleEvent, ...] = (
         weight=6,
         stage_goal="让风险路线带来真实压力，而不是重复突破按钮",
         lore_template="{rival}逼近{outer_region}，{sect}临时调派低阶弟子补巡，{location}的风险被写上明榜。",
-        allowed_delta_types=("lore_add", "status_effects_add", "breakthrough_flags_add"),
+        allowed_delta_types=("lore_add", "status_effects_add", "breakthrough_flags_add", "location"),
         choice_hints=("领取补巡差事", "寻找护持同伴", "深入边缘查探", "随战报改道"),
     ),
     ChronicleEvent(
@@ -334,7 +351,7 @@ CHRONICLE_EVENTS: tuple[ChronicleEvent, ...] = (
         weight=4,
         stage_goal="提供禁地/斗法/伤势压力，避免无代价冒险",
         lore_template="{outer_region}近年异动加重，{neutral}开始高价收购护身符与疗伤药。",
-        allowed_delta_types=("lore_add", "status_effects_add", "inventory_add"),
+        allowed_delta_types=("lore_add", "status_effects_add", "inventory_add", "location"),
         choice_hints=("准备护身物", "寻找同伴同行", "冒险探查异动", "随缘避开锋芒"),
     ),
     ChronicleEvent(
@@ -348,7 +365,9 @@ CHRONICLE_EVENTS: tuple[ChronicleEvent, ...] = (
         weight=4,
         stage_goal="让斗法压力以可选择的风险出现，并由规则承接伤势或因果",
         lore_template="{rival}门下有人在{outer_region}设下约斗榜，{sect}执事提醒低阶修士不得把一时意气当作破境捷径。",
-        allowed_delta_types=("lore_add", "status_effects_add", "npcs_present_add"),
+        allowed_delta_types=(
+            "lore_add", "status_effects_add", "npcs_present_add", "relationship_add", "location"
+        ),
         choice_hints=("避开约斗稳住气息", "打听约斗来历", "冒险赴榜试探", "随缘观望胜负"),
     ),
     ChronicleEvent(
@@ -362,7 +381,7 @@ CHRONICLE_EVENTS: tuple[ChronicleEvent, ...] = (
         weight=3,
         stage_goal="把伤势、寿元和高龄压力写入路线风险",
         lore_template="{location}近日多有低阶弟子旧伤复发，{neutral}的医修把{conflict}列为近期外出禁忌。",
-        allowed_delta_types=("lore_add", "status_effects_add", "lifespan"),
+        allowed_delta_types=("lore_add", "status_effects_add", "location"),
         choice_hints=("调养旧伤", "寻医问药", "强行外出查探", "随缘听从医嘱"),
     ),
     ChronicleEvent(
@@ -376,7 +395,7 @@ CHRONICLE_EVENTS: tuple[ChronicleEvent, ...] = (
         weight=5,
         stage_goal="让气运路线产生可感知的命数摇摆",
         lore_template="{age}岁这一年，{region}流传一则无名签文，有人因它得机缘，也有人因它遭反噬。",
-        allowed_delta_types=("lore_add", "attributes", "status_effects_add"),
+        allowed_delta_types=("lore_add", "status_effects_add"),
         choice_hints=("按签文低调行事", "寻找解签之人", "赌一次未知机缘", "顺其自然"),
     ),
     ChronicleEvent(
@@ -404,7 +423,7 @@ CHRONICLE_EVENTS: tuple[ChronicleEvent, ...] = (
         weight=4,
         stage_goal="让气运路线出现小兆头和后续钩子，而非固定随机奖惩",
         lore_template="{location}夜半有短暂灵光掠过，{neutral}只把它记为小兆，不许低阶弟子据此自称得道。",
-        allowed_delta_types=("lore_add", "discovered_add", "attributes"),
+        allowed_delta_types=("lore_add", "discovered_add"),
         choice_hints=("低调记录小兆", "询问懂星象者", "追随灵光方向", "随缘等待回响"),
     ),
     ChronicleEvent(
@@ -418,7 +437,9 @@ CHRONICLE_EVENTS: tuple[ChronicleEvent, ...] = (
         weight=3,
         stage_goal="把气运写成因果账和取舍压力",
         lore_template="{sect}外门新贴因果账，称{outer_region}近来得失相抵，受益者日后多半也要偿一笔人情。",
-        allowed_delta_types=("lore_add", "npcs_present_add", "status_effects_add"),
+        allowed_delta_types=(
+            "lore_add", "npcs_present_add", "relationship_add", "status_effects_add"
+        ),
         choice_hints=("记下因果账", "拜访账册执事", "冒险接下人情", "随缘不问来处"),
     ),
 )

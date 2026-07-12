@@ -32,6 +32,7 @@ logger = logging.getLogger(__name__)
 
 FRONTEND_REACT_DIST = Path(__file__).resolve().parents[1] / "frontend-react" / "dist"
 SAFE_ERROR = "请求无法完成，请稍后再试。"
+_PLACEHOLDER_MARKERS = ("change_me", "changeme", "replace_me", "example.com", "<", ">")
 
 
 def validate_runtime_config() -> None:
@@ -44,11 +45,42 @@ def validate_runtime_config() -> None:
         "MODEL_CONFIG_SECRET": os.environ.get("MODEL_CONFIG_SECRET", "").strip(),
     }
     session_secret = os.environ.get("SESSION_SECRET", "").strip()
-    if not session_secret or session_secret == DEV_SESSION_SECRET:
-        raise RuntimeError("SESSION_SECRET must be set to a non-default value in production.")
+    if not session_secret:
+        raise RuntimeError("SESSION_SECRET required in production.")
+    if session_secret == DEV_SESSION_SECRET or _looks_like_placeholder(session_secret):
+        raise RuntimeError("SESSION_SECRET must not use a placeholder value in production.")
     missing = [name for name, value in required.items() if not value]
     if missing:
         raise RuntimeError(f"{', '.join(missing)} required in production.")
+    configured = {**required, "SESSION_SECRET": session_secret}
+    optional_api_key = os.environ.get("AGNES_API_KEY", "").strip()
+    if optional_api_key:
+        configured["AGNES_API_KEY"] = optional_api_key
+    placeholders = [name for name, value in configured.items() if _looks_like_placeholder(value)]
+    if placeholders:
+        raise RuntimeError(f"{', '.join(placeholders)} must not use placeholder values in production.")
+    weak = [
+        name
+        for name, minimum in (
+            ("SESSION_SECRET", 32),
+            ("MODEL_CONFIG_SECRET", 32),
+            ("INVITE_ADMIN_CODE", 16),
+        )
+        if len(configured[name]) < minimum
+    ]
+    if weak:
+        raise RuntimeError(f"{', '.join(weak)} must use sufficiently long production values.")
+    secure_cookie = os.environ.get("SESSION_COOKIE_SECURE", "1").strip().lower()
+    if secure_cookie in {"0", "false", "no"}:
+        raise RuntimeError("SESSION_COOKIE_SECURE must remain enabled in production.")
+    origins = [item.strip() for item in required["AGENS_ALLOWED_ORIGINS"].split(",") if item.strip()]
+    if any(urlparse(origin).scheme.lower() != "https" for origin in origins):
+        raise RuntimeError("AGENS_ALLOWED_ORIGINS must contain only HTTPS origins in production.")
+
+
+def _looks_like_placeholder(value: str) -> bool:
+    normalized = value.strip().lower()
+    return any(marker in normalized for marker in _PLACEHOLDER_MARKERS)
 
 
 def allowed_hosts_from_env() -> list[str]:

@@ -11,11 +11,11 @@ import pytest
 from fastapi.testclient import TestClient
 from sqlalchemy import create_engine, text
 
+from agens_novel.engine.choices import choice_with_semantic
 from agens_novel.engine.turn_rules import classify_choice
 from agens_novel.game.constants import ATTRIBUTE_KEYS
 from web.backend.app import create_app
 from web.backend.auth import hash_invite_code
-from web.backend.service import _with_choice_semantic
 
 pytestmark = pytest.mark.xdist_group("pg_test_db")
 
@@ -98,7 +98,7 @@ def test_choice_index_semantic_prefixes_match_rule_categories() -> None:
     ]
 
     for index, category in enumerate(expected):
-        action = _with_choice_semantic(index, "\u5c71\u95e8\u4fee\u884c")
+        action = choice_with_semantic(index, "\u5c71\u95e8\u4fee\u884c")
         assert classify_choice(action) == category
 
 
@@ -160,7 +160,9 @@ def test_web_api_minimum_game_flow(tmp_path: Path, monkeypatch) -> None:
         assert "insight" not in chosen["character"]
         assert "gold" not in chosen["character"]
         assert chosen["character"]["age"] > started["character"]["age"]
-        assert chosen["choices"] == ["继续请教", "前往住处", "查看木牌", "【气运】随缘而行，听天命、赌因果"]
+        assert chosen["choices"][:3] == ["继续请教", "前往住处", "查看木牌"]
+        assert "气运" in chosen["choices"][3]
+        assert "早开灵草" in chosen["choices"][3]
 
         acted = client.post(
             f"/api/sessions/{session_id}/action",
@@ -744,6 +746,125 @@ def test_web_save_load_restores_snapshot_and_chat_history(tmp_path: Path, monkey
     assert "sk-test-web-api" not in db_text
 
 
+def test_web_load_rewinds_future_turn_rows_before_continuing(monkeypatch) -> None:
+    monkeypatch.setenv("AGNES_API_KEY", "sk-test-web-api")
+    monkeypatch.setenv("SESSION_COOKIE_SECURE", "0")
+    app = create_app()
+    client = TestClient(app)
+    _create_invite(app)
+    user = _register(client)
+    session = client.post("/api/sessions", json={}).json()
+    session_id = session["session_id"]
+
+    def mutation(body: dict[str, Any], current: dict[str, Any], request_id: str) -> dict[str, Any]:
+        return {
+            **body,
+            "request_id": request_id,
+            "expected_version": current["version"],
+        }
+
+    with patch("agens_novel.engine.game_engine.run_turn_sync", side_effect=_runner):
+        current = client.post(
+            f"/api/sessions/{session_id}/start",
+            json=mutation({"char_name": "许满"}, session, "rewind-start-0001"),
+        ).json()
+        current = client.post(
+            f"/api/sessions/{session_id}/choice",
+            json=mutation({"choice_index": 0}, current, "rewind-turn-0001"),
+        ).json()
+        saved_turn = current["turn_count"]
+        current = client.post(
+            f"/api/sessions/{session_id}/save",
+            json=mutation({"name": "rewind_slot"}, current, "rewind-save-0001"),
+        ).json()["session"]
+        current = client.post(
+            f"/api/sessions/{session_id}/choice",
+            json=mutation({"choice_index": 1}, current, "rewind-turn-0002"),
+        ).json()
+        assert current["turn_count"] == saved_turn + 1
+
+        current = client.post(
+            f"/api/sessions/{session_id}/load",
+            json=mutation({"name": "rewind_slot"}, current, "rewind-load-0001"),
+        ).json()
+        assert current["turn_count"] == saved_turn
+        continued = client.post(
+            f"/api/sessions/{session_id}/choice",
+            json=mutation({"choice_index": 2}, current, "rewind-turn-0002"),
+        )
+
+    assert continued.status_code == 200
+    assert continued.json()["turn_count"] == saved_turn + 1
+    with app.state.service.db.engine.connect() as conn:
+        rows = conn.execute(
+            text(
+                """
+                SELECT turn_no FROM game_turns
+                WHERE run_id = :run_id
+                ORDER BY turn_no
+                """
+            ),
+            {"run_id": session_id},
+        ).scalars().all()
+    assert rows == list(range(1, saved_turn + 2))
+    assert user["id"]
+
+
+def test_web_new_session_can_load_completed_run_save_and_continue(monkeypatch) -> None:
+    monkeypatch.setenv("AGNES_API_KEY", "sk-test-web-api")
+    monkeypatch.setenv("SESSION_COOKIE_SECURE", "0")
+    app = create_app()
+    client = TestClient(app)
+    _create_invite(app)
+    _register(client)
+
+    def mutation(body: dict[str, Any], current: dict[str, Any], request_id: str) -> dict[str, Any]:
+        return {**body, "request_id": request_id, "expected_version": current["version"]}
+
+    original = client.post("/api/sessions", json={}).json()
+    with patch("agens_novel.engine.game_engine.run_turn_sync", side_effect=_runner):
+        current = client.post(
+            f"/api/sessions/{original['session_id']}/start",
+            json=mutation({"char_name": "许满"}, original, "new-load-start-0001"),
+        ).json()
+        current = client.post(
+            f"/api/sessions/{original['session_id']}/choice",
+            json=mutation({"choice_index": 0}, current, "new-load-turn-0001"),
+        ).json()
+        saved_turn = current["turn_count"]
+        current = client.post(
+            f"/api/sessions/{original['session_id']}/save",
+            json=mutation({"name": "completed_source"}, current, "new-load-save-0001"),
+        ).json()["session"]
+        ended = client.post(
+            f"/api/sessions/{original['session_id']}/end",
+            json=mutation({"reason": "玩家结束本局"}, current, "new-load-end-0001"),
+        )
+        assert ended.status_code == 200
+
+        fresh = client.post("/api/sessions", json={}).json()
+        loaded = client.post(
+            f"/api/sessions/{fresh['session_id']}/load",
+            json=mutation({"name": "completed_source"}, fresh, "new-load-load-0001"),
+        )
+        assert loaded.status_code == 200
+        loaded_body = loaded.json()
+        continued = client.post(
+            f"/api/sessions/{fresh['session_id']}/choice",
+            json=mutation({"choice_index": 1}, loaded_body, "new-load-turn-0002"),
+        )
+
+    assert continued.status_code == 200
+    assert continued.json()["turn_count"] == saved_turn + 1
+    with app.state.service.db.engine.connect() as conn:
+        run = conn.execute(
+            text("SELECT completed, turn_count FROM game_runs WHERE id = :id"),
+            {"id": fresh["session_id"]},
+        ).mappings().one()
+    assert run["completed"] is False
+    assert run["turn_count"] == saved_turn + 1
+
+
 def test_web_model_failure_exposes_fallback_and_can_end(tmp_path: Path, monkeypatch) -> None:
     monkeypatch.delenv("AGNES_API_KEY", raising=False)
     monkeypatch.setenv("AGENS_START_MODEL_OPENING", "1")
@@ -1178,7 +1299,8 @@ def test_production_requires_allowed_origins(tmp_path: Path, monkeypatch) -> Non
     monkeypatch.setenv("AGENS_ENV", "production")
     monkeypatch.setenv("DATABASE_URL", "postgresql+psycopg://agens_user:test@postgres:5432/agens_web")
     monkeypatch.setenv("INVITE_ADMIN_CODE", "admin-invite-123")
-    monkeypatch.setenv("SESSION_SECRET", "not-the-dev-secret")
+    monkeypatch.setenv("SESSION_SECRET", "test-session-secret-with-more-than-32-characters")
+    monkeypatch.setenv("MODEL_CONFIG_SECRET", "test-model-config-secret-with-more-than-32-characters")
     monkeypatch.delenv("AGENS_ALLOWED_ORIGINS", raising=False)
 
     with pytest.raises(RuntimeError, match="AGENS_ALLOWED_ORIGINS"):
@@ -1189,10 +1311,10 @@ def test_production_hides_openapi_and_rejects_untrusted_host(tmp_path: Path, mon
     monkeypatch.setenv("AGENS_ENV", "production")
     monkeypatch.setenv("DATABASE_URL", os.environ["TEST_DATABASE_URL"])
     monkeypatch.setenv("INVITE_ADMIN_CODE", "admin-invite-123")
-    monkeypatch.setenv("SESSION_SECRET", "not-the-dev-secret")
+    monkeypatch.setenv("SESSION_SECRET", "test-session-secret-with-more-than-32-characters")
     monkeypatch.setenv("AGENS_ALLOWED_ORIGINS", "https://game.example.test")
-    monkeypatch.setenv("MODEL_CONFIG_SECRET", "test-model-config-secret")
-    monkeypatch.setenv("SESSION_COOKIE_SECURE", "0")
+    monkeypatch.setenv("MODEL_CONFIG_SECRET", "test-model-config-secret-with-more-than-32-characters")
+    monkeypatch.setenv("SESSION_COOKIE_SECURE", "1")
     app = create_app()
 
     client = TestClient(app, base_url="https://game.example.test")
@@ -1839,12 +1961,26 @@ def test_legacy_bonuses_applied_on_next_character(tmp_path: Path, monkeypatch) -
     _register(client)
     db = app.state.service.db
     user_id = db.get_user_by_username("player")["id"]
-    # Pre-seed two legacy bonuses for the user.
+    # Pre-seed legacy bonuses for the user.
     db.save_legacy_bonus(
         user_id=user_id,
         bonus_type="attribute_points",
         bonus_value="2",
         label="+2",
+        source_session_id="seeded",
+    )
+    db.save_legacy_bonus(
+        user_id=user_id,
+        bonus_type="legacy_talent",
+        bonus_value="游历之眼",
+        label="游历之眼",
+        source_session_id="seeded",
+    )
+    db.save_legacy_bonus(
+        user_id=user_id,
+        bonus_type="opening_title",
+        bonus_value="飞升者",
+        label="飞升者",
         source_session_id="seeded",
     )
     db.save_legacy_bonus(
@@ -1867,9 +2003,10 @@ def test_legacy_bonuses_applied_on_next_character(tmp_path: Path, monkeypatch) -
                 },
             },
         ).json()
-    # Both bonuses should have been applied: +2 attribute points distributed
-    # to the lowest stats, +10 extra lifespan reflected in world/character.
+    # All bonuses should be visible before the rows are consumed.
     assert started["game_started"] is True
+    assert started["character"]["legacy_talents"] == ["游历之眼"]
+    assert started["character"]["titles"] == ["飞升者"]
     # After consumption, legacy_bonuses for this user should be 0 (runs_remaining 0).
     remaining = db.list_legacy_bonuses(user_id)
     assert all(b["runs_remaining"] == 0 for b in remaining)

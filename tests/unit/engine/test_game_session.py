@@ -27,6 +27,9 @@ class TestGameSessionInit:
         assert s.breakthrough_flags == []
         assert s.techniques == []
         assert s.inventory == []
+        assert s.legacy_talents == []
+        assert s.titles == []
+        assert s.relationships == []
         assert s.status_effects == []
         assert s.lifespan == 100
         assert s.equipment_slots == dict(DEFAULT_EQUIPMENT_SLOTS)
@@ -149,11 +152,91 @@ class TestGameSessionApplyDelta:
         s.apply_delta({"character": {"status_effects_add": ["中毒"]}})
         assert "中毒" in s.status_effects
 
+    def test_apply_titles_and_relationships_as_durable_character_state(self):
+        s = GameSession()
+
+        s.apply_delta(
+            {
+                "character": {
+                    "title_add": ["外门魁首", "外门魁首"],
+                    "relationship_add": [
+                        {"name": "陈师兄", "relation": "同门", "affinity": 5},
+                    ],
+                }
+            }
+        )
+        s.apply_delta(
+            {
+                "character": {
+                    "relationship_add": [
+                        {"name": "陈师兄", "relation": "盟友", "affinity": 15},
+                    ],
+                }
+            }
+        )
+
+        assert s.titles == ["外门魁首"]
+        assert s.relationships == [{"name": "陈师兄", "relation": "盟友", "affinity": 15}]
+
+    def test_npc_presence_does_not_create_a_durable_relationship(self):
+        s = GameSession()
+
+        s.apply_delta(
+            {"world": {"npcs_present_add": [{"name": "赵执事", "relation": "引路人"}]}}
+        )
+
+        assert s.npcs_present == [{"name": "赵执事", "relation": "引路人"}]
+        assert s.relationships == []
+
+    def test_scene_npc_does_not_override_explicit_relationship(self):
+        s = GameSession()
+
+        s.apply_delta(
+            {
+                "character": {
+                    "relationship_add": [
+                        {"name": "陈师兄", "relation": "盟友", "affinity": 10}
+                    ]
+                },
+                "world": {
+                    "npcs_present_add": [{"name": "陈师兄", "relation": "同门"}]
+                },
+            }
+        )
+
+        assert s.relationships == [{"name": "陈师兄", "relation": "盟友", "affinity": 10}]
+
     def test_apply_status_effects_no_duplicate(self):
         s = GameSession()
         s.status_effects = ["中毒"]
         s.apply_delta({"character": {"status_effects_add": ["中毒"]}})
         assert s.status_effects.count("中毒") == 1
+
+    def test_apply_status_effects_remove_matches_string_and_structured_names(self):
+        s = GameSession()
+        unrelated = {"name": "旧伤", "severity": "轻"}
+        s.status_effects = ["走火入魔", {"name": "修为未复"}, unrelated]
+
+        s.apply_delta(
+            {"character": {"status_effects_remove": ["走火入魔", {"name": "修为未复"}]}}
+        )
+
+        assert s.status_effects == [unrelated]
+
+    def test_apply_status_effect_remove_then_add_keeps_new_effect(self):
+        s = GameSession()
+        s.status_effects = ["走火入魔"]
+
+        s.apply_delta(
+            {
+                "character": {
+                    "status_effects_remove": ["走火入魔"],
+                    "status_effects_add": ["走火入魔"],
+                }
+            }
+        )
+
+        assert s.status_effects == ["走火入魔"]
 
     def test_apply_meta_game_over(self):
         s = GameSession()
@@ -213,6 +296,9 @@ class TestGameSessionSerialization:
         s.breakthrough_flags = ["foundation_aid"]
         s.techniques = [{"name": "火球术", "type": "术法"}]
         s.inventory = [{"name": "回血丹", "type": "丹药"}]
+        s.legacy_talents = ["游历之眼"]
+        s.titles = ["外门魁首"]
+        s.relationships = [{"name": "陈师兄", "relation": "盟友", "affinity": 12}]
         s.status_effects = ["中毒"]
         s.lifespan = 95
         s.equipment_slots = {"weapon": {"name": "铁剑"}, "armor": None, "accessory": None}
@@ -223,6 +309,9 @@ class TestGameSessionSerialization:
         s.active_quests = [{"name": "入门修行"}]
         s.discovered_locations = ["青云山"]
         s.lore_facts = ["东荒三宗之一"]
+        s.story_key = "alliance-old-oath"
+        s.story_version = 1
+        s.story_state = {"phase_key": "turning", "stage_goal": "查清旧契"}
         s.chat_history = [{"role": "user", "content": f"行动{i}"} for i in range(25)]
         s.game_started = True
         s.turn_count = 10
@@ -246,12 +335,18 @@ class TestGameSessionSerialization:
         assert s2.breakthrough_flags == ["foundation_aid"]
         assert s2.techniques == [{"name": "火球术", "type": "术法"}]
         assert s2.inventory == [{"name": "回血丹", "type": "丹药"}]
+        assert s2.legacy_talents == ["游历之眼"]
+        assert s2.titles == ["外门魁首"]
+        assert s2.relationships == [{"name": "陈师兄", "relation": "盟友", "affinity": 12}]
         assert s2.status_effects == ["中毒"]
         assert s2.lifespan == 95
         assert s2.equipment_slots["weapon"]["name"] == "铁剑"
         assert s2.location == "青云山"
         assert s2.region == "东荒"
         assert s2.day_count == 5
+        assert s2.story_key == "alliance-old-oath"
+        assert s2.story_version == 1
+        assert s2.story_state == {"phase_key": "turning", "stage_goal": "查清旧契"}
         assert s2.game_started is True
         assert s2.turn_count == 10
         assert len(s2.chat_history) == 20
@@ -299,6 +394,9 @@ class TestGameSessionSerialization:
             assert not hasattr(s, legacy)
         assert s.attributes == DEFAULT_ATTRIBUTES
         assert s.chat_history == []
+        assert s.story_key == ""
+        assert s.story_version == 0
+        assert s.story_state == {}
 
     def test_old_0_100_scale_save_attributes_are_migrated_to_0_10(self):
         data = {
@@ -333,6 +431,19 @@ class TestGameSessionSerialization:
         s.lifespan = 100
         s.age = 18
         assert s.remaining_lifespan == 82
+
+    def test_record_turn_keeps_narrator_contract_in_model_history(self):
+        s = GameSession()
+        s.turn_count = 1
+        s.last_choices = ["稳固根基", "寻访机缘", "踏入险地", "静候气运"]
+
+        s.record_turn("稳固根基", "其人在外门静修一年。", {})
+
+        assistant = s.chat_history[-1]
+        assert assistant["role"] == "assistant"
+        assert assistant["content"].startswith("其人在外门静修一年。")
+        assert "<state_update>{}</state_update>" in assistant["content"]
+        assert '<choices>["稳固根基", "寻访机缘", "踏入险地", "静候气运"]</choices>' in assistant["content"]
 
 
 class TestGameSessionReset:

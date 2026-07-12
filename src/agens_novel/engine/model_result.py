@@ -43,10 +43,14 @@ def classify_narrator_result(result: dict[str, Any]) -> ModelResultStatus:
             ModelResultKind.REQUEST_FAILED,
             f"叙述失败: {result['llm_error']}",
         )
-
     narrative = str(result.get("narrative") or "").strip()
     state_delta = result.get("state_delta")
     choices = normalize_choices(result.get("choices"))
+    contract_value = result.get("contract_diagnostics")
+    contract: dict[str, Any] = contract_value if isinstance(contract_value, dict) else {}
+    contract_failure = _narrator_contract_failure(result, contract)
+    if contract_failure is not None:
+        return contract_failure
 
     if state_delta is None or not isinstance(state_delta, dict):
         return ModelResultStatus(ModelResultKind.INCOMPLETE_OUTPUT, "模型已返回叙事，但状态更新格式不完整。")
@@ -57,6 +61,26 @@ def classify_narrator_result(result: dict[str, Any]) -> ModelResultStatus:
     if len(choices) != 4:
         return ModelResultStatus(ModelResultKind.INCOMPLETE_OUTPUT, "模型已返回叙事，但未返回恰好 4 个 A/B/C/D 选项。")
     return ModelResultStatus(ModelResultKind.OK)
+
+
+def _narrator_contract_failure(
+    result: dict[str, Any],
+    contract: dict[str, Any],
+) -> ModelResultStatus | None:
+    if result.get("provider_json_schema") and not result.get("provider_json_envelope_ok"):
+        return ModelResultStatus(
+            ModelResultKind.INCOMPLETE_OUTPUT,
+            "模型未按 provider JSON schema 返回完整字段。",
+        )
+    if contract.get("structured_residue"):
+        return ModelResultStatus(ModelResultKind.INCOMPLETE_OUTPUT, "模型可见文本仍含结构化残留。")
+    if contract.get("english_residue"):
+        return ModelResultStatus(ModelResultKind.INCOMPLETE_OUTPUT, "模型可见文本仍含英文残留。")
+    if contract and not contract.get("raw_has_state_update_tag"):
+        return ModelResultStatus(ModelResultKind.INCOMPLETE_OUTPUT, "模型输出缺少 state_update 标签。")
+    if contract and not contract.get("raw_has_choices_tag"):
+        return ModelResultStatus(ModelResultKind.INCOMPLETE_OUTPUT, "模型输出缺少 choices 标签。")
+    return None
 
 
 def classify_world_builder_result(result: dict[str, Any]) -> ModelResultStatus:
@@ -154,8 +178,12 @@ def result_diagnostics(result: dict[str, Any]) -> dict[str, Any]:
         "contract_missing_narrative": bool(contract.get("missing_narrative")),
         "contract_missing_state_update": bool(contract.get("missing_state_update")),
         "contract_choices_count_ok": bool(contract.get("choices_count_ok")),
+        "contract_raw_has_state_update_tag": bool(contract.get("raw_has_state_update_tag")),
+        "contract_raw_has_choices_tag": bool(contract.get("raw_has_choices_tag")),
         "contract_structured_residue": bool(contract.get("structured_residue")),
         "contract_english_residue": bool(contract.get("english_residue")),
+        "provider_json_schema": bool(result.get("provider_json_schema")),
+        "provider_json_envelope_ok": bool(result.get("provider_json_envelope_ok")),
     }
 
 

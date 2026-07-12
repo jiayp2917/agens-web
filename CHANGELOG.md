@@ -1,6 +1,59 @@
 # Changelog
 
+## 2026-07-12
+
+### Breakthrough recovery, strict contract retry and long-run consistency
+
+- Added rule-owned breakthrough blockers for `根基重创`, `修为未复` and `走火入魔`. A steady turn now removes only those blockers, preserves unrelated injuries and reopens the risk-slot breakthrough after recovery.
+- Prevented Narrator/Judge breakthrough deltas from changing authoritative character state. Breakthrough prose is revalidated against the final realm/stage, so failed prose cannot survive a success and a failed attempt cannot claim an unrecorded stage drop.
+- Moved local-story next-choice filtering after final settlement and added deterministic recovery matching, removing the failed-breakthrough immediate-retry path.
+- Tightened provider schema choices to non-empty distinct strings. Ordinary and breakthrough Narrator paths retry one incomplete strict response without enabling repair or counting local completion as live success.
+- Extended duplicate detection across 60 turns, expanded deterministic replacement combinations, and removed terminal punctuation before event-template suffixes.
+- Consolidated `docs/plan.md` as a long-term target document and removed stale Prompt, SQL, implementation-status and approval-checklist content from the game-mode specification.
+- Added concise completed/pending milestone markers to `docs/plan.md` while keeping exact test evidence in the audit and detailed unfinished work in the backlog.
+- Tightened title consistency after authoritative rule merge: visible prose must name the final structured title, so a model-only title cannot survive when the rule engine records a different title.
+
+### Verification
+
+- `compileall`, Ruff, Ruff C901 and mypy passed; PostgreSQL Web suite: 94 passed with 0 skipped; full non-live suite: 691 passed.
+- Vitest: 12 passed; production build passed; npm audit reported 0 vulnerabilities.
+- `verify_pg_backup_restore.py` restored Alembic `20260710_0008`, 18 application tables and the business relationship graph with 0 orphan turns.
+- Latest worktree-bound visible Chrome evidence `goal-plan-final-r3-768-20260712.json`: 20 main turns plus 3 post-load turns, 23/23 live, turn count 1-23 continuous, fallback/contract recovery/repair/incomplete retry/P0/P1 all 0. The 768x900 run passed real HTTP 409 keyboard/focus recovery, double-click suppression, refresh, save/load and post-load continuation; the saved state was age 53 at early Foundation Establishment.
+- Latest choice p50 was 8.80s, p95 10.32s and maximum 16.64s. Earlier A/B/C/D 20-turn and mixed 60-turn evidence remains historical because it binds to an earlier dirty-worktree fingerprint. No production deployment or production validation was performed.
+
 ## 2026-07-11
+
+### Long-term goal consolidation and strict model acceptance
+
+- Rewrote `docs/plan.md` as a stable objective document, removing duplicated backlog, current-file and machine-path details. It now separates the 20-turn vertical slice from the full content matrix and the standard 90-turn game length with a 60-120 range.
+- Added four versioned 60-turn world story arcs with persisted key/version/progress, route commitments, faction attitudes, unresolved threads and deterministic endings. Resolved stories no longer settle the same ending again.
+- Unified A/B/C/D semantic wrapping across Web choice indices and direct GameEngine letters, preventing selected risk/luck routes from being reclassified after display-label cleanup.
+- Enforced event-owned model delta types, retained guarded scene progression, and suppressed model attempts to reset the established world.
+- Removed the Narrator prompt contradiction around JSON arrays, lowered Narrator temperature, removed generic World Builder choice placeholders, and made Chrome evidence treat incomplete contract recovery as non-live success.
+- Added p50/p95 latency evidence, raw-tag presence diagnostics and generic opening-choice detection without recording raw model output.
+
+### Verification
+
+- `compileall`, Ruff, Ruff C901 and mypy passed; PostgreSQL Web suite: 93 passed; full non-live suite: 650 passed with 1 `llm_real` test excluded.
+- Frontend Vitest: 10 passed; production build passed; npm audit reported 0 vulnerabilities; `git diff --check` passed with line-ending warnings only.
+- Eight disposable-database migration tests passed: representative 0007 backfill, orphan turns, duplicate achievements/rewards/legacy rows, clean downgrade/re-upgrade, and guest/active-run downgrade refusal.
+- Expanded `verify_pg_backup_restore.py` to restore and verify user/session/save/run/turn/mutation/achievement/reward/legacy/progress relationships; orphan turns remained 0.
+
+### Strict live and runtime consistency follow-up
+
+- Made 60-turn story resolution end the session with a rule-owned ending; legacy saves receive a binding from their existing world, while unavailable exact versions fail explicitly.
+- Fixed old-save continuation by transactionally rewinding future `game_turns` and the active run before replay; completed runs cannot be overwritten in place.
+- Tightened Narrator compliance with a per-turn contract reminder, accepted three-part model history, temperature 0, raw-tag strict classification and no ordinary model ownership of attributes/lifespan.
+- Fixed the browser audit script start-snapshot scope bug, minor-stage breakthrough false positive, terminal save/load probe and repeated replacement chronicle variants.
+- `goal-final-strict-live-20260711` completed 23/23 accepted live turns with fallback/contract recovery/repair/visible forbidden text/repetition all 0; save/load, refresh and double-click probes passed. Choice p50 was 12.2s, p95 18.9s and max 25.5s.
+- Full content matrix remains blocked: A-route 20 passed, while the latest B-route run stopped at turn 3 because the provider returned tags and choices but no narrative. C/D and mixed 60 were not run; generated evidence remains ignored under `output/playwright/`.
+
+### Schema-native Narrator and final content matrix
+
+- Added an Agens-specific provider `json_schema` contract with a dedicated prompt; the application deterministically renders the three schema fields into the compatible tag format. The legacy tag parser remains available, but recovery is not counted as strict live success.
+- Aligned runtime duplicate detection with the Chrome Chinese-bigram threshold, including short prose that reuses the previous ending. Added deterministic same-slot replacement for player-visible English choices without shifting A/B/C/D semantics, and expanded browser evidence to detect arbitrary English words.
+- Final local Chrome evidence passed: cycle 23/23 with save/load, refresh and double-click; A/B/C/D 20/20 each; mixed reached a rule-owned terminal state at turn 46 with 46/46 accepted live turns. Final runs all reported fallback 0, contract recovery 0, repair 0, visible forbidden text 0 and P0/P1 0.
+- Final choice latency was approximately p50 9.0-9.3s and p95 9.3-10.1s; mixed max was 22.5s. Local gates passed with PostgreSQL Web 93, full pytest 659, Vitest 10, build, Ruff/C901/mypy, npm audit 0 and the 18-table dump/restore graph.
 
 ### Frontend material-detail replication
 

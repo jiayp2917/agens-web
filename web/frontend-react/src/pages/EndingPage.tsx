@@ -3,7 +3,17 @@ import { ScrollText } from "lucide-react";
 import { fetchDeathSummary, type Session } from "../lib/api";
 import { formatRealmName } from "../lib/catalog";
 
-export function EndingPage({ session, onHome, onRestart }: { session: Session; onHome: () => void; onRestart: () => void }) {
+export function EndingPage({
+  session,
+  busy,
+  onHome,
+  onRestart,
+}: {
+  session: Session;
+  busy: boolean;
+  onHome: () => void;
+  onRestart: () => void;
+}) {
   const character = session.character || {};
   const recap = session.events.filter((event) => event.text).slice(-6);
   const [summary, setSummary] = useState<{
@@ -52,7 +62,9 @@ export function EndingPage({ session, onHome, onRestart }: { session: Session; o
           <dt>回合</dt><dd>{session.turn_count}</dd>
         </dl>
         <div className="ending-actions">
-          <button className="primary-btn" onClick={onRestart}>再开一局</button>
+          <button className="primary-btn" onClick={onRestart} disabled={busy} aria-busy={busy}>
+            {busy ? "创建中" : "再开一局"}
+          </button>
           <button onClick={onHome}>回首页</button>
         </div>
       </div>
