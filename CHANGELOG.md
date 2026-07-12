@@ -2,6 +2,19 @@
 
 ## 2026-07-12
 
+### Model error-path verification suite
+
+- Added `tests/unit/llm/test_llm_error_paths.py` locking the model-call error classification and propagation contract for the unfinished latency/error milestone. Coverage: all retryable statuses (408/425/429/500/502/503/504) raise `httpx.HTTPStatusError` instead of collapsing to `LLMBadRequest`; 401/403 raise `LLMAuthError`; 3xx redirects are refused without following `Location`; total timeout, `RetryExhausted` and retryable-status exhaustion surface as distinct `LLMError` messages; external `asyncio` cancellation propagates instead of being swallowed.
+- Covered the previously-untested engine-layer `is_retryable_model_request_failure` classifier (transient markers retryable; auth/missing-key/empty/non-dict not retryable).
+- Tests-only batch; no product code changed. The choice p50 ≤ 5s latency target is NOT addressed here — it needs a live-model measurement run and remains open.
+
+### Verification
+
+- `compileall`, Ruff, Ruff C901, mypy: 0 errors. PostgreSQL Web suite `-n0`: 94 passed, 0 skipped. Full non-live suite with `TEST_DATABASE_URL`: 740 passed, 0 skipped, 0 failed.
+- Vitest: 12 passed; production build passed; npm audit: 0 vulnerabilities; `git diff --check` clean.
+- Two cross-review sub-agents (correctness/security/compatibility and tests/duplication/complexity/doc-drift) found no issues.
+- Surfaced a pre-existing flaky test `test_notice_board_description_is_not_treated_as_claimed_reward` (non-deterministic; root cause and risk recorded in `PROJECT_AUDIT.md`). Not introduced or worsened by this batch.
+
 ### Breakthrough recovery, strict contract retry and long-run consistency
 
 - Added rule-owned breakthrough blockers for `根基重创`, `修为未复` and `走火入魔`. A steady turn now removes only those blockers, preserves unrelated injuries and reopens the risk-slot breakthrough after recovery.

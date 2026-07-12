@@ -2,7 +2,7 @@
 
 ## Scope
 
-本审计描述 2026-07-12 本地 `master@ea5ab36` 工作树。当前为 dirty 状态：53 个已跟踪文件修改、10 个未跟踪文件；所有验证均针对该工作树，不代表 HEAD 单独状态。未连接生产环境、未读取 secrets、未执行生产迁移或部署，旧生产证据不作为当前分支通过结论。
+本审计描述 2026-07-12 本地 `master@ea18398` 工作树（clean；本批次新增 `tests/unit/llm/test_llm_error_paths.py`）。自动化门禁在该工作树复跑通过，旧 `master@ea5ab36` 的 dirty 工作树证据只作历史。未连接生产环境、未读取 secrets、未执行生产迁移或部署，旧生产证据不作为当前分支通过结论。
 
 ## Current Architecture
 
@@ -125,7 +125,8 @@ run_achievements, account_rewards, legacy_bonuses
 - `scripts/verify_pg_backup_restore.py` 实际完成临时源库 `pg_dump`、目标库 `pg_restore`，恢复 revision `20260710_0008`、18 张应用表，以及 user/session/save/run/turn/mutation/achievement/reward/legacy/progress 业务关系图；孤儿 turn 为 0，最后清理临时库和 dump。
 - `compileall` passed。
 - PostgreSQL `tests\web -n0`：94 passed，0 skipped。
-- 全量非 live pytest：691 passed。
+- 全量非 live pytest（`TEST_DATABASE_URL` 已配置）：740 passed，0 skipped，0 failed。
+- 模型错误路径专项验证 `tests/unit/llm/test_llm_error_paths.py`：49 项，覆盖 408/425/429/500/502/503/504 状态分类、401/403 鉴权、3xx 重定向拒绝、整体超时、`RetryExhausted` 与可重试状态耗尽、外部取消传播，以及此前零覆盖的 `is_retryable_model_request_failure` 分类器。
 - Vitest：12 passed；React production build passed；npm audit：0 vulnerabilities。
 - 真实 Chrome fallback smoke 通过：注册、访客局删除、个人模型设置保存/清除且 Key 输入清空、双击 start/choice 单请求、fallback 无“继续本局”、A/B/C/D 年龄推进、save/load、终局原因、375 和 2K 无横向溢出。
 - 真实 Chrome UI 视觉检查覆盖 1440x900、1920x1080、2560x1440 和 390x844；角色创建、游戏页、桌面/移动弹窗及六态夹具均已截图核对。证据不进入 Git。
@@ -149,6 +150,7 @@ run_achievements, account_rewards, legacy_bonuses
 | `tests/web/test_web_api.py` 仍偏大 | P2 | 后续按 auth/settings/session/save/turn 拆文件，不应和玩法改动混做 |
 | 应用内 RateLimiter 为单进程 | P2 | 多副本公网应使用反代/Redis 分布式限流 |
 | 初始 `/api/auth/me` 访客探测返回 401 | P2 | UI 正常处理，但 Chrome console 会记录一次预期资源错误；可后续评估匿名 me 返回 200/null |
+| `test_notice_board_description_is_not_treated_as_claimed_reward` 非确定性 | P2 | pre-existing flaky：仅当回合 1 随机推进 stage 时，`_narrative_conflicts_with_stage_delta`（turn_flow.py:418-420）把含「练气N层」任务等级描述的叙事误判为玩家境界声明，用规则编年史覆盖 narrator 叙事。5 次孤立运行为 3 通过 / 2 失败。属叙事一致性产品行为，修复需谨慎（正则/上下文消歧或产品判定），与模型错误路径批次无关 |
 
 ## Acceptance Boundary
 

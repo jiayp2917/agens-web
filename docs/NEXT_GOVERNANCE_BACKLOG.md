@@ -43,3 +43,4 @@
 3. 评估把应用内 RateLimiter 换成 Redis 或反向代理限流；单实例 Alpha 可保留现实现。
 4. 为模型 URL 校验增加可插拔的固定解析/连接层，进一步缩小 DNS rebinding 窗口。
 5. 扩展前端测试到完整账号流程、长文本和恢复后继续游玩；HTTP 409 单元测试与真实键盘/焦点证据已完成。
+6. 稳定 pre-existing flaky `test_notice_board_description_is_not_treated_as_claimed_reward`：回合 1 随机推进 stage 时，`_narrative_conflicts_with_stage_delta` 把叙事中「练气N层」任务等级描述误判为玩家境界声明并覆盖 narrator 叙事。需正则/上下文消歧或产品判定，属叙事一致性产品行为。
