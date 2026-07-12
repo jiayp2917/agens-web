@@ -15,6 +15,16 @@
 - Two cross-review sub-agents (correctness/security/compatibility and tests/duplication/complexity/doc-drift) found no issues.
 - Surfaced a pre-existing flaky test `test_notice_board_description_is_not_treated_as_claimed_reward` (non-deterministic; root cause and risk recorded in `PROJECT_AUDIT.md`). Not introduced or worsened by this batch.
 
+### Database repository extraction (catalog + rewards)
+
+- Extracted catalog read/write (`list_catalog`, `insert_catalog`) into `web/backend/database_postgres_catalog.py` (`CatalogRepository`) and the death-reward persistence (run achievements, account rewards, legacy bonuses — 7 methods) into `web/backend/database_postgres_rewards.py` (`RewardsRepository`). `PostgresWebDatabase` instantiates both in `__init__` and delegates, keeping `WebDatabaseProtocol`, API, schema and save format unchanged. `database_postgres.py` dropped 1332→1151 lines.
+- The terminal settlement path (`_finalize_terminal`) keeps its inline writes to the reward tables because they must commit inside the session-mutation transaction; documented in the new module.
+
+### Verification
+
+- `compileall`, Ruff, Ruff C901, mypy: 0 errors. PostgreSQL Web suite `-n0`: 94 passed, 0 skipped. Full non-live suite with `TEST_DATABASE_URL`: 740 passed, 0 skipped, 0 failed. Vitest: 12 passed; production build passed; npm audit: 0 vulnerabilities; `git diff --check` clean.
+- Two cross-review sub-agents (correctness/transaction/compatibility and complexity/duplication/doc-drift) reviewed the extraction against the pre-refactor bodies.
+
 ### Breakthrough recovery, strict contract retry and long-run consistency
 
 - Added rule-owned breakthrough blockers for `根基重创`, `修为未复` and `走火入魔`. A steady turn now removes only those blockers, preserves unrelated injuries and reopens the risk-slot breakthrough after recovery.

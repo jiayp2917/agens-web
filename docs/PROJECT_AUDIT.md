@@ -146,7 +146,7 @@ run_achievements, account_rewards, legacy_bonuses
 | 最新工作树未重跑完整路线矩阵 | P1 | 当前 fingerprint 已完成 23 回合综合验收；A/B/C/D 各 20 回合与规则终局长局仍需在玩法/内容再次变化或公开试玩前重跑 |
 | 标准 90 回合目标未实现 | P1 | 当前四套内容版本在第 60 回合收束；90 回合是长期产品目标，不是当前完成事实 |
 | 生产未部署 `0008` | P1 | 当前只证明本地迁移；生产需单独备份、孤儿检查、迁移和 smoke |
-| `database_postgres.py` 仍偏大 | P2 | 事务边界已集中，但 SQL/row shaping 仍可按 catalog/session/reward 拆模块 |
+| `database_postgres.py` 仍偏大 | P2 | catalog 与 rewards 已抽到 `database_postgres_catalog.py`/`database_postgres_rewards.py`（1332→1151 行）；session mutation/run/turn 的 SQL 仍可继续按模块拆 |
 | `tests/web/test_web_api.py` 仍偏大 | P2 | 后续按 auth/settings/session/save/turn 拆文件，不应和玩法改动混做 |
 | 应用内 RateLimiter 为单进程 | P2 | 多副本公网应使用反代/Redis 分布式限流 |
 | 初始 `/api/auth/me` 访客探测返回 401 | P2 | UI 正常处理，但 Chrome console 会记录一次预期资源错误；可后续评估匿名 me 返回 200/null |
