@@ -15,15 +15,16 @@
 - Two cross-review sub-agents (correctness/security/compatibility and tests/duplication/complexity/doc-drift) found no issues.
 - Surfaced a pre-existing flaky test `test_notice_board_description_is_not_treated_as_claimed_reward` (non-deterministic; root cause and risk recorded in `PROJECT_AUDIT.md`). Not introduced or worsened by this batch.
 
-### Database repository extraction (catalog + rewards)
+### Database repository extraction (catalog + rewards + session_mutation)
 
-- Extracted catalog read/write (`list_catalog`, `insert_catalog`) into `web/backend/database_postgres_catalog.py` (`CatalogRepository`) and the death-reward persistence (run achievements, account rewards, legacy bonuses — 7 methods) into `web/backend/database_postgres_rewards.py` (`RewardsRepository`). `PostgresWebDatabase` instantiates both in `__init__` and delegates, keeping `WebDatabaseProtocol`, API, schema and save format unchanged. `database_postgres.py` dropped 1332→1151 lines.
-- The terminal settlement path (`_finalize_terminal`) keeps its inline writes to the reward tables because they must commit inside the session-mutation transaction; documented in the new module.
+- Extracted catalog read/write into `web/backend/database_postgres_catalog.py` (`CatalogRepository`), death-reward persistence into `web/backend/database_postgres_rewards.py` (`RewardsRepository`), and the CAS-protected session-mutation path (`get_session_mutation`, `commit_session_mutation` + 6 txn-bound helpers) into `web/backend/database_postgres_session.py` (`SessionMutationRepository`). `PostgresWebDatabase` instantiates all three in `__init__` and delegates, keeping `WebDatabaseProtocol`, API, schema and save format unchanged. `database_postgres.py` dropped 1332→727 lines (−45%).
+- `commit_session_mutation` opens one `engine.begin()` transaction; all six helpers take a `conn` and run inside it. The terminal settlement path (`_finalize_terminal`) keeps its inline idempotent writes to reward tables (atomic with the session mutation; documented).
+- Updated three `test_runtime_consistency.py` patch targets from `db._helper` → `db._session_mutation._helper` (no change in injection semantics).
 
 ### Verification
 
 - `compileall`, Ruff, Ruff C901, mypy: 0 errors. PostgreSQL Web suite `-n0`: 94 passed, 0 skipped. Full non-live suite with `TEST_DATABASE_URL`: 740 passed, 0 skipped, 0 failed. Vitest: 12 passed; production build passed; npm audit: 0 vulnerabilities; `git diff --check` clean.
-- Two cross-review sub-agents (correctness/transaction/compatibility and complexity/duplication/doc-drift) reviewed the extraction against the pre-refactor bodies.
+- Two cross-review sub-agents per step (8-step transaction-integrity verification + complexity/pattern/doc-drift review) confirmed: transaction boundaries preserved, delegation signatures correct, helpers correctly resolve within the new class, all imports orphan-free, test patches semantically equivalent, residual risk acceptable.
 
 ### Breakthrough recovery, strict contract retry and long-run consistency
 

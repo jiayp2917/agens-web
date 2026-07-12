@@ -215,7 +215,7 @@ def test_turn_transaction_failure_rolls_back_snapshot_and_log(monkeypatch) -> No
             },
         )
         with patch.object(
-            app.state.service.db,
+            app.state.service.db._session_mutation,
             "_insert_turn",
             side_effect=RuntimeError("write failed"),
         ):
@@ -256,7 +256,7 @@ def test_start_failure_does_not_consume_legacy_bonus(monkeypatch) -> None:
     session_id = client.post("/api/sessions", json={}).json()["session_id"]
 
     with patch("agens_novel.engine.game_engine.run_turn_sync", side_effect=_runner):
-        with patch.object(db, "_ensure_active_run", side_effect=RuntimeError("run write failed")):
+        with patch.object(db._session_mutation, "_ensure_active_run", side_effect=RuntimeError("run write failed")):
             response = client.post(
                 f"/api/sessions/{session_id}/start",
                 json={
@@ -291,13 +291,13 @@ def test_terminal_bundle_is_atomic_and_retryable(monkeypatch) -> None:
             },
         )
 
-    original = db._finalize_terminal
+    original = db._session_mutation._finalize_terminal
 
     def fail_after_writes(*args, **kwargs):
         original(*args, **kwargs)
         raise RuntimeError("terminal write failed")
 
-    with patch.object(db, "_finalize_terminal", side_effect=fail_after_writes):
+    with patch.object(db._session_mutation, "_finalize_terminal", side_effect=fail_after_writes):
         failed = client.post(
             f"/api/sessions/{session_id}/end",
             json={
