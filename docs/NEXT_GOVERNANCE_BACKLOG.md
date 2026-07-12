@@ -39,7 +39,7 @@
 ## P2 Maintainability
 
 1. 拆 `database_postgres.py`：优先抽 session mutation、catalog 和 rewards repository，保持 `WebDatabaseProtocol` 不变。
-2. 拆 `tests/web/test_web_api.py`：auth、model settings、production-hardening 已拆出；session/save/load/turn persistence 仍与 gameplay flow 混在原文件，后续连同把 `_create_invite`/`_login_user`/`_model_payload`/`_use_public_model_dns` 迁到 `conftest.py` 一起拆。
+2. 拆 `tests/web/test_web_api.py`：auth、model settings、production-hardening、save/load 已拆出；session/turn persistence 仍与 gameplay flow 混在原文件，后续连同把 `_create_invite`/`_login_user`/`_register`/`_model_payload`/`_use_public_model_dns`/`_runner` 迁到 `conftest.py` 一起拆。
 3. 评估把应用内 RateLimiter 换成 Redis 或反向代理限流；单实例 Alpha 可保留现实现。
 4. 为模型 URL 校验增加可插拔的固定解析/连接层，进一步缩小 DNS rebinding 窗口。
 5. 扩展前端测试到完整账号流程、长文本和恢复后继续游玩；HTTP 409 单元测试与真实键盘/焦点证据已完成。

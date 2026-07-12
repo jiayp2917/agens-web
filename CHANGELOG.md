@@ -30,6 +30,7 @@
 
 - Split `tests/web/test_web_api.py` (2040 lines) by theme: model-settings tests → `test_web_model_settings.py` (8 tests), auth-stream tests → `test_web_auth.py` (invite/register/guest/isolation/service-error-mapping/admin-invite), and production-hardening tests → `test_web_production_hardening.py` (AGENS_ENV config, CORS/origin, openapi hiding, runtime-DDL refusal). New files import shared helpers (`_create_invite`/`_login_user`/`_model_payload`/`_use_public_model_dns`) from `test_web_api` via absolute import; all carry `pytestmark = xdist_group("pg_test_db")`. `test_web_api.py` is now ~1576 lines (gameplay-flow/save-load/alembic/body-size/postgres-smoke remain).
 - All moved tests are byte-identical to the pre-split bodies; no assertion/status-code/payload drift. Collection stays at 94 (no duplication, no loss).
+- Save/load tests (snapshot restore, rewind, completed-run continuation) extracted to `test_web_save_load.py` (3 tests, same cross-import pattern); `test_web_api.py` now ~1419 lines.
 
 ### Verification
 
