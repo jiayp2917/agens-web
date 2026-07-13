@@ -6,6 +6,7 @@ from unittest.mock import patch
 
 from agens_novel.engine.game_engine import GameEngine
 from agens_novel.engine.model_fallback_policy import public_model_failure_notice
+from agens_novel.engine.world_generator import build_world_fallback
 
 
 def test_start_flow_world_builder_exception_can_end_run(monkeypatch) -> None:
@@ -13,15 +14,84 @@ def test_start_flow_world_builder_exception_can_end_run(monkeypatch) -> None:
     engine = GameEngine()
     decisions: list[tuple[str, str]] = []
     game_overs: list[str] = []
-    engine.on_model_failure_choice = lambda source, reason: decisions.append((source, reason)) or "end"
+    engine.on_model_failure_choice = lambda source, reason: (
+        decisions.append((source, reason)) or "end"
+    )
     engine.on_game_over = lambda reason: game_overs.append(reason)
 
-    with patch("agens_novel.engine.game_engine.run_turn_sync", side_effect=RuntimeError("network down")):
+    with patch(
+        "agens_novel.engine.game_engine.run_turn_sync", side_effect=RuntimeError("network down")
+    ):
         engine.new_game("许满")
 
     assert decisions and decisions[0][0] == "world_builder_exception"
     assert engine.game_session.game_over is True
     assert game_overs == ["模型不可用导致本局结束。"]
+
+
+def test_profile_opening_retry_adds_visible_text_contract(monkeypatch) -> None:
+    monkeypatch.setenv("AGNES_API_KEY", "sk-test-1234567890")
+    monkeypatch.setenv("AGENS_START_MODEL_WORLD", "1")
+    engine = GameEngine()
+    profile = {
+        "char_name": "许满",
+        "talent": "平平无奇",
+        "spirit_root": "木灵根",
+        "family_background": "寒门",
+        "difficulty": "普通",
+        "attributes": {
+            "root_bone": 5,
+            "comprehension": 5,
+            "luck": 5,
+            "willpower": 5,
+            "physique": 5,
+            "soul": 5,
+        },
+    }
+    bad = build_world_fallback(profile)
+    bad["world"] = {**bad["world"], "location": "English Place"}
+    good = build_world_fallback(profile)
+    captured: list[str] = []
+
+    def runner(_agent_name, user_input, _session, **_kwargs):
+        captured.append(user_input)
+        return {"generated_data": bad if len(captured) == 1 else good, "llm_error": ""}
+
+    with patch.object(engine, "run_agent", side_effect=runner):
+        engine.start_from_profile(profile)
+
+    assert len(captured) == 2
+    assert "所有可见字符串必须是中文" in captured[1]
+    assert engine.game_session.local_story_active is False
+
+
+def test_profile_opening_empty_result_uses_strict_retry(monkeypatch) -> None:
+    monkeypatch.setenv("AGNES_API_KEY", "sk-test-1234567890")
+    monkeypatch.setenv("AGENS_START_MODEL_WORLD", "1")
+    engine = GameEngine()
+    profile = {
+        "char_name": "许满",
+        "talent": "平平无奇",
+        "spirit_root": "木灵根",
+        "family_background": "寒门",
+        "difficulty": "普通",
+    }
+    good = build_world_fallback(profile)
+    calls: list[tuple[str, str]] = []
+
+    def runner(_agent_name, user_input, _session, **kwargs):
+        calls.append((user_input, str(kwargs.get("generation_type") or "")))
+        if len(calls) == 1:
+            return {"generated_data": {}, "llm_error": ""}
+        return {"generated_data": good, "llm_error": ""}
+
+    with patch.object(engine, "run_agent", side_effect=runner):
+        engine.start_from_profile(profile)
+
+    assert len(calls) == 2
+    assert "严格重试要求" in calls[1][0]
+    assert calls[1][1] == "profile_opening"
+    assert engine.game_session.region == good["world"]["region"]
 
 
 def test_turn_flow_judge_llm_error_rejects_delta_without_player_fallback(monkeypatch) -> None:
@@ -31,14 +101,18 @@ def test_turn_flow_judge_llm_error_rejects_delta_without_player_fallback(monkeyp
     engine.game_session.last_choices = ["留在山门吐纳", "询问接引弟子", "强闯禁地", "随缘听天命"]
     decisions: list[tuple[str, str]] = []
     game_overs: list[str] = []
-    engine.on_model_failure_choice = lambda source, reason: decisions.append((source, reason)) or "end"
+    engine.on_model_failure_choice = lambda source, reason: (
+        decisions.append((source, reason)) or "end"
+    )
     engine.on_game_over = lambda reason: game_overs.append(reason)
 
     def runner(agent_name, user_input, session, **kwargs):
         if agent_name == "narrator":
             return {
                 "narrative": "你得了一件不该存在的秘宝。",
-                "state_delta": {"character": {"inventory_add": [{"name": "越权秘宝", "rarity": "橙"}]}},
+                "state_delta": {
+                    "character": {"inventory_add": [{"name": "越权秘宝", "rarity": "橙"}]}
+                },
                 "choices": ["继续吐纳", "请教师兄", "观察灵气流向"],
                 "llm_error": "",
             }
@@ -66,7 +140,9 @@ def test_breakthrough_flow_judge_exception_can_end_run(monkeypatch) -> None:
     engine.game_session.last_choices = ["稳固道心", "请护法", "观察瓶颈", "随缘听天命"]
     decisions: list[tuple[str, str]] = []
     game_overs: list[str] = []
-    engine.on_model_failure_choice = lambda source, reason: decisions.append((source, reason)) or "end"
+    engine.on_model_failure_choice = lambda source, reason: (
+        decisions.append((source, reason)) or "end"
+    )
     engine.on_game_over = lambda reason: game_overs.append(reason)
 
     def runner(agent_name, user_input, session, **kwargs):
@@ -178,7 +254,9 @@ def test_json_only_terminal_delta_is_rejected_before_choices_are_cleared(monkeyp
         if agent_name == "narrator":
             return {
                 "narrative": "",
-                "state_delta": {"meta": {"game_over": True, "game_over_reason": "model-only terminal"}},
+                "state_delta": {
+                    "meta": {"game_over": True, "game_over_reason": "model-only terminal"}
+                },
                 "choices": [],
                 "llm_error": "",
             }

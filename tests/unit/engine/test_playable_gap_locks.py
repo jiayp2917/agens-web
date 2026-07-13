@@ -13,37 +13,27 @@ from unittest.mock import patch
 import pytest
 
 from agens_novel.engine.game_engine import GameEngine
+from agens_novel.engine.world_generator import build_world_fallback
 from agens_novel.session.game_session import GameSession
 
 
 def _canned_world_builder() -> dict[str, Any]:
+    generated = build_world_fallback(
+        {
+            "char_name": "许满",
+            "spirit_root": "火木双灵根",
+            "spirit_root_grade": "地",
+        }
+    )
+    generated["world"].update(
+        {
+            "current_scene": "晨雾中的青云山外门",
+            "location": "青云山外门",
+            "region": "东荒",
+        }
+    )
     return {
-        "generated_data": {
-            "character": {
-                "name": "Xu Man",
-                "realm": "练气",
-                "realm_stage": 1,
-                "spirit_root": "火木双灵根",
-                "spirit_root_grade": "地",
-                "breakthrough_flags": [],
-                "techniques": [{"name": "基础吐纳术", "level": 1, "type": "内功"}],
-                "inventory": [{"name": "粗布道袍", "quantity": 1, "type": "防具"}],
-                "status_effects": [],
-                "lifespan": 100,
-            },
-            "world": {
-                "current_scene": "晨雾中的青云山外门",
-                "location": "青云山外门",
-                "region": "东荒",
-                "npcs_present": [],
-                "active_quests": [],
-                "discovered_locations": ["青云山外门"],
-                "lore_facts": [],
-                "day_count": 1,
-            },
-            "opening_narrative": "天道初开。",
-            "choices": ["留在山门吐纳", "询问接引弟子", "观察灵气流向"],
-        },
+        "generated_data": generated,
         "world_description": "",
         "opening_narrative": "",
         "output_path": "",
@@ -70,7 +60,9 @@ def _patch_turn_runner(call_log: list | None = None) -> Any:
     if call_log is None:
         call_log = []
 
-    def fake_run_turn_sync(agent_name: str, user_input: str, session: GameSession, **kwargs) -> dict:
+    def fake_run_turn_sync(
+        agent_name: str, user_input: str, session: GameSession, **kwargs
+    ) -> dict:
         call_log.append(agent_name)
         if agent_name == "narrator":
             return {
@@ -119,7 +111,9 @@ class TestPlayableGapLocks:
 
         assert not any(item.get("name") == "幽灵丹" for item in engine.game_session.inventory)
 
-    def test_T2_local_story_cultivation_self_loop_does_not_repeat_narrative(self, monkeypatch) -> None:
+    def test_T2_local_story_cultivation_self_loop_does_not_repeat_narrative(
+        self, monkeypatch
+    ) -> None:
         from agens_novel.engine.local_story import advance_local_story, start_local_story
 
         monkeypatch.setenv("AGNES_API_KEY", "sk-test-1234567890")
@@ -131,8 +125,7 @@ class TestPlayableGapLocks:
         advance_local_story(session, "按山门规矩登记入门，先求一个稳妥落脚处")
         advance_local_story(session, "按执事吩咐完成杂务，熟悉宗门规矩")
         narratives = [
-            advance_local_story(session, "继续吐纳一夜，稳固根骨与心性").narrative
-            for _ in range(3)
+            advance_local_story(session, "继续吐纳一夜，稳固根骨与心性").narrative for _ in range(3)
         ]
         assert len(set(narratives)) > 1
 
@@ -184,7 +177,9 @@ class TestPlayableGapLocks:
         assert delta["meta"]["game_over"] is True
         assert delta["meta"]["game_over_reason"] == "寿元耗尽，坐化而去。"
 
-    def test_T6_start_profile_rejects_attribute_pool_not_summing_to_30(self, monkeypatch, tmp_path) -> None:
+    def test_T6_start_profile_rejects_attribute_pool_not_summing_to_30(
+        self, monkeypatch, tmp_path
+    ) -> None:
         from agens_novel import paths
 
         monkeypatch.setattr(paths, "SAVE_DIR", tmp_path)

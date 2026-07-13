@@ -1,4 +1,4 @@
-﻿"""Tests for GameEngine turn execution and gameplay mechanics — UI-agnostic game logic service."""
+"""Tests for GameEngine turn execution and gameplay mechanics — UI-agnostic game logic service."""
 
 from __future__ import annotations
 
@@ -8,35 +8,37 @@ from unittest.mock import patch
 from agens_novel.engine.action_delta_policy import is_pure_cultivation
 from agens_novel.engine.choices import fallback_choices
 from agens_novel.engine.game_engine import GameEngine
+from agens_novel.engine.world_generator import build_world_fallback
 from agens_novel.session.game_session import GameSession
 
 # ═══════════════════════════════════════════════════════════════════════════════
 # Canned helpers
 # ═══════════════════════════════════════════════════════════════════════════════
 
+
 def _canned_world_builder() -> dict[str, Any]:
+    generated = build_world_fallback(
+        {
+            "char_name": "许满",
+            "spirit_root": "火木双灵根",
+            "spirit_root_grade": "地",
+        }
+    )
+    generated["world"].update(
+        {
+            "current_scene": "晨雾中的青云山外门",
+            "location": "青云山外门",
+            "region": "东荒",
+        }
+    )
     return {
-        "generated_data": {
-            "character": {
-                "name": "许满", "realm": "练气", "realm_stage": 1,
-                "spirit_root": "火木双灵根", "spirit_root_grade": "地",
-                "breakthrough_flags": [],
-                "techniques": [{"name": "基础吐纳术", "level": 1, "type": "内功"}],
-                "inventory": [{"name": "粗布道袍", "quantity": 1, "type": "防具"}],
-                "status_effects": [], "lifespan": 100,
-            },
-            "world": {
-                "current_scene": "晨雾中的青云山外门",
-                "location": "青云山外门", "region": "东荒",
-                "npcs_present": [], "active_quests": [],
-                "discovered_locations": ["青云山外门"],
-                "lore_facts": [], "day_count": 1,
-            },
-            "opening_narrative": "天道初开。",
-            "choices": ["留在山门吐纳", "询问接引弟子", "观察灵气流向"],
-        },
-        "world_description": "", "opening_narrative": "",
-        "output_path": "", "audit_path": "", "finished_at": "", "llm_error": "",
+        "generated_data": generated,
+        "world_description": "",
+        "opening_narrative": "",
+        "output_path": "",
+        "audit_path": "",
+        "finished_at": "",
+        "llm_error": "",
     }
 
 
@@ -45,15 +47,23 @@ def _canned_narrator() -> dict[str, Any]:
         "narrative": "你静坐吐纳，灵气缓缓涌入。",
         "state_delta": {"character": {"attributes": {"willpower": 1}}},
         "choices": ["继续吐纳", "请教师兄", "观察灵气流向"],
-        "output_path": "", "audit_path": "", "finished_at": "", "llm_error": "",
+        "output_path": "",
+        "audit_path": "",
+        "finished_at": "",
+        "llm_error": "",
     }
 
 
 def _canned_judge() -> dict[str, Any]:
     return {
-        "approved": True, "corrected_delta": {},
-        "judgment_note": "ok", "review_score": 8,
-        "output_path": "", "audit_path": "", "finished_at": "", "llm_error": "",
+        "approved": True,
+        "corrected_delta": {},
+        "judgment_note": "ok",
+        "review_score": 8,
+        "output_path": "",
+        "audit_path": "",
+        "finished_at": "",
+        "llm_error": "",
     }
 
 
@@ -61,7 +71,9 @@ def _patch_turn_runner(call_log: list | None = None) -> Any:
     if call_log is None:
         call_log = []
 
-    def fake_run_turn_sync(agent_name: str, user_input: str, session: GameSession, **kwargs) -> dict:
+    def fake_run_turn_sync(
+        agent_name: str, user_input: str, session: GameSession, **kwargs
+    ) -> dict:
         call_log.append(agent_name)
         if agent_name == "narrator":
             return _canned_narrator()
@@ -78,6 +90,7 @@ def _patch_turn_runner(call_log: list | None = None) -> Any:
 # Tests
 # ═══════════════════════════════════════════════════════════════════════════════
 
+
 class TestGameEngineHandleAction:
     def test_action_runs_narrator_and_judge(self, monkeypatch) -> None:
         monkeypatch.setenv("AGNES_API_KEY", "sk-test-1234567890")
@@ -87,7 +100,12 @@ class TestGameEngineHandleAction:
         # Set up a started game.
         with _patch_turn_runner():
             engine.new_game("许满")
-        engine.game_session.last_choices = ["留在山门吐纳", "询问接引弟子", "强闯禁地", "随缘听天命"]
+        engine.game_session.last_choices = [
+            "留在山门吐纳",
+            "询问接引弟子",
+            "强闯禁地",
+            "随缘听天命",
+        ]
 
         def runner(agent_name, user_input, session, **kw):
             call_log.append(agent_name)
@@ -96,7 +114,10 @@ class TestGameEngineHandleAction:
                     "narrative": "你强闯禁地边缘，被阴风擦过经脉。",
                     "state_delta": {"character": {"status_effects_add": ["阴风侵体"]}},
                     "choices": ["返回山门", "请教师兄", "继续观察", "随缘听天命"],
-                    "output_path": "", "audit_path": "", "finished_at": "", "llm_error": "",
+                    "output_path": "",
+                    "audit_path": "",
+                    "finished_at": "",
+                    "llm_error": "",
                 }
             if agent_name == "judge":
                 return _canned_judge()
@@ -115,11 +136,13 @@ class TestGameEngineHandleAction:
         seen_inputs: list[str] = []
         engine = GameEngine()
         with _patch_turn_runner():
-            engine.start_from_profile({
-                "char_name": "许满",
-                "choices": ["留在山门吐纳", "询问接引弟子", "观察灵气流向"],
-                "_allow_choice_override": True,
-            })
+            engine.start_from_profile(
+                {
+                    "char_name": "许满",
+                    "choices": ["留在山门吐纳", "询问接引弟子", "观察灵气流向"],
+                    "_allow_choice_override": True,
+                }
+            )
 
         def runner(agent_name, user_input, session, **kw):
             if agent_name == "narrator":
@@ -156,7 +179,12 @@ class TestGameEngineHandleAction:
         monkeypatch.setenv("AGNES_API_KEY", "sk-test-1234567890")
         engine = GameEngine()
         engine.game_session.game_started = True
-        engine.game_session.last_choices = ["留在山门吐纳", "询问接引弟子", "观察灵气流向", "随缘听天命"]
+        engine.game_session.last_choices = [
+            "留在山门吐纳",
+            "询问接引弟子",
+            "观察灵气流向",
+            "随缘听天命",
+        ]
 
         assert engine._resolve_choice_input("D: 沿石阶寻找隐藏碑文") is None
         assert engine._resolve_choice_input("D") == "D【气运】随缘听天命"
@@ -197,13 +225,16 @@ class TestGameEngineHandleAction:
         assert engine.game_session.local_story_active is True
         assert len(engine.game_session.last_choices) == 4
         assert any("本回合记录暂未续上" in msg for msg in infos)
+
     def test_narrator_exception_can_end_run_from_ui_choice(self, monkeypatch) -> None:
         monkeypatch.setenv("AGNES_API_KEY", "sk-test-1234567890")
         engine = GameEngine()
         engine.game_session.game_started = True
         choices: list[tuple[str, str]] = []
         game_overs: list[str] = []
-        engine.on_model_failure_choice = lambda source, reason: choices.append((source, reason)) or "end"
+        engine.on_model_failure_choice = lambda source, reason: (
+            choices.append((source, reason)) or "end"
+        )
         engine.on_game_over = lambda reason: game_overs.append(reason)
 
         def fake_runner(agent_name, user_input, session, **kw):
@@ -231,7 +262,12 @@ class TestGameEngineHandleAction:
         def runner(agent_name, user_input, session, **kw):
             calls.append(agent_name)
             if agent_name == "narrator":
-                return {"narrative": "你在山门前盘膝吐纳，晨雾沿石阶慢慢散开。", "state_delta": {}, "choices": [], "llm_error": ""}
+                return {
+                    "narrative": "你在山门前盘膝吐纳，晨雾沿石阶慢慢散开。",
+                    "state_delta": {},
+                    "choices": [],
+                    "llm_error": "",
+                }
             return {"approved": True, "corrected_delta": {}, "llm_error": ""}
 
         with patch("agens_novel.engine.game_engine.run_turn_sync", side_effect=runner):
@@ -250,7 +286,9 @@ class TestGameEngineHandleAction:
         assert "local_story" not in engine.game_session.turn_history[-1]
         assert not any("补齐下一步选择" in msg or "因果结算" in msg for msg in infos)
 
-    def test_narrative_reward_claim_without_delta_is_suppressed_after_choice_recovery(self, monkeypatch) -> None:
+    def test_narrative_reward_claim_without_delta_is_suppressed_after_choice_recovery(
+        self, monkeypatch
+    ) -> None:
         monkeypatch.setenv("AGNES_API_KEY", "sk-test-1234567890")
         engine = GameEngine()
         engine.game_session.game_started = True
@@ -263,7 +301,12 @@ class TestGameEngineHandleAction:
 
         def runner(agent_name, user_input, session, **kw):
             if agent_name == "narrator":
-                return {"narrative": "你获得一枚清灵丹。", "state_delta": {}, "choices": [], "llm_error": ""}
+                return {
+                    "narrative": "你获得一枚清灵丹。",
+                    "state_delta": {},
+                    "choices": [],
+                    "llm_error": "",
+                }
             return {"approved": True, "corrected_delta": {}, "llm_error": ""}
 
         with patch("agens_novel.engine.game_engine.run_turn_sync", side_effect=runner):
@@ -319,7 +362,10 @@ class TestGameEngineHandleAction:
 
         def runner(agent_name, user_input, session, **kw):
             calls.append((agent_name, user_input))
-            if agent_name == "narrator" and len([call for call in calls if call[0] == "narrator"]) == 1:
+            if (
+                agent_name == "narrator"
+                and len([call for call in calls if call[0] == "narrator"]) == 1
+            ):
                 return {"narrative": "", "state_delta": {}, "choices": [], "llm_error": ""}
             if agent_name == "narrator":
                 return {
@@ -340,7 +386,12 @@ class TestGameEngineHandleAction:
         assert engine.game_session.turn_count == 1
         assert engine.game_session.local_story_active is False
         assert "local_story" not in engine.game_session.turn_history[-1]
-        assert engine.game_session.turn_history[-1]["delta"]["meta"]["choice_category"] in {"稳妥", "机遇", "风险", "气运"}
+        assert engine.game_session.turn_history[-1]["delta"]["meta"]["choice_category"] in {
+            "稳妥",
+            "机遇",
+            "风险",
+            "气运",
+        }
         assert narratives and "村落香火" in narratives[-1][0]
         assert not any("天道紊乱" in msg or "因果结算" in msg for msg in infos)
 
@@ -381,7 +432,9 @@ class TestGameEngineHandleAction:
         assert engine.game_session.local_story_active is False
         assert engine.game_session.last_choices == ["闭门整理", "拜访执事", "夜探山径", "静候命数"]
 
-    def test_json_only_narrator_delta_settles_by_rules_without_retry_or_local_story(self, monkeypatch) -> None:
+    def test_json_only_narrator_delta_settles_by_rules_without_retry_or_local_story(
+        self, monkeypatch
+    ) -> None:
         monkeypatch.setenv("AGNES_API_KEY", "sk-test-1234567890")
         engine = GameEngine()
         engine.game_session.game_started = True
@@ -430,7 +483,9 @@ class TestGameEngineHandleAction:
         assert narratives
         assert not any("天道紊乱" in msg or "因果结算" in msg for msg in infos)
 
-    def test_malformed_state_update_with_narrative_recovers_as_rule_settled_turn(self, monkeypatch) -> None:
+    def test_malformed_state_update_with_narrative_recovers_as_rule_settled_turn(
+        self, monkeypatch
+    ) -> None:
         monkeypatch.setenv("AGNES_API_KEY", "sk-test-1234567890")
         engine = GameEngine()
         engine.game_session.game_started = True
@@ -453,7 +508,12 @@ class TestGameEngineHandleAction:
 
         assert engine.game_session.turn_count == 1
         assert engine.game_session.local_story_active is False
-        assert engine.game_session.turn_history[-1]["delta"]["meta"]["choice_category"] in {"稳妥", "机遇", "风险", "气运"}
+        assert engine.game_session.turn_history[-1]["delta"]["meta"]["choice_category"] in {
+            "稳妥",
+            "机遇",
+            "风险",
+            "气运",
+        }
         assert "local_story_fallback" not in engine.game_session.turn_history[-1]["delta"]["meta"]
         assert len(engine.game_session.last_choices) == 4
         assert not any("补齐下一步选择" in msg or "因果结算" in msg for msg in infos)
@@ -492,8 +552,13 @@ class TestGameEngineHandleAction:
         assert "云水诀" not in narratives[-1][0]
         assert not any("因果结算" in msg or "narrative/state mismatch" in msg for msg in infos)
         assert not any("状态栏为准" in msg or "state_delta" in msg for msg in infos)
-        assert all("清灵丹" not in choice and "云水诀" not in choice for choice in engine.game_session.last_choices)
-        assert not any(engine._parse_breakthrough_action(choice) for choice in engine.game_session.last_choices)
+        assert all(
+            "清灵丹" not in choice and "云水诀" not in choice
+            for choice in engine.game_session.last_choices
+        )
+        assert not any(
+            engine._parse_breakthrough_action(choice) for choice in engine.game_session.last_choices
+        )
         assert engine.game_session.turn_count == 1
         assert engine.game_session.turn_history[-1]["turn"] == 1
         assert engine.game_session.turn_history[-1]["narrative"]
@@ -641,11 +706,18 @@ class TestGameEngineHandleAction:
 
         with _patch_turn_runner():
             engine.new_game("许满")
-        engine.game_session.last_choices = ["留在山门吐纳", "询问接引弟子", "强闯禁地", "随缘听天命"]
+        engine.game_session.last_choices = [
+            "留在山门吐纳",
+            "询问接引弟子",
+            "强闯禁地",
+            "随缘听天命",
+        ]
 
         call_log: list[str] = []
         decisions: list[tuple[str, str]] = []
-        engine.on_model_failure_choice = lambda source, reason: decisions.append((source, reason)) or "end"
+        engine.on_model_failure_choice = lambda source, reason: (
+            decisions.append((source, reason)) or "end"
+        )
 
         def selective_runner(agent_name, user_input, session, **kw):
             call_log.append(agent_name)
@@ -654,7 +726,10 @@ class TestGameEngineHandleAction:
                     "narrative": "你得了一笔不该存在的秘宝。",
                     "state_delta": {"character": {"gold": "+77"}},
                     "choices": ["继续吐纳", "请教师兄", "观察灵气流向"],
-                    "output_path": "", "audit_path": "", "finished_at": "", "llm_error": "",
+                    "output_path": "",
+                    "audit_path": "",
+                    "finished_at": "",
+                    "llm_error": "",
                 }
             if agent_name == "judge":
                 raise ConnectionError("Judge down")
@@ -674,7 +749,12 @@ class TestGameEngineHandleAction:
 
         with _patch_turn_runner():
             engine.new_game("许满")
-        engine.game_session.last_choices = ["留在山门吐纳", "询问接引弟子", "强闯禁地", "随缘听天命"]
+        engine.game_session.last_choices = [
+            "留在山门吐纳",
+            "询问接引弟子",
+            "强闯禁地",
+            "随缘听天命",
+        ]
 
         def selective_runner(agent_name, user_input, session, **kw):
             if agent_name == "narrator":
@@ -682,7 +762,10 @@ class TestGameEngineHandleAction:
                     "narrative": "你强闯禁地边缘，被阴风擦过经脉。",
                     "state_delta": {"character": {"status_effects_add": ["阴风侵体"]}},
                     "choices": ["返回山门", "请教师兄", "继续观察", "随缘听天命"],
-                    "output_path": "", "audit_path": "", "finished_at": "", "llm_error": "",
+                    "output_path": "",
+                    "audit_path": "",
+                    "finished_at": "",
+                    "llm_error": "",
                 }
             if agent_name == "judge":
                 return {
@@ -690,7 +773,10 @@ class TestGameEngineHandleAction:
                     "corrected_delta": {"character": {"status_effects_add": ["轻伤"]}},
                     "judgment_note": "状态变更过大",
                     "review_score": 3,
-                    "output_path": "", "audit_path": "", "finished_at": "", "llm_error": "",
+                    "output_path": "",
+                    "audit_path": "",
+                    "finished_at": "",
+                    "llm_error": "",
                 }
             return {}
 
@@ -705,7 +791,12 @@ class TestGameEngineHandleAction:
 
         with _patch_turn_runner():
             engine.new_game("许满")
-        engine.game_session.last_choices = ["留在山门吐纳", "询问接引弟子", "强闯内门", "随缘听天命"]
+        engine.game_session.last_choices = [
+            "留在山门吐纳",
+            "询问接引弟子",
+            "强闯内门",
+            "随缘听天命",
+        ]
 
         narratives: list[tuple[str, int]] = []
         infos: list[str] = []
@@ -829,12 +920,14 @@ class TestGameEngineHandleAction:
         monkeypatch.setattr(paths, "SAVE_DIR", tmp_path)
         monkeypatch.delenv("AGNES_API_KEY", raising=False)
         engine = GameEngine()
-        engine.start_from_profile({
-            "char_name": "许满",
-            "talent": "剑心微明",
-            "spirit_root": "火灵根",
-            "family_background": "寒门",
-        })
+        engine.start_from_profile(
+            {
+                "char_name": "许满",
+                "talent": "剑心微明",
+                "spirit_root": "火灵根",
+                "family_background": "寒门",
+            }
+        )
 
         assert engine.game_session.chat_history
         assert "当前状态 JSON 为准" in engine.game_session.chat_history[0]["content"]
@@ -849,10 +942,12 @@ class TestGameEngineHandleAction:
 
         engine = GameEngine()
         with _patch_turn_runner():
-            engine.start_from_profile({
-                "char_name": "许满",
-                "techniques": [{"name": "基础吐纳术", "level": 1, "type": "内功"}],
-            })
+            engine.start_from_profile(
+                {
+                    "char_name": "许满",
+                    "techniques": [{"name": "基础吐纳术", "level": 1, "type": "内功"}],
+                }
+            )
 
         assert not hasattr(engine, "_parse_typed_combat_action")
         assert not hasattr(engine.game_session, "combat")
@@ -942,7 +1037,10 @@ class TestStageAdvancement:
                     "narrative": "修炼大进！",
                     "state_delta": {"character": {"attributes": {"willpower": 1}}},
                     "choices": ["继续吐纳", "检查瓶颈", "出门历练"],
-                    "output_path": "", "audit_path": "", "finished_at": "", "llm_error": "",
+                    "output_path": "",
+                    "audit_path": "",
+                    "finished_at": "",
+                    "llm_error": "",
                 }
             if agent_name == "judge":
                 return _canned_judge()
@@ -1161,7 +1259,9 @@ class TestBreakthroughPreparationGate:
                 return _canned_judge()
             return {}
 
-        with patch("agens_novel.engine.game_engine.run_turn_sync", side_effect=narrator_with_legacy_fields):
+        with patch(
+            "agens_novel.engine.game_engine.run_turn_sync", side_effect=narrator_with_legacy_fields
+        ):
             engine.new_game("许满")
             engine.handle_action("闭关修炼")
 
@@ -1201,8 +1301,9 @@ class TestBreakthroughPreparationGate:
             with patch("agens_novel.game.realm.random.random", return_value=0.001):
                 engine.attempt_breakthrough()
 
-        assert engine.game_session.realm == "筑基", \
+        assert engine.game_session.realm == "筑基", (
             f"Breakthrough should reach 筑基, got {engine.game_session.realm}"
+        )
         assert engine.game_session.local_story_active is False
         assert len(engine.game_session.last_choices) == 4
 

@@ -10,11 +10,13 @@ from __future__ import annotations
 
 import json
 import logging
+import os
 import re
 from typing import Any
 
 from ... import paths
 from ...artifacts import store
+from ...engine.world_generator import is_complete_opening_payload
 from ...llm.types import Message
 from ...utils.timing import utcnow_iso
 from ..common import call_agnes_llm_common, load_agent_settings, normalize_choices
@@ -22,6 +24,181 @@ from ..common import call_agnes_llm_common, load_agent_settings, normalize_choic
 log = logging.getLogger(__name__)
 
 AGENT_NAME = "world_builder"
+_WORLD_BUILDER_SCHEMA_ENV = "AGENS_WORLD_BUILDER_RESPONSE_SCHEMA"
+_WORLD_BUILDER_RESPONSE_FORMAT: dict[str, Any] = {
+    "type": "json_schema",
+    "json_schema": {
+        "name": "world_builder_opening",
+        "strict": True,
+        "schema": {
+            "type": "object",
+            "properties": {
+                "character": {
+                    "type": "object",
+                    "properties": {
+                        "name": {"type": "string", "minLength": 1},
+                        "realm": {"type": "string", "minLength": 1},
+                        "realm_stage": {"type": "integer", "minimum": 1},
+                        "spirit_root": {"type": "string", "minLength": 1},
+                        "spirit_root_grade": {"type": "string"},
+                        "age": {"type": "integer", "minimum": 1},
+                        "talent": {"type": "string", "minLength": 1},
+                        "family_background": {"type": "string", "minLength": 1},
+                        "difficulty": {"type": "string", "minLength": 1},
+                        "attributes": {
+                            "type": "object",
+                            "properties": {
+                                "root_bone": {"type": "integer", "minimum": 0, "maximum": 10},
+                                "comprehension": {"type": "integer", "minimum": 0, "maximum": 10},
+                                "luck": {"type": "integer", "minimum": 0, "maximum": 10},
+                                "willpower": {"type": "integer", "minimum": 0, "maximum": 10},
+                                "physique": {"type": "integer", "minimum": 0, "maximum": 10},
+                                "soul": {"type": "integer", "minimum": 0, "maximum": 10},
+                            },
+                            "required": [
+                                "root_bone",
+                                "comprehension",
+                                "luck",
+                                "willpower",
+                                "physique",
+                                "soul",
+                            ],
+                            "additionalProperties": False,
+                        },
+                        "breakthrough_flags": {"type": "array", "items": {"type": "string"}},
+                        "techniques": {"type": "array", "items": {"type": "object"}},
+                        "inventory": {"type": "array", "items": {"type": "object"}},
+                        "status_effects": {"type": "array", "items": {"type": "string"}},
+                        "lifespan": {"type": "integer", "minimum": 1},
+                        "equipment_slots": {
+                            "type": ["object", "null"],
+                            "additionalProperties": True,
+                        },
+                    },
+                    "required": [
+                        "name",
+                        "realm",
+                        "realm_stage",
+                        "spirit_root",
+                        "spirit_root_grade",
+                        "age",
+                        "talent",
+                        "family_background",
+                        "difficulty",
+                        "attributes",
+                        "breakthrough_flags",
+                        "techniques",
+                        "inventory",
+                        "status_effects",
+                        "lifespan",
+                        "equipment_slots",
+                    ],
+                    "additionalProperties": False,
+                },
+                "world_name": {"type": "string", "minLength": 1},
+                "regions": {
+                    "type": "array",
+                    "minItems": 1,
+                    "items": {
+                        "type": "object",
+                        "properties": {
+                            "name": {"type": "string", "minLength": 1},
+                            "description": {"type": "string", "minLength": 1},
+                        },
+                        "required": ["name", "description"],
+                        "additionalProperties": False,
+                    },
+                },
+                "sects": {
+                    "type": "array",
+                    "minItems": 1,
+                    "items": {
+                        "type": "object",
+                        "properties": {
+                            "name": {"type": "string", "minLength": 1},
+                            "alignment": {"type": "string", "minLength": 1},
+                            "description": {"type": "string", "minLength": 1},
+                        },
+                        "required": ["name", "alignment", "description"],
+                        "additionalProperties": False,
+                    },
+                },
+                "current_conflicts": {
+                    "type": "array",
+                    "minItems": 1,
+                    "items": {"type": "string", "minLength": 1},
+                },
+                "fate_hooks": {
+                    "type": "array",
+                    "minItems": 1,
+                    "items": {"type": "string", "minLength": 1},
+                },
+                "chronicle_0_16": {
+                    "type": "array",
+                    "minItems": 3,
+                    "maxItems": 5,
+                    "items": {"type": "string", "minLength": 1},
+                },
+                "initial_situation": {"type": "string", "minLength": 1},
+                "initial_situation_16": {"type": "string", "minLength": 1},
+                "opening_narrative": {"type": "string", "minLength": 1},
+                "choices": {
+                    "type": "array",
+                    "minItems": 4,
+                    "maxItems": 4,
+                    "items": {"type": "string", "minLength": 4},
+                },
+                "world": {
+                    "type": "object",
+                    "properties": {
+                        "current_scene": {"type": "string", "minLength": 1},
+                        "location": {"type": "string", "minLength": 1},
+                        "region": {"type": "string", "minLength": 1},
+                        "npcs_present": {"type": "array", "items": {"type": "object"}},
+                        "active_quests": {"type": "array", "items": {"type": "object"}},
+                        "discovered_locations": {
+                            "type": "array",
+                            "minItems": 1,
+                            "items": {"type": "string", "minLength": 1},
+                        },
+                        "lore_facts": {
+                            "type": "array",
+                            "minItems": 1,
+                            "items": {"type": "string", "minLength": 1},
+                        },
+                        "day_count": {"type": "integer", "minimum": 1},
+                    },
+                    "required": [
+                        "current_scene",
+                        "location",
+                        "region",
+                        "npcs_present",
+                        "active_quests",
+                        "discovered_locations",
+                        "lore_facts",
+                        "day_count",
+                    ],
+                    "additionalProperties": False,
+                },
+            },
+            "required": [
+                "character",
+                "world_name",
+                "regions",
+                "sects",
+                "current_conflicts",
+                "fate_hooks",
+                "chronicle_0_16",
+                "initial_situation",
+                "initial_situation_16",
+                "opening_narrative",
+                "choices",
+                "world",
+            ],
+            "additionalProperties": False,
+        },
+    },
+}
 
 
 def load_settings(state: dict[str, Any]) -> dict[str, Any]:
@@ -29,7 +206,9 @@ def load_settings(state: dict[str, Any]) -> dict[str, Any]:
 
 
 def build_prompt(state: dict[str, Any]) -> dict[str, Any]:
-    system_path = paths.system_prompt_path("world_builder")
+    provider_json_schema = _should_use_world_builder_schema(state)
+    prompt_name = "world_builder_schema" if provider_json_schema else "world_builder"
+    system_path = paths.system_prompt_path(prompt_name)
     if not system_path.exists():
         raise FileNotFoundError(f"System prompt not found: {system_path}")
     system_message = system_path.read_text(encoding="utf-8").strip()
@@ -58,6 +237,7 @@ def build_prompt(state: dict[str, Any]) -> dict[str, Any]:
         "system_message": system_message,
         "user_message": user_content,
         "messages": messages,
+        "provider_json_schema": provider_json_schema,
     }
 
 
@@ -67,6 +247,9 @@ async def call_agnes_llm(state: dict[str, Any]) -> dict[str, Any]:
         agent_name=AGENT_NAME,
         temperature=0.6,
         max_tokens=4096,
+        response_format=_WORLD_BUILDER_RESPONSE_FORMAT
+        if state.get("provider_json_schema")
+        else None,
     )
 
 
@@ -81,27 +264,42 @@ def save_artifact(state: dict[str, Any]) -> dict[str, Any]:
         world_description = ""
         opening_narrative = ""
     else:
-        generated_data, world_description, opening_narrative = _parse_world_output(text)
+        if state.get("provider_json_schema"):
+            generated_data, world_description, opening_narrative = _parse_schema_world_output(text)
+        else:
+            generated_data, world_description, opening_narrative = _parse_world_output(text)
 
     out_path = store.write_output(AGENT_NAME, run_id, text)
     store.write_input_snapshot(
-        AGENT_NAME, run_id,
-        {"user_input": state.get("user_input"),
-         "generation_type": state.get("generation_type"), "model": state.get("model")},
+        AGENT_NAME,
+        run_id,
+        {
+            "user_input": state.get("user_input"),
+            "generation_type": state.get("generation_type"),
+            "model": state.get("model"),
+        },
     )
     audit = {
-        "run_id": run_id, "agent": AGENT_NAME,
-        "started_at": state.get("started_at"), "finished_at": utcnow_iso(),
-        "model": state.get("model"), "usage": state.get("usage", {}),
-        "elapsed_ms": state.get("elapsed_ms", 0), "llm_error": llm_error,
+        "run_id": run_id,
+        "agent": AGENT_NAME,
+        "started_at": state.get("started_at"),
+        "finished_at": utcnow_iso(),
+        "model": state.get("model"),
+        "usage": state.get("usage", {}),
+        "elapsed_ms": state.get("elapsed_ms", 0),
+        "llm_error": llm_error,
         "output_path": str(out_path),
         "generation_type": state.get("generation_type", "new_game"),
     }
     audit_path = store.write_audit(AGENT_NAME, run_id, audit)
-    store.append_global_log({
-        "event": "world_builder_run_finished", "run_id": run_id,
-        "ok": not llm_error, "type": state.get("generation_type", "new_game"),
-    })
+    store.append_global_log(
+        {
+            "event": "world_builder_run_finished",
+            "run_id": run_id,
+            "ok": not llm_error,
+            "type": state.get("generation_type", "new_game"),
+        }
+    )
 
     return {
         "generated_data": generated_data,
@@ -110,6 +308,10 @@ def save_artifact(state: dict[str, Any]) -> dict[str, Any]:
         "output_path": str(out_path),
         "audit_path": str(audit_path),
         "finished_at": audit["finished_at"],
+        "provider_json_schema": bool(state.get("provider_json_schema")),
+        "provider_json_envelope_ok": bool(generated_data)
+        if state.get("provider_json_schema")
+        else False,
     }
 
 
@@ -119,6 +321,30 @@ def save_artifact(state: dict[str, Any]) -> dict[str, Any]:
 
 _TAG_RE = re.compile(r"<world_data>(.*?)</world_data>", re.DOTALL)
 _JSON_FENCE_RE = re.compile(r"```(?:json)?\s*(\{.*?\})\s*```", re.DOTALL)
+
+
+def _should_use_world_builder_schema(state: dict[str, Any]) -> bool:
+    configured = os.environ.get(_WORLD_BUILDER_SCHEMA_ENV, "auto").strip().lower()
+    if configured in {"1", "true", "yes", "on"}:
+        return True
+    if configured in {"0", "false", "no", "off"}:
+        return False
+    model = str(state.get("model") or os.environ.get("AGNES_MODEL") or "").strip().lower()
+    return model.startswith("agnes-")
+
+
+def _parse_schema_world_output(text: str) -> tuple[dict, str, str]:
+    try:
+        data = json.loads(str(text or ""))
+    except (json.JSONDecodeError, TypeError, ValueError):
+        return {}, "", ""
+    if not isinstance(data, dict):
+        return {}, "", ""
+    generated_data = _sanitize_world_data(data)
+    generated_data["choices"] = normalize_choices(generated_data.get("choices"))
+    if not is_complete_opening_payload(generated_data):
+        return {}, "", ""
+    return generated_data, "", str(generated_data.get("opening_narrative") or "")
 
 
 def _parse_world_output(text: str) -> tuple[dict, str, str]:
@@ -181,8 +407,7 @@ def _sanitize_world_data(data: dict[str, Any]) -> dict[str, Any]:
             sanitized[key] = _sanitize_world_data(value)
         elif isinstance(value, list):
             sanitized[key] = [
-                _sanitize_world_data(item) if isinstance(item, dict) else item
-                for item in value
+                _sanitize_world_data(item) if isinstance(item, dict) else item for item in value
             ]
         else:
             sanitized[key] = value

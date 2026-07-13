@@ -51,7 +51,7 @@ const FORBIDDEN_VISIBLE_PATTERNS = [
   ["json_like_array", /(?:^|[\s：:])\[(?=[^\]]*(?:"|'))[^\]]+\]/u],
   ["quoted_choice_fragment", /(?:\\?["“][^"“”\n]{4,160}\\?["”]\s*[,，]\s*){2,}\\?["“][^"“”\n]{4,160}\\?["”]/u],
   ["english_status_word", /\b(?:prowess|inventory|lifespan|realm|delta|narrative|turn_count|game_turns)\b/iu],
-  ["english_word", /\b(?!(?:jiayp|slot_\d+)\b)[A-Za-z]{2,}(?:_[A-Za-z0-9]+)?\b/iu],
+  ["english_word", /\b(?!jiayp\b)[A-Za-z]{2,}(?:_[A-Za-z0-9]+)?\b/iu],
 ];
 
 const ROUTE_HINTS = {

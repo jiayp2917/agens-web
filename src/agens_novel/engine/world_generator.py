@@ -8,9 +8,10 @@ fallback keeps the game running.
 from __future__ import annotations
 
 import logging
+import re
 from typing import Any
 
-from ..game.constants import ATTRIBUTE_KEYS, ATTRIBUTE_LABELS
+from ..game.constants import ATTRIBUTE_KEYS, ATTRIBUTE_LABELS, compute_starting_lifespan
 from .choices import clean_visible_text, has_visible_english, normalize_choices
 from .profile_opening import profile_summary, world_key_for_summary
 from .story_catalog import opening_story_binding, story_arc_for_binding
@@ -38,6 +39,7 @@ _WORLD_VISIBLE_FIELDS = (
     "discovered_locations",
 )
 
+
 def build_world_prompt(profile: dict[str, Any]) -> str:
     """Build a World Builder prompt from a character creation profile."""
     summary = profile_summary(profile)
@@ -48,22 +50,20 @@ def build_world_prompt(profile: dict[str, Any]) -> str:
     )
     fate = "、".join(summary["fate_tendency"])
     fate_detail = "；".join(
-        f"{item['label']}({item['score']})"
-        for item in fate_profile
-        if isinstance(item, dict)
+        f"{item['label']}({item['score']})" for item in fate_profile if isinstance(item, dict)
     )
     random_mode = "随机" if summary["randomize_attributes"] else "手选"
     semantic_text = _semantic_prompt(summary.get("profile_semantics"))
-    legacy_talents = [
-        str(item).strip()
-        for item in profile.get("legacy_talents", [])
-        if str(item).strip()
-    ] if isinstance(profile.get("legacy_talents"), list) else []
-    opening_titles = [
-        str(item).strip()
-        for item in profile.get("opening_titles", [])
-        if str(item).strip()
-    ] if isinstance(profile.get("opening_titles"), list) else []
+    legacy_talents = (
+        [str(item).strip() for item in profile.get("legacy_talents", []) if str(item).strip()]
+        if isinstance(profile.get("legacy_talents"), list)
+        else []
+    )
+    opening_titles = (
+        [str(item).strip() for item in profile.get("opening_titles", []) if str(item).strip()]
+        if isinstance(profile.get("opening_titles"), list)
+        else []
+    )
 
     parts = [
         f"角色名：{summary['char_name']}",
@@ -83,8 +83,7 @@ def build_world_prompt(profile: dict[str, Any]) -> str:
     if opening_titles:
         parts.append(f"开局称号：{'、'.join(opening_titles)}")
     return (
-        "；".join(parts)
-        + "。请根据以上信息生成该角色的本局修仙世界观、外界情报、0-16岁短编年史、"
+        "；".join(parts) + "。请根据以上信息生成该角色的本局修仙世界观、外界情报、0-16岁短编年史、"
         "16岁初始局势和首次四个选择。叙事使用第三方编年史视角，A/B/C/D语义固定为稳妥、机遇、风险、气运。"
     )
 
@@ -127,6 +126,36 @@ def build_world_fallback(profile: dict[str, Any]) -> dict[str, Any]:
     ]
 
     return {
+        "character": {
+            "name": char_name,
+            "realm": "练气",
+            "realm_stage": 1,
+            "spirit_root": spirit_root,
+            "spirit_root_grade": str(profile.get("spirit_root_grade") or ""),
+            "age": int(profile.get("age") or 16),
+            "talent": talent,
+            "family_background": family_background,
+            "difficulty": difficulty,
+            "attributes": attrs,
+            "breakthrough_flags": list(profile.get("breakthrough_flags") or []),
+            "techniques": list(
+                profile.get("techniques") or [{"name": "基础吐纳术", "level": 1, "type": "内功"}]
+            ),
+            "inventory": list(
+                profile.get("inventory") or [{"name": "粗布道袍", "quantity": 1, "type": "防具"}]
+            ),
+            "status_effects": list(profile.get("status_effects") or []),
+            "lifespan": int(
+                profile.get("lifespan")
+                or compute_starting_lifespan(
+                    "练气",
+                    attributes=attrs,
+                    talent=talent,
+                    difficulty=difficulty,
+                )
+            ),
+            "equipment_slots": profile.get("equipment_slots"),
+        },
         "world_name": world_name,
         "regions": [
             {"name": region_name, "description": variant["region_desc"]},
@@ -135,7 +164,11 @@ def build_world_fallback(profile: dict[str, Any]) -> dict[str, Any]:
         "sects": [
             {"name": sect_name, "alignment": "正道", "description": variant["sect_desc"]},
             {"name": variant["rival"], "alignment": "敌对", "description": variant["rival_desc"]},
-            {"name": variant["neutral"], "alignment": "中立", "description": variant["neutral_desc"]},
+            {
+                "name": variant["neutral"],
+                "alignment": "中立",
+                "description": variant["neutral_desc"],
+            },
         ],
         "cultivation_system": f"{world_name}沿用九境修行，但早期更看重六维短板：{_attribute_readout(attrs)}。",
         "current_conflicts": [
@@ -155,24 +188,24 @@ def build_world_fallback(profile: dict[str, Any]) -> dict[str, Any]:
         "matched_fates": variant["matched_fates"],
         **story,
         "opening_narrative": (
-            "\n".join(chronicle)
-            + "\n\n"
-            + str(story["story_opening"])
-            + "\n\n"
-            + initial_situation
+            "\n".join(chronicle) + "\n\n" + str(story["story_opening"]) + "\n\n" + initial_situation
         ),
         "choices": choices,
         "world": {
             "current_scene": initial_situation,
             "location": location,
             "region": world_name,
-            "npcs_present": [{"name": variant["mentor"], "relation": "接引", "realm": "练气", "affinity": 0}],
-            "active_quests": [{
-                "name": story_arc.title if story_arc else variant["quest"],
-                "description": story["story_state"]["stage_goal"],
-                "status": "active",
-                "type": "主线",
-            }],
+            "npcs_present": [
+                {"name": variant["mentor"], "relation": "接引", "realm": "练气", "affinity": 0}
+            ],
+            "active_quests": [
+                {
+                    "name": story_arc.title if story_arc else variant["quest"],
+                    "description": story["story_state"]["stage_goal"],
+                    "status": "active",
+                    "type": "主线",
+                }
+            ],
             "discovered_locations": [location],
             "lore_facts": lore_facts,
             "day_count": 1,
@@ -281,31 +314,115 @@ def is_complete_opening_payload(data: dict[str, Any]) -> bool:
     """Return True only when model data itself can satisfy live opening acceptance."""
     if not isinstance(data, dict) or not data:
         return False
+    character_value = data.get("character")
+    character: dict[str, Any] = character_value if isinstance(character_value, dict) else {}
+    required_character_strings = (
+        "name",
+        "realm",
+        "spirit_root",
+        "talent",
+        "family_background",
+        "difficulty",
+    )
+    if any(not str(character.get(key) or "").strip() for key in required_character_strings):
+        return False
+    if not _valid_character_contract(character):
+        return False
     world_name = str(data.get("world_name") or "").strip()
+    regions = data.get("regions")
+    sects = data.get("sects")
     chronicle = data.get("chronicle_0_16")
     initial = str(data.get("initial_situation_16") or data.get("initial_situation") or "").strip()
+    opening = str(data.get("opening_narrative") or "").strip()
     conflicts = data.get("current_conflicts")
     hooks = data.get("fate_hooks")
     choices = normalize_choices(data.get("choices"))
     world_value = data.get("world")
     world: dict[str, Any] = world_value if isinstance(world_value, dict) else {}
     scene = str(world.get("current_scene") or "").strip()
+    location = str(world.get("location") or "").strip()
+    region = str(world.get("region") or "").strip()
     lore = world.get("lore_facts")
+    discovered = world.get("discovered_locations")
     return (
         bool(world_name)
+        and _valid_named_records(regions, ("name", "description"))
+        and _valid_named_records(sects, ("name", "alignment", "description"))
         and isinstance(chronicle, list)
-        and len([item for item in chronicle if str(item).strip()]) >= 1
+        and 3 <= len([item for item in chronicle if str(item).strip()]) <= 5
         and bool(initial)
+        and bool(opening)
         and isinstance(conflicts, list)
         and len([item for item in conflicts if str(item).strip()]) >= 1
         and isinstance(hooks, list)
         and len([item for item in hooks if str(item).strip()]) >= 1
         and bool(scene)
+        and bool(location)
+        and bool(region)
+        and isinstance(world.get("npcs_present"), list)
+        and isinstance(world.get("active_quests"), list)
+        and isinstance(discovered, list)
+        and len([item for item in discovered if str(item).strip()]) >= 1
         and isinstance(lore, list)
         and len([item for item in lore if str(item).strip()]) >= 1
-        and len(choices) == 4
+        and isinstance(world.get("day_count"), int)
+        and not isinstance(world.get("day_count"), bool)
+        and int(world["day_count"]) >= 1
+        and _opening_choices_are_meaningful(choices)
         and not any(has_visible_english(text) for text in _opening_visible_texts(data))
     )
+
+
+def _valid_character_contract(character: dict[str, Any]) -> bool:
+    integer_fields = ("realm_stage", "age", "lifespan")
+    if any(
+        not isinstance(character.get(key), int)
+        or isinstance(character.get(key), bool)
+        or int(character[key]) < 1
+        for key in integer_fields
+    ):
+        return False
+    attributes = character.get("attributes")
+    if not isinstance(attributes, dict) or set(attributes) != set(ATTRIBUTE_KEYS):
+        return False
+    if any(
+        not isinstance(attributes.get(key), int)
+        or isinstance(attributes.get(key), bool)
+        or not 0 <= int(attributes[key]) <= 10
+        for key in ATTRIBUTE_KEYS
+    ):
+        return False
+    for key in ("breakthrough_flags", "techniques", "inventory", "status_effects"):
+        if not isinstance(character.get(key), list):
+            return False
+    return "spirit_root_grade" in character and "equipment_slots" in character
+
+
+def _valid_named_records(value: Any, required_fields: tuple[str, ...]) -> bool:
+    if not isinstance(value, list) or not value:
+        return False
+    return all(
+        isinstance(item, dict)
+        and all(str(item.get(field) or "").strip() for field in required_fields)
+        for item in value
+    )
+
+
+def _opening_choices_are_meaningful(choices: list[str]) -> bool:
+    if len(choices) != 4:
+        return False
+    placeholders = {
+        "具体行动",
+        "稳妥路径的具体行动",
+        "机遇路径的具体行动",
+        "风险路径的具体行动",
+        "气运路径的具体行动",
+    }
+    for choice in choices:
+        text = clean_visible_text(choice, allow_structured=False)
+        if len(text) < 4 or text in placeholders or re.fullmatch(r"[A-Da-d1-4]", text):
+            return False
+    return True
 
 
 def _clean_opening_visible_fields(data: dict[str, Any]) -> None:
@@ -353,7 +470,9 @@ def _world_visible_texts(value: Any) -> list[str]:
     for key in _WORLD_VISIBLE_FIELDS:
         values.extend(_visible_strings(value.get(key)))
     values.extend(_record_visible_texts(value.get("npcs_present"), ("name", "relation", "realm")))
-    values.extend(_record_visible_texts(value.get("active_quests"), ("name", "description", "type")))
+    values.extend(
+        _record_visible_texts(value.get("active_quests"), ("name", "description", "type"))
+    )
     return values
 
 

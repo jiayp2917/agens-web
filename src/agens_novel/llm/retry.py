@@ -15,7 +15,7 @@ log = logging.getLogger(__name__)
 T = TypeVar("T")
 
 # Status codes worth retrying on.
-RETRYABLE_HTTP_STATUSES: frozenset[int] = frozenset({408, 425, 429, 500, 502, 503, 504})
+RETRYABLE_HTTP_STATUSES: frozenset[int] = frozenset({408, 425, 429, 500, 502, 503, 504, 520})
 
 
 def is_retryable_status(status_code: int) -> bool:
@@ -50,21 +50,27 @@ async def with_retry(
             if attempt >= max_retries:
                 raise RetryExhausted(f"{label}: network error after {attempt} retries: {e}") from e
             delay = _backoff(attempt, initial_backoff, max_backoff)
-            log.warning("%s: network error (attempt %d): %s; retrying in %.2fs",
-                        label, attempt + 1, e, delay)
+            log.warning(
+                "%s: network error (attempt %d): %s; retrying in %.2fs",
+                label,
+                attempt + 1,
+                e,
+                delay,
+            )
             await asyncio.sleep(delay)
         except httpx.HTTPStatusError as e:
             status = e.response.status_code
             if not is_retryable_status(status) or attempt >= max_retries:
                 raise
             delay = _backoff(attempt, initial_backoff, max_backoff)
-            log.warning("%s: HTTP %d (attempt %d); retrying in %.2fs",
-                        label, status, attempt + 1, delay)
+            log.warning(
+                "%s: HTTP %d (attempt %d); retrying in %.2fs", label, status, attempt + 1, delay
+            )
             await asyncio.sleep(delay)
         attempt += 1
 
 
 def _backoff(attempt: int, initial: float, maximum: float) -> float:
     # Exponential with full jitter.
-    raw = initial * (2 ** attempt)
+    raw = initial * (2**attempt)
     return random.uniform(0, min(maximum, raw))

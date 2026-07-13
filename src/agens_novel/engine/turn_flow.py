@@ -114,7 +114,8 @@ class TurnFlow:
         rule_delta = settle_turn(text, session)
         turn_summary = (
             rule_delta.get("meta", {}).get("turn_summary", "")
-            if isinstance(rule_delta.get("meta"), dict) else ""
+            if isinstance(rule_delta.get("meta"), dict)
+            else ""
         )
 
         narrator_result = self._run_narrator(text, turn_summary)
@@ -197,8 +198,14 @@ class TurnFlow:
     ) -> tuple[str, dict[str, Any], Any]:
         has_narrative = bool(str(narrative or "").strip())
         normalized_choices = normalize_choices(choices)
-        if not has_narrative and _has_nonempty_structured_delta(state_delta) and not normalized_choices:
-            log.info("narrator returned JSON-only delta; rejecting model delta and settling by rules")
+        if (
+            not has_narrative
+            and _has_nonempty_structured_delta(state_delta)
+            and not normalized_choices
+        ):
+            log.info(
+                "narrator returned JSON-only delta; rejecting model delta and settling by rules"
+            )
             narrative = self._narrative_from_rule_delta(rule_delta)
             state_delta = self._empty_delta_from_rule(rule_delta)
             choices = fallback_choices(self.engine.game_session)
@@ -408,7 +415,9 @@ class TurnFlow:
         if not consistent:
             log.info("Narrative/state mismatch rejected: %s", consistency_reason)
             narrative = ""
-            session.last_choices = engine._filter_unavailable_breakthrough_choices(fallback_choices(session))
+            session.last_choices = engine._filter_unavailable_breakthrough_choices(
+                fallback_choices(session)
+            )
             state_delta = merge_rule_delta({"character": {}, "world": {}, "meta": {}}, rule_delta)
 
         session.apply_delta(state_delta)
@@ -416,7 +425,9 @@ class TurnFlow:
         if stage_delta is not None:
             state_delta = self._merge_state_delta(state_delta, stage_delta)
             if _narrative_conflicts_with_stage_delta(narrative, stage_delta, session):
-                log.info("narrative realm stage contradicted post-settlement stage; using rule chronicle")
+                log.info(
+                    "narrative realm stage contradicted post-settlement stage; using rule chronicle"
+                )
                 narrative = self._narrative_from_rule_delta(state_delta)
 
         if not str(narrative or "").strip():
@@ -449,7 +460,9 @@ class TurnFlow:
             elif not _has_visible_authoritative_delta(state_delta, narrative):
                 narrative = _generic_distinct_chronicle(state_delta, session)
         if _narrative_conflicts_with_stage_delta(narrative, state_delta, session):
-            log.info("visible chronicle contradicted final realm stage; using distinct rule chronicle")
+            log.info(
+                "visible chronicle contradicted final realm stage; using distinct rule chronicle"
+            )
             narrative = _generic_distinct_chronicle(state_delta, session)
         session.record_turn(text, narrative, state_delta)
 
@@ -531,7 +544,7 @@ class TurnFlow:
             fallbacks = fallback_choices(session)
             while len(recovered) < len(fallbacks):
                 recovered.append(fallbacks[len(recovered)])
-            return recovered[:len(fallbacks)]
+            return recovered[: len(fallbacks)]
         return fallback_choices(session)
 
     @staticmethod
@@ -559,7 +572,11 @@ class TurnFlow:
             if story_beat:
                 lore = story_beat
             stage_goal = str(meta.get("story_goal") or meta.get("stage_goal") or "").strip()
-        if isinstance(world, dict) and isinstance(world.get("lore_add"), list) and world["lore_add"]:
+        if (
+            isinstance(world, dict)
+            and isinstance(world.get("lore_add"), list)
+            and world["lore_add"]
+        ):
             lore = str(world["lore_add"][0] or "").strip()
         years = f"{elapsed}年间，" if elapsed > 0 else ""
         if lore:
@@ -606,7 +623,9 @@ def _is_terminal_state_delta(state_delta: Any) -> bool:
     if not isinstance(state_delta, dict):
         return False
     meta_delta = state_delta.get("meta")
-    return isinstance(meta_delta, dict) and bool(meta_delta.get("game_over") or meta_delta.get("finale"))
+    return isinstance(meta_delta, dict) and bool(
+        meta_delta.get("game_over") or meta_delta.get("finale")
+    )
 
 
 def _is_recent_duplicate_narrative(session: Any, narrative: str, *, limit: int = 60) -> bool:
@@ -643,8 +662,8 @@ def _narrative_keys_overlap(left: str, right: str) -> bool:
     if len(shorter) >= 48 and SequenceMatcher(None, left, right).ratio() >= 0.86:
         return True
     if len(shorter) >= 20:
-        left_grams = {left[index:index + 2] for index in range(len(left) - 1)}
-        right_grams = {right[index:index + 2] for index in range(len(right) - 1)}
+        left_grams = {left[index : index + 2] for index in range(len(left) - 1)}
+        right_grams = {right[index : index + 2] for index in range(len(right) - 1)}
         overlap = len(left_grams & right_grams) / max(1, min(len(left_grams), len(right_grams)))
         if overlap >= 0.86:
             return True
@@ -652,10 +671,28 @@ def _narrative_keys_overlap(left: str, right: str) -> bool:
 
 
 _QI_STAGE_CLAIM_RE = re.compile(r"练气\s*(?:第)?\s*([1-9一二三四五六七八九])\s*层")
-_REALM_PHASE_CLAIM_RE = re.compile(
-    r"(筑基|金丹|元婴|化神|合体|大乘|渡劫)\s*(初期|中期|后期|圆满)"
+_REALM_PHASE_CLAIM_RE = re.compile(r"(筑基|金丹|元婴|化神|合体|大乘|渡劫)\s*(初期|中期|后期|圆满)")
+_CHINESE_STAGE_VALUES = {
+    "一": 1,
+    "二": 2,
+    "三": 3,
+    "四": 4,
+    "五": 5,
+    "六": 6,
+    "七": 7,
+    "八": 8,
+    "九": 9,
+}
+_CLAUSE_BOUNDARY_RE = re.compile(r"[。！？!?；;\n]")
+_PLAYER_REALM_TRANSITION_BEFORE_RE = re.compile(
+    r"(?:突破至|踏入|晋入|修至|跌落至|退回|重返|迈入|臻至|升至)\s*$"
 )
-_CHINESE_STAGE_VALUES = {"一": 1, "二": 2, "三": 3, "四": 4, "五": 5, "六": 6, "七": 7, "八": 8, "九": 9}
+_REALM_REQUIREMENT_BEFORE_RE = re.compile(
+    r"(?:要求|至少|最低|不低于|门槛为|条件为|须达|需达|修为达到|境界达到)\s*$"
+)
+_REALM_REQUIREMENT_AFTER_RE = re.compile(
+    r"^\s*(?:以上|以下)?\s*(?:方可|才可|方能|即可|才能|可接取|可报名|可登记|可领取|适用)"
+)
 
 
 def _narrative_conflicts_with_stage_delta(
@@ -674,17 +711,47 @@ def _narrative_conflicts_with_stage_delta(
     text = str(narrative or "")
     realm = str(getattr(session, "realm", "") or "")
     if realm == "练气":
-        claims = {
-            int(value) if value.isdigit() else _CHINESE_STAGE_VALUES.get(value, 0)
-            for value in _QI_STAGE_CLAIM_RE.findall(text)
+        claims: set[int] = {
+            _qi_stage_claim_value(match)
+            for match in _QI_STAGE_CLAIM_RE.finditer(text)
+            if not _is_non_player_stage_reference(text, match.start(), match.end())
         }
         claims.discard(0)
         return bool(claims) and target_stage not in claims
 
     labels = ("初期", "中期", "后期", "圆满")
     target_label = labels[max(1, min(4, target_stage)) - 1]
-    claims = {phase for claim_realm, phase in _REALM_PHASE_CLAIM_RE.findall(text) if claim_realm == realm}
-    return bool(claims) and target_label not in claims
+    phase_claims: set[str] = {
+        str(match.group(2))
+        for match in _REALM_PHASE_CLAIM_RE.finditer(text)
+        if match.group(1) == realm
+        and not _is_non_player_stage_reference(text, match.start(), match.end())
+    }
+    return bool(phase_claims) and target_label not in phase_claims
+
+
+def _is_non_player_stage_reference(text: str, start: int, end: int) -> bool:
+    """Ignore only explicit realm requirements, never player transition claims."""
+    clause_start = 0
+    clause_end = len(text)
+    for boundary in _CLAUSE_BOUNDARY_RE.finditer(text):
+        if boundary.end() <= start:
+            clause_start = boundary.end()
+            continue
+        clause_end = boundary.start()
+        break
+    before = text[clause_start:start][-20:]
+    after = text[end:clause_end][:20]
+    if _PLAYER_REALM_TRANSITION_BEFORE_RE.search(before):
+        return False
+    return bool(
+        _REALM_REQUIREMENT_BEFORE_RE.search(before) or _REALM_REQUIREMENT_AFTER_RE.search(after)
+    )
+
+
+def _qi_stage_claim_value(match: re.Match[str]) -> int:
+    raw = str(match.group(1))
+    return int(raw) if raw.isdigit() else _CHINESE_STAGE_VALUES.get(raw, 0)
 
 
 def _generic_distinct_chronicle(state_delta: dict[str, Any], session: Any) -> str:
@@ -844,9 +911,17 @@ def _visible_character_delta(value: Any, narrative: str) -> bool:
     if not isinstance(value, dict):
         return False
     direct_keys = (
-        "breakthrough_flags", "breakthrough_flags_add", "equipment_slots", "inventory",
-        "inventory_add", "relationship_add", "status_effects", "status_effects_add",
-        "techniques", "techniques_add", "title_add",
+        "breakthrough_flags",
+        "breakthrough_flags_add",
+        "equipment_slots",
+        "inventory",
+        "inventory_add",
+        "relationship_add",
+        "status_effects",
+        "status_effects_add",
+        "techniques",
+        "techniques_add",
+        "title_add",
     )
     if any(_meaningful_delta_value(value.get(key)) for key in direct_keys):
         return True
@@ -864,8 +939,15 @@ def _visible_world_delta(value: Any) -> bool:
     if not isinstance(value, dict):
         return False
     keys = (
-        "active_quests", "active_quests_add", "current_scene", "discovered_add",
-        "discovered_locations", "location", "npcs_present", "npcs_present_add", "region",
+        "active_quests",
+        "active_quests_add",
+        "current_scene",
+        "discovered_add",
+        "discovered_locations",
+        "location",
+        "npcs_present",
+        "npcs_present_add",
+        "region",
     )
     return any(_meaningful_delta_value(value.get(key)) for key in keys)
 
@@ -887,11 +969,13 @@ def _narrative_claims_attributes(text: str) -> bool:
 
 
 def _narrative_claims_realm_progress(text: str) -> bool:
-    return bool(re.search(
-        r"(?:修为|境界|突破|晋升|练气|筑基|金丹|元婴|化神|炼虚|合体|大乘|渡劫|飞升|"
-        r"初期|中期|后期|圆满|[一二三四五六七八九十\d]+层)",
-        str(text or ""),
-    ))
+    return bool(
+        re.search(
+            r"(?:修为|境界|突破|晋升|练气|筑基|金丹|元婴|化神|炼虚|合体|大乘|渡劫|飞升|"
+            r"初期|中期|后期|圆满|[一二三四五六七八九十\d]+层)",
+            str(text or ""),
+        )
+    )
 
 
 def _meaningful_delta_value(value: Any) -> bool:

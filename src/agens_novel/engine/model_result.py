@@ -53,13 +53,19 @@ def classify_narrator_result(result: dict[str, Any]) -> ModelResultStatus:
         return contract_failure
 
     if state_delta is None or not isinstance(state_delta, dict):
-        return ModelResultStatus(ModelResultKind.INCOMPLETE_OUTPUT, "模型已返回叙事，但状态更新格式不完整。")
+        return ModelResultStatus(
+            ModelResultKind.INCOMPLETE_OUTPUT, "模型已返回叙事，但状态更新格式不完整。"
+        )
     if not narrative:
         return ModelResultStatus(ModelResultKind.INCOMPLETE_OUTPUT, "模型输出缺少叙事正文。")
     if narrative and not choices:
-        return ModelResultStatus(ModelResultKind.INCOMPLETE_OUTPUT, "模型已返回叙事，但未返回可用 A/B/C/D 选项。")
+        return ModelResultStatus(
+            ModelResultKind.INCOMPLETE_OUTPUT, "模型已返回叙事，但未返回可用 A/B/C/D 选项。"
+        )
     if len(choices) != 4:
-        return ModelResultStatus(ModelResultKind.INCOMPLETE_OUTPUT, "模型已返回叙事，但未返回恰好 4 个 A/B/C/D 选项。")
+        return ModelResultStatus(
+            ModelResultKind.INCOMPLETE_OUTPUT, "模型已返回叙事，但未返回恰好 4 个 A/B/C/D 选项。"
+        )
     return ModelResultStatus(ModelResultKind.OK)
 
 
@@ -77,7 +83,9 @@ def _narrator_contract_failure(
     if contract.get("english_residue"):
         return ModelResultStatus(ModelResultKind.INCOMPLETE_OUTPUT, "模型可见文本仍含英文残留。")
     if contract and not contract.get("raw_has_state_update_tag"):
-        return ModelResultStatus(ModelResultKind.INCOMPLETE_OUTPUT, "模型输出缺少 state_update 标签。")
+        return ModelResultStatus(
+            ModelResultKind.INCOMPLETE_OUTPUT, "模型输出缺少 state_update 标签。"
+        )
     if contract and not contract.get("raw_has_choices_tag"):
         return ModelResultStatus(ModelResultKind.INCOMPLETE_OUTPUT, "模型输出缺少 choices 标签。")
     return None
@@ -92,7 +100,9 @@ def classify_world_builder_result(result: dict[str, Any]) -> ModelResultStatus:
         )
     generated = result.get("generated_data")
     if not isinstance(generated, dict) or not generated:
-        return ModelResultStatus(ModelResultKind.INCOMPLETE_OUTPUT, "世界生成已返回，但缺少结构化开局数据。")
+        return ModelResultStatus(
+            ModelResultKind.INCOMPLETE_OUTPUT, "世界生成已返回，但缺少结构化开局数据。"
+        )
     return ModelResultStatus(ModelResultKind.OK)
 
 
@@ -127,6 +137,7 @@ def is_retryable_model_request_failure(result: dict[str, Any]) -> bool:
         "http 502",
         "http 503",
         "http 504",
+        "http 520",
         "upstream_error",
         "notfounderror",
     )
@@ -136,7 +147,12 @@ def is_retryable_model_request_failure(result: dict[str, Any]) -> bool:
 def result_diagnostics(result: dict[str, Any]) -> dict[str, Any]:
     """Return non-secret model result facts suitable for logcat diagnostics."""
     generated = result.get("generated_data")
-    narrative = result.get("narrative") or result.get("opening_narrative") or result.get("world_description") or ""
+    narrative = (
+        result.get("narrative")
+        or result.get("opening_narrative")
+        or result.get("world_description")
+        or ""
+    )
     state_delta = result.get("state_delta")
     raw_choices = result.get("choices")
     usage_value = result.get("usage")
@@ -144,7 +160,9 @@ def result_diagnostics(result: dict[str, Any]) -> dict[str, Any]:
     prompt_metrics_value = result.get("prompt_metrics")
     contract_value = result.get("contract_diagnostics")
     usage: dict[str, Any] = usage_value if isinstance(usage_value, dict) else {}
-    repair_usage: dict[str, Any] = repair_usage_value if isinstance(repair_usage_value, dict) else {}
+    repair_usage: dict[str, Any] = (
+        repair_usage_value if isinstance(repair_usage_value, dict) else {}
+    )
     prompt_metrics: dict[str, Any] = (
         prompt_metrics_value if isinstance(prompt_metrics_value, dict) else {}
     )

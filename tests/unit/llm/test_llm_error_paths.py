@@ -5,7 +5,7 @@
 408/429/5xx、超时和取消专项验证」。覆盖三层：
 
 1. HTTP 状态分类（``_handle_non_stream_response`` / ``_handle_stream_response``）：
-   401/403 → ``LLMAuthError``；3xx → 重定向拒绝；408/425/429/500/502/503/504 →
+   401/403 → ``LLMAuthError``；3xx → 重定向拒绝；408/425/429/500/502/503/504/520 →
    交由 ``raise_for_status`` 触发可重试 ``HTTPStatusError``；其余 ≥400 → ``LLMBadRequest``。
 2. ``_execute_with_retry`` 传播：整体超时 → ``LLMError("total timeout exceeded")``；
    ``RetryExhausted`` → ``LLMError("upstream transport unavailable")``；
@@ -58,7 +58,7 @@ class TestNonStreamStatusClassification:
 
     @pytest.mark.parametrize("status_code", sorted(RETRYABLE_HTTP_STATUSES))
     def test_retryable_status_raises_http_status_error(self, status_code: int) -> None:
-        # 408/425/429/500/502/503/504 不能被折叠成 LLMBadRequest；交给 raise_for_status
+        # 408/425/429/500/502/503/504/520 不能被折叠成 LLMBadRequest；交给 raise_for_status
         # 触发 HTTPStatusError，供上层重试。
         with pytest.raises(httpx.HTTPStatusError):
             _handle_non_stream_response(_response(status_code), time.monotonic())
@@ -137,9 +137,7 @@ class TestStreamStatusClassification:
 
 def _status_error(status_code: int) -> httpx.HTTPStatusError:
     response = _response(status_code)
-    return httpx.HTTPStatusError(
-        f"HTTP {status_code}", request=response.request, response=response
-    )
+    return httpx.HTTPStatusError(f"HTTP {status_code}", request=response.request, response=response)
 
 
 class TestExecuteWithRetryPropagation:
@@ -171,10 +169,8 @@ class TestExecuteWithRetryPropagation:
             )
 
     @pytest.mark.asyncio
-    @pytest.mark.parametrize("status_code", (429, 500, 503))
-    async def test_retryable_http_status_exhausts_to_upstream_http(
-        self, status_code: int
-    ) -> None:
+    @pytest.mark.parametrize("status_code", (429, 500, 503, 520))
+    async def test_retryable_http_status_exhausts_to_upstream_http(self, status_code: int) -> None:
         async def fails_with_status() -> httpx.Response:
             raise _status_error(status_code)
 
@@ -229,6 +225,7 @@ class TestIsRetryableModelRequestFailure:
             "llm_call: upstream HTTP 502",
             "llm_call: upstream HTTP 503",
             "llm_call: upstream HTTP 504",
+            "llm_call: upstream HTTP 520",
             # 其他暂态特征
             "read timed out",
             "connection reset by peer",

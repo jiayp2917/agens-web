@@ -104,8 +104,14 @@ class StartFlow:
                 engine.end_model_failure_run(reason)
             return
 
-        generated = result.get("generated_data", {})
-        world_status = classify_world_builder_result(result)
+        world_status, generated = _classify_opening_result(result)
+        result, world_status, generated = self._retry_incomplete_opening(
+            concept,
+            result,
+            world_status,
+            generated,
+            generation_type="new_game",
+        )
         engine.log_model_result(
             agent="world_builder",
             source="new_game",
@@ -113,7 +119,7 @@ class StartFlow:
             reason=world_status.reason,
             result=result,
         )
-        if not generated:
+        if world_status.kind == ModelResultKind.INCOMPLETE_OUTPUT or not generated:
             engine.emit("on_info", "世界数据为空，请重试。")
             return
 
@@ -124,13 +130,17 @@ class StartFlow:
             desc = result.get("world_description", "")
             opening = desc or "世界已生成。"
 
-        if engine.set_choices(
-            generated.get("choices"),
-            source="world_builder",
-            fallback_notice=True,
-            require_choice=True,
-            reason="世界生成未返回可用选项。",
-        ) is False and session.game_over:
+        if (
+            engine.set_choices(
+                generated.get("choices"),
+                source="world_builder",
+                fallback_notice=True,
+                require_choice=True,
+                reason="世界生成未返回可用选项。",
+            )
+            is False
+            and session.game_over
+        ):
             return
         self._emit_opening(opening)
 
@@ -145,15 +155,27 @@ class StartFlow:
             return
         apply_profile_opening_payload(engine.game_session, payload)
 
-        debug_choices = complete_choices(profile.get("choices"), engine.game_session) if profile.get("_allow_choice_override") else []
-        opening = str(profile.get("opening_narrative") or payload.get("opening_narrative") or profile_opening(engine.game_session))
-        if engine.set_choices(
-            debug_choices or payload.get("choices"),
-            source="profile_opening",
-            fallback_notice=True,
-            require_choice=True,
-            reason="开场推演未返回可用选项。",
-        ) is False and engine.game_session.game_over:
+        debug_choices = (
+            complete_choices(profile.get("choices"), engine.game_session)
+            if profile.get("_allow_choice_override")
+            else []
+        )
+        opening = str(
+            profile.get("opening_narrative")
+            or payload.get("opening_narrative")
+            or profile_opening(engine.game_session)
+        )
+        if (
+            engine.set_choices(
+                debug_choices or payload.get("choices"),
+                source="profile_opening",
+                fallback_notice=True,
+                require_choice=True,
+                reason="开场推演未返回可用选项。",
+            )
+            is False
+            and engine.game_session.game_over
+        ):
             return
         self._emit_opening(opening)
 
@@ -183,7 +205,9 @@ class StartFlow:
                 generation_type="profile_opening",
             )
             if is_retryable_model_request_failure(result):
-                log.info("profile opening world_builder request failed with retryable provider error; retrying once")
+                log.info(
+                    "profile opening world_builder request failed with retryable provider error; retrying once"
+                )
                 retry_result = engine.run_agent(
                     "world_builder",
                     prompt,
@@ -199,20 +223,13 @@ class StartFlow:
                 fallback, "profile_opening_exception", "开场推演失败（详见日志）。"
             )
 
-        world_status = classify_world_builder_result(result)
-        parsed = parse_world_response(result) if world_status.kind != ModelResultKind.REQUEST_FAILED else {}
+        world_status, parsed = _classify_opening_result(result)
         result, world_status, parsed = self._retry_incomplete_opening(
             prompt,
             result,
             world_status,
             parsed,
         )
-        if world_status.kind == ModelResultKind.OK and not is_complete_opening_payload(parsed):
-            world_status = ModelResultStatus(
-                ModelResultKind.INCOMPLETE_OUTPUT,
-                "开场推演缺少动态世界、编年史、初始局势或四个选项。",
-            )
-            parsed = {}
         engine.log_model_result(
             agent="world_builder",
             source="profile_opening",
@@ -236,33 +253,29 @@ class StartFlow:
         result: dict[str, Any],
         world_status: ModelResultStatus,
         parsed: dict[str, Any],
+        *,
+        generation_type: str = "profile_opening",
     ) -> tuple[dict[str, Any], ModelResultStatus, dict[str, Any]]:
-        should_retry = (
-            world_status.kind == ModelResultKind.OK
-            and not is_complete_opening_payload(parsed)
-            and not result.get("retried_after_request_failed")
+        should_retry = world_status.kind == ModelResultKind.INCOMPLETE_OUTPUT and not result.get(
+            "retried_after_incomplete_output"
         )
         if not should_retry:
             return result, world_status, parsed
         log.info("profile opening contract incomplete; retrying world_builder once")
+        retry_prompt = _strict_opening_retry_prompt(prompt)
         try:
             result = self.engine.run_agent(
                 "world_builder",
-                prompt,
+                retry_prompt,
                 self.engine.game_session,
-                generation_type="profile_opening",
+                generation_type=generation_type,
             )
             if not result.get("llm_error"):
                 result["retried_after_incomplete_output"] = True
         except Exception:
             log.exception("profile opening world_builder incomplete retry failed")
             result = {"generated_data": {}, "llm_error": "开场推演重试失败。"}
-        world_status = classify_world_builder_result(result)
-        parsed = (
-            parse_world_response(result)
-            if world_status.kind != ModelResultKind.REQUEST_FAILED
-            else {}
-        )
+        world_status, parsed = _classify_opening_result(result)
         return result, world_status, parsed
 
     def _decline_or_continue(
@@ -309,12 +322,15 @@ def apply_world_builder_generated_session(
         session.techniques = char_data.get("techniques", [])
         session.inventory = char_data.get("inventory", [])
         session.status_effects = char_data.get("status_effects", [])
-        session.lifespan = int(char_data.get("lifespan") or compute_starting_lifespan(
-            session.realm,
-            attributes=session.attributes,
-            talent=session.talent,
-            difficulty=session.difficulty,
-        ))
+        session.lifespan = int(
+            char_data.get("lifespan")
+            or compute_starting_lifespan(
+                session.realm,
+                attributes=session.attributes,
+                talent=session.talent,
+                difficulty=session.difficulty,
+            )
+        )
         if "equipment_slots" in char_data:
             session.equipment_slots = char_data["equipment_slots"]
 
@@ -371,16 +387,18 @@ def apply_profile_session(session: GameSession, profile: dict[str, Any]) -> None
         difficulty=session.difficulty,
         extra_lifespan=int(profile.get("extra_lifespan") or 0),
     )
-    session.techniques = list(profile.get("techniques") or [{"name": "基础吐纳术", "level": 1, "type": "内功"}])
-    session.inventory = list(profile.get("inventory") or [{"name": "粗布道袍", "quantity": 1, "type": "防具"}])
+    session.techniques = list(
+        profile.get("techniques") or [{"name": "基础吐纳术", "level": 1, "type": "内功"}]
+    )
+    session.inventory = list(
+        profile.get("inventory") or [{"name": "粗布道袍", "quantity": 1, "type": "防具"}]
+    )
     legacy_talents = profile.get("legacy_talents")
     opening_titles = profile.get("opening_titles")
     session.legacy_talents = dedupe_strings(
         legacy_talents if isinstance(legacy_talents, list) else []
     )
-    session.titles = dedupe_strings(
-        opening_titles if isinstance(opening_titles, list) else []
-    )
+    session.titles = dedupe_strings(opening_titles if isinstance(opening_titles, list) else [])
     default_scene, default_location, default_region, default_lore = profile_default_world(profile)
     session.current_scene = str(profile.get("current_scene") or default_scene)
     session.location = str(profile.get("location") or default_location)
@@ -476,7 +494,7 @@ def apply_profile_opening_payload(session: GameSession, payload: dict[str, Any])
     world_profile = {
         key: value
         for key, value in payload.items()
-        if key not in {"world", "choices", "opening_narrative"}
+        if key not in {"character", "world", "choices", "opening_narrative"}
     }
     if world_profile:
         session.world_profile = world_profile
@@ -557,9 +575,37 @@ def _list_or_existing(value: Any, existing: list[Any]) -> list[Any]:
     return list(value) if isinstance(value, list) else list(existing or [])
 
 
-
 def _engine_has_api_key(engine: Any) -> bool:
     config = getattr(engine, "model_config", {})
     if isinstance(config, dict) and "api_key_set" in config:
         return bool(config.get("api_key_set"))
     return bool(os.environ.get("AGNES_API_KEY"))
+
+
+def _classify_opening_result(
+    result: dict[str, Any],
+) -> tuple[ModelResultStatus, dict[str, Any]]:
+    status = classify_world_builder_result(result)
+    if status.kind == ModelResultKind.REQUEST_FAILED:
+        return status, {}
+    parsed = parse_world_response(result)
+    if not is_complete_opening_payload(parsed):
+        return (
+            ModelResultStatus(
+                ModelResultKind.INCOMPLETE_OUTPUT,
+                "开场推演缺少完整角色、动态世界、编年史、初始局势或四个选项。",
+            ),
+            {},
+        )
+    return ModelResultStatus(ModelResultKind.OK), parsed
+
+
+def _strict_opening_retry_prompt(prompt: str) -> str:
+    return (
+        f"{prompt}\n\n"
+        "严格重试要求：上一份开场数据未通过验收。请重新检查 character、world_name、regions、sects、"
+        "current_conflicts、fate_hooks、chronicle_0_16、initial_situation、opening_narrative、"
+        "choices 以及 world 内的 current_scene、location、region、npcs_present、active_quests、"
+        "discovered_locations、lore_facts；所有可见字符串必须是中文，不得含任何英文单词、英文地点名、"
+        "标签、占位选项或单独的 A/B/C/D 字母。choices 必须是四条引用本局地点或势力的完整中文行动句。"
+    )

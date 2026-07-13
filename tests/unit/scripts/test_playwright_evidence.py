@@ -261,6 +261,12 @@ def test_content_audit_forbids_chinese_fallback_notices() -> None:
     assert "quoted_choice_fragment" in source
 
 
+def test_content_audit_does_not_exempt_internal_save_slot_names() -> None:
+    source = (ROOT / "scripts" / "local_visible_playtest.cjs").read_text(encoding="utf-8")
+
+    assert "slot_\\d+" not in source
+
+
 def test_content_audit_recomputes_issue_counts_after_writer_failure() -> None:
     source = (ROOT / "scripts" / "local_visible_playtest.cjs").read_text(encoding="utf-8")
 

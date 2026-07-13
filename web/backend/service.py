@@ -239,6 +239,7 @@ class WebRunner:
     def snapshot(self) -> dict[str, Any]:
         return self.engine.game_session.to_save_dict()
 
+
 def _sanitize_event_payload(event_type: str, payload: dict[str, Any]) -> dict[str, Any]:
     sanitized = dict(payload)
     if event_type == "model_result":
@@ -538,7 +539,6 @@ class WebGameService:
             }
             rollback = self._rollback_state(runner)
             try:
-                runner.record("info", text=f"进度已保存: {save_name}")
                 return self._commit_runner(
                     runner,
                     expected_version=expected_version,
@@ -572,7 +572,6 @@ class WebGameService:
                 db=self.db,
                 version=runner.version,
             )
-            restored.record("info", text=f"已加载存档: {saved['name']}")
             response = self._commit_runner(
                 restored,
                 expected_version=expected_version,
@@ -627,9 +626,7 @@ class WebGameService:
 
     # ── Death rewards (P4) ──────────────────────────────────────────────
 
-    def death_summary(
-        self, session_id: str, user_id: str | None = None
-    ) -> dict[str, Any]:
+    def death_summary(self, session_id: str, user_id: str | None = None) -> dict[str, Any]:
         """Return the most recent death summary for a session.
 
         Prefer a live rebuild so the UI reflects current achievement rules even
@@ -752,7 +749,9 @@ class WebGameService:
             rewind_run=rewind_run,
         )
         session_value = result.get("session")
-        session_response: dict[str, Any] = session_value if isinstance(session_value, dict) else result
+        session_response: dict[str, Any] = (
+            session_value if isinstance(session_value, dict) else result
+        )
         runner.version = int(session_response.get("version") or expected_version + 1)
         return result
 
@@ -896,7 +895,9 @@ class WebGameService:
         meta = delta.get("meta") if isinstance(delta, dict) else {}
         if not isinstance(meta, dict):
             meta = {}
-        elapsed_years = int(meta.get("elapsed_years") or max(0, session.age - int(before.get("age") or session.age)))
+        elapsed_years = int(
+            meta.get("elapsed_years") or max(0, session.age - int(before.get("age") or session.age))
+        )
         calendar_summary = str(
             meta.get("calendar_summary")
             or meta.get("turn_summary")
@@ -931,7 +932,9 @@ class WebGameService:
             else:
                 normalized["attributes"] = _random_attributes()
         else:
-            normalized["attributes"] = normalize_profile_attributes(normalized.get("attributes", {}))
+            normalized["attributes"] = normalize_profile_attributes(
+                normalized.get("attributes", {})
+            )
         normalized["randomize_attributes"] = bool(normalized.get("randomize_attributes"))
 
         catalogs = {
@@ -965,9 +968,7 @@ class WebGameService:
             key: _catalog_semantics(_catalog_entry(rows, str(normalized.get(key) or "")))
             for key, rows in catalogs.items()
         }
-        normalized["profile_semantics"] = {
-            key: value for key, value in semantics.items() if value
-        }
+        normalized["profile_semantics"] = {key: value for key, value in semantics.items() if value}
         return normalized
 
     def _catalog_rows(self, table: str) -> list[dict[str, Any]]:

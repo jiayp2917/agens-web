@@ -26,14 +26,20 @@ def test_web_save_load_restores_snapshot_and_chat_history(tmp_path: Path, monkey
     session_id = client.post("/api/sessions", json={}).json()["session_id"]
 
     with patch("agens_novel.engine.game_engine.run_turn_sync", side_effect=_runner):
-        client.post(f"/api/sessions/{session_id}/start", json={"char_name": "许满"})
+        started = client.post(
+            f"/api/sessions/{session_id}/start", json={"char_name": "许满"}
+        ).json()
+        visible_events = list(started["events"])
         saved = client.post(f"/api/sessions/{session_id}/save", json={"name": "slot_1"}).json()
         assert saved["save"]["name"] == "slot_1"
+        assert saved["session"]["events"] == visible_events
 
         loaded = client.post(f"/api/sessions/{session_id}/load", json={"name": "slot_1"}).json()
         assert loaded["character"]["name"] == "许满"
         assert len(loaded["choices"]) == 4
         assert "气运" in loaded["choices"][-1]
+        assert loaded["events"] == visible_events
+        assert all("slot_1" not in str(event) for event in loaded["events"])
 
     # Security: the raw API key must never be persisted. Under PostgreSQL there
     # is no DB file to scan, so check the columns that could hold it.
@@ -104,16 +110,20 @@ def test_web_load_rewinds_future_turn_rows_before_continuing(monkeypatch) -> Non
     assert continued.status_code == 200
     assert continued.json()["turn_count"] == saved_turn + 1
     with app.state.service.db.engine.connect() as conn:
-        rows = conn.execute(
-            text(
-                """
+        rows = (
+            conn.execute(
+                text(
+                    """
                 SELECT turn_no FROM game_turns
                 WHERE run_id = :run_id
                 ORDER BY turn_no
                 """
-            ),
-            {"run_id": session_id},
-        ).scalars().all()
+                ),
+                {"run_id": session_id},
+            )
+            .scalars()
+            .all()
+        )
     assert rows == list(range(1, saved_turn + 2))
     assert user["id"]
 
@@ -165,9 +175,13 @@ def test_web_new_session_can_load_completed_run_save_and_continue(monkeypatch) -
     assert continued.status_code == 200
     assert continued.json()["turn_count"] == saved_turn + 1
     with app.state.service.db.engine.connect() as conn:
-        run = conn.execute(
-            text("SELECT completed, turn_count FROM game_runs WHERE id = :id"),
-            {"id": fresh["session_id"]},
-        ).mappings().one()
+        run = (
+            conn.execute(
+                text("SELECT completed, turn_count FROM game_runs WHERE id = :id"),
+                {"id": fresh["session_id"]},
+            )
+            .mappings()
+            .one()
+        )
     assert run["completed"] is False
     assert run["turn_count"] == saved_turn + 1

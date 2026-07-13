@@ -2,9 +2,147 @@
 
 from __future__ import annotations
 
+import asyncio
 import json
 
+from agens_novel.agents.world_builder import nodes
 from agens_novel.agents.world_builder.nodes import _parse_world_output
+
+
+def test_world_builder_schema_prompt_is_used_for_agnes_model() -> None:
+    result = nodes.build_prompt(
+        {
+            "model": "agnes-2.0-flash",
+            "generation_type": "profile_opening",
+            "user_input": "角色名：许满；难度：普通；六维属性：根骨=5。",
+        }
+    )
+
+    assert result["provider_json_schema"] is True
+    assert "<world_data>" not in result["system_message"]
+    assert "直接返回一个 JSON 对象" in result["system_message"]
+
+
+def test_world_builder_schema_call_passes_provider_format(monkeypatch) -> None:
+    calls = []
+
+    async def fake_call(state, **kwargs):
+        calls.append(kwargs)
+        return {"output_text": "{}", "llm_error": "", "elapsed_ms": 1, "usage": {}}
+
+    monkeypatch.setattr(nodes, "call_agnes_llm_common", fake_call)
+    result = asyncio.run(
+        nodes.call_agnes_llm(
+            {
+                "api_key_set": True,
+                "provider_json_schema": True,
+                "messages": [{"role": "user", "content": "开局"}],
+            }
+        )
+    )
+
+    assert calls[0]["response_format"]["type"] == "json_schema"
+    assert result["output_text"] == "{}"
+
+
+def test_world_builder_schema_output_is_parsed_without_tags() -> None:
+    payload = {
+        "character": {
+            "name": "许满",
+            "realm": "练气",
+            "realm_stage": 1,
+            "spirit_root": "木灵根",
+            "spirit_root_grade": "凡",
+            "age": 16,
+            "talent": "平平无奇",
+            "family_background": "寒门",
+            "difficulty": "普通",
+            "attributes": {
+                "root_bone": 5,
+                "comprehension": 5,
+                "luck": 5,
+                "willpower": 5,
+                "physique": 5,
+                "soul": 5,
+            },
+            "breakthrough_flags": [],
+            "techniques": [],
+            "inventory": [],
+            "status_effects": [],
+            "lifespan": 100,
+            "equipment_slots": None,
+        },
+        "world_name": "归墟潮界",
+        "regions": [{"name": "潮生海市", "description": "潮图缺失"}],
+        "sects": [{"name": "潮音阁", "alignment": "正道", "description": "守潮"}],
+        "current_conflicts": ["灵潮提前"],
+        "fate_hooks": ["天命奇遇"],
+        "chronicle_0_16": [
+            "零至六岁，常听潮声。",
+            "七至十二岁，学会辨潮。",
+            "十三至十五岁，离开故乡。",
+        ],
+        "initial_situation": "十六岁抵达潮音渡口。",
+        "initial_situation_16": "十六岁抵达潮音渡口。",
+        "opening_narrative": "归墟潮界灵潮提前，许满在十六岁抵达潮音渡口。",
+        "choices": ["留在渡口", "打听灵潮", "夜探沉星礁", "随潮而行"],
+        "world": {
+            "current_scene": "渡口正在登记",
+            "location": "潮音渡口",
+            "region": "归墟潮界",
+            "npcs_present": [],
+            "active_quests": [],
+            "discovered_locations": ["潮音渡口"],
+            "lore_facts": ["灵潮提前"],
+            "day_count": 1,
+        },
+    }
+
+    parsed, description, opening = nodes._parse_schema_world_output(
+        json.dumps(payload, ensure_ascii=False)
+    )
+
+    assert description == ""
+    assert opening == payload["opening_narrative"]
+    assert parsed["world_name"] == "归墟潮界"
+    assert parsed["choices"] == payload["choices"]
+
+
+def test_world_builder_schema_output_rejects_missing_character() -> None:
+    payload = {
+        "world_name": "归墟潮界",
+        "regions": [{"name": "潮生海市", "description": "潮图缺失"}],
+        "sects": [{"name": "潮音阁", "alignment": "正道", "description": "守潮"}],
+        "current_conflicts": ["灵潮提前"],
+        "fate_hooks": ["天命奇遇"],
+        "chronicle_0_16": [
+            "零至六岁，常听潮声。",
+            "七至十二岁，学会辨潮。",
+            "十三至十五岁，离开故乡。",
+        ],
+        "initial_situation": "十六岁抵达潮音渡口。",
+        "initial_situation_16": "十六岁抵达潮音渡口。",
+        "opening_narrative": "归墟潮界灵潮提前，许满在十六岁抵达潮音渡口。",
+        "choices": ["留在渡口", "打听灵潮", "夜探沉星礁", "随潮而行"],
+        "world": {
+            "current_scene": "渡口正在登记",
+            "location": "潮音渡口",
+            "region": "归墟潮界",
+            "npcs_present": [],
+            "active_quests": [],
+            "discovered_locations": ["潮音渡口"],
+            "lore_facts": ["灵潮提前"],
+            "day_count": 1,
+        },
+    }
+
+    parsed, description, opening = nodes._parse_schema_world_output(
+        json.dumps(payload, ensure_ascii=False)
+    )
+
+    assert parsed == {}
+    assert description == ""
+    assert opening == ""
 
 
 def test_parse_world_output_preserves_abcd_opening_choices() -> None:

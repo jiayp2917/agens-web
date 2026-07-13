@@ -1,4 +1,4 @@
-﻿"""Tests for GameEngine initialization and configuration — UI-agnostic game logic service."""
+"""Tests for GameEngine initialization and configuration — UI-agnostic game logic service."""
 
 from __future__ import annotations
 
@@ -7,66 +7,95 @@ from unittest.mock import patch
 
 from agens_novel.engine.choices import fallback_choices, normalize_choices
 from agens_novel.engine.game_engine import GameEngine
+from agens_novel.engine.world_generator import build_world_fallback
 from agens_novel.session.game_session import GameSession
 
 # ═══════════════════════════════════════════════════════════════════════════════
 # Canned helpers
 # ═══════════════════════════════════════════════════════════════════════════════
 
+
 def _canned_world_builder() -> dict[str, Any]:
+    generated = build_world_fallback(
+        {
+            "char_name": "许满",
+            "talent": "平平无奇",
+            "spirit_root": "火木双灵根",
+            "spirit_root_grade": "地",
+            "family_background": "寒门",
+            "difficulty": "普通",
+            "attributes": {
+                "root_bone": 5,
+                "comprehension": 5,
+                "luck": 5,
+                "willpower": 5,
+                "physique": 5,
+                "soul": 5,
+            },
+        }
+    )
+    generated["world"].update(
+        {
+            "current_scene": "晨雾中的青云山外门",
+            "location": "青云山外门",
+            "region": "东荒",
+        }
+    )
+    generated["choices"] = [
+        "留在山门吐纳",
+        "询问接引弟子",
+        "观察灵气流向",
+        "【气运】随缘听天命",
+    ]
     return {
-        "generated_data": {
-            "character": {
-                "name": "许满", "realm": "练气", "realm_stage": 1,
-                "spirit_root": "火木双灵根", "spirit_root_grade": "地",
-                "attributes": {
-                    "root_bone": 50,
-                    "comprehension": 50,
-                    "luck": 50,
-                    "willpower": 50,
-                    "physique": 50,
-                    "soul": 50,
-                },
-                "breakthrough_flags": [],
-                "techniques": [{"name": "基础吐纳术", "level": 1, "type": "内功"}],
-                "inventory": [{"name": "粗布道袍", "quantity": 1, "type": "防具"}],
-                "status_effects": [], "lifespan": 100,
-            },
-            "world": {
-                "current_scene": "晨雾中的青云山外门",
-                "location": "青云山外门", "region": "东荒",
-                "npcs_present": [], "active_quests": [],
-                "discovered_locations": ["青云山外门"],
-                "lore_facts": [], "day_count": 1,
-            },
-            "opening_narrative": "天道初开。",
-            "choices": ["留在山门吐纳", "询问接引弟子", "观察灵气流向"],
-        },
-        "world_description": "", "opening_narrative": "",
-        "output_path": "", "audit_path": "", "finished_at": "", "llm_error": "",
+        "generated_data": generated,
+        "world_description": "",
+        "opening_narrative": "",
+        "output_path": "",
+        "audit_path": "",
+        "finished_at": "",
+        "llm_error": "",
     }
 
 
 def _complete_profile_world_builder() -> dict[str, Any]:
-    return {
-        "generated_data": {
+    generated = build_world_fallback(
+        {
+            "char_name": "许满",
+            "talent": "平平无奇",
+            "spirit_root": "木灵根",
+            "family_background": "寒门",
+            "difficulty": "普通",
+        }
+    )
+    generated.update(
+        {
             "world_name": "归墟潮界",
-            "regions": [{"name": "潮音渡口"}],
-            "sects": [{"name": "潮音阁"}],
+            "regions": [{"name": "潮音渡口", "description": "边境渡口"}],
+            "sects": [{"name": "潮音阁", "alignment": "正道", "description": "镇守灵潮"}],
             "current_conflicts": ["边境灵潮提前"],
             "fate_hooks": ["散修命途"],
-            "chronicle_0_16": ["十六岁前，他在边关听潮长大。"],
+            "chronicle_0_16": [
+                "零至六岁，他在边关听潮长大。",
+                "七至十二岁，他开始辨认潮汐灵机。",
+                "十三至十五岁，他随商队抵达渡口。",
+            ],
             "initial_situation": "十六岁这年，仙途在潮音渡口开启。",
             "initial_situation_16": "十六岁这年，仙途在潮音渡口开启。",
             "opening_narrative": "十六岁这年，他来到潮音渡口，修行编年由此展开。",
             "choices": ["留守渡口", "打听灵潮", "夜探沉礁", "随潮而行"],
-            "world": {
-                "current_scene": "十六岁这年，仙途在潮音渡口开启。",
-                "location": "潮音渡口",
-                "region": "归墟潮界",
-                "lore_facts": ["边境灵潮提前。"],
-            },
-        },
+        }
+    )
+    generated["world"].update(
+        {
+            "current_scene": "十六岁这年，仙途在潮音渡口开启。",
+            "location": "潮音渡口",
+            "region": "归墟潮界",
+            "lore_facts": ["边境灵潮提前。"],
+        }
+    )
+    return {
+        "generated_data": generated,
         "world_description": "潮声记录着边关旧事。",
         "opening_narrative": "十六岁这年，他来到潮音渡口，修行编年由此展开。",
         "output_path": "",
@@ -81,15 +110,23 @@ def _canned_narrator() -> dict[str, Any]:
         "narrative": "你静坐吐纳，灵气缓缓涌入。",
         "state_delta": {"character": {"attributes": {"willpower": 1}}},
         "choices": [],
-        "output_path": "", "audit_path": "", "finished_at": "", "llm_error": "",
+        "output_path": "",
+        "audit_path": "",
+        "finished_at": "",
+        "llm_error": "",
     }
 
 
 def _canned_judge() -> dict[str, Any]:
     return {
-        "approved": True, "corrected_delta": {},
-        "judgment_note": "ok", "review_score": 8,
-        "output_path": "", "audit_path": "", "finished_at": "", "llm_error": "",
+        "approved": True,
+        "corrected_delta": {},
+        "judgment_note": "ok",
+        "review_score": 8,
+        "output_path": "",
+        "audit_path": "",
+        "finished_at": "",
+        "llm_error": "",
     }
 
 
@@ -97,7 +134,9 @@ def _patch_turn_runner(call_log: list | None = None) -> Any:
     if call_log is None:
         call_log = []
 
-    def fake_run_turn_sync(agent_name: str, user_input: str, session: GameSession, **kwargs) -> dict:
+    def fake_run_turn_sync(
+        agent_name: str, user_input: str, session: GameSession, **kwargs
+    ) -> dict:
         call_log.append(agent_name)
         if agent_name == "narrator":
             return _canned_narrator()
@@ -113,6 +152,7 @@ def _patch_turn_runner(call_log: list | None = None) -> Any:
 # ═══════════════════════════════════════════════════════════════════════════════
 # Tests
 # ═══════════════════════════════════════════════════════════════════════════════
+
 
 class TestGameEngineNewGame:
     def test_new_game_initializes_session(self, monkeypatch) -> None:
@@ -130,20 +170,20 @@ class TestGameEngineNewGame:
         assert engine.game_session.attributes["root_bone"] == 5
         assert not hasattr(engine.game_session, "hp")
         assert not hasattr(engine.game_session, "mp")
-        assert engine.game_session.last_choices == [
-            "留在山门吐纳",
-            "询问接引弟子",
-            "观察灵气流向",
-            fallback_choices(engine.game_session)[3],
-        ]
+        assert (
+            engine.game_session.last_choices == _canned_world_builder()["generated_data"]["choices"]
+        )
         assert len(narratives) == 1
 
-    def test_model_choices_are_completed_to_four_buttons(self, monkeypatch) -> None:
+    def test_incomplete_world_builder_choices_are_retried_then_rejected(self, monkeypatch) -> None:
         monkeypatch.setenv("AGNES_API_KEY", "sk-test-1234567890")
         engine = GameEngine()
+        calls = 0
 
         def runner(agent_name, user_input, session, **kw):
+            nonlocal calls
             if agent_name == "world_builder":
+                calls += 1
                 data = _canned_world_builder()
                 data["generated_data"]["choices"] = ["请教陈师兄", "查看山门规矩"]
                 return data
@@ -152,12 +192,9 @@ class TestGameEngineNewGame:
         with patch("agens_novel.engine.game_engine.run_turn_sync", side_effect=runner):
             engine.new_game("许满")
 
-        assert engine.game_session.last_choices == [
-            "请教陈师兄",
-            "查看山门规矩",
-            fallback_choices(engine.game_session)[2],
-            fallback_choices(engine.game_session)[3],
-        ]
+        assert calls == 2
+        assert engine.game_session.game_started is False
+        assert engine.game_session.last_choices == []
 
     def test_profile_opening_retries_transient_world_builder_failure(self, monkeypatch) -> None:
         monkeypatch.setenv("AGNES_API_KEY", "sk-test-1234567890")
@@ -198,7 +235,9 @@ class TestGameEngineNewGame:
             calls.append(agent_name)
             result = _complete_profile_world_builder()
             if calls.count("world_builder") == 1:
-                result["generated_data"]["opening_narrative"] = "十六岁前，他在 Harvest 与劳作间长大。"
+                result["generated_data"]["opening_narrative"] = (
+                    "十六岁前，他在 Harvest 与劳作间长大。"
+                )
             return result
 
         with patch("agens_novel.engine.game_engine.run_turn_sync", side_effect=runner):
@@ -259,7 +298,9 @@ class TestGameEngineNewGame:
         engine = GameEngine()
         infos: list[str] = []
         engine.on_info = lambda msg: infos.append(msg)
-        engine.start_from_profile({"char_name": "许满", "opening_narrative": "山门初开。", "choices": ["观察"]})
+        engine.start_from_profile(
+            {"char_name": "许满", "opening_narrative": "山门初开。", "choices": ["观察"]}
+        )
 
         def runner(agent_name, user_input, session, **kw):
             if agent_name == "narrator":

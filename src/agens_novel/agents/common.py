@@ -9,6 +9,7 @@ deduplicates the identical A/B/C/D choices shaping used by narrator + world_buil
 
 from __future__ import annotations
 
+import json
 import logging
 import os
 from typing import Any
@@ -43,7 +44,9 @@ def load_agent_settings(agent_name: str, state: dict[str, Any] | None = None) ->
     else:
         api_key_set = bool(api_key)
     run_id = store.new_run_id()
-    log.info("[%s.load_settings] run_id=%s model=%s key_set=%s", agent_name, run_id, model, api_key_set)
+    log.info(
+        "[%s.load_settings] run_id=%s model=%s key_set=%s", agent_name, run_id, model, api_key_set
+    )
     return {
         "model": model,
         "base_url": base_url,
@@ -105,6 +108,7 @@ async def call_agnes_llm_common(
     temperature: float,
     max_tokens: int,
     include_prompt_metrics: bool = False,
+    response_format: dict[str, Any] | None = None,
 ) -> dict[str, Any]:
     """Shared non-streaming ``call_agnes_llm`` body for judge + world_builder.
 
@@ -115,14 +119,18 @@ async def call_agnes_llm_common(
     """
     if not state.get("api_key_set"):
         return {
-            "output_text": "", "llm_error": "AGNES_API_KEY 未设置。",
-            "elapsed_ms": 0, "usage": {},
+            "output_text": "",
+            "llm_error": "AGNES_API_KEY 未设置。",
+            "elapsed_ms": 0,
+            "usage": {},
         }
     messages: list[Message] = state.get("messages") or []
     if not messages:
         return {
-            "output_text": "", "llm_error": "messages 为空。",
-            "elapsed_ms": 0, "usage": {},
+            "output_text": "",
+            "llm_error": "messages 为空。",
+            "elapsed_ms": 0,
+            "usage": {},
         }
     try:
         resp = await call_llm(
@@ -133,12 +141,16 @@ async def call_agnes_llm_common(
             temperature=temperature,
             max_tokens=max_tokens,
             stream=False,
+            response_format=response_format,
         )
+        output_text = str(resp.get("text") or "")
         result: dict[str, Any] = {
-            "output_text": resp.get("text", ""),
+            "output_text": output_text,
             "usage": dict(resp.get("usage") or {}),
             "elapsed_ms": int(resp.get("elapsed_ms", 0)),
             "llm_error": "",
+            "provider_json_schema": bool(response_format),
+            "provider_json_envelope_ok": _is_json_object(output_text) if response_format else False,
         }
         if include_prompt_metrics:
             result["prompt_metrics"] = state.get("prompt_metrics") or {}
@@ -146,3 +158,10 @@ async def call_agnes_llm_common(
     except LLMError as e:
         log.error("[%s.call_agnes_llm] failed: %s", agent_name, e)
         return {"output_text": "", "llm_error": str(e), "elapsed_ms": 0, "usage": {}}
+
+
+def _is_json_object(value: str) -> bool:
+    try:
+        return isinstance(json.loads(value), dict)
+    except (json.JSONDecodeError, TypeError, ValueError):
+        return False

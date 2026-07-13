@@ -6,43 +6,50 @@ from typing import Any
 from unittest.mock import patch
 
 from agens_novel.engine.game_engine import GameEngine
+from agens_novel.engine.world_generator import build_world_fallback
 from agens_novel.session.game_session import GameSession
 
 # ═══════════════════════════════════════════════════════════════════════════════
 # Canned helpers
 # ═══════════════════════════════════════════════════════════════════════════════
 
+
 def _canned_world_builder() -> dict[str, Any]:
+    generated = build_world_fallback(
+        {
+            "char_name": "许满",
+            "spirit_root": "火木双灵根",
+            "spirit_root_grade": "地",
+        }
+    )
+    generated["world"].update(
+        {
+            "current_scene": "晨雾中的青云山外门",
+            "location": "青云山外门",
+            "region": "东荒",
+        }
+    )
     return {
-        "generated_data": {
-            "character": {
-                "name": "许满", "realm": "练气", "realm_stage": 1,
-                "spirit_root": "火木双灵根", "spirit_root_grade": "地",
-                "breakthrough_flags": [],
-                "techniques": [{"name": "基础吐纳术", "level": 1, "type": "内功"}],
-                "inventory": [{"name": "粗布道袍", "quantity": 1, "type": "防具"}],
-                "status_effects": [], "lifespan": 100,
-            },
-            "world": {
-                "current_scene": "晨雾中的青云山外门",
-                "location": "青云山外门", "region": "东荒",
-                "npcs_present": [], "active_quests": [],
-                "discovered_locations": ["青云山外门"],
-                "lore_facts": [], "day_count": 1,
-            },
-            "opening_narrative": "天道初开。",
-            "choices": ["留在山门吐纳", "询问接引弟子", "观察灵气流向"],
-        },
-        "world_description": "", "opening_narrative": "",
-        "output_path": "", "audit_path": "", "finished_at": "", "llm_error": "",
+        "generated_data": generated,
+        "world_description": "",
+        "opening_narrative": "",
+        "output_path": "",
+        "audit_path": "",
+        "finished_at": "",
+        "llm_error": "",
     }
 
 
 def _canned_judge() -> dict[str, Any]:
     return {
-        "approved": True, "corrected_delta": {},
-        "judgment_note": "ok", "review_score": 8,
-        "output_path": "", "audit_path": "", "finished_at": "", "llm_error": "",
+        "approved": True,
+        "corrected_delta": {},
+        "judgment_note": "ok",
+        "review_score": 8,
+        "output_path": "",
+        "audit_path": "",
+        "finished_at": "",
+        "llm_error": "",
     }
 
 
@@ -50,7 +57,9 @@ def _patch_turn_runner(call_log: list | None = None) -> Any:
     if call_log is None:
         call_log = []
 
-    def fake_run_turn_sync(agent_name: str, user_input: str, session: GameSession, **kwargs) -> dict:
+    def fake_run_turn_sync(
+        agent_name: str, user_input: str, session: GameSession, **kwargs
+    ) -> dict:
         call_log.append(agent_name)
         if agent_name == "judge":
             return _canned_judge()
@@ -64,6 +73,7 @@ def _patch_turn_runner(call_log: list | None = None) -> Any:
 # ═══════════════════════════════════════════════════════════════════════════════
 # Tests
 # ═══════════════════════════════════════════════════════════════════════════════
+
 
 class TestGameSessionRoundtrip:
     """Session serialization roundtrip via to_save_dict / from_save_dict."""

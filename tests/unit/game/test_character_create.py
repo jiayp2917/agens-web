@@ -1,28 +1,63 @@
-﻿"""Tests for prototype-driven character creation flow."""
+"""Tests for prototype-driven character creation flow."""
 
 from __future__ import annotations
 
 from unittest.mock import patch
 
 from agens_novel.engine.game_engine import GameEngine
+from agens_novel.engine.world_generator import build_world_fallback
 from agens_novel.game.constants import ATTRIBUTE_KEYS
+
+
+def _complete_model_opening() -> dict:
+    generated = build_world_fallback({"char_name": "许满"})
+    generated.update(
+        {
+            "world_name": "星河试界",
+            "regions": [{"name": "星河山门", "description": "群峰环绕的入道门户"}],
+            "sects": [{"name": "星河剑宗", "alignment": "正道", "description": "以剑观星"}],
+            "current_conflicts": ["外门名额缩减"],
+            "fate_hooks": ["平稳入道"],
+            "initial_situation": "许满在星河接引台前候名。",
+            "initial_situation_16": "十六岁这年，许满在星河接引台前候名。",
+            "chronicle_0_16": [
+                "零至六岁，许满在寒门读旧经。",
+                "七至十二岁，许满随乡师辨认星图。",
+                "十三至十五岁，许满攒下路资前往山门。",
+            ],
+            "opening_narrative": "星河剑宗钟声响起。",
+            "choices": ["拜见接引弟子", "观察星河灵脉", "整理行囊", "随缘等候"],
+        }
+    )
+    generated["world"].update(
+        {
+            "location": "星河剑宗山门",
+            "region": "星河试界",
+            "current_scene": "星河接引台",
+            "lore_facts": ["星河试界外门名额缩减。"],
+        }
+    )
+    return generated
 
 
 def test_start_from_profile_initializes_session(tmp_path, monkeypatch):
     from agens_novel import paths
+
     monkeypatch.setattr(paths, "SAVE_DIR", tmp_path)
 
     engine = GameEngine()
     narratives = []
     engine.on_narrative = lambda text, turn: narratives.append((text, turn))
-    engine.start_from_profile({
-        "char_name": "许满",
-        "talent": "剑心微明",
-        "spirit_root": "火灵根",
-        "family_background": "寒门",
-        "difficulty": "普通",
-        "attributes": {key: 5 for key in ATTRIBUTE_KEYS},
-    })
+    engine.start_from_profile(
+        {
+            "char_name": "许满",
+            "talent": "剑心微明",
+            "spirit_root": "火灵根",
+            "family_background": "寒门",
+            "difficulty": "普通",
+            "attributes": {key: 5 for key in ATTRIBUTE_KEYS},
+        }
+    )
 
     s = engine.game_session
     assert s.game_started is True
@@ -39,17 +74,20 @@ def test_start_from_profile_initializes_session(tmp_path, monkeypatch):
 
 def test_unknown_profile_seed_is_not_special(tmp_path, monkeypatch):
     from agens_novel import paths
+
     monkeypatch.setattr(paths, "SAVE_DIR", tmp_path)
 
     engine = GameEngine()
-    engine.start_from_profile({
-        "unknown_seed": "removed-special-start",
-        "char_name": "许满",
-        "talent": "天命道胎",
-        "spirit_root": "火灵根",
-        "family_background": "隐世仙族",
-        "attributes": {key: 5 for key in ATTRIBUTE_KEYS},
-    })
+    engine.start_from_profile(
+        {
+            "unknown_seed": "removed-special-start",
+            "char_name": "许满",
+            "talent": "天命道胎",
+            "spirit_root": "火灵根",
+            "family_background": "隐世仙族",
+            "attributes": {key: 5 for key in ATTRIBUTE_KEYS},
+        }
+    )
 
     s = engine.game_session
     assert s.char_name == "许满"
@@ -62,6 +100,7 @@ def test_unknown_profile_seed_is_not_special(tmp_path, monkeypatch):
 
 def test_start_from_profile_generates_opening_choices_from_model(tmp_path, monkeypatch):
     from agens_novel import paths
+
     monkeypatch.setattr(paths, "SAVE_DIR", tmp_path)
     monkeypatch.setenv("AGENS_START_MODEL_OPENING", "1")
     monkeypatch.setenv("AGNES_API_KEY", "sk-test-1234567890")
@@ -70,26 +109,11 @@ def test_start_from_profile_generates_opening_choices_from_model(tmp_path, monke
 
     def runner(agent_name, user_input, session, **kwargs):
         assert agent_name == "world_builder"
-        return {
-            "generated_data": {
-                "world_name": "星河试界",
-                "regions": [{"name": "星河山门"}],
-                "sects": [{"name": "星河剑宗"}],
-                "current_conflicts": ["外门名额缩减"],
-                "fate_hooks": ["平稳入道"],
-                "initial_situation": "许满在接引台前候名。",
-                "initial_situation_16": "十六岁这年，许满在接引台前候名。",
-                "chronicle_0_16": ["零至六岁，许满在寒门读旧经。"],
-                "opening_narrative": "接引钟声响起。",
-                "world": {
-                    "location": "青玄宗山门",
-                    "current_scene": "接引台",
-                    "lore_facts": ["星河试界外门名额缩减。"],
-                },
-                "choices": ["拜见接引弟子", "观察灵气", "整理行囊", "随缘等候"],
-            },
-            "llm_error": "",
-        }
+        generated = _complete_model_opening()
+        generated["world"]["location"] = "青玄宗山门"
+        generated["world"]["current_scene"] = "接引台"
+        generated["choices"] = ["拜见接引弟子", "观察灵气", "整理行囊", "随缘等候"]
+        return {"generated_data": generated, "llm_error": ""}
 
     with patch("agens_novel.engine.game_engine.run_turn_sync", side_effect=runner):
         engine.start_from_profile({"char_name": "许满"})
@@ -100,6 +124,7 @@ def test_start_from_profile_generates_opening_choices_from_model(tmp_path, monke
 
 def test_start_from_profile_model_failure_uses_profile_aware_fallback(tmp_path, monkeypatch):
     from agens_novel import paths
+
     monkeypatch.setattr(paths, "SAVE_DIR", tmp_path)
     monkeypatch.setenv("AGENS_START_MODEL_OPENING", "1")
     monkeypatch.setenv("AGNES_API_KEY", "sk-test-1234567890")
@@ -111,18 +136,20 @@ def test_start_from_profile_model_failure_uses_profile_aware_fallback(tmp_path, 
         return {"generated_data": {}, "llm_error": "timeout"}
 
     with patch("agens_novel.engine.game_engine.run_turn_sync", side_effect=runner):
-        engine.start_from_profile({
-            "char_name": "许满",
-            "difficulty": "困难",
-            "attributes": {
-                "root_bone": 2,
-                "comprehension": 4,
-                "luck": 2,
-                "willpower": 8,
-                "physique": 8,
-                "soul": 6,
-            },
-        })
+        engine.start_from_profile(
+            {
+                "char_name": "许满",
+                "difficulty": "困难",
+                "attributes": {
+                    "root_bone": 2,
+                    "comprehension": 4,
+                    "luck": 2,
+                    "willpower": 8,
+                    "physique": 8,
+                    "soul": 6,
+                },
+            }
+        )
 
     assert engine.game_session.local_story_active is False
     assert len(engine.game_session.last_choices) == 4
@@ -132,6 +159,7 @@ def test_start_from_profile_model_failure_uses_profile_aware_fallback(tmp_path, 
 
 def test_start_from_profile_model_failure_can_end_run(tmp_path, monkeypatch):
     from agens_novel import paths
+
     monkeypatch.setattr(paths, "SAVE_DIR", tmp_path)
     monkeypatch.setenv("AGENS_START_MODEL_OPENING", "1")
     monkeypatch.setenv("AGNES_API_KEY", "sk-test-1234567890")
@@ -151,8 +179,11 @@ def test_start_from_profile_model_failure_can_end_run(tmp_path, monkeypatch):
     assert engine.game_session.last_choices == []
 
 
-def test_start_from_profile_model_failure_ignores_profile_choice_override_by_default(tmp_path, monkeypatch):
+def test_start_from_profile_model_failure_ignores_profile_choice_override_by_default(
+    tmp_path, monkeypatch
+):
     from agens_novel import paths
+
     monkeypatch.setattr(paths, "SAVE_DIR", tmp_path)
     monkeypatch.setenv("AGENS_START_MODEL_OPENING", "1")
     monkeypatch.setenv("AGNES_API_KEY", "sk-test-1234567890")
@@ -165,10 +196,12 @@ def test_start_from_profile_model_failure_ignores_profile_choice_override_by_def
         return {"generated_data": {}, "llm_error": "timeout"}
 
     with patch("agens_novel.engine.game_engine.run_turn_sync", side_effect=runner):
-        engine.start_from_profile({
-            "char_name": "许满",
-            "choices": ["退回山门", "询问执事"],
-        })
+        engine.start_from_profile(
+            {
+                "char_name": "许满",
+                "choices": ["退回山门", "询问执事"],
+            }
+        )
 
     assert engine.game_session.local_story_active is False
     assert engine.game_session.last_choices != ["退回山门", "询问执事"]
@@ -178,6 +211,7 @@ def test_start_from_profile_model_failure_ignores_profile_choice_override_by_def
 
 def test_unknown_profile_seed_is_not_sent_to_world_builder_prompt(tmp_path, monkeypatch):
     from agens_novel import paths
+
     monkeypatch.setattr(paths, "SAVE_DIR", tmp_path)
     monkeypatch.setenv("AGENS_START_MODEL_OPENING", "1")
     monkeypatch.setenv("AGNES_API_KEY", "sk-test-1234567890")
@@ -187,26 +221,7 @@ def test_unknown_profile_seed_is_not_sent_to_world_builder_prompt(tmp_path, monk
     def runner(agent_name, user_input, session, **kwargs):
         assert agent_name == "world_builder"
         seen_inputs.append(user_input)
-        return {
-            "generated_data": {
-                "world_name": "星河试界",
-                "regions": [{"name": "星河山门"}],
-                "sects": [{"name": "星河剑宗"}],
-                "current_conflicts": ["外门名额缩减"],
-                "fate_hooks": ["平稳入道"],
-                "initial_situation": "许满在星河接引台前候名。",
-                "initial_situation_16": "十六岁这年，许满在星河接引台前候名。",
-                "chronicle_0_16": ["零至六岁，许满在寒门读旧经。"],
-                "opening_narrative": "星河剑宗钟声响起。",
-                "world": {
-                    "location": "星河剑宗山门",
-                    "current_scene": "星河接引台",
-                    "lore_facts": ["星河试界外门名额缩减。"],
-                },
-                "choices": ["拜见接引弟子", "观察星河灵脉", "整理行囊", "随缘等候"],
-            },
-            "llm_error": "",
-        }
+        return {"generated_data": _complete_model_opening(), "llm_error": ""}
 
     with patch("agens_novel.engine.game_engine.run_turn_sync", side_effect=runner):
         engine.start_from_profile({"unknown_seed": "星河剑宗", "char_name": "许满"})
@@ -217,6 +232,7 @@ def test_unknown_profile_seed_is_not_sent_to_world_builder_prompt(tmp_path, monk
 
 def test_unknown_profile_seed_does_not_change_local_fallback_opening(tmp_path, monkeypatch):
     from agens_novel import paths
+
     monkeypatch.setattr(paths, "SAVE_DIR", tmp_path)
     monkeypatch.delenv("AGNES_API_KEY", raising=False)
 
@@ -232,38 +248,43 @@ def test_unknown_profile_seed_does_not_change_local_fallback_opening(tmp_path, m
 
 def test_different_profiles_get_different_fallback_worlds(tmp_path, monkeypatch):
     from agens_novel import paths
+
     monkeypatch.setattr(paths, "SAVE_DIR", tmp_path)
     monkeypatch.delenv("AGENS_START_MODEL_OPENING", raising=False)
     monkeypatch.delenv("AGENS_START_MODEL_WORLD", raising=False)
 
     high_luck = GameEngine()
-    high_luck.start_from_profile({
-        "char_name": "许满",
-        "family_background": "寒门",
-        "randomize_attributes": True,
-        "attributes": {
-            "root_bone": 3,
-            "comprehension": 5,
-            "luck": 9,
-            "willpower": 5,
-            "physique": 4,
-            "soul": 4,
-        },
-    })
+    high_luck.start_from_profile(
+        {
+            "char_name": "许满",
+            "family_background": "寒门",
+            "randomize_attributes": True,
+            "attributes": {
+                "root_bone": 3,
+                "comprehension": 5,
+                "luck": 9,
+                "willpower": 5,
+                "physique": 4,
+                "soul": 4,
+            },
+        }
+    )
     hard = GameEngine()
-    hard.start_from_profile({
-        "char_name": "许满",
-        "difficulty": "困难",
-        "randomize_attributes": True,
-        "attributes": {
-            "root_bone": 2,
-            "comprehension": 4,
-            "luck": 2,
-            "willpower": 8,
-            "physique": 8,
-            "soul": 6,
-        },
-    })
+    hard.start_from_profile(
+        {
+            "char_name": "许满",
+            "difficulty": "困难",
+            "randomize_attributes": True,
+            "attributes": {
+                "root_bone": 2,
+                "comprehension": 4,
+                "luck": 2,
+                "willpower": 8,
+                "physique": 8,
+                "soul": 6,
+            },
+        }
+    )
 
     assert high_luck.game_session.world_profile["world_name"] == "沧澜群岛"
     assert hard.game_session.world_profile["world_name"] == "西陲裂土"
