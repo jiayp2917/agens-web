@@ -12,6 +12,7 @@ from fastapi.responses import FileResponse, JSONResponse
 from fastapi.staticfiles import StaticFiles
 from starlette.middleware.trustedhost import TrustedHostMiddleware
 
+from agens_novel.llm.client import InvalidEgressProxyUrl, validate_egress_proxy_url
 from agens_novel.logging_setup import setup_logging
 
 from .auth import DEV_SESSION_SECRET
@@ -22,7 +23,7 @@ from .router_sessions import router as sessions_router
 from .router_settings import router as settings_router
 from .security import (
     BodySizeLimitMiddleware,
-    RateLimiter,
+    create_rate_limiter,
     enforce_same_origin,
     is_production_mode,
 )
@@ -38,8 +39,29 @@ _PLACEHOLDER_MARKERS = ("change_me", "changeme", "replace_me", "example.com", "<
 def validate_runtime_config() -> None:
     if not is_production_mode():
         return
+    _validate_production_runtime_services()
+    configured = _required_production_values()
+    _validate_production_secrets(configured)
+    _validate_production_transport(configured["AGENS_ALLOWED_ORIGINS"])
+
+
+def _validate_production_runtime_services() -> None:
     if os.environ.get("AGENS_VALIDATION_SEED", "").strip():
         raise RuntimeError("AGENS_VALIDATION_SEED must not be set in production.")
+    if os.environ.get("AGENS_RATE_LIMIT_BACKEND", "").strip().lower() != "redis":
+        raise RuntimeError("AGENS_RATE_LIMIT_BACKEND must be redis in production.")
+    if not os.environ.get("AGENS_RATE_LIMIT_REDIS_URL", "").strip():
+        raise RuntimeError("AGENS_RATE_LIMIT_REDIS_URL required in production.")
+    proxy_url = os.environ.get("AGENS_EGRESS_PROXY_URL", "").strip()
+    if not proxy_url:
+        raise RuntimeError("AGENS_EGRESS_PROXY_URL required in production.")
+    try:
+        validate_egress_proxy_url(proxy_url)
+    except InvalidEgressProxyUrl as exc:
+        raise RuntimeError("AGENS_EGRESS_PROXY_URL must be a valid HTTP(S) proxy URL.") from exc
+
+
+def _required_production_values() -> dict[str, str]:
     required = {
         "DATABASE_URL": os.environ.get("DATABASE_URL", "").strip(),
         "INVITE_ADMIN_CODE": os.environ.get("INVITE_ADMIN_CODE", "").strip(),
@@ -58,6 +80,10 @@ def validate_runtime_config() -> None:
     optional_api_key = os.environ.get("AGNES_API_KEY", "").strip()
     if optional_api_key:
         configured["AGNES_API_KEY"] = optional_api_key
+    return configured
+
+
+def _validate_production_secrets(configured: dict[str, str]) -> None:
     placeholders = [name for name, value in configured.items() if _looks_like_placeholder(value)]
     if placeholders:
         raise RuntimeError(
@@ -74,12 +100,13 @@ def validate_runtime_config() -> None:
     ]
     if weak:
         raise RuntimeError(f"{', '.join(weak)} must use sufficiently long production values.")
+
+
+def _validate_production_transport(allowed_origins: str) -> None:
     secure_cookie = os.environ.get("SESSION_COOKIE_SECURE", "1").strip().lower()
     if secure_cookie in {"0", "false", "no"}:
         raise RuntimeError("SESSION_COOKIE_SECURE must remain enabled in production.")
-    origins = [
-        item.strip() for item in required["AGENS_ALLOWED_ORIGINS"].split(",") if item.strip()
-    ]
+    origins = [item.strip() for item in allowed_origins.split(",") if item.strip()]
     if any(urlparse(origin).scheme.lower() != "https" for origin in origins):
         raise RuntimeError("AGENS_ALLOWED_ORIGINS must contain only HTTPS origins in production.")
 
@@ -117,7 +144,7 @@ def create_app() -> FastAPI:
         openapi_url=None if production else "/openapi.json",
     )
     app.state.service = WebGameService(create_database())
-    app.state.rate_limiter = RateLimiter()
+    app.state.rate_limiter = create_rate_limiter()
     _configure_middleware(app, production)
     _configure_handlers(app)
     app.include_router(auth_router)
@@ -150,11 +177,14 @@ def _configure_handlers(app: FastAPI) -> None:
     @app.get("/api/health")
     def health() -> dict[str, str]:
         try:
-            if app.state.service.db.ping():
-                return {"status": "ok", "database": "ok"}
+            database_ok = bool(app.state.service.db.ping())
         except Exception as exc:
             raise HTTPException(status_code=503, detail="数据库暂不可用。") from exc
-        raise HTTPException(status_code=503, detail="数据库暂不可用。")
+        if not database_ok:
+            raise HTTPException(status_code=503, detail="数据库暂不可用。")
+        if not app.state.rate_limiter.ping():
+            raise HTTPException(status_code=503, detail="请求保护服务暂不可用。")
+        return {"status": "ok", "database": "ok", "rate_limiter": "ok"}
 
 
 def _mount_frontend(app: FastAPI) -> None:

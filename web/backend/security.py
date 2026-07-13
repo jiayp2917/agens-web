@@ -4,9 +4,12 @@ from __future__ import annotations
 
 import os
 import time
+import uuid
 from collections import defaultdict, deque
+from typing import Any, Protocol
 from urllib.parse import urlparse
 
+import redis
 from fastapi import HTTPException, Request
 from starlette.responses import JSONResponse
 
@@ -71,8 +74,14 @@ async def _read_limited_body(receive, max_bytes: int) -> tuple[bytes | None, boo
             return bytes(body), True
 
 
-class RateLimiter:
-    """Small in-process sliding-window limiter for alpha deployment."""
+class RateLimiter(Protocol):
+    def check(self, key: str, *, limit: int, window_seconds: int) -> None: ...
+
+    def ping(self) -> bool: ...
+
+
+class InMemoryRateLimiter:
+    """In-process limiter for local development and isolated unit tests."""
 
     def __init__(self) -> None:
         self._buckets: dict[str, deque[float]] = defaultdict(deque)
@@ -85,6 +94,72 @@ class RateLimiter:
         if len(bucket) >= limit:
             raise HTTPException(status_code=429, detail="操作过于频繁，请稍后再试。")
         bucket.append(now)
+
+    def ping(self) -> bool:
+        return True
+
+
+_REDIS_SLIDING_WINDOW_SCRIPT = """
+local now = redis.call('TIME')
+local now_ms = (now[1] * 1000) + math.floor(now[2] / 1000)
+local window_ms = tonumber(ARGV[1])
+local limit = tonumber(ARGV[2])
+redis.call('ZREMRANGEBYSCORE', KEYS[1], 0, now_ms - window_ms)
+local count = redis.call('ZCARD', KEYS[1])
+if count >= limit then
+  redis.call('PEXPIRE', KEYS[1], window_ms)
+  return 0
+end
+redis.call('ZADD', KEYS[1], now_ms, tostring(now_ms) .. '-' .. ARGV[3])
+redis.call('PEXPIRE', KEYS[1], window_ms)
+return 1
+"""
+
+
+class RedisRateLimiter:
+    """Atomic Redis sliding-window limiter shared by every application instance."""
+
+    def __init__(self, url: str, *, client: Any | None = None) -> None:
+        if not str(url or "").strip():
+            raise RuntimeError("AGENS_RATE_LIMIT_REDIS_URL is required for Redis rate limiting.")
+        self._client = client or redis.Redis.from_url(
+            url,
+            decode_responses=True,
+            socket_connect_timeout=2,
+            socket_timeout=2,
+        )
+
+    def check(self, key: str, *, limit: int, window_seconds: int) -> None:
+        try:
+            allowed = self._client.eval(
+                _REDIS_SLIDING_WINDOW_SCRIPT,
+                1,
+                f"agens:rate:{key}",
+                max(1, int(window_seconds)) * 1000,
+                max(1, int(limit)),
+                uuid.uuid4().hex,
+            )
+        except (redis.RedisError, OSError) as exc:
+            raise HTTPException(status_code=503, detail="请求保护服务暂不可用。") from exc
+        if int(allowed or 0) != 1:
+            raise HTTPException(status_code=429, detail="操作过于频繁，请稍后再试。")
+
+    def ping(self) -> bool:
+        try:
+            return bool(self._client.ping())
+        except (redis.RedisError, OSError):
+            return False
+
+
+def create_rate_limiter() -> RateLimiter:
+    backend = os.environ.get("AGENS_RATE_LIMIT_BACKEND", "").strip().lower()
+    if not backend:
+        backend = "redis" if is_production_mode() else "memory"
+    if backend == "memory":
+        return InMemoryRateLimiter()
+    if backend == "redis":
+        return RedisRateLimiter(os.environ.get("AGENS_RATE_LIMIT_REDIS_URL", ""))
+    raise RuntimeError("AGENS_RATE_LIMIT_BACKEND must be memory or redis.")
 
 
 def client_key(request: Request, action: str) -> str:

@@ -19,6 +19,7 @@ import time
 from collections.abc import Callable
 from dataclasses import dataclass, field
 from typing import Any
+from urllib.parse import urlsplit, urlunsplit
 
 import httpx
 
@@ -42,6 +43,10 @@ class LLMAuthError(LLMError):
 
 class LLMBadRequest(LLMError):
     """4xx other than auth."""
+
+
+class InvalidEgressProxyUrl(ValueError):
+    """Raised when the explicit outbound proxy URL is malformed."""
 
 
 def _resolve_config(
@@ -116,12 +121,49 @@ def _resolve_request_options(
 def _resolve_total_timeout(total_timeout_seconds: float | None) -> float:
     if total_timeout_seconds is None:
         try:
-            total_timeout_seconds = float(
-                os.environ.get("AGNES_TOTAL_TIMEOUT_SECONDS", "90.0")
-            )
+            total_timeout_seconds = float(os.environ.get("AGNES_TOTAL_TIMEOUT_SECONDS", "90.0"))
         except ValueError:
             total_timeout_seconds = 90.0
     return max(1.0, total_timeout_seconds)
+
+
+def validate_egress_proxy_url(raw_url: str) -> str:
+    value = str(raw_url or "").strip()
+    if not value:
+        return ""
+    try:
+        parsed = urlsplit(value)
+        port = parsed.port
+    except ValueError as exc:
+        raise InvalidEgressProxyUrl("AGENS_EGRESS_PROXY_URL is invalid.") from exc
+    if parsed.scheme.lower() not in {"http", "https"}:
+        raise InvalidEgressProxyUrl("AGENS_EGRESS_PROXY_URL must use HTTP or HTTPS.")
+    if not parsed.hostname or parsed.username or parsed.password:
+        raise InvalidEgressProxyUrl(
+            "AGENS_EGRESS_PROXY_URL must not contain credentials or an empty host."
+        )
+    if parsed.path not in {"", "/"} or parsed.query or parsed.fragment:
+        raise InvalidEgressProxyUrl(
+            "AGENS_EGRESS_PROXY_URL must not contain a path, query, or fragment."
+        )
+    hostname = parsed.hostname.rstrip(".").lower()
+    if not hostname or "%" in hostname:
+        raise InvalidEgressProxyUrl("AGENS_EGRESS_PROXY_URL contains an invalid host.")
+    normalized_host = f"[{hostname}]" if ":" in hostname else hostname
+    netloc = f"{normalized_host}:{port}" if port is not None else normalized_host
+    return urlunsplit((parsed.scheme.lower(), netloc, "", "", ""))
+
+
+def _http_client_options(timeout_seconds: float) -> dict[str, Any]:
+    options: dict[str, Any] = {
+        "timeout": timeout_seconds,
+        "follow_redirects": False,
+        "trust_env": False,
+    }
+    proxy = validate_egress_proxy_url(os.environ.get("AGENS_EGRESS_PROXY_URL", ""))
+    if proxy:
+        options["proxy"] = proxy
+    return options
 
 
 async def call_llm(
@@ -239,11 +281,7 @@ async def _call_non_stream(
     started: float,
 ) -> LLMResponse:
     async def _do() -> LLMResponse:
-        async with httpx.AsyncClient(
-            timeout=timeout_seconds,
-            follow_redirects=False,
-            trust_env=False,
-        ) as client:
+        async with httpx.AsyncClient(**_http_client_options(timeout_seconds)) as client:
             resp = await client.post(url, headers=headers, json=payload)
             return _handle_non_stream_response(resp, started)
 
@@ -266,11 +304,7 @@ async def _call_stream(
     on_chunk: Callable[[str], None] | None = None,
 ) -> LLMResponse:
     async def _do() -> LLMResponse:
-        async with httpx.AsyncClient(
-            timeout=timeout_seconds,
-            follow_redirects=False,
-            trust_env=False,
-        ) as client:
+        async with httpx.AsyncClient(**_http_client_options(timeout_seconds)) as client:
             async with client.stream("POST", url, headers=headers, json=payload) as resp:
                 return await _handle_stream_response(
                     resp,
@@ -436,7 +470,7 @@ def _parse_sse_lines(lines: list[str]) -> list[dict[str, Any]]:
         line = line.rstrip("\r").strip()
         if not line.startswith("data:"):
             continue
-        payload = line[len("data:"):].strip()
+        payload = line[len("data:") :].strip()
         if not payload or payload == "[DONE]":
             continue
         try:

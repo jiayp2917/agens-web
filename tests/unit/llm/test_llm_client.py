@@ -8,14 +8,17 @@ import httpx
 import pytest
 
 from agens_novel.llm.client import (
+    InvalidEgressProxyUrl,
     LLMBadRequest,
     _build_payload,
     _execute_with_retry,
     _handle_non_stream_response,
+    _http_client_options,
     _resolve_config,
     _resolve_request_options,
     _resolve_total_timeout,
     mask_key,
+    validate_egress_proxy_url,
 )
 from agens_novel.llm.types import LLMResponse
 
@@ -144,6 +147,39 @@ def test_build_payload_includes_optional_response_format() -> None:
     )
 
     assert payload["response_format"] == response_format
+
+
+def test_http_client_uses_only_explicit_egress_proxy(monkeypatch) -> None:
+    monkeypatch.setenv("HTTPS_PROXY", "http://ambient-proxy.invalid:9999")
+    monkeypatch.setenv("AGENS_EGRESS_PROXY_URL", "http://egress-proxy:3128")
+
+    options = _http_client_options(30.0)
+
+    assert options["proxy"] == "http://egress-proxy:3128"
+    assert options["trust_env"] is False
+    assert options["follow_redirects"] is False
+
+
+@pytest.mark.parametrize(
+    "value",
+    (
+        "socks5://egress-proxy:1080",
+        "http://user:pass@egress-proxy:3128",
+        "http://egress-proxy:3128/path",
+        "http://egress-proxy:3128?mode=open",
+        "http://:3128",
+        "http://egress-proxy:70000",
+    ),
+)
+def test_explicit_egress_proxy_rejects_unsafe_or_malformed_urls(value: str) -> None:
+    with pytest.raises(InvalidEgressProxyUrl):
+        validate_egress_proxy_url(value)
+
+
+def test_explicit_egress_proxy_normalizes_authority() -> None:
+    assert validate_egress_proxy_url(" HTTP://Egress-Proxy:3128/ ") == (
+        "http://egress-proxy:3128"
+    )
 
 
 def test_retryable_response_is_not_collapsed_to_bad_request() -> None:

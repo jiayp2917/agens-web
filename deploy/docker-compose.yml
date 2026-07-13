@@ -6,7 +6,7 @@ services:
       dockerfile: Dockerfile
     restart: "no"
     env_file:
-      - ./production.env
+      - ${AGENS_PRODUCTION_ENV_FILE:-./production.env}
     command: ["alembic", "-c", "/app/alembic.ini", "upgrade", "head"]
     read_only: true
     cap_drop: ["ALL"]
@@ -15,6 +15,9 @@ services:
     tmpfs:
       - /tmp:size=32m,mode=1777
       - /app/runtime:size=16m,uid=10001,gid=10001,mode=0700
+    pids_limit: 128
+    mem_limit: 384m
+    cpus: 0.5
     networks:
       - jiayp_internal
 
@@ -27,8 +30,12 @@ services:
     depends_on:
       agens-web-migrate:
         condition: service_completed_successfully
+      redis:
+        condition: service_healthy
+      egress-proxy:
+        condition: service_healthy
     env_file:
-      - ./production.env
+      - ${AGENS_PRODUCTION_ENV_FILE:-./production.env}
     expose:
       - "8000"
     init: true
@@ -52,6 +59,68 @@ services:
     networks:
       - jiayp_proxy
       - jiayp_internal
+      - agens_runtime
+
+  redis:
+    image: redis:7.4.2-alpine
+    restart: unless-stopped
+    user: redis
+    command:
+      - redis-server
+      - --save
+      - ""
+      - --appendonly
+      - "no"
+      - --maxmemory
+      - 64mb
+      - --maxmemory-policy
+      - allkeys-lru
+    expose:
+      - "6379"
+    read_only: true
+    cap_drop: ["ALL"]
+    security_opt:
+      - no-new-privileges:true
+    tmpfs:
+      - /data:size=64m,mode=1777
+    pids_limit: 128
+    mem_limit: 96m
+    cpus: 0.25
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 3s
+      retries: 5
+    networks:
+      - agens_runtime
+
+  egress-proxy:
+    build:
+      context: ./squid
+      dockerfile: Dockerfile
+    image: agens-web-egress:${AGENS_IMAGE_TAG:-local}
+    restart: unless-stopped
+    env_file:
+      - ${AGENS_PRODUCTION_ENV_FILE:-./production.env}
+    expose:
+      - "3128"
+    read_only: true
+    cap_drop: ["ALL"]
+    security_opt:
+      - no-new-privileges:true
+    tmpfs:
+      - /tmp:size=32m,uid=100,mode=1777
+    pids_limit: 128
+    mem_limit: 128m
+    cpus: 0.5
+    healthcheck:
+      test: ["CMD-SHELL", "nc -z 127.0.0.1 3128"]
+      interval: 10s
+      timeout: 3s
+      retries: 5
+    networks:
+      - agens_runtime
+      - agens_egress
 
 # This compose file intentionally does not create PostgreSQL. The one-shot
 # migration service must complete before the application starts.
@@ -63,3 +132,6 @@ networks:
     external: true
   jiayp_internal:
     external: true
+  agens_runtime:
+    internal: true
+  agens_egress: {}
