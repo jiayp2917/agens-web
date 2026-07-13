@@ -185,7 +185,7 @@ class WebRunner:
         session = runner.engine.game_session
         if session.game_started:
             if not session.story_key:
-                ensure_story_binding(session)
+                ensure_story_binding(session, content_version=1)
             elif story_arc_for_binding(session.story_key, session.story_version) is None:
                 raise ValueError(
                     f"存档引用的剧情版本不可用: {session.story_key}@{session.story_version}"

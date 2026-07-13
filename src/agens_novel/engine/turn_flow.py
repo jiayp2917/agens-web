@@ -52,6 +52,7 @@ class TurnFlow:
             return
 
         session.turn_count += 1
+        session.realm_turn_count += 1
         rule_delta = settle_turn(text, session)
         result_delta = self._merge_local_story_rule_delta(
             result.delta if isinstance(result.delta, dict) else {},
@@ -108,6 +109,7 @@ class TurnFlow:
         engine = self.engine
         session = engine.game_session
         session.turn_count += 1
+        session.realm_turn_count += 1
 
         engine.emit("on_loading", "天道运转中...")
 
@@ -121,6 +123,7 @@ class TurnFlow:
         narrator_result = self._run_narrator(text, turn_summary)
         if narrator_result is None:
             session.turn_count -= 1
+            session.realm_turn_count = max(0, session.realm_turn_count - 1)
             engine.emit("on_info", "本回合记录暂未续上，已切换本地故事，请直接选择下方选项继续。")
             return
 
@@ -143,6 +146,7 @@ class TurnFlow:
                 reason=reason,
             )
             session.turn_count -= 1
+            session.realm_turn_count = max(0, session.realm_turn_count - 1)
             return
 
         narrative = narrator_result.get("narrative", "")

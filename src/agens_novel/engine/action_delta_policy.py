@@ -8,29 +8,119 @@ from typing import Any
 from ..session.game_session import GameSession
 from .choices import dedupe_strings
 
-INCONSISTENT_NARRATIVE_NOTICE = "narrative/state mismatch: authoritative state change was missing structured data"
+INCONSISTENT_NARRATIVE_NOTICE = (
+    "narrative/state mismatch: authoritative state change was missing structured data"
+)
 
 
 _MEDITATION_KEYWORDS: tuple[str, ...] = (
-    "闭关", "打坐", "吐纳", "静坐", "冥想", "静修", "参禅", "盘膝",
-    "闭目", "运功", "运转", "吐故纳新", "吸纳", "静心", "修炼", "修行",
-    "入定", "凝神", "冥思",
+    "闭关",
+    "打坐",
+    "吐纳",
+    "静坐",
+    "冥想",
+    "静修",
+    "参禅",
+    "盘膝",
+    "闭目",
+    "运功",
+    "运转",
+    "吐故纳新",
+    "吸纳",
+    "静心",
+    "修炼",
+    "修行",
+    "入定",
+    "凝神",
+    "冥思",
 )
 
 _ACTIVITY_KEYWORDS: tuple[str, ...] = (
-    "剑法", "剑诀", "剑术", "刀法", "拳法", "掌法", "法术", "术法",
-    "战斗", "杀敌", "攻击", "防御", "施展", "催动", "历练", "探索",
-    "寻宝", "寻药", "买药", "购买", "交易", "谈话", "询问", "请教",
-    "救人", "帮助", "炼丹", "炼器", "制符", "破阵", "师父", "师兄",
-    "师姐", "长老", "掌门", "外出", "出门", "离开", "行走", "入城",
-    "进入", "任务", "秘境", "坊市", "参悟", "悟道",
-    "战", "斗", "敌", "妖", "兽", "寻", "药", "宝", "丹", "阵", "符",
+    "剑法",
+    "剑诀",
+    "剑术",
+    "刀法",
+    "拳法",
+    "掌法",
+    "法术",
+    "术法",
+    "战斗",
+    "杀敌",
+    "攻击",
+    "防御",
+    "施展",
+    "催动",
+    "历练",
+    "探索",
+    "寻宝",
+    "寻药",
+    "买药",
+    "购买",
+    "交易",
+    "谈话",
+    "询问",
+    "请教",
+    "救人",
+    "帮助",
+    "炼丹",
+    "炼器",
+    "制符",
+    "破阵",
+    "师父",
+    "师兄",
+    "师姐",
+    "长老",
+    "掌门",
+    "外出",
+    "出门",
+    "离开",
+    "行走",
+    "入城",
+    "进入",
+    "任务",
+    "秘境",
+    "坊市",
+    "参悟",
+    "悟道",
+    "战",
+    "斗",
+    "敌",
+    "妖",
+    "兽",
+    "寻",
+    "药",
+    "宝",
+    "丹",
+    "阵",
+    "符",
 )
 
 _BREAKTHROUGH_FLAG_TRIGGERS: tuple[str, ...] = (
-    "历练", "探索", "秘境", "机缘", "请教", "任务", "战斗", "切磋",
-    "寻药", "炼丹", "炼器", "制符", "阵法", "法宝", "顿悟", "悟道",
-    "雷劫", "渡劫", "护法", "护持", "丹", "药", "阵", "符", "宝",
+    "历练",
+    "探索",
+    "秘境",
+    "机缘",
+    "请教",
+    "任务",
+    "战斗",
+    "切磋",
+    "寻药",
+    "炼丹",
+    "炼器",
+    "制符",
+    "阵法",
+    "法宝",
+    "顿悟",
+    "悟道",
+    "雷劫",
+    "渡劫",
+    "护法",
+    "护持",
+    "丹",
+    "药",
+    "阵",
+    "符",
+    "宝",
 )
 
 _REALM_BREAKTHROUGH_FLAGS: dict[str, tuple[str, ...]] = {
@@ -52,7 +142,9 @@ _TITLE_CLAIM_PATTERNS: tuple[re.Pattern[str], ...] = (
 _CLAIM_RULES: tuple[tuple[tuple[re.Pattern[str], ...], tuple[tuple[str, str], ...]], ...] = (
     (
         (
-            re.compile(r"(?:成功)?(?:突破|晋入|升至|迈入)(?:练气|筑基|金丹|元婴|化神|合体|大乘|渡劫|飞升)"),
+            re.compile(
+                r"(?:成功)?(?:突破|晋入|升至|迈入)(?:练气|筑基|金丹|元婴|化神|合体|大乘|渡劫|飞升)"
+            ),
             re.compile(r"踏入(?:练气|筑基|金丹|元婴|化神|合体|大乘|渡劫|飞升)"),
             re.compile(r"(?:修为|境界).{0,8}(?:提升|突破|精进|晋升)"),
             re.compile(r"(?:结成|凝成)金丹|元婴出窍|化神成功|飞升成仙"),
@@ -62,8 +154,12 @@ _CLAIM_RULES: tuple[tuple[tuple[re.Pattern[str], ...], tuple[tuple[str, str], ..
     (
         (
             re.compile(r"(?:奖励|发放|交给)(?:你|玩家|弟子)[^，。；\n]{0,24}"),
-            re.compile(r"(?:你|玩家|弟子)?(?:获得|得到|收下|拿到)[^，。；\n]{0,24}(?:丹|药|法器|灵石|材料|奖励|奖赏|灵草|矿碎|矿石|玉简|秘籍|符箓)"),
-            re.compile(r"(?:你|玩家|弟子)?拾得[^，。；\n]{0,24}(?:并|，)?(?:收入|收好|带走|留下|据为己有)[^，。；\n]{0,16}"),
+            re.compile(
+                r"(?:你|玩家|弟子)?(?:获得|得到|收下|拿到)[^，。；\n]{0,24}(?:丹|药|法器|灵石|材料|奖励|奖赏|灵草|矿碎|矿石|玉简|秘籍|符箓)"
+            ),
+            re.compile(
+                r"(?:你|玩家|弟子)?拾得[^，。；\n]{0,24}(?:并|，)?(?:收入|收好|带走|留下|据为己有)[^，。；\n]{0,16}"
+            ),
         ),
         (("character", "inventory_add"), ("character", "inventory")),
     ),
@@ -76,23 +172,37 @@ _CLAIM_RULES: tuple[tuple[tuple[re.Pattern[str], ...], tuple[tuple[str, str], ..
     ),
     (
         (
-            re.compile(r"发现(?:了)?(?:地点|秘境|洞府|遗迹|新地点|新地图|一处|一座)[^，。；\n]{0,24}"),
-            re.compile(r"(?:抵达|来到)[^，。；\n]{0,24}(?:广场|殿|山门|药谷|秘境|洞府|遗迹|坊市|药圃)"),
+            re.compile(
+                r"发现(?:了)?(?:地点|秘境|洞府|遗迹|新地点|新地图|一处|一座)[^，。；\n]{0,24}"
+            ),
+            re.compile(
+                r"(?:抵达|来到)[^，。；\n]{0,24}(?:广场|殿|山门|药谷|秘境|洞府|遗迹|坊市|药圃)"
+            ),
         ),
         (("world", "discovered_add"), ("world", "location"), ("world", "current_scene")),
     ),
     (
         (
-            re.compile(r"(?<!想)(?:接取|领取|接受|登记)(?:了|下)?[^，。；\n]{0,30}(?:任务|委托|悬赏)"),
+            re.compile(
+                r"(?<!想)(?:接取|领取|接受|登记)(?:了|下)?[^，。；\n]{0,30}(?:任务|委托|悬赏)"
+            ),
         ),
         (("world", "active_quests_add"), ("world", "active_quests")),
     ),
     (
         (
-            re.compile(r"(?:你|主角|自身|身上|体内|经脉|气海|丹田)[^，。；\n]{0,8}(?:受了?|负了?|留下|染上)[^，。；\n]{0,16}(?:伤|伤势|内伤|外伤|毒|寒毒|火毒|诅咒)"),
-            re.compile(r"(?:你|主角|自身|身上|体内|经脉|气海|丹田)[^，。；\n]{0,8}(?:身受|遭受|中了)[^，。；\n]{0,16}(?:重伤|内伤|外伤|毒|寒毒|火毒|诅咒)"),
+            re.compile(
+                r"(?:你|主角|自身|身上|体内|经脉|气海|丹田)[^，。；\n]{0,8}(?:受了?|负了?|留下|染上)[^，。；\n]{0,16}(?:伤|伤势|内伤|外伤|毒|寒毒|火毒|诅咒)"
+            ),
+            re.compile(
+                r"(?:你|主角|自身|身上|体内|经脉|气海|丹田)[^，。；\n]{0,8}(?:身受|遭受|中了)[^，。；\n]{0,16}(?:重伤|内伤|外伤|毒|寒毒|火毒|诅咒)"
+            ),
         ),
-        (("character", "status_effects_add"), ("character", "status_effects"), ("meta", "status_effect_add")),
+        (
+            ("character", "status_effects_add"),
+            ("character", "status_effects"),
+            ("meta", "status_effect_add"),
+        ),
     ),
     (
         (
@@ -107,14 +217,20 @@ _CLAIM_RULES: tuple[tuple[tuple[re.Pattern[str], ...], tuple[tuple[str, str], ..
     ),
     (
         (
-            re.compile(r"(?:悟性|根骨|心性|体魄|神魂|气运|资质|道心)[^，。；\n]{0,12}(?:提升|增长|增加|精进|大涨|更坚|稳固)"),
-            re.compile(r"(?:提升|增长|增加|精进)[^，。；\n]{0,12}(?:悟性|根骨|心性|体魄|神魂|气运|资质|道心)"),
+            re.compile(
+                r"(?:悟性|根骨|心性|体魄|神魂|气运|资质|道心)[^，。；\n]{0,12}(?:提升|增长|增加|精进|大涨|更坚|稳固)"
+            ),
+            re.compile(
+                r"(?:提升|增长|增加|精进)[^，。；\n]{0,12}(?:悟性|根骨|心性|体魄|神魂|气运|资质|道心)"
+            ),
         ),
         (("character", "attributes"),),
     ),
     (
         (
-            re.compile(r"(?:结为|拜入|收为|认作)[^，。；\n]{0,18}(?:道侣|师徒|师父|师尊|弟子|盟友|仇敌)"),
+            re.compile(
+                r"(?:结为|拜入|收为|认作)[^，。；\n]{0,18}(?:道侣|师徒|师父|师尊|弟子|盟友|仇敌)"
+            ),
             re.compile(r"(?:与|和)[^，。；\n]{1,18}(?:结缘|结仇|立誓|结盟|反目)"),
         ),
         (
@@ -123,10 +239,12 @@ _CLAIM_RULES: tuple[tuple[tuple[re.Pattern[str], ...], tuple[tuple[str, str], ..
         ),
     ),
     (
+        (re.compile(r"(?:因果|业力|气运|天命).{0,12}(?:加身|缠身|反噬|增长|折损)"),),
         (
-            re.compile(r"(?:因果|业力|气运|天命).{0,12}(?:加身|缠身|反噬|增长|折损)"),
+            ("character", "status_effects_add"),
+            ("character", "status_effects"),
+            ("world", "lore_add"),
         ),
-        (("character", "status_effects_add"), ("character", "status_effects"), ("world", "lore_add")),
     ),
 )
 
@@ -203,9 +321,7 @@ def validate_narrative_delta_consistency(narrative: str, delta: dict[str, Any]) 
     return True, ""
 
 
-def merge_rule_delta(
-    model_delta: dict[str, Any], rule_delta: dict[str, Any]
-) -> dict[str, Any]:
+def merge_rule_delta(model_delta: dict[str, Any], rule_delta: dict[str, Any]) -> dict[str, Any]:
     """Merge authoritative rule-engine delta on top of model-generated delta.
 
     Rule engine owns: age, lifespan, game_over, game_over_reason, elapsed_years.
@@ -275,11 +391,7 @@ def _allowed_delta_section(
 ) -> dict[str, Any]:
     if not isinstance(value, dict):
         return {}
-    return {
-        key: item
-        for key, item in value.items()
-        if key in supported and key in allowed
-    }
+    return {key: item for key, item in value.items() if key in supported and key in allowed}
 
 
 def _merge_authoritative_character(merged: dict[str, Any], value: Any) -> None:
@@ -294,6 +406,7 @@ def _merge_authoritative_character(merged: dict[str, Any], value: Any) -> None:
         "status_effects_remove",
         "title_add",
         "relationship_add",
+        "breakthrough_flags_add",
     ):
         if key in value:
             character[key] = value[key]
@@ -334,6 +447,7 @@ def _merge_authoritative_meta(merged: dict[str, Any], value: Any) -> None:
         "story_goal",
         "story_beat",
         "story_status",
+        "breakthrough_preparation",
         "turn_summary",
     }
     meta.update({key: item for key, item in value.items() if key in authoritative})
@@ -368,10 +482,7 @@ def _has_path(delta: dict[str, Any], section: str, key: str) -> bool:
     if key == "status_effect_add":
         return bool(value) and isinstance(value, str)
     if key in {"lifespan", "realm_stage", "age"}:
-        return (
-            isinstance(value, int)
-            and not isinstance(value, bool)
-        ) or (
+        return (isinstance(value, int) and not isinstance(value, bool)) or (
             isinstance(value, str)
             and len(value) > 1
             and value[0] in {"+", "-"}
@@ -420,7 +531,7 @@ def _claim_mentions_structured_title(text: str, delta: dict[str, Any]) -> bool:
 
 def _is_non_authoritative_context(text: str, start: int, end: int) -> bool:
     """Return True for rumor, desire, condition, or historical framing."""
-    prefix = text[max(0, start - 12):start]
+    prefix = text[max(0, start - 12) : start]
     prefix_markers = (
         "传闻",
         "听闻",
@@ -451,7 +562,7 @@ def _is_non_authoritative_context(text: str, start: int, end: int) -> bool:
     if any(marker in prefix for marker in prefix_markers):
         return True
 
-    suffix = text[end:end + 18]
+    suffix = text[end : end + 18]
     suffix_markers = (
         "只是旧闻",
         "只是传闻",

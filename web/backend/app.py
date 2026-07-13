@@ -38,6 +38,8 @@ _PLACEHOLDER_MARKERS = ("change_me", "changeme", "replace_me", "example.com", "<
 def validate_runtime_config() -> None:
     if not is_production_mode():
         return
+    if os.environ.get("AGENS_VALIDATION_SEED", "").strip():
+        raise RuntimeError("AGENS_VALIDATION_SEED must not be set in production.")
     required = {
         "DATABASE_URL": os.environ.get("DATABASE_URL", "").strip(),
         "INVITE_ADMIN_CODE": os.environ.get("INVITE_ADMIN_CODE", "").strip(),
@@ -58,7 +60,9 @@ def validate_runtime_config() -> None:
         configured["AGNES_API_KEY"] = optional_api_key
     placeholders = [name for name, value in configured.items() if _looks_like_placeholder(value)]
     if placeholders:
-        raise RuntimeError(f"{', '.join(placeholders)} must not use placeholder values in production.")
+        raise RuntimeError(
+            f"{', '.join(placeholders)} must not use placeholder values in production."
+        )
     weak = [
         name
         for name, minimum in (
@@ -73,7 +77,9 @@ def validate_runtime_config() -> None:
     secure_cookie = os.environ.get("SESSION_COOKIE_SECURE", "1").strip().lower()
     if secure_cookie in {"0", "false", "no"}:
         raise RuntimeError("SESSION_COOKIE_SECURE must remain enabled in production.")
-    origins = [item.strip() for item in required["AGENS_ALLOWED_ORIGINS"].split(",") if item.strip()]
+    origins = [
+        item.strip() for item in required["AGENS_ALLOWED_ORIGINS"].split(",") if item.strip()
+    ]
     if any(urlparse(origin).scheme.lower() != "https" for origin in origins):
         raise RuntimeError("AGENS_ALLOWED_ORIGINS must contain only HTTPS origins in production.")
 

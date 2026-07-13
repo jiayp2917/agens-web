@@ -7,7 +7,9 @@ breakthrough attempts.
 
 from __future__ import annotations
 
+import hashlib
 import logging
+import os
 import random
 from dataclasses import dataclass, field
 from typing import Any
@@ -28,6 +30,17 @@ _QI_REFINING_BASE_AGE = 16
 _QI_REFINING_YEARS_PER_STAGE = 2
 _QI_REFINING_TURNS_PER_STAGE = 3
 BREAKTHROUGH_BLOCKING_EFFECTS = ("根基重创", "修为未复", "走火入魔")
+GOLDEN_APTITUDE_THRESHOLD = 21
+_GOLDEN_BREAKTHROUGH_FLAGS: dict[str, tuple[str, ...]] = {
+    "练气": ("foundation_aid",),
+    "筑基": ("golden_core_aid",),
+    "金丹": ("nascent_soul_aid",),
+    "元婴": ("spirit_transformation_aid",),
+    "化神": ("unity_law_aid",),
+    "合体": ("mahayana_vow_aid",),
+    "大乘": ("tribulation_preparation",),
+    "渡劫": ("tribulation_elixir", "ascension_protection"),
+}
 
 
 def breakthrough_blocking_effects(effects: Any) -> list[str]:
@@ -39,7 +52,9 @@ def breakthrough_blocking_effects(effects: Any) -> list[str]:
         if isinstance(effect, str):
             name = effect.strip()
         elif isinstance(effect, dict):
-            name = str(effect.get("name") or effect.get("effect") or effect.get("status") or "").strip()
+            name = str(
+                effect.get("name") or effect.get("effect") or effect.get("status") or ""
+            ).strip()
         else:
             name = ""
         if name in BREAKTHROUGH_BLOCKING_EFFECTS and name not in blockers:
@@ -133,7 +148,10 @@ class RealmSystem:
 
         # Must be at the final stage of the current realm.
         if realm_stage < cfg.stages:
-            return False, f"当前境界{format_realm_name(realm, realm_stage)}，需达到{format_realm_name(realm, cfg.stages)}方可突破。"
+            return (
+                False,
+                f"当前境界{format_realm_name(realm, realm_stage)}，需达到{format_realm_name(realm, cfg.stages)}方可突破。",
+            )
 
         missing = self._missing_breakthrough_requirements(session, cfg)
         if missing:
@@ -222,7 +240,7 @@ class RealmSystem:
             return {"meta": {"breakthrough_result": "ineligible", "reason": reason}}
 
         rate = self.calculate_breakthrough_rate(session)
-        success = random.random() < rate
+        success = _breakthrough_roll(session) < rate
 
         realm = getattr(session, "realm", "练气")
         next_realm = self.get_next_realm(realm)
@@ -299,15 +317,19 @@ class RealmSystem:
         min_stage = self._minimum_stage_for_chronicle_pace(session, cfg)
         if min_stage > stage:
             return self._stage_delta(min_stage, cfg.stages, paced=True)
+        if os.environ.get("AGENS_VALIDATION_SEED", "").strip() and is_high_aptitude_v2(session):
+            return None
 
         attrs = getattr(session, "attributes", {}) if hasattr(session, "attributes") else {}
         comprehension = (
             normalize_attribute_value(attrs.get("comprehension", ATTRIBUTE_DEFAULT))
-            if isinstance(attrs, dict) else ATTRIBUTE_DEFAULT
+            if isinstance(attrs, dict)
+            else ATTRIBUTE_DEFAULT
         )
         root_bone = (
             normalize_attribute_value(attrs.get("root_bone", ATTRIBUTE_DEFAULT))
-            if isinstance(attrs, dict) else ATTRIBUTE_DEFAULT
+            if isinstance(attrs, dict)
+            else ATTRIBUTE_DEFAULT
         )
         rate = (
             0.22
@@ -341,6 +363,11 @@ class RealmSystem:
 
     def _minimum_stage_for_chronicle_pace(self, session: Any, cfg: RealmConfig) -> int:
         """Keep early Qi Refining from lagging behind a multi-year chronicle."""
+        if is_high_aptitude_v2(session):
+            realm = str(getattr(session, "realm", "练气") or "练气")
+            turns_per_stage = 2 if realm == "练气" else 3
+            realm_turns = max(0, int(getattr(session, "realm_turn_count", 0) or 0))
+            return max(1, min(cfg.stages, 1 + realm_turns // turns_per_stage))
         if getattr(session, "realm", "练气") != "练气":
             return int(getattr(session, "realm_stage", 1) or 1)
         age = int(getattr(session, "age", _QI_REFINING_BASE_AGE) or _QI_REFINING_BASE_AGE)
@@ -383,6 +410,53 @@ class RealmSystem:
             "cultivation_bonus": sr_data.get("cultivation_bonus", 1.0),
             "breakthrough_bonus": sr_data.get("breakthrough_bonus", 0.0),
         }
+
+
+def is_high_aptitude_v2(session: Any) -> bool:
+    if int(getattr(session, "story_version", 0) or 0) != 2:
+        return False
+    attrs = getattr(session, "attributes", {})
+    if not isinstance(attrs, dict):
+        return False
+    total = sum(
+        normalize_attribute_value(attrs.get(key, ATTRIBUTE_DEFAULT))
+        for key in ("root_bone", "comprehension", "luck")
+    )
+    return total >= GOLDEN_APTITUDE_THRESHOLD
+
+
+def golden_breakthrough_flags(session: Any) -> tuple[str, ...]:
+    """Return v2 event rewards once the golden route reaches its stage cap."""
+    if not is_high_aptitude_v2(session):
+        return ()
+    realm = str(getattr(session, "realm", "练气") or "练气")
+    stage = int(getattr(session, "realm_stage", 1) or 1)
+    cfg = REALM_CONFIGS.get(realm)
+    if not isinstance(cfg, dict) or stage < int(cfg.get("stages") or 1) - 1:
+        return ()
+    turns_per_stage = 2 if realm == "练气" else 3
+    realm_turns = max(0, int(getattr(session, "realm_turn_count", 0) or 0))
+    required_turns = (int(cfg.get("stages") or 1) - 1) * turns_per_stage
+    if realm_turns < required_turns:
+        return ()
+    return _GOLDEN_BREAKTHROUGH_FLAGS.get(realm, ())
+
+
+def _breakthrough_roll(session: Any) -> float:
+    seed = os.environ.get("AGENS_VALIDATION_SEED", "").strip()
+    if not seed:
+        return random.random()
+    payload = "|".join(
+        (
+            seed,
+            str(getattr(session, "story_key", "") or ""),
+            str(getattr(session, "realm", "") or ""),
+            str(int(getattr(session, "realm_turn_count", 0) or 0)),
+            str(int(getattr(session, "turn_count", 0) or 0)),
+        )
+    )
+    digest = hashlib.sha256(payload.encode("utf-8")).digest()
+    return int.from_bytes(digest[:8], "big") / float(2**64)
 
 
 _REQUIREMENT_ALIASES: dict[str, tuple[str, ...]] = {

@@ -8,9 +8,11 @@ from agens_novel.engine.choices import fallback_choices
 from agens_novel.engine.story_catalog import (
     STORY_ARCS,
     STORY_RESOLUTION_TURN,
+    STORY_V2_RESOLUTION_TURN,
     opening_story_binding,
     story_arc_for_binding,
     story_arc_for_world,
+    story_content_version,
     story_turn_delta,
 )
 from agens_novel.engine.turn_rules import settle_turn
@@ -24,8 +26,8 @@ _ROUTE_EXPECTATIONS = {
 }
 
 
-def _bound_session(world_key: str = "forest") -> GameSession:
-    binding = opening_story_binding(world_key, ["苦修", "宗门"])
+def _bound_session(world_key: str = "forest", *, version: int = 1) -> GameSession:
+    binding = opening_story_binding(world_key, ["苦修", "宗门"], content_version=version)
     return GameSession(
         game_started=True,
         location="青岚药圃",
@@ -44,9 +46,21 @@ def test_story_catalog_has_versioned_complete_arcs() -> None:
         assert arc.opening
         assert arc.failure_branch
         assert set(arc.endings) == {"稳妥", "机遇", "风险", "气运"}
-        assert len(arc.phases) >= 5
+        assert len(arc.phases) == (5 if arc.version == 1 else 9)
         assert arc.phases[0].min_turn == 1
-        assert arc.phases[-1].max_turn == STORY_RESOLUTION_TURN
+        assert arc.phases[-1].max_turn == (
+            STORY_RESOLUTION_TURN if arc.version == 1 else STORY_V2_RESOLUTION_TURN
+        )
+
+
+def test_story_content_version_defaults_to_v2_and_can_pin_v1(monkeypatch) -> None:
+    monkeypatch.delenv("AGENS_STORY_CONTENT_VERSION", raising=False)
+    assert story_content_version() == 2
+    assert opening_story_binding("forest", ["苦修"])["story_version"] == 2
+
+    monkeypatch.setenv("AGENS_STORY_CONTENT_VERSION", "1")
+    assert story_content_version() == 1
+    assert opening_story_binding("forest", ["苦修"])["story_version"] == 1
 
 
 def test_each_world_pack_selects_its_own_story() -> None:
@@ -95,7 +109,9 @@ def test_fallback_choices_reference_current_story_goal_and_thread() -> None:
     assert len(choices) == 4
     assert session.story_state["stage_goal"] in choices[0]
     assert session.story_state["unresolved_threads"][0] in choices[1]
-    assert all(marker in choices[index] for index, marker in enumerate(("稳妥", "机遇", "风险", "气运")))
+    assert all(
+        marker in choices[index] for index, marker in enumerate(("稳妥", "机遇", "风险", "气运"))
+    )
 
 
 def test_story_progress_is_not_applied_before_delta_commit() -> None:
@@ -226,8 +242,51 @@ def test_moderate_risk_route_can_reach_risk_ending() -> None:
         session.story_state = story["story_update"]
 
     assert session.story_state["route_counts"]["风险"] > max(
-        session.story_state["route_counts"][key]
-        for key in ("稳妥", "机遇", "气运")
+        session.story_state["route_counts"][key] for key in ("稳妥", "机遇", "气运")
     )
     assert session.story_state["pressure"] < 8
     assert session.story_state["ending"] == arc.endings["风险"]
+
+
+@pytest.mark.parametrize("world_key", ("frontier", "clan", "ocean", "forest"))
+@pytest.mark.parametrize("category", ("稳妥", "机遇", "风险", "气运"))
+def test_v2_four_world_route_matrix_reaches_nine_phase_resolution(
+    world_key: str,
+    category: str,
+) -> None:
+    session = _bound_session(world_key, version=2)
+    phase_keys: list[str] = []
+
+    for turn in range(1, STORY_V2_RESOLUTION_TURN + 1):
+        session.turn_count = turn
+        story = story_turn_delta(session, category, {}, 16 + turn)
+        assert story
+        phase_keys.append(story["story_update"]["phase_key"])
+        session.story_state = story["story_update"]
+
+    assert set(phase_keys) == {
+        "entry",
+        "rooting",
+        "spread",
+        "reversal",
+        "alignment",
+        "rupture",
+        "unification",
+        "tribulation-preparation",
+        "ascension-resolution",
+    }
+    assert session.story_state["status"] == "resolved"
+    assert session.story_state["ending"]
+
+
+def test_low_aptitude_v2_run_can_end_without_ascension() -> None:
+    session = _bound_session("frontier", version=2)
+    session.attributes = {key: 2 for key in session.attributes}
+    session.turn_count = STORY_V2_RESOLUTION_TURN
+    session.story_state["route_counts"] = {"稳妥": 5, "机遇": 5, "风险": 60, "气运": 19}
+
+    delta = settle_turn("C", session)
+
+    assert delta["meta"]["game_over"] is True
+    assert delta["meta"]["story_status"] == "resolved"
+    assert delta["meta"].get("finale") is not True

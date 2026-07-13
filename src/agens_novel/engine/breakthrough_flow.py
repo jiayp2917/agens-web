@@ -31,10 +31,18 @@ _BREAKTHROUGH_FAILURE_WORDS = (
 )
 _BREAKTHROUGH_SUCCESS_WORDS = ("突破成功", "功成", "踏入", "晋入", "进阶", "破境已成")
 _QI_STAGE_CLAIM_RE = re.compile(r"练气\s*(?:第)?\s*([1-9一二三四五六七八九])\s*层")
-_REALM_PHASE_CLAIM_RE = re.compile(
-    r"(筑基|金丹|元婴|化神|合体|大乘|渡劫)\s*(初期|中期|后期|圆满)"
-)
-_CHINESE_STAGE_VALUES = {"一": 1, "二": 2, "三": 3, "四": 4, "五": 5, "六": 6, "七": 7, "八": 8, "九": 9}
+_REALM_PHASE_CLAIM_RE = re.compile(r"(筑基|金丹|元婴|化神|合体|大乘|渡劫)\s*(初期|中期|后期|圆满)")
+_CHINESE_STAGE_VALUES = {
+    "一": 1,
+    "二": 2,
+    "三": 3,
+    "四": 4,
+    "五": 5,
+    "六": 6,
+    "七": 7,
+    "八": 8,
+    "九": 9,
+}
 
 
 class BreakthroughFlow:
@@ -73,7 +81,10 @@ class BreakthroughFlow:
         if result is None:
             state_delta = breakthrough_delta
         elif result.get("llm_error"):
-            log.info("breakthrough narrator unavailable after rule settlement: %s", result.get("llm_error"))
+            log.info(
+                "breakthrough narrator unavailable after rule settlement: %s",
+                result.get("llm_error"),
+            )
             state_delta = breakthrough_delta
         else:
             narrative = str(result.get("narrative") or "")
@@ -93,6 +104,7 @@ class BreakthroughFlow:
         )
 
         session.turn_count += 1
+        session.realm_turn_count += 1
         self._ensure_breakthrough_meta(state_delta, bt_result)
         session.apply_delta(state_delta)
         narrative = self._coerce_breakthrough_narrative(narrative, bt_result)
@@ -186,7 +198,11 @@ class BreakthroughFlow:
         meta_value = breakthrough_delta.get("meta")
         meta: dict[str, Any] = meta_value if isinstance(meta_value, dict) else {}
         result = str(meta.get("breakthrough_result") or "")
-        target = str(meta.get("new_realm") or self.engine.realm_system.get_next_realm(session.realm) or "更高境界")
+        target = str(
+            meta.get("new_realm")
+            or self.engine.realm_system.get_next_realm(session.realm)
+            or "更高境界"
+        )
         if result == "success":
             return f"规则判定：本次突破成功，从{session.realm}突破至{target}。请只写成功叙事。"
         if result == "failure":
@@ -315,10 +331,14 @@ class BreakthroughFlow:
             engine.emit("on_narrative", narrative, session.turn_count)
 
 
-def _conflicts_with_breakthrough_result(corrected: dict[str, Any], original: dict[str, Any]) -> bool:
+def _conflicts_with_breakthrough_result(
+    corrected: dict[str, Any], original: dict[str, Any]
+) -> bool:
     original_meta_value = original.get("meta")
     corrected_meta_value = corrected.get("meta")
-    original_meta: dict[str, Any] = original_meta_value if isinstance(original_meta_value, dict) else {}
+    original_meta: dict[str, Any] = (
+        original_meta_value if isinstance(original_meta_value, dict) else {}
+    )
     corrected_meta: dict[str, Any] = (
         corrected_meta_value if isinstance(corrected_meta_value, dict) else {}
     )
@@ -337,7 +357,9 @@ def _conflicts_with_breakthrough_result(corrected: dict[str, Any], original: dic
         corrected_character_value if isinstance(corrected_character_value, dict) else {}
     )
     for key in ("realm", "realm_stage", "lifespan"):
-        if key in corrected_character and corrected_character.get(key) != original_character.get(key):
+        if key in corrected_character and corrected_character.get(key) != original_character.get(
+            key
+        ):
             return True
     for key in ("finale", "game_over", "game_over_reason", "new_realm"):
         if key in corrected_meta and corrected_meta.get(key) != original_meta.get(key):

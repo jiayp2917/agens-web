@@ -1158,6 +1158,19 @@ def test_rule_world_delta_survives_model_merge() -> None:
     assert merged["meta"]["elapsed_years"] == 2
 
 
+def test_rule_breakthrough_preparation_survives_model_merge() -> None:
+    merged = merge_rule_delta(
+        {"character": {}, "world": {}, "meta": {}},
+        {
+            "character": {"breakthrough_flags_add": ["foundation_aid"]},
+            "meta": {"breakthrough_preparation": ["foundation_aid"]},
+        },
+    )
+
+    assert merged["character"]["breakthrough_flags_add"] == ["foundation_aid"]
+    assert merged["meta"]["breakthrough_preparation"] == ["foundation_aid"]
+
+
 def test_rule_status_effect_removal_survives_model_merge() -> None:
     merged = merge_rule_delta(
         {"character": {"status_effects_add": ["旧伤"]}},

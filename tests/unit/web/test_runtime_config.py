@@ -34,6 +34,14 @@ def test_valid_production_runtime_passes(monkeypatch) -> None:
     validate_runtime_config()
 
 
+def test_production_rejects_validation_seed(monkeypatch) -> None:
+    _valid_production_env(monkeypatch)
+    monkeypatch.setenv("AGENS_VALIDATION_SEED", "golden-route")
+
+    with pytest.raises(RuntimeError, match="AGENS_VALIDATION_SEED"):
+        validate_runtime_config()
+
+
 @pytest.mark.parametrize(
     ("name", "value"),
     [

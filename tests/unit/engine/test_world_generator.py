@@ -126,7 +126,7 @@ def test_fallback_varies_by_profile_and_contains_opening_payload() -> None:
     assert calm["event_weights"]
     assert calm["fate_profile"]
     assert calm["story_key"] == "herb-boundary-blight"
-    assert calm["story_version"] == 1
+    assert calm["story_version"] == 2
     assert calm["story_state"]["stage_goal"]
     assert calm["story_opening"] in calm["opening_narrative"]
     assert calm["world"]["active_quests"][0]["name"] == calm["story_title"]

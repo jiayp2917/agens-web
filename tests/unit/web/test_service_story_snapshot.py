@@ -64,6 +64,4 @@ def test_restored_snapshot_exposes_titles_and_relationships() -> None:
 
     character = runner.response()["character"]
     assert character["titles"] == ["外门魁首"]
-    assert character["relationships"] == [
-        {"name": "陈师兄", "relation": "盟友", "affinity": 12}
-    ]
+    assert character["relationships"] == [{"name": "陈师兄", "relation": "盟友", "affinity": 12}]

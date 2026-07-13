@@ -1,4 +1,4 @@
-﻿"""Tests for GameSession — new fields, delta application, serialization."""
+"""Tests for GameSession — new fields, delta application, serialization."""
 
 from __future__ import annotations
 
@@ -19,7 +19,18 @@ class TestGameSessionInit:
         assert s.talent == ""
         assert s.family_background == ""
         assert s.difficulty == "普通"
-        for legacy in ("game_mode", "hp", "hp_max", "mp", "mp_max", "combat", "experience", "experience_to_next", "insight", "gold"):
+        for legacy in (
+            "game_mode",
+            "hp",
+            "hp_max",
+            "mp",
+            "mp_max",
+            "combat",
+            "experience",
+            "experience_to_next",
+            "insight",
+            "gold",
+        ):
             assert not hasattr(s, legacy)
         assert s.attributes == DEFAULT_ATTRIBUTES
         assert s.attributes["luck"] == 5
@@ -34,6 +45,7 @@ class TestGameSessionInit:
         assert s.lifespan == 100
         assert s.equipment_slots == dict(DEFAULT_EQUIPMENT_SLOTS)
         assert s.game_started is False
+        assert s.realm_turn_count == 0
         assert s.game_over is False
 
 
@@ -72,16 +84,18 @@ class TestGameSessionApplyDelta:
 
     def test_apply_profile_fields(self):
         s = GameSession()
-        s.apply_delta({
-            "character": {
-                "age": "+2",
-                "talent": "剑心微明",
-                "family_background": "寒门",
-                "difficulty": "困难",
-                "game_mode": "mid",
-                "attributes": {"root_bone": 2, "luck": "+51", "bad": True},
+        s.apply_delta(
+            {
+                "character": {
+                    "age": "+2",
+                    "talent": "剑心微明",
+                    "family_background": "寒门",
+                    "difficulty": "困难",
+                    "game_mode": "mid",
+                    "attributes": {"root_bone": 2, "luck": "+51", "bad": True},
+                }
             }
-        })
+        )
         assert s.age == 18
         assert s.talent == "剑心微明"
         assert s.family_background == "寒门"
@@ -181,9 +195,7 @@ class TestGameSessionApplyDelta:
     def test_npc_presence_does_not_create_a_durable_relationship(self):
         s = GameSession()
 
-        s.apply_delta(
-            {"world": {"npcs_present_add": [{"name": "赵执事", "relation": "引路人"}]}}
-        )
+        s.apply_delta({"world": {"npcs_present_add": [{"name": "赵执事", "relation": "引路人"}]}})
 
         assert s.npcs_present == [{"name": "赵执事", "relation": "引路人"}]
         assert s.relationships == []
@@ -194,13 +206,9 @@ class TestGameSessionApplyDelta:
         s.apply_delta(
             {
                 "character": {
-                    "relationship_add": [
-                        {"name": "陈师兄", "relation": "盟友", "affinity": 10}
-                    ]
+                    "relationship_add": [{"name": "陈师兄", "relation": "盟友", "affinity": 10}]
                 },
-                "world": {
-                    "npcs_present_add": [{"name": "陈师兄", "relation": "同门"}]
-                },
+                "world": {"npcs_present_add": [{"name": "陈师兄", "relation": "同门"}]},
             }
         )
 
@@ -217,9 +225,7 @@ class TestGameSessionApplyDelta:
         unrelated = {"name": "旧伤", "severity": "轻"}
         s.status_effects = ["走火入魔", {"name": "修为未复"}, unrelated]
 
-        s.apply_delta(
-            {"character": {"status_effects_remove": ["走火入魔", {"name": "修为未复"}]}}
-        )
+        s.apply_delta({"character": {"status_effects_remove": ["走火入魔", {"name": "修为未复"}]}})
 
         assert s.status_effects == [unrelated]
 
@@ -272,7 +278,9 @@ class TestGameSessionApplyDelta:
 
     def test_apply_breakthrough_flags_add(self):
         s = GameSession()
-        s.apply_delta({"character": {"breakthrough_flags_add": ["foundation_aid", "foundation_aid", 123]}})
+        s.apply_delta(
+            {"character": {"breakthrough_flags_add": ["foundation_aid", "foundation_aid", 123]}}
+        )
         s.apply_delta({"character": {"breakthrough_flags_add": "golden_core_aid"}})
         assert s.breakthrough_flags == ["foundation_aid", "golden_core_aid"]
 
@@ -360,7 +368,17 @@ class TestGameSessionSerialization:
         assert "combat" not in data["character"]
         s2 = GameSession.from_save_dict(data)
         assert not hasattr(s2, "combat")
-        for legacy in ("hp", "hp_max", "mp", "mp_max", "game_mode", "experience", "experience_to_next", "insight", "gold"):
+        for legacy in (
+            "hp",
+            "hp_max",
+            "mp",
+            "mp_max",
+            "game_mode",
+            "experience",
+            "experience_to_next",
+            "insight",
+            "gold",
+        ):
             assert legacy not in data["character"]
             assert not hasattr(s2, legacy)
 
@@ -369,6 +387,13 @@ class TestGameSessionSerialization:
         data = s.to_save_dict()
         s2 = GameSession.from_save_dict(data)
         assert s2.equipment_slots == dict(DEFAULT_EQUIPMENT_SLOTS)
+
+    def test_realm_turn_count_roundtrip(self):
+        session = GameSession(realm_turn_count=7)
+
+        restored = GameSession.from_save_dict(session.to_save_dict())
+
+        assert restored.realm_turn_count == 7
 
     def test_old_save_uses_profile_defaults(self):
         data = {
@@ -397,6 +422,7 @@ class TestGameSessionSerialization:
         assert s.story_key == ""
         assert s.story_version == 0
         assert s.story_state == {}
+        assert s.realm_turn_count == 0
 
     def test_old_0_100_scale_save_attributes_are_migrated_to_0_10(self):
         data = {
@@ -443,7 +469,10 @@ class TestGameSessionSerialization:
         assert assistant["role"] == "assistant"
         assert assistant["content"].startswith("其人在外门静修一年。")
         assert "<state_update>{}</state_update>" in assistant["content"]
-        assert '<choices>["稳固根基", "寻访机缘", "踏入险地", "静候气运"]</choices>' in assistant["content"]
+        assert (
+            '<choices>["稳固根基", "寻访机缘", "踏入险地", "静候气运"]</choices>'
+            in assistant["content"]
+        )
 
 
 class TestGameSessionReset:
@@ -485,6 +514,10 @@ class TestGameSessionAsGameState:
 
         assert gs["character"]["spirit_root"] == "冰灵根"
         assert gs["character"]["spirit_root_grade"] == "天"
-        assert gs["character"]["equipment_slots"] == {"weapon": None, "armor": None, "accessory": None}
+        assert gs["character"]["equipment_slots"] == {
+            "weapon": None,
+            "armor": None,
+            "accessory": None,
+        }
         # Game-mode v5: no structured combat field in game state.
         assert "combat" not in gs["character"]

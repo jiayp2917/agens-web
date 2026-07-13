@@ -50,6 +50,7 @@ class GameSession:
     # ── Save metadata ──
     save_file: str = ""
     turn_count: int = 0
+    realm_turn_count: int = 0
     game_started: bool = False
     game_over: bool = False
 
@@ -223,9 +224,7 @@ class GameSession:
         # assistant response. Current state JSON remains authoritative.
         history_choices = json.dumps(self.last_choices[:4], ensure_ascii=False)
         assistant_content = (
-            f"{narrative}\n"
-            "<state_update>{}</state_update>\n"
-            f"<choices>{history_choices}</choices>"
+            f"{narrative}\n<state_update>{{}}</state_update>\n<choices>{history_choices}</choices>"
         )
         self.chat_history.append({"role": "assistant", "content": assistant_content})
         if len(self.chat_history) > 20:
@@ -241,10 +240,12 @@ class GameSession:
         """Serialize the full session for JSON save export."""
         return {
             "turn_count": self.turn_count,
+            "realm_turn_count": self.realm_turn_count,
             "game_started": self.game_started,
             "game_over": self.game_over,
             "character": {
-                "name": self.char_name, "realm": self.realm,
+                "name": self.char_name,
+                "realm": self.realm,
                 "realm_stage": self.realm_stage,
                 "spirit_root": self.spirit_root,
                 "spirit_root_grade": self.spirit_root_grade,
@@ -265,7 +266,8 @@ class GameSession:
                 "equipment_slots": self.equipment_slots,
             },
             "world": {
-                "location": self.location, "region": self.region,
+                "location": self.location,
+                "region": self.region,
                 "current_scene": self.current_scene,
                 "day_count": self.day_count,
                 "npcs_present": self.npcs_present,
@@ -294,6 +296,12 @@ class GameSession:
         """Deserialize from a saved JSON dict."""
         session = cls()
         session.turn_count = data.get("turn_count", 0)
+        realm_turn_count = data.get("realm_turn_count", 0)
+        session.realm_turn_count = (
+            max(0, realm_turn_count)
+            if isinstance(realm_turn_count, int) and not isinstance(realm_turn_count, bool)
+            else 0
+        )
         session.game_started = data.get("game_started", False)
         session.game_over = data.get("game_over", False)
 
@@ -311,7 +319,11 @@ class GameSession:
         if isinstance(attrs, dict):
             merged_attrs = dict(DEFAULT_ATTRIBUTES)
             for key, value in attrs.items():
-                if key in DEFAULT_ATTRIBUTES and isinstance(value, int) and not isinstance(value, bool):
+                if (
+                    key in DEFAULT_ATTRIBUTES
+                    and isinstance(value, int)
+                    and not isinstance(value, bool)
+                ):
                     merged_attrs[key] = normalize_attribute_value(value)
             session.attributes = merged_attrs
         flags = char.get("breakthrough_flags", [])
@@ -416,9 +428,13 @@ def _apply_character_identity(session: GameSession, delta: dict[str, Any]) -> No
     if "realm" in delta:
         realm = delta["realm"]
         if isinstance(realm, str) and realm in REALM_ORDER:
+            if realm != session.realm:
+                session.realm_turn_count = 0
             session.realm = realm
         else:
-            log.warning("apply_delta: ignored invalid realm %r (expected one of %s)", realm, REALM_ORDER)
+            log.warning(
+                "apply_delta: ignored invalid realm %r (expected one of %s)", realm, REALM_ORDER
+            )
     direct_fields = {
         "name": "char_name",
         "spirit_root": "spirit_root",
@@ -471,7 +487,9 @@ def _apply_techniques(session: GameSession, delta: dict[str, Any]) -> None:
         elif isinstance(additions, list):
             session.techniques.extend(additions)
         else:
-            log.warning("apply_delta: techniques_add must be list, got %s", type(additions).__name__)
+            log.warning(
+                "apply_delta: techniques_add must be list, got %s", type(additions).__name__
+            )
     elif isinstance(delta.get("techniques"), list):
         session.techniques = delta["techniques"]
 
@@ -583,7 +601,9 @@ def _apply_breakthrough_flags(session: GameSession, delta: dict[str, Any]) -> No
         if isinstance(flags, list):
             session.breakthrough_flags = _dedupe_strings(flags)
         else:
-            log.warning("apply_delta: breakthrough_flags must be list, got %s", type(flags).__name__)
+            log.warning(
+                "apply_delta: breakthrough_flags must be list, got %s", type(flags).__name__
+            )
     if "breakthrough_flags_add" not in delta:
         return
     additions = delta["breakthrough_flags_add"]

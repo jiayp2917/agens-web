@@ -2,12 +2,15 @@
 
 from __future__ import annotations
 
+import os
 from dataclasses import dataclass
 from typing import Any
 
 from .world_catalog import world_key_for_name
 
 STORY_RESOLUTION_TURN = 60
+STORY_V2_RESOLUTION_TURN = 90
+DEFAULT_STORY_CONTENT_VERSION = 2
 
 
 @dataclass(frozen=True)
@@ -114,7 +117,117 @@ def _phases(subject: str, rival: str, neutral: str) -> tuple[StoryPhase, ...]:
     )
 
 
-STORY_ARCS: tuple[StoryArc, ...] = (
+def _phases_v2(
+    subject: str,
+    ally: str,
+    rival: str,
+    neutral: str,
+) -> tuple[StoryPhase, ...]:
+    specs = (
+        (
+            "entry",
+            "入局",
+            1,
+            10,
+            f"确认{subject}的第一份可信记录，并在{ally}与{neutral}之间建立立足点",
+            f"{subject}最早的记录仍缺少见证者",
+            "其先核对名册与旧档，使最初传闻有了可复查的边界。",
+        ),
+        (
+            "rooting",
+            "扎根",
+            11,
+            20,
+            f"建立稳定修行与情报来源，并辨认{rival}对{subject}的试探",
+            f"{rival}开始接触外围见证者",
+            f"其在{ally}站稳脚跟，也第一次看清各方围绕{subject}的真实代价。",
+        ),
+        (
+            "spread",
+            "扩散",
+            21,
+            30,
+            f"追踪{subject}向外扩散的范围，并决定哪些线索应当公开",
+            f"{subject}的影响越过原有边界",
+            f"其把旁证串联起来，迫使{neutral}承认局势已经不再局限于一地。",
+        ),
+        (
+            "reversal",
+            "反转",
+            31,
+            40,
+            f"查明{subject}中被倒置的因果，并重新判断盟友与敌手",
+            f"早期证词显示{rival}并非唯一受益者",
+            "其复核旧日承诺，发现最可靠的一份证词恰好隐去了关键年月。",
+        ),
+        (
+            "alignment",
+            "分阵",
+            41,
+            50,
+            f"在{ally}、{rival}与{neutral}公开分阵前确定自身立场",
+            "各方要求其交出证据并兑现早年的承诺",
+            f"其公开一部分证据，使{ally}与{neutral}不得不表明各自底线。",
+        ),
+        (
+            "rupture",
+            "决裂",
+            51,
+            60,
+            f"处理{subject}引发的公开冲突，并承担阵营选择的直接后果",
+            f"{rival}切断旧有协商渠道",
+            f"其不再维持表面均衡，围绕{subject}的旧秩序由此决裂。",
+        ),
+        (
+            "unification",
+            "归一",
+            61,
+            70,
+            "把分散证据、修行成果与势力承诺归为一条可执行的解决路径",
+            "前期承诺开始逐项兑现或反噬",
+            "其逐项清偿人情与旧债，使多年积累第一次指向同一个结论。",
+        ),
+        (
+            "tribulation-preparation",
+            "渡劫准备",
+            71,
+            80,
+            f"为{subject}的最终清算准备护持、见证与失败退路",
+            "最终行动所需的护持仍缺最后一环",
+            f"其让{ally}负责见证、{neutral}保留退路，并迫使{rival}提前暴露底牌。",
+        ),
+        (
+            "ascension-resolution",
+            "证道收束",
+            81,
+            STORY_V2_RESOLUTION_TURN,
+            f"完成{subject}的最终清算，使路线选择、修行结果与世界后果同时落定",
+            "主线与个人道途已进入不可逆的最后阶段",
+            "其把前期承诺、势力代价与自身道途一并摆上最后的因果清算。",
+        ),
+    )
+    phases: list[StoryPhase] = []
+    for key, title, min_turn, max_turn, goal, thread, common_beat in specs:
+        phases.append(
+            StoryPhase(
+                key,
+                title,
+                min_turn,
+                max_turn,
+                goal,
+                thread,
+                {
+                    "稳妥": f"{common_beat}其以可复核的次序降低无谓损耗。",
+                    "机遇": f"{common_beat}其借新交换把个人前路与主线推进相连。",
+                    "风险": f"{common_beat}其主动承担冲突代价，以伤势与声名换取突破口。",
+                    "气运": f"{common_beat}其保留最后一手，让命数回响决定证据出现的时机。",
+                },
+            )
+        )
+    return tuple(phases)
+
+
+_STORY_ARCS_V1: tuple[StoryArc, ...] = (
     StoryArc(
         key="border-vein-crisis",
         version=1,
@@ -222,15 +335,67 @@ STORY_ARCS: tuple[StoryArc, ...] = (
 )
 
 
+_V2_SUBJECTS = {
+    "border-vein-crisis": "边境裂脉",
+    "alliance-old-oath": "玄都旧契",
+    "sunken-star-tide": "沉星异潮",
+    "herb-boundary-blight": "药境早凋",
+}
+
+
+def _story_arc_v2(arc: StoryArc) -> StoryArc:
+    subject = _V2_SUBJECTS[arc.key]
+    return StoryArc(
+        key=arc.key,
+        version=2,
+        title=f"{arc.title}九章",
+        worlds=arc.worlds,
+        fate_tags=arc.fate_tags,
+        opening=f"{arc.opening} 本局将以九个阶段追踪此事直至证道收束。",
+        unresolved_thread=arc.unresolved_thread,
+        ally_faction=arc.ally_faction,
+        rival_faction=arc.rival_faction,
+        neutral_faction=arc.neutral_faction,
+        phases=_phases_v2(
+            subject,
+            arc.ally_faction,
+            arc.rival_faction,
+            arc.neutral_faction,
+        ),
+        commitments=arc.commitments,
+        failure_branch=f"{arc.failure_branch} 九阶段承诺未能兑现，本局以失败结局收束。",
+        endings={
+            category: f"{ending} 早年承诺与最终道途在九阶段后得到兑现。"
+            for category, ending in arc.endings.items()
+        },
+    )
+
+
+STORY_ARCS: tuple[StoryArc, ...] = (
+    *_STORY_ARCS_V1,
+    *(_story_arc_v2(arc) for arc in _STORY_ARCS_V1),
+)
+
+
 _ARCS_BY_BINDING = {(arc.key, arc.version): arc for arc in STORY_ARCS}
 
 
-def story_arc_for_world(world_key: str, fate_tags: list[str] | tuple[str, ...]) -> StoryArc:
+def story_arc_for_world(
+    world_key: str,
+    fate_tags: list[str] | tuple[str, ...],
+    *,
+    content_version: int | None = None,
+) -> StoryArc:
     """Select the latest compatible arc without depending on model output."""
     tags = {str(tag).strip() for tag in fate_tags if str(tag).strip()}
-    candidates = [arc for arc in STORY_ARCS if world_key in arc.worlds]
+    selected_version = story_content_version() if content_version is None else content_version
+    candidates = [
+        arc for arc in STORY_ARCS if world_key in arc.worlds and arc.version == selected_version
+    ]
     if not candidates:
-        candidates = [arc for arc in STORY_ARCS if "forest" in arc.worlds]
+        candidates = [
+            arc for arc in STORY_ARCS if "forest" in arc.worlds and arc.version == selected_version
+        ]
     return max(candidates, key=lambda arc: (len(tags.intersection(arc.fate_tags)), arc.version))
 
 
@@ -239,8 +404,13 @@ def story_arc_for_binding(story_key: str, story_version: int) -> StoryArc | None
     return _ARCS_BY_BINDING.get((story_key, story_version))
 
 
-def opening_story_binding(world_key: str, fate_tags: list[str] | tuple[str, ...]) -> dict[str, Any]:
-    arc = story_arc_for_world(world_key, fate_tags)
+def opening_story_binding(
+    world_key: str,
+    fate_tags: list[str] | tuple[str, ...],
+    *,
+    content_version: int | None = None,
+) -> dict[str, Any]:
+    arc = story_arc_for_world(world_key, fate_tags, content_version=content_version)
     first = arc.phases[0]
     return {
         "story_key": arc.key,
@@ -268,7 +438,7 @@ def opening_story_binding(world_key: str, fate_tags: list[str] | tuple[str, ...]
     }
 
 
-def ensure_story_binding(session: Any) -> None:
+def ensure_story_binding(session: Any, *, content_version: int | None = None) -> None:
     """Bind an unversioned session once; preserve every existing exact binding."""
     if str(getattr(session, "story_key", "") or ""):
         return
@@ -276,9 +446,11 @@ def ensure_story_binding(session: Any) -> None:
     world_profile = profile if isinstance(profile, dict) else {}
     world_key = str(world_profile.get("world_key") or "").strip()
     if not world_key:
-        world_key = world_key_for_name(str(world_profile.get("world_name") or getattr(session, "region", "")))
+        world_key = world_key_for_name(
+            str(world_profile.get("world_name") or getattr(session, "region", ""))
+        )
     fate_tags = _fate_tags(world_profile)
-    binding = opening_story_binding(world_key, fate_tags)
+    binding = opening_story_binding(world_key, fate_tags, content_version=content_version)
     session.story_key = binding["story_key"]
     session.story_version = binding["story_version"]
     session.story_state = binding["story_state"]
@@ -308,12 +480,31 @@ def story_turn_delta(
     attitudes = _faction_attitudes(state, arc)
     _adjust_attitudes(attitudes, arc, category)
     status, ending, beat = _story_outcome(
-        arc, phase, category, route_counts, pressure, turn, due, session, event, new_age,
+        arc,
+        phase,
+        category,
+        route_counts,
+        pressure,
+        turn,
+        due,
+        session,
+        event,
+        new_age,
         game_over_reason,
     )
     next_state = _next_story_state(
-        state, arc, phase, category, route_counts, attitudes, pressure, turn, due,
-        status, ending, beat,
+        state,
+        arc,
+        phase,
+        category,
+        route_counts,
+        attitudes,
+        pressure,
+        turn,
+        due,
+        status,
+        ending,
+        beat,
     )
     return {
         "story_update": next_state,
@@ -334,9 +525,15 @@ def _session_story_binding(session: Any) -> tuple[StoryArc, dict[str, Any]] | No
     if arc is None:
         return None
     current = getattr(session, "story_state", None)
-    state = dict(current) if isinstance(current, dict) else opening_story_binding(
-        arc.worlds[0], list(arc.fate_tags)
-    )["story_state"]
+    state = (
+        dict(current)
+        if isinstance(current, dict)
+        else opening_story_binding(
+            arc.worlds[0],
+            list(arc.fate_tags),
+            content_version=arc.version,
+        )["story_state"]
+    )
     return arc, state
 
 
@@ -355,11 +552,12 @@ def _story_outcome(
 ) -> tuple[str, str, str]:
     beat = (
         _format_beat(phase.beats.get(category) or phase.beats["机遇"], session, event, new_age)
-        if due else ""
+        if due
+        else ""
     )
     if game_over_reason:
         return "failed", arc.failure_branch, f"{game_over_reason}{arc.failure_branch}"
-    if turn < STORY_RESOLUTION_TURN:
+    if turn < arc.phases[-1].max_turn:
         return "active", "", beat
     ending = arc.failure_branch if pressure >= 8 else arc.endings[_dominant_route(route_counts)]
     return "resolved", ending, ending
@@ -410,6 +608,17 @@ def _phase_for_turn(arc: StoryArc, turn: int) -> StoryPhase:
         if phase.min_turn <= turn <= phase.max_turn:
             return phase
     return arc.phases[-1]
+
+
+def story_content_version() -> int:
+    raw = os.environ.get("AGENS_STORY_CONTENT_VERSION", str(DEFAULT_STORY_CONTENT_VERSION)).strip()
+    try:
+        version = int(raw)
+    except ValueError as exc:
+        raise RuntimeError("AGENS_STORY_CONTENT_VERSION must be 1 or 2.") from exc
+    if version not in {1, 2}:
+        raise RuntimeError("AGENS_STORY_CONTENT_VERSION must be 1 or 2.")
+    return version
 
 
 def _fate_tags(world_profile: dict[str, Any]) -> list[str]:

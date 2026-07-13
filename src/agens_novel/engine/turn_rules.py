@@ -13,7 +13,7 @@ import random
 from typing import Any
 
 from ..game.constants import REALM_LIFESPANS
-from ..game.realm import breakthrough_blocking_effects
+from ..game.realm import breakthrough_blocking_effects, golden_breakthrough_flags
 from .event_catalog import event_summary, select_chronicle_event, stage_feedback_due
 from .story_catalog import story_turn_delta
 
@@ -71,6 +71,7 @@ _CHOICE_ATTRIBUTE_IMPACT: dict[str, dict[str, Any]] = {
     },
 }
 
+
 def classify_choice(text: str) -> str:
     """Map a player choice text to a category label (稳妥/机遇/风险/气运).
 
@@ -127,6 +128,13 @@ def settle_turn(
     recovered_effects = _steady_recovery_effects(session, category)
     if recovered_effects:
         char_delta["status_effects_remove"] = recovered_effects
+    preparation_flags = [
+        flag
+        for flag in golden_breakthrough_flags(session)
+        if flag not in getattr(session, "breakthrough_flags", [])
+    ]
+    if preparation_flags:
+        char_delta["breakthrough_flags_add"] = preparation_flags
     new_age = session.age + elapsed_years
     remaining_lifespan, game_over_reason = _settle_lifespan(session, realm, new_age, char_delta)
     event = select_chronicle_event(session, category, new_age)
@@ -136,9 +144,7 @@ def settle_turn(
     if not game_over_reason and story.get("story_status") in {"resolved", "failed"}:
         story_update = story.get("story_update")
         ending = (
-            str(story_update.get("ending") or "").strip()
-            if isinstance(story_update, dict)
-            else ""
+            str(story_update.get("ending") or "").strip() if isinstance(story_update, dict) else ""
         )
         game_over_reason = ending or str(story.get("story_beat") or "主线尘埃落定。").strip()
     game_over = bool(game_over_reason)
@@ -151,9 +157,14 @@ def settle_turn(
         recovered_effects,
         event,
         story,
+        preparation_flags,
         game_over_reason,
     )
     world_delta = _stage_feedback_delta(session, event, story)
+    if preparation_flags:
+        world_delta.setdefault("lore_add", []).append(
+            f"{realm}阶段的长期积累已经兑现，下一境界所需的护持与机缘已齐备。"
+        )
 
     # ── Build state_delta ──
     state_delta: dict[str, Any] = {
@@ -171,6 +182,7 @@ def settle_turn(
             "story_goal": story.get("story_goal", ""),
             "story_beat": story.get("story_beat", ""),
             "story_status": story.get("story_status", ""),
+            "breakthrough_preparation": preparation_flags,
             "turn_summary": turn_summary,
         },
     }
@@ -186,7 +198,9 @@ def _elapsed_years(realm: str, category: str, difficulty: str) -> int:
     year_min, year_max = _REALM_YEAR_RANGES.get(realm, (1, 3))
     difficulty_multiplier = {"简单": 0.7, "困难": 1.3}.get(difficulty, 1.0)
     base_years = random.randint(year_min, year_max)
-    return max(1, int(base_years * _RISK_YEAR_MULTIPLIER.get(category, 1.0) * difficulty_multiplier))
+    return max(
+        1, int(base_years * _RISK_YEAR_MULTIPLIER.get(category, 1.0) * difficulty_multiplier)
+    )
 
 
 def _attribute_changes(category: str) -> dict[str, Any]:
@@ -228,6 +242,7 @@ def _turn_summary(
     recovered_effects: list[str],
     event: dict[str, Any],
     story: dict[str, Any],
+    preparation_flags: list[str],
     game_over_reason: str,
 ) -> str:
     summary = (
@@ -245,6 +260,8 @@ def _turn_summary(
         summary += f" 主线阶段：{story_phase}；当前目标：{story_goal}。"
     if story_beat:
         summary += f" 本轮主线兑现：{story_beat}"
+    if preparation_flags:
+        summary += " 本轮阶段事件已兑现下一境界所需的护持与机缘。"
     if game_over_reason:
         summary += f" 结局：{game_over_reason}"
     return summary
