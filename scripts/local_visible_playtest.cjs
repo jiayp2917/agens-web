@@ -320,10 +320,43 @@ function routeIndexForTurn(turn, choices, snapshot) {
     const wanted = normalized.toUpperCase();
     return enabled.find((choice) => String(choice.letter || "").toUpperCase() === wanted) || fallback;
   }
+  if (normalized === "golden") {
+    const breakthrough = canBreakthroughFromRealmText(snapshot?.status?.realm || "")
+      ? enabled.find((choice) => hasBreakthroughIntent(choice.text))
+      : null;
+    return breakthrough
+      || enabled.find((choice) => String(choice.letter || "").toUpperCase() === "A")
+      || fallback;
+  }
   if (normalized === "mixed" || normalized === "player") {
     return chooseMixedChoice(turn, enabled, snapshot) || fallback;
   }
   return fallback;
+}
+
+async function configureGoldenProfile(page) {
+  const attributes = {
+    willpower: 3,
+    physique: 3,
+    soul: 3,
+    root_bone: 7,
+    comprehension: 7,
+    luck: 7,
+  };
+  for (const [name, value] of Object.entries(attributes)) {
+    const input = page.locator(`input[name="${name}"]`);
+    await input.focus();
+    await input.press("Home");
+    for (let current = 2; current < value; current += 1) {
+      await input.press("ArrowRight");
+    }
+  }
+  const actual = await page.locator('.attribute-panel input[type="range"]').evaluateAll((inputs) =>
+    Object.fromEntries(inputs.map((input) => [input.name, Number(input.value)])),
+  );
+  if (Object.entries(attributes).some(([name, value]) => actual[name] !== value)) {
+    throw new Error(`Golden profile attributes were not applied: ${JSON.stringify(actual)}`);
+  }
 }
 
 function chooseMixedChoice(turn, enabled, snapshot) {
@@ -886,6 +919,7 @@ function updateIssueCounts(summary, issues) {
     invite_seeded: false,
     registration_passed: false,
     start_passed: false,
+    golden_profile_configured: false,
     save_load_passed: false,
     request_timeout_ms: REQUEST_TIMEOUT_MS,
     result: "running",
@@ -1006,6 +1040,10 @@ function updateIssueCounts(summary, issues) {
     await clickFirstVisible(page, [".home-actions button:nth-child(1)", "text=新游戏"], 30000);
     await page.waitForSelector('input[name="char_name"]', { timeout: 30000 });
     await page.locator('input[name="char_name"]').fill("验真者");
+    if (CHOICE_STRATEGY === "golden") {
+      await configureGoldenProfile(page);
+      summary.golden_profile_configured = true;
+    }
     const [startResponse] = await Promise.all([
       page.waitForResponse((resp) => resp.url().includes("/api/sessions/") && resp.url().includes("/start"), {
         timeout: REQUEST_TIMEOUT_MS,

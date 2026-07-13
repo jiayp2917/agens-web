@@ -204,6 +204,18 @@ def test_content_audit_playtest_treats_p1_as_failed_content_gate() -> None:
     assert 'summary.result = "failed_content"' in source
 
 
+def test_visible_playtest_golden_strategy_uses_real_profile_controls_and_breakthroughs() -> None:
+    source = (ROOT / "scripts" / "local_visible_playtest.cjs").read_text(encoding="utf-8")
+
+    assert 'normalized === "golden"' in source
+    assert "configureGoldenProfile(page)" in source
+    assert "root_bone: 7" in source
+    assert "comprehension: 7" in source
+    assert "luck: 7" in source
+    assert "willpower: 3" in source
+    assert "hasBreakthroughIntent(choice.text)" in source
+
+
 def test_content_audit_playtest_allows_terminal_turn_without_choices() -> None:
     source = (ROOT / "scripts" / "local_visible_playtest.cjs").read_text(encoding="utf-8")
 
