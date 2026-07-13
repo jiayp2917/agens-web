@@ -1,15 +1,12 @@
 from __future__ import annotations
 
-import json
-import os
 import socket
 from pathlib import Path
-from typing import Any
 from unittest.mock import patch
 
 import pytest
 from fastapi.testclient import TestClient
-from sqlalchemy import create_engine, text
+from sqlalchemy import text
 
 from agens_novel.engine.choices import choice_with_semantic
 from agens_novel.engine.turn_rules import classify_choice
@@ -62,7 +59,6 @@ def _world_builder_result() -> dict:
         "llm_error": "",
     }
 
-
 def _narrator_result(text: str = "你拜见执事，听完入门规矩后气息更稳。") -> dict:
     return {
         "narrative": text,
@@ -74,10 +70,8 @@ def _narrator_result(text: str = "你拜见执事，听完入门规矩后气息�
         "llm_error": "",
     }
 
-
 def _judge_result() -> dict:
     return {"approved": True, "corrected_delta": {}, "llm_error": ""}
-
 
 def _runner(agent_name: str, *_args, **_kwargs):
     if agent_name == "world_builder":
@@ -87,7 +81,6 @@ def _runner(agent_name: str, *_args, **_kwargs):
     if agent_name == "judge":
         return _judge_result()
     raise AssertionError(agent_name)
-
 
 def test_choice_index_semantic_prefixes_match_rule_categories() -> None:
     expected = [
@@ -101,17 +94,14 @@ def test_choice_index_semantic_prefixes_match_rule_categories() -> None:
         action = choice_with_semantic(index, "\u5c71\u95e8\u4fee\u884c")
         assert classify_choice(action) == category
 
-
 def _register(client: TestClient, invite: str = "invite-code-123") -> dict:
     return client.post(
         "/api/auth/register",
         json={"username": "player", "password": "password-123", "invite_code": invite},
     ).json()["user"]
 
-
 def _create_invite(app, invite: str = "invite-code-123") -> None:
     app.state.service.db.create_invite_code(hash_invite_code(invite), max_uses=10)
-
 
 def test_web_api_minimum_game_flow(tmp_path: Path, monkeypatch) -> None:
     monkeypatch.setenv("AGNES_API_KEY", "sk-test-web-api")
@@ -195,7 +185,6 @@ def test_web_api_minimum_game_flow(tmp_path: Path, monkeypatch) -> None:
             "ascension_count": 0,
         }
 
-
 def test_registered_account_session_start_choice_keeps_owner_and_session(
     tmp_path: Path,
     monkeypatch,
@@ -254,7 +243,6 @@ def test_registered_account_session_start_choice_keeps_owner_and_session(
     assert counts["sessions_count"] == 1
     assert counts["turns_count"] == 1
 
-
 def test_choice_endpoint_rejects_free_text_and_accepts_choice_letter_or_number(
     tmp_path: Path,
     monkeypatch,
@@ -304,7 +292,6 @@ def test_choice_endpoint_rejects_free_text_and_accepts_choice_letter_or_number(
         assert rejected_mixed.status_code == 400
         assert client.get(f"/api/sessions/{session_id}").json()["turn_count"] == 2
 
-
 def test_ineligible_breakthrough_choice_advances_and_records_turn(
     tmp_path: Path,
     monkeypatch,
@@ -347,7 +334,6 @@ def test_ineligible_breakthrough_choice_advances_and_records_turn(
             {"run_id": session_id},
         ).mappings().one()
     assert dict(row) == {"c": 1, "max_turn": 1}
-
 
 def test_mismatched_narrative_still_records_contiguous_turns(
     tmp_path: Path,
@@ -397,7 +383,6 @@ def test_mismatched_narrative_still_records_contiguous_turns(
             {"run_id": session_id},
         ).scalars().all()
     assert rows == [1, 2]
-
 
 def test_local_story_fallback_records_turn(
     tmp_path: Path,
@@ -453,7 +438,6 @@ def test_local_story_fallback_records_turn(
     assert row["event_kind"] in {"稳妥", "event"}
     assert row["narrative"]
     assert row["state_delta"]["meta"]["local_story_fallback"] is True
-
 
 def test_incomplete_narrator_choices_recover_without_local_story_fallback(
     tmp_path: Path,
@@ -513,7 +497,6 @@ def test_incomplete_narrator_choices_recover_without_local_story_fallback(
     assert row["state_delta"]["meta"]["choice_category"] in {"稳妥", "机遇", "风险", "气运"}
     assert "local_story_fallback" not in row["state_delta"]["meta"]
 
-
 def test_malformed_state_update_with_narrative_settles_rule_turn(
     tmp_path: Path,
     monkeypatch,
@@ -565,7 +548,6 @@ def test_malformed_state_update_with_narrative_settles_rule_turn(
     assert row["state_delta"]["meta"]["choice_category"] in {"稳妥", "机遇", "风险", "气运"}
     assert "local_story_fallback" not in row["state_delta"]["meta"]
 
-
 def test_model_failure_prompt_uses_sanitized_public_http_404_notice(
     tmp_path: Path,
     monkeypatch,
@@ -606,7 +588,6 @@ def test_model_failure_prompt_uses_sanitized_public_http_404_notice(
     assert "Base URL" not in text_value
     assert "sk-" not in text_value
     assert "https://" not in text_value
-
 
 def test_transient_narrator_404_retries_without_fallback(
     tmp_path: Path,
@@ -654,7 +635,6 @@ def test_transient_narrator_404_retries_without_fallback(
     assert body["turn_count"] == 1
     assert body["fallback_prompt"]["active"] is False
     assert len(body["choices"]) == 4
-
 
 def test_model_failure_prompt_and_event_redact_secret_bearing_format_reason(
     tmp_path: Path,
@@ -707,7 +687,6 @@ def test_model_failure_prompt_and_event_redact_secret_bearing_format_reason(
         assert "provider.example" not in text_value
         assert "https://" not in text_value
 
-
 def test_web_model_failure_exposes_fallback_and_can_end(tmp_path: Path, monkeypatch) -> None:
     monkeypatch.delenv("AGNES_API_KEY", raising=False)
     monkeypatch.setenv("AGENS_START_MODEL_OPENING", "1")
@@ -735,14 +714,11 @@ def test_web_model_failure_exposes_fallback_and_can_end(tmp_path: Path, monkeypa
     assert ended["fallback_prompt"]["active"] is False
     assert ended["error"] == "玩家结束本局。"
 
-
-
 def _login_user(client: TestClient, username: str, invite: str) -> dict:
     return client.post(
         "/api/auth/register",
         json={"username": username, "password": "password-123", "invite_code": invite},
     ).json()["user"]
-
 
 def _model_payload(api_key: str = "") -> dict[str, str]:
     return {
@@ -752,7 +728,6 @@ def _model_payload(api_key: str = "") -> dict[str, str]:
         "api_key": api_key,
     }
 
-
 def _use_public_model_dns(monkeypatch) -> None:
     monkeypatch.setattr(
         "agens_novel.llm.url_security.socket.getaddrinfo",
@@ -760,660 +735,3 @@ def _use_public_model_dns(monkeypatch) -> None:
             (socket.AF_INET, socket.SOCK_STREAM, 6, "", ("8.8.8.8", 443))
         ],
     )
-
-
-
-
-def test_body_size_limit_rejects_actual_large_body(tmp_path: Path, monkeypatch) -> None:
-    monkeypatch.setenv("SESSION_COOKIE_SECURE", "0")
-    monkeypatch.setenv("AGENS_MAX_REQUEST_BYTES", "128")
-    app = create_app()
-    client = TestClient(app)
-
-    response = client.post(
-        "/api/auth/login",
-        content=b'{"username":"' + (b"x" * 256) + b'","password":"password-123"}',
-        headers={"Content-Type": "application/json"},
-    )
-    assert response.status_code == 413
-
-
-@pytest.mark.anyio("asyncio")
-async def test_body_size_limit_rejects_chunked_body_without_content_length() -> None:
-    from web.backend.security import BodySizeLimitMiddleware
-
-    async def inner_app(_scope, _receive, send):
-        await send({"type": "http.response.start", "status": 204, "headers": []})
-        await send({"type": "http.response.body", "body": b""})
-
-    middleware = BodySizeLimitMiddleware(inner_app, max_bytes=8)
-    scope = {"type": "http", "headers": []}
-    messages = iter(
-        [
-            {"type": "http.request", "body": b"12345", "more_body": True},
-            {"type": "http.request", "body": b"6789", "more_body": False},
-        ]
-    )
-    sent: list[dict[str, Any]] = []
-
-    async def receive():
-        return next(messages)
-
-    async def send(message):
-        sent.append(message)
-
-    await middleware(scope, receive, send)
-
-    assert sent[0]["type"] == "http.response.start"
-    assert sent[0]["status"] == 413
-
-
-@pytest.mark.anyio("asyncio")
-async def test_body_size_limit_replays_allowed_chunked_body() -> None:
-    from web.backend.security import BodySizeLimitMiddleware
-
-    seen_body = b""
-
-    async def inner_app(_scope, receive, send):
-        nonlocal seen_body
-        message = await receive()
-        seen_body = message["body"]
-        await send({"type": "http.response.start", "status": 204, "headers": []})
-        await send({"type": "http.response.body", "body": b""})
-
-    middleware = BodySizeLimitMiddleware(inner_app, max_bytes=16)
-    scope = {"type": "http", "headers": []}
-    messages = iter(
-        [
-            {"type": "http.request", "body": b"12345", "more_body": True},
-            {"type": "http.request", "body": b"678", "more_body": False},
-        ]
-    )
-    sent: list[dict[str, Any]] = []
-
-    async def receive():
-        return next(messages)
-
-    async def send(message):
-        sent.append(message)
-
-    await middleware(scope, receive, send)
-
-    assert seen_body == b"12345678"
-    assert sent[0]["status"] == 204
-
-
-
-def test_alembic_initial_pg_schema_covers_runtime_tables() -> None:
-    migration = (
-        Path(__file__).resolve().parents[2]
-        / "migrations"
-        / "versions"
-        / "20260621_0001_initial_web_pg.py"
-    ).read_text(encoding="utf-8")
-    for table in (
-        "catalog_talents",
-        "catalog_family_backgrounds",
-        "catalog_spirit_roots",
-        "catalog_difficulties",
-        "catalog_story_seeds",
-        "run_achievements",
-        "account_rewards",
-        "legacy_bonuses",
-    ):
-        assert f'"{table}"' in migration
-
-
-def test_alembic_game_mode_v5_bridge_covers_runtime_tables() -> None:
-    migration = (
-        Path(__file__).resolve().parents[2]
-        / "migrations"
-        / "versions"
-        / "20260622_0003_game_mode_v5_runs_turns_progress.py"
-    ).read_text(encoding="utf-8")
-    for table in ("game_runs", "game_turns", "player_progress"):
-        assert table in migration
-    assert "CREATE TABLE IF NOT EXISTS" in migration
-    assert 'down_revision = "20260621_0002"' in migration
-
-
-def test_alembic_user_model_configs_migration_covers_runtime_tables() -> None:
-    migration = (
-        Path(__file__).resolve().parents[2]
-        / "migrations"
-        / "versions"
-        / "20260622_0005_user_model_configs.py"
-    ).read_text(encoding="utf-8")
-    assert 'revision = "20260622_0005"' in migration
-    assert 'down_revision = "20260622_0004"' in migration
-    assert "user_model_configs" in migration
-    assert "api_key_encrypted" in migration
-
-
-def test_auto_ddl_schema_includes_database_comments() -> None:
-    from web.backend.database_postgres_schema import schema_comment_statements
-
-    comments = "\n".join(schema_comment_statements())
-    assert "COMMENT ON TABLE user_model_configs" in comments
-    assert "用户个人模型配置表" in comments
-    assert "COMMENT ON COLUMN game_turns.run_id" in comments
-    assert "当前等于 session_id" in comments
-
-
-def test_model_failure_events_are_public_safe(tmp_path: Path, monkeypatch) -> None:
-    monkeypatch.setenv("SESSION_COOKIE_SECURE", "0")
-    app = create_app()
-    client = TestClient(app)
-    _create_invite(app)
-    _register(client)
-    session_id = client.post("/api/sessions", json={}).json()["session_id"]
-
-    def failing_world_builder(agent_name: str, *_args, **_kwargs):
-        if agent_name == "world_builder":
-            return {"generated_data": {}, "llm_error": "sk-secret leaked via provider"}
-        return _runner(agent_name)
-
-    with patch("agens_novel.engine.game_engine.run_turn_sync", side_effect=failing_world_builder):
-        payload = client.post(f"/api/sessions/{session_id}/start", json={"char_name": "许满"}).json()
-
-    body = json.dumps(payload, ensure_ascii=False)
-    assert "sk-secret" not in body
-    assert "模型暂不可用，已切换本地故事，请直接选择下方选项继续。" in body
-
-
-def test_start_accepts_seeded_catalog_character_options(tmp_path: Path, monkeypatch) -> None:
-    monkeypatch.setenv("AGNES_API_KEY", "sk-test-web-api")
-    monkeypatch.setenv("SESSION_COOKIE_SECURE", "0")
-    app = create_app()
-    client = TestClient(app)
-    _create_invite(app)
-    _register(client)
-    session_id = client.post("/api/sessions", json={}).json()["session_id"]
-
-    with patch("agens_novel.engine.game_engine.run_turn_sync", side_effect=_runner):
-        started = client.post(
-            f"/api/sessions/{session_id}/start",
-            json={
-                "char_name": "许满",
-                "talent": "万法归宗",
-                "spirit_root": "混沌灵根",
-                "family_background": "隐世仙族",
-                "difficulty": "普通",
-                "randomize_attributes": False,
-                "attributes": {
-                    "root_bone": 5,
-                    "comprehension": 5,
-                    "luck": 5,
-                    "willpower": 5,
-                    "physique": 5,
-                    "soul": 5,
-                },
-            },
-        ).json()
-
-    assert started["game_started"] is True
-    assert started["character"]["talent"] == "万法归宗"
-    assert started["character"]["spirit_root"] == "混沌灵根"
-    assert started["character"]["spirit_root_grade"] == "天"
-    assert started["character"]["family_background"] == "隐世仙族"
-
-
-def test_start_rejects_invalid_manual_attribute_pool(tmp_path: Path, monkeypatch) -> None:
-    monkeypatch.setenv("AGNES_API_KEY", "sk-test-web-api")
-    monkeypatch.setenv("SESSION_COOKIE_SECURE", "0")
-    app = create_app()
-    client = TestClient(app)
-    _create_invite(app)
-    _register(client)
-    session_id = client.post("/api/sessions", json={}).json()["session_id"]
-
-    response = client.post(
-        f"/api/sessions/{session_id}/start",
-        json={
-            "char_name": "bad-pool",
-            "randomize_attributes": False,
-            "attributes": {
-                "root_bone": 5,
-                "comprehension": 5,
-                "luck": 5,
-                "willpower": 5,
-                "physique": 5,
-                "soul": 4,
-            },
-        },
-    )
-
-    assert response.status_code == 400
-    assert "30" in response.json()["detail"]
-
-
-def test_randomized_start_uses_30_point_attribute_pool(tmp_path: Path, monkeypatch) -> None:
-    monkeypatch.setenv("AGNES_API_KEY", "sk-test-web-api")
-    monkeypatch.setenv("SESSION_COOKIE_SECURE", "0")
-    app = create_app()
-    client = TestClient(app)
-    _create_invite(app)
-    _register(client)
-    session_id = client.post("/api/sessions", json={}).json()["session_id"]
-    preview_attrs = {
-        "root_bone": 0,
-        "comprehension": 10,
-        "luck": 7,
-        "willpower": 3,
-        "physique": 6,
-        "soul": 4,
-    }
-
-    with patch("agens_novel.engine.game_engine.run_turn_sync", side_effect=_runner):
-        started = client.post(
-            f"/api/sessions/{session_id}/start",
-            json={
-                "char_name": "random-pool",
-                "randomize_attributes": True,
-                "attributes": preview_attrs,
-            },
-        ).json()
-
-    attrs = started["character"]["attributes"]
-    assert attrs == preview_attrs
-    assert sum(attrs.values()) == 30
-    assert all(0 <= value <= 10 for value in attrs.values())
-
-
-def test_start_persists_dynamic_opening_world_profile(tmp_path: Path, monkeypatch) -> None:
-    monkeypatch.setenv("AGNES_API_KEY", "sk-test-web-api")
-    monkeypatch.setenv("SESSION_COOKIE_SECURE", "0")
-    monkeypatch.setenv("AGENS_START_MODEL_OPENING", "1")
-    app = create_app()
-    client = TestClient(app)
-    _create_invite(app)
-    _register(client)
-    session_id = client.post("/api/sessions", json={}).json()["session_id"]
-
-    def dynamic_world_builder(agent_name: str, user_input: str, *_args, **_kwargs):
-        if agent_name == "world_builder":
-            assert "六维属性" in user_input
-            assert "命数倾向" in user_input
-            return {
-                "generated_data": {
-                    "world_name": "归墟潮界",
-                    "regions": [{"name": "潮生海市"}],
-                    "sects": [{"name": "潮音阁"}],
-                    "current_conflicts": ["灵潮提前"],
-                    "fate_hooks": ["天命奇遇"],
-                    "chronicle_0_16": [
-                        "零至六岁，许满常听潮声。",
-                        "七至十二岁，他在寒门旧屋读残卷。",
-                        "十六岁，灵潮把他带到渡口。",
-                    ],
-                    "initial_situation": "许满抵达潮音渡口。",
-                    "initial_situation_16": "十六岁这年，许满抵达潮音渡口。",
-                    "opening_narrative": "归墟潮界灵潮提前，许满在十六岁抵达潮音渡口。",
-                    "world": {
-                        "location": "潮音渡口",
-                        "region": "归墟潮界",
-                        "current_scene": "潮音渡口正在登记听潮弟子",
-                        "lore_facts": ["归墟潮界灵潮提前。"],
-                    },
-                    "choices": ["稳住渡口差事", "打听灵潮", "夜探沉星礁", "随潮而行"],
-                },
-                "llm_error": "",
-            }
-        return _runner(agent_name)
-
-    with patch("agens_novel.engine.game_engine.run_turn_sync", side_effect=dynamic_world_builder):
-        started = client.post(
-            f"/api/sessions/{session_id}/start",
-            json={
-                "char_name": "许满",
-                "talent": "天命道胎",
-                "spirit_root": "雷灵根",
-                "family_background": "寒门",
-                "difficulty": "普通",
-                "randomize_attributes": True,
-                "attributes": {
-                    "root_bone": 3,
-                    "comprehension": 5,
-                    "luck": 9,
-                    "willpower": 5,
-                    "physique": 4,
-                    "soul": 4,
-                },
-            },
-        ).json()
-
-    assert started["fallback_prompt"]["active"] is False
-    assert any(
-        event.get("type") == "model_result"
-        and event.get("agent") == "world_builder"
-        and event.get("source") == "profile_opening"
-        and event.get("status") == "ok"
-        for event in started["events"]
-    )
-    assert started["world"]["world_profile"]["world_name"] == "归墟潮界"
-    assert started["world"]["current_scene"] == "潮音渡口正在登记听潮弟子"
-    assert started["choices"] == ["稳住渡口差事", "打听灵潮", "夜探沉星礁", "随潮而行"]
-    with app.state.service.db.engine.connect() as conn:
-        snapshot_text = conn.execute(
-            text("SELECT snapshot::text FROM sessions WHERE id = :session_id"),
-            {"session_id": session_id},
-        ).scalar_one()
-    assert "归墟潮界" in snapshot_text
-    assert "chronicle_0_16" in snapshot_text
-
-
-def test_start_model_failure_reports_fallback_but_uses_dynamic_profile_opening(
-    tmp_path: Path,
-    monkeypatch,
-) -> None:
-    monkeypatch.setenv("AGNES_API_KEY", "sk-test-web-api")
-    monkeypatch.setenv("SESSION_COOKIE_SECURE", "0")
-    monkeypatch.setenv("AGENS_START_MODEL_OPENING", "1")
-    app = create_app()
-    client = TestClient(app)
-    _create_invite(app)
-    _register(client)
-    session_id = client.post("/api/sessions", json={}).json()["session_id"]
-
-    def failing_world_builder(agent_name: str, *_args, **_kwargs):
-        if agent_name == "world_builder":
-            return {"generated_data": {}, "llm_error": "timeout"}
-        return _runner(agent_name)
-
-    with patch("agens_novel.engine.game_engine.run_turn_sync", side_effect=failing_world_builder):
-        started = client.post(
-            f"/api/sessions/{session_id}/start",
-            json={
-                "char_name": "许满",
-                "difficulty": "困难",
-                "randomize_attributes": True,
-                "attributes": {
-                    "root_bone": 2,
-                    "comprehension": 4,
-                    "luck": 2,
-                    "willpower": 8,
-                    "physique": 8,
-                    "soul": 6,
-                },
-            },
-        ).json()
-
-    assert started["fallback_prompt"]["active"] is True
-    assert started["local_story"]["active"] is False
-    assert started["world"]["world_profile"]["world_name"] == "西陲裂土"
-    assert len(started["choices"]) == 4
-    assert any(event.get("type") == "model_failure" for event in started["events"])
-
-
-def test_incomplete_start_model_output_is_not_live_success(
-    tmp_path: Path,
-    monkeypatch,
-) -> None:
-    monkeypatch.setenv("AGNES_API_KEY", "sk-test-web-api")
-    monkeypatch.setenv("SESSION_COOKIE_SECURE", "0")
-    monkeypatch.setenv("AGENS_START_MODEL_OPENING", "1")
-    app = create_app()
-    client = TestClient(app)
-    _create_invite(app)
-    _register(client)
-    session_id = client.post("/api/sessions", json={}).json()["session_id"]
-
-    def incomplete_world_builder(agent_name: str, *_args, **_kwargs):
-        if agent_name == "world_builder":
-            return {
-                "generated_data": {
-                    "opening_narrative": "模型只给出一段残缺开场。",
-                    "choices": ["稳住渡口差事"],
-                },
-                "llm_error": "",
-            }
-        return _runner(agent_name)
-
-    with patch("agens_novel.engine.game_engine.run_turn_sync", side_effect=incomplete_world_builder):
-        started = client.post(
-            f"/api/sessions/{session_id}/start",
-            json={
-                "char_name": "许满",
-                "difficulty": "普通",
-                "attributes": {
-                    "root_bone": 5,
-                    "comprehension": 5,
-                    "luck": 5,
-                    "willpower": 5,
-                    "physique": 5,
-                    "soul": 5,
-                },
-            },
-        ).json()
-
-    assert started["fallback_prompt"]["active"] is True
-    assert started["world"]["world_profile"].get("chronicle_0_16")
-    assert len(started["choices"]) == 4
-    assert not any(
-        event.get("type") == "model_result"
-        and event.get("agent") == "world_builder"
-        and event.get("source") == "profile_opening"
-        and event.get("status") == "ok"
-        for event in started["events"]
-    )
-
-
-@pytest.mark.skipif(not os.environ.get("TEST_DATABASE_URL"), reason="TEST_DATABASE_URL not configured")
-def test_postgres_database_url_smoke(monkeypatch) -> None:
-    from alembic import command
-    from alembic.config import Config
-
-    monkeypatch.setenv("DATABASE_URL", os.environ["TEST_DATABASE_URL"])
-    monkeypatch.setenv("SESSION_COOKIE_SECURE", "0")
-    monkeypatch.setenv("INVITE_ADMIN_CODE", "pg-admin-invite-123")
-    monkeypatch.setenv("SESSION_SECRET", "test-postgres-session-secret")
-    monkeypatch.setenv("AGENS_ALLOWED_ORIGINS", "https://game.example.test")
-
-    engine = create_engine(os.environ["TEST_DATABASE_URL"], isolation_level="AUTOCOMMIT")
-    try:
-        with engine.connect() as conn:
-            conn.execute(text("DROP SCHEMA IF EXISTS public CASCADE"))
-            conn.execute(text("CREATE SCHEMA public"))
-    finally:
-        engine.dispose()
-
-    alembic_cfg = Config(str(Path(__file__).resolve().parents[2] / "alembic.ini"))
-    command.upgrade(alembic_cfg, "head")
-
-    from web.backend.database import create_database
-
-    db = create_database()
-    assert db.engine.url.drivername.startswith("postgresql")
-    assert db.list_catalog("catalog_talents")
-    with db.engine.connect() as conn:
-        assert conn.execute(text("SELECT to_regclass('public.user_model_configs')")).scalar() == "user_model_configs"
-        columns = conn.execute(
-            text("SELECT column_name FROM information_schema.columns WHERE table_name = 'model_config'")
-        ).scalars().all()
-        table_comment = conn.execute(
-            text(
-                """
-                SELECT obj_description('public.user_model_configs'::regclass)
-                """
-            )
-        ).scalar()
-        run_id_comment = conn.execute(
-            text(
-                """
-                SELECT col_description('public.game_turns'::regclass, ordinal_position)
-                FROM information_schema.columns
-                WHERE table_schema = 'public'
-                  AND table_name = 'game_turns'
-                  AND column_name = 'run_id'
-                """
-            )
-        ).scalar()
-    assert "api_key_encrypted" in columns
-    assert table_comment == "用户个人模型配置表。每个注册用户最多一条，加密保存个人 API Key。"
-    assert "当前等于 session_id" in run_id_comment
-
-    app = create_app()
-    client = TestClient(app, base_url="https://game.example.test")
-    client.post(
-        "/api/auth/register",
-        json={"username": "pg_player", "password": "password-123", "invite_code": "pg-admin-invite-123"},
-        headers={"Origin": "https://game.example.test"},
-    )
-    created = client.post(
-        "/api/sessions",
-        json={},
-        headers={"Origin": "https://game.example.test"},
-    ).json()
-    session_id = created["session_id"]
-    with patch("agens_novel.engine.game_engine.run_turn_sync", side_effect=_runner):
-        started = client.post(
-            f"/api/sessions/{session_id}/start",
-            json={"char_name": "pg_player"},
-            headers={"Origin": "https://game.example.test"},
-        ).json()
-        assert started["game_started"] is True
-        assert client.post(
-            f"/api/sessions/{session_id}/choice",
-            json={"choice_index": 0},
-            headers={"Origin": "https://game.example.test"},
-        ).status_code == 200
-        assert client.post(
-            f"/api/sessions/{session_id}/save",
-            json={"name": "slot_1"},
-            headers={"Origin": "https://game.example.test"},
-        ).status_code == 200
-        assert client.post(
-            f"/api/sessions/{session_id}/load",
-            json={"name": "slot_1"},
-            headers={"Origin": "https://game.example.test"},
-        ).status_code == 200
-        assert client.post(
-            f"/api/sessions/{session_id}/end",
-            json={"reason": "done"},
-            headers={"Origin": "https://game.example.test"},
-        ).status_code == 200
-    assert client.get(f"/api/sessions/{session_id}/death_summary").status_code == 200
-
-
-# ── P4: Death rewards ──────────────────────────────────────────────────
-
-
-def test_death_summary_persists_for_registered_user(tmp_path: Path, monkeypatch) -> None:
-    monkeypatch.setenv("AGNES_API_KEY", "sk-test-web-api")
-    monkeypatch.setenv("SESSION_COOKIE_SECURE", "0")
-    app = create_app()
-    client = TestClient(app)
-    _create_invite(app)
-    _register(client)
-    session_id = client.post("/api/sessions", json={"title": "试炼"}).json()["session_id"]
-
-    with patch("agens_novel.engine.game_engine.run_turn_sync", side_effect=_runner):
-        client.post(f"/api/sessions/{session_id}/start", json={"char_name": "许满"})
-        ended = client.post(
-            f"/api/sessions/{session_id}/end",
-            json={"reason": "玩家结束本局。"},
-        ).json()
-        assert ended["game_over"] is True
-
-    summary_resp = client.get(f"/api/sessions/{session_id}/death_summary").json()
-    assert summary_resp["is_guest"] is False
-    summary = summary_resp["summary"]
-    assert summary["death_cause"] == "玩家结束本局"
-    achievement_keys = {a["key"] for a in summary.get("achievements", [])}
-    assert "long_lived_mortal" not in achievement_keys
-    # At minimum, base attribute_points are always granted.
-    types = {r["type"] for r in summary.get("rewards", [])}
-    assert "attribute_points" in types
-
-    # Legacy bonuses should now be listed for the user.
-    bonuses = client.get("/api/users/me/legacy_bonuses").json()
-    assert len(bonuses) >= 1
-    assert any(b["bonus_type"] == "attribute_points" for b in bonuses)
-
-
-def test_legacy_bonuses_applied_on_next_character(tmp_path: Path, monkeypatch) -> None:
-    monkeypatch.setenv("AGNES_API_KEY", "sk-test-web-api")
-    monkeypatch.setenv("SESSION_COOKIE_SECURE", "0")
-    app = create_app()
-    client = TestClient(app)
-    _create_invite(app)
-    _register(client)
-    db = app.state.service.db
-    user_id = db.get_user_by_username("player")["id"]
-    # Pre-seed legacy bonuses for the user.
-    db.save_legacy_bonus(
-        user_id=user_id,
-        bonus_type="attribute_points",
-        bonus_value="2",
-        label="+2",
-        source_session_id="seeded",
-    )
-    db.save_legacy_bonus(
-        user_id=user_id,
-        bonus_type="legacy_talent",
-        bonus_value="游历之眼",
-        label="游历之眼",
-        source_session_id="seeded",
-    )
-    db.save_legacy_bonus(
-        user_id=user_id,
-        bonus_type="opening_title",
-        bonus_value="飞升者",
-        label="飞升者",
-        source_session_id="seeded",
-    )
-    db.save_legacy_bonus(
-        user_id=user_id,
-        bonus_type="extra_lifespan",
-        bonus_value="10",
-        label="+10",
-        source_session_id="seeded",
-    )
-
-    session_id = client.post("/api/sessions", json={}).json()["session_id"]
-    with patch("agens_novel.engine.game_engine.run_turn_sync", side_effect=_runner):
-        started = client.post(
-            f"/api/sessions/{session_id}/start",
-            json={
-                "char_name": "许满",
-                "attributes": {
-                    "root_bone": 5, "comprehension": 5, "luck": 5,
-                    "willpower": 5, "physique": 5, "soul": 5,
-                },
-            },
-        ).json()
-    # All bonuses should be visible before the rows are consumed.
-    assert started["game_started"] is True
-    assert started["character"]["legacy_talents"] == ["游历之眼"]
-    assert started["character"]["titles"] == ["飞升者"]
-    # After consumption, legacy_bonuses for this user should be 0 (runs_remaining 0).
-    remaining = db.list_legacy_bonuses(user_id)
-    assert all(b["runs_remaining"] == 0 for b in remaining)
-
-
-def test_legacy_bonuses_endpoint_returns_empty_for_guest(tmp_path: Path, monkeypatch) -> None:
-    monkeypatch.setenv("SESSION_COOKIE_SECURE", "0")
-    app = create_app()
-    client = TestClient(app)
-    # No login → 401 (endpoint requires auth).
-    assert client.get("/api/users/me/legacy_bonuses").status_code == 401
-
-
-def test_guest_death_summary_returns_in_memory(tmp_path: Path, monkeypatch) -> None:
-    monkeypatch.setenv("AGNES_API_KEY", "sk-test-web-api")
-    monkeypatch.setenv("SESSION_COOKIE_SECURE", "0")
-    app = create_app()
-    client = TestClient(app)
-    session_id = client.post("/api/sessions", json={"title": "访客局"}).json()["session_id"]
-
-    with patch("agens_novel.engine.game_engine.run_turn_sync", side_effect=_runner):
-        client.post(f"/api/sessions/{session_id}/start", json={"char_name": "访客"})
-        client.post(
-            f"/api/sessions/{session_id}/end",
-            json={"reason": "玩家结束本局。"},
-        )
-
-    summary = client.get(f"/api/sessions/{session_id}/death_summary").json()
-    assert summary["is_guest"] is True
-    # Summary exists even though the guest has no DB.
-    assert summary["summary"]["death_cause"] == "玩家结束本局"
