@@ -597,6 +597,7 @@ class TestGameEngineHandleAction:
 
     def test_notice_board_description_is_not_treated_as_claimed_reward(self, monkeypatch) -> None:
         monkeypatch.setenv("AGNES_API_KEY", "sk-test-1234567890")
+        monkeypatch.setattr("agens_novel.game.realm.random.random", lambda: 0.0)
         monkeypatch.setattr(
             "agens_novel.engine.turn_rules.select_chronicle_event",
             lambda *_args, **_kwargs: {

@@ -551,7 +551,10 @@ def test_post_settlement_stage_claim_must_match_authoritative_stage() -> None:
 def test_stage_requirement_is_not_treated_as_player_realm_claim() -> None:
     session = GameSession(realm="练气", realm_stage=2)
     delta = {"character": {"realm_stage": 2}, "meta": {"stage_advanced": True}}
-    narrative = "悬赏榜标明，练气三层以上方可接取采集任务，练气一层即可登记杂役差事。"
+    narrative = (
+        "悬赏榜标明，练气三层以上方可接取采集任务，练气一层即可登记杂役差事；"
+        "执事另建议练气四层以上接取护送委托。"
+    )
 
     assert not _narrative_conflicts_with_stage_delta(narrative, delta, session)
 

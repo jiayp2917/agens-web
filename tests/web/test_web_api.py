@@ -38,10 +38,12 @@ def _world_builder_result() -> dict:
                     "physique": 5,
                     "soul": 5,
                 },
+                "breakthrough_flags": [],
                 "techniques": [{"name": "基础吐纳术", "level": 1, "type": "内功"}],
                 "inventory": [{"name": "粗布道袍", "quantity": 1, "type": "防具"}],
                 "status_effects": [],
                 "lifespan": 100,
+                "equipment_slots": None,
             },
             "world": {
                 "current_scene": "青玄宗山门",

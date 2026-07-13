@@ -10,7 +10,7 @@ import pytest
 from fastapi.testclient import TestClient
 from sqlalchemy import text
 
-from tests.web.test_web_api import _create_invite, _register, _runner
+from tests.web.test_web_api import _create_invite, _register, _runner, _world_builder_result
 from web.backend.app import create_app
 
 pytestmark = pytest.mark.xdist_group("pg_test_db")
@@ -148,9 +148,16 @@ def test_start_persists_dynamic_opening_world_profile(tmp_path: Path, monkeypatc
             assert "命数倾向" in user_input
             return {
                 "generated_data": {
+                    "character": _world_builder_result()["generated_data"]["character"],
                     "world_name": "归墟潮界",
-                    "regions": [{"name": "潮生海市"}],
-                    "sects": [{"name": "潮音阁"}],
+                    "regions": [{"name": "潮生海市", "description": "海市随灵潮涨落而迁徙。"}],
+                    "sects": [
+                        {
+                            "name": "潮音阁",
+                            "alignment": "中立",
+                            "description": "潮音阁守望群岛灵潮。",
+                        }
+                    ],
                     "current_conflicts": ["灵潮提前"],
                     "fate_hooks": ["天命奇遇"],
                     "chronicle_0_16": [
@@ -165,7 +172,11 @@ def test_start_persists_dynamic_opening_world_profile(tmp_path: Path, monkeypatc
                         "location": "潮音渡口",
                         "region": "归墟潮界",
                         "current_scene": "潮音渡口正在登记听潮弟子",
+                        "npcs_present": [],
+                        "active_quests": [],
+                        "discovered_locations": ["潮音渡口"],
                         "lore_facts": ["归墟潮界灵潮提前。"],
+                        "day_count": 1,
                     },
                     "choices": ["稳住渡口差事", "打听灵潮", "夜探沉星礁", "随潮而行"],
                 },

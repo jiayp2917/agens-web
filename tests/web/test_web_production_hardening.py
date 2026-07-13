@@ -10,8 +10,16 @@ from fastapi.testclient import TestClient
 
 from tests.web.test_web_api import _create_invite
 from web.backend.app import create_app
+from web.backend.security import InMemoryRateLimiter
 
 pytestmark = pytest.mark.xdist_group("pg_test_db")
+
+
+def _set_production_runtime_services(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setenv("AGENS_RATE_LIMIT_BACKEND", "redis")
+    monkeypatch.setenv("AGENS_RATE_LIMIT_REDIS_URL", "redis://redis:6379/0")
+    monkeypatch.setenv("AGENS_EGRESS_PROXY_URL", "http://egress-proxy:3128")
+    monkeypatch.setattr("web.backend.app.create_rate_limiter", InMemoryRateLimiter)
 
 
 def test_production_rejects_default_session_secret(tmp_path: Path, monkeypatch) -> None:
@@ -21,6 +29,7 @@ def test_production_rejects_default_session_secret(tmp_path: Path, monkeypatch) 
     monkeypatch.setenv("DATABASE_URL", "postgresql+psycopg://agens_user:test@postgres:5432/agens_web")
     monkeypatch.setenv("INVITE_ADMIN_CODE", "admin-invite-123")
     monkeypatch.delenv("SESSION_SECRET", raising=False)
+    _set_production_runtime_services(monkeypatch)
 
     with pytest.raises(RuntimeError, match="SESSION_SECRET"):
         create_app()
@@ -37,6 +46,7 @@ def test_production_requires_allowed_origins(tmp_path: Path, monkeypatch) -> Non
     monkeypatch.setenv("SESSION_SECRET", "test-session-secret-with-more-than-32-characters")
     monkeypatch.setenv("MODEL_CONFIG_SECRET", "test-model-config-secret-with-more-than-32-characters")
     monkeypatch.delenv("AGENS_ALLOWED_ORIGINS", raising=False)
+    _set_production_runtime_services(monkeypatch)
 
     with pytest.raises(RuntimeError, match="AGENS_ALLOWED_ORIGINS"):
         create_app()
@@ -50,6 +60,7 @@ def test_production_hides_openapi_and_rejects_untrusted_host(tmp_path: Path, mon
     monkeypatch.setenv("AGENS_ALLOWED_ORIGINS", "https://game.example.test")
     monkeypatch.setenv("MODEL_CONFIG_SECRET", "test-model-config-secret-with-more-than-32-characters")
     monkeypatch.setenv("SESSION_COOKIE_SECURE", "1")
+    _set_production_runtime_services(monkeypatch)
     app = create_app()
 
     client = TestClient(app, base_url="https://game.example.test")
