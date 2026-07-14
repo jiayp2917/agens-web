@@ -74,7 +74,13 @@ def test_host_acl_blocks_application_proxy_bypass() -> None:
     script = (ROOT / "deploy" / "apply-egress-acl.sh").read_text(encoding="utf-8")
 
     assert "DOCKER-USER" in script
+    assert "modprobe br_netfilter" in script
+    assert "net.bridge.bridge-nf-call-iptables=1" in script
     assert 'AGENS_DB_PORT_FOR_ACL' in script
     assert '-p tcp --dport 3128 -j ACCEPT' in script
     assert '-p tcp --dport 6379 -j ACCEPT' in script
+    assert '--ctdir REPLY -j ACCEPT' in script
     assert 'iptables -A "$chain" -s "$app_ip" -j REJECT' in script
+    delete_jump = script.index('iptables -D DOCKER-USER -j "$chain"')
+    insert_jump = script.index('iptables -I DOCKER-USER 1 -j "$chain"')
+    assert delete_jump < insert_jump

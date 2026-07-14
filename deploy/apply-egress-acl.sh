@@ -7,6 +7,15 @@ chain=AGENS_WEB_EGRESS
 
 command -v docker >/dev/null 2>&1 || { echo "docker is required" >&2; exit 1; }
 command -v iptables >/dev/null 2>&1 || { echo "iptables is required" >&2; exit 1; }
+command -v modprobe >/dev/null 2>&1 || { echo "modprobe is required" >&2; exit 1; }
+command -v sysctl >/dev/null 2>&1 || { echo "sysctl is required" >&2; exit 1; }
+
+modprobe br_netfilter
+sysctl -q -w net.bridge.bridge-nf-call-iptables=1
+[ "$(sysctl -n net.bridge.bridge-nf-call-iptables)" = 1 ] || {
+  echo "bridge netfilter must be enabled" >&2
+  exit 1
+}
 
 app_id=$(docker compose -p "$project" -f "$compose_file" ps -q agens-web)
 proxy_id=$(docker compose -p "$project" -f "$compose_file" ps -q egress-proxy)
@@ -37,10 +46,9 @@ db_ips=$(docker exec "$app_id" python -c 'import socket,sys; print(" ".join(sort
 
 iptables -N "$chain" 2>/dev/null || true
 iptables -F "$chain"
-iptables -C DOCKER-USER -j "$chain" 2>/dev/null || iptables -I DOCKER-USER 1 -j "$chain"
-iptables -A "$chain" -m conntrack --ctstate ESTABLISHED,RELATED -j ACCEPT
 
 for app_ip in $app_ips; do
+  iptables -A "$chain" -s "$app_ip" -m conntrack --ctstate ESTABLISHED,RELATED --ctdir REPLY -j ACCEPT
   for proxy_ip in $proxy_ips; do
     iptables -A "$chain" -s "$app_ip" -d "$proxy_ip" -p tcp --dport 3128 -j ACCEPT
   done
@@ -54,4 +62,8 @@ for app_ip in $app_ips; do
 done
 
 iptables -A "$chain" -j RETURN
+while iptables -C DOCKER-USER -j "$chain" 2>/dev/null; do
+  iptables -D DOCKER-USER -j "$chain"
+done
+iptables -I DOCKER-USER 1 -j "$chain"
 echo "agens-web outbound ACL applied"
