@@ -1,5 +1,36 @@
 # Changelog
 
+## 2026-07-14
+
+### 90-turn v2, controlled egress, shared limiting, and browser acceptance
+
+- Added `story_version=2` with nine 10-turn phases across the four world packages. New games default to the 90-turn content, while v1 60-turn saves remain version-pinned and compatible. The high-aptitude validation route reaches ascension on turn 87 without bypassing `RealmSystem`.
+- Added Redis-backed atomic shared rate limiting for production and an internal Squid HTTPS CONNECT proxy plus `DOCKER-USER` egress ACL. Production fails closed when Redis is unavailable; local tests may retain the memory backend.
+- Closed opening and visible-text gaps: strict World Builder validation now covers empty/invalid output, save/load no longer leaks internal slot names, realm requirement text is disambiguated from player progression, and breakthrough narration is rewritten when its source or target realm conflicts with authoritative state.
+- Split Web integration tests by domain and extended the headed Chrome driver with a golden profile, mid-run save/load, refresh, content diagnostics, and transition-aware realm checks.
+- Final local candidate `99e7915`: compileall, Ruff, C901, mypy and deployment-contract tests passed. Gameplay and browser evidence remains bound to `9b3a86e`; the two later commits only corrected host egress ACL activation order and its regression contract.
+- Headed Chrome golden route: `passed_terminal`, ascension on turn 87, 87/87 strict live turns, fallback 0, repair 0, P0/P1 0, save/load and refresh passed, visible forbidden text 0, exact repeats 0; choice p50 9.159s, p95 18.573s, max 19.752s.
+- Headed Chrome mixed route: 20/20 strict live turns, double-click single-submit passed, turn-10 save/load and refresh passed, fallback/repair/P0/P1 0; choice p50 10.240s. The p50 <= 5s target remains intentionally deferred.
+- Browser evidence remains ignored under `output/playwright/local-visible-golden90-9b3a86e-20260714.*` and `output/playwright/local-visible-mixed20-9b3a86e-20260714.*`; no credential or runtime artifact enters the commit.
+
+### Production deployment gate and stop condition
+
+- Rebuilt and scanned candidate/production packages directly from commit `99e7915`; production-package sensitive paths, tests and credential-pattern hits were zero.
+- Server isolation passed PostgreSQL, Redis shared limiting, Redis fail-closed 503, Squid allow/deny rules, image hardening and host egress ACL checks. The application could reach only PostgreSQL, Redis and Squid; same-bridge peers and direct public egress were blocked while the allowed provider remained reachable through Squid.
+- Production backups completed for PostgreSQL, application files, Compose and environment configuration. Stage 1 deployed the new image with `story_version=1`; Alembic remained at `20260710_0008`, Redis/Squid/application and public health were healthy, and the ACL was active at the head of `DOCKER-USER`.
+- Production strict smoke stopped on the first choice: start was non-fallback, but two complete Narrator attempts retained English text in the narrative and were classified as incomplete, causing local fallback. HTTP 200 and turn progression were therefore not accepted as live-model success.
+- The old-image rollback drill, `story_version=2` switch, v2 smoke and host ACL/sysctl persistence were not executed. Production remains healthy on the staged v1 image but is not release-accepted; the next action is either rollback to `a5a1f0f9` or a new Narrator-contract fix followed by the remaining gates.
+
+## 2026-07-13
+
+### Plan alignment and current fingerprint verification
+
+- Closed the `docs/plan.md` milestone for latest-fingerprint real-browser verification. The current worktree ran headed Chrome against isolated `agens_web_test`: base 23 turns including post-load continuation, A/B/C/D each 20 turns, mixed 60 turns reaching a rule terminal state, and a double-click probe; 164/164 choice turns were strict live.
+- All current browser gates passed: fallback 0, repair 0, incomplete retry 0, contract recovery 0, visible forbidden text 0, repeated exact narrative 0, P0/P1 0, save/load passed, and no duplicate submission from double-click. Evidence remains under ignored `output/playwright/goal-plan-ac14d07-final2-20260713-*`.
+- Added provider JSON-schema support for World Builder and restored the required `new_game.character` object in the strict contract. Added rejection of empty, placeholder and single-letter opening choices. Added HTTP 520 to transient retry classification.
+- Fixed stage consistency false positives: task requirements such as “练气三层以上方可接取” are no longer treated as the player’s realm claim. The notice-board regression is covered and the full serial suite passed.
+- Final local gates: `tests\\web -n0` 94 passed, full `pytest -q -n0` with `TEST_DATABASE_URL` 751 passed and 0 skipped, compileall/Ruff/Ruff C901/mypy passed, and the frontend Vitest/build gates remained green. This batch does not claim the 5-second latency target, Docker gate, production ACL/deployment, or standard 90-turn content target.
+
 ## 2026-07-12
 
 ### Live model matrix on the current worktree fingerprint

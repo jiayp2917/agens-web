@@ -23,17 +23,17 @@
 - [x] 模型地址已具备应用层协议、主机、DNS/IP、重定向和环境代理防护；Key 加密并保持脱敏边界。
 - [x] 当前数据库迁移链、异常数据 fail-closed、空库升级、备份与恢复已完成本地验证。
 - [x] 桌面端、移动端、键盘焦点、重复提交、HTTP 409、存读档和 20 回合 live 垂直切片已完成本地验收。
+- [x] 新局默认九阶段 90 回合 v2，黄金路线在第 90 回合前飞升；v1 60 回合旧存档保持兼容。
+- [x] 最新提交已完成 headed Chrome 90 回合终局与 20 回合混合/双击/存读档复验，严格 live 与内容门禁通过。
+- [x] Web API 测试已按领域拆分，生产共享限流已改为 Redis，Redis 故障按 fail-closed 处理。
+- [x] Docker/Compose、非 root、只读根目录、一次性 migration、Redis/Squid 和 egress ACL 已在服务器隔离及生产 Stage 1 验证；生产备份已完成。
 - [x] `plan/spec/audit/backlog/changelog` 的长期目标、当前事实、未完成项和历史证据已分离。
 
 ### 未完成
 
-- [ ] 在具备 Docker 的环境完成镜像、Compose、一次性迁移服务、非 root、只读文件系统和健康检查门禁。
 - [ ] 将同一 provider/network 下的 choice p50 降到 5 秒以内，并完成 408/429/5xx、超时和取消专项验证。
-- [ ] 在生产部署层增加出站 ACL 或受控代理，缩小 DNS rebinding 的连接时竞态窗口。
-- [ ] 在最新工作树 fingerprint 重跑 A/B/C/D 各 20 回合和规则终局长局矩阵。
-- [ ] 把当前版本化内容扩展到标准 90 回合目标，增加阶段、分支兑现和结局差异。
-- [ ] 在生产执行备份、异常数据检查、迁移到当前 Alembic head、回滚演练和 strict live smoke。
-- [ ] 继续小步拆分数据库与 Web API 测试复杂度，并为多实例部署引入共享限流边界。
+- [ ] 修复生产 Narrator 正文英文残留导致的 choice fallback，完成 strict live smoke、旧镜像回滚演练、v2 切换与 v2 smoke。
+- [ ] 持久化生产 `br_netfilter`、bridge sysctl 和 ACL 重应用；失败恢复不得卸载 `br_netfilter`。
 
 ## 1. 总体目标
 

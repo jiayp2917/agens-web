@@ -79,22 +79,26 @@ start/choice/action/save/load/end 请求必须包含：
 - 自定义 hostname 必须在 `AGENS_MODEL_BASE_URL_ALLOWLIST`；可按 `host:port` 精确允许非 443 HTTPS 端口。
 - 请求前解析全部 A/AAAA；任一地址不是 global unicast 即拒绝，包括 loopback、private、link-local、reserved、multicast 和云 metadata 地址。
 - HTTPX 设置 `trust_env=False` 和 `follow_redirects=False`，不继承本机代理，也不跟随重定向。
-- 当前 DNS 校验与连接仍是两个步骤，理论上存在 DNS rebinding TOCTOU 残余风险；公网高风险场景应增加出站网络 ACL 或固定解析连接层。
+- 生产模型请求额外使用显式 `AGENS_EGRESS_PROXY_URL` 指向内部 Squid；代理只允许 HTTPS CONNECT 443 到官方域名和部署 allowlist。
+- `DOCKER-USER` 应用专用链拒绝应用绕过代理直连公网、loopback、private、link-local、metadata 和 reserved 目标。应用层 URL 校验、代理 ACL 与主机 egress ACL 是三层独立防线。
+- ACL 应先完整安装并置于 `DOCKER-USER` 首位，再开启 bridge IPv4 filtering，避免放行链尚未建立时中断应用到数据库等同桥流量。
 
 ## Request Boundary
 
 - body 默认上限 64 KiB，同时覆盖 Content-Length 和 chunked body。
 - 状态变更请求校验 Origin/Referer。
 - 生产启用 TrustedHost，关闭 `/docs`、`/redoc`、`/openapi.json`。
-- 认证和回合接口有应用内限流；长期公网可迁到反代/Redis，但应用内保护不能视为分布式限流。
+- 认证和回合接口通过抽象限流接口保护；本地默认内存实现，生产必须使用 Redis 原子滑动窗口。Redis 不可用时敏感写请求返回 503，不静默降级。
 - `/api/health` ping PostgreSQL，数据库不可用返回 503。
 
 ## Deployment Boundary
 
 - PostgreSQL 不暴露公网或 LAN。
+- Redis 与 Squid 不发布宿主机端口；Redis 不持久化限流数据，Squid 不缓存模型流量。
 - Compose 使用一次性 migration service；应用副本不执行 Alembic。
 - 最终镜像非 root、只读根文件系统、drop all capabilities、`no-new-privileges`、tmpfs 和资源限制。
 - 公网只暴露反代/Tunnel 到应用端口。
+- 活跃 Docker 主机不得执行 `modprobe -r br_netfilter`；需要恢复测试前状态时保留模块，只恢复 bridge sysctl。卸载模块可能连带移除 `bridge` 并破坏所有 Docker bridge 设备。
 - 真实生产部署、迁移、备份恢复和 live-model 验收不属于本地代码验证。
 
 ## Local Key Pattern
@@ -121,4 +125,4 @@ cd web\frontend-react
 npm.cmd audit --audit-level=high
 ```
 
-测试通过不等于生产安全验收；生产还需要外部网络策略、反代限制、备份恢复和脱敏日志复核。
+测试通过不等于生产安全验收；每次发布仍需复验 Squid 允许/拒绝矩阵、Redis 跨实例计数、egress ACL 防绕过、备份恢复和脱敏日志。当前生产执行结果见 `PROJECT_AUDIT.md`。

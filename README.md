@@ -14,13 +14,14 @@ Web-only 文字修仙模拟器。当前主线由 React/Vite、FastAPI、PostgreS
 - start/choice/action/save/load/end 都要求 `request_id` 与 `expected_version`，后端通过会话锁、CAS 和幂等结果防止双击、重试和并发覆盖。
 - 回合日志、session snapshot、活跃/终局 run、奖励和遗泽消费使用同一数据库事务；失败恢复内存 runner。
 - fallback 会自动切换本地故事，玩家直接使用下方 A/B/C/D；fallback 不能算 live-model 成功。
-- 四套世界包现绑定版本化 60 回合主线；存档保存 `story_key`、`story_version` 和可变进度，20 回合只验证阶段推进。
+- 四套世界包保留 60 回合 `story_version=1` 旧档兼容；新局默认使用九阶段 90 回合 `story_version=2`，黄金路线可在第 90 回合前飞升，其他路线允许失败、死亡或较低境界收束。
 - 普通回合由事件表声明模型可承接的 delta 类型；Web `choice_index` 与引擎 A/B/C/D 输入共用同一语义包装。
 - Narrator 缺任一契约段时会记录 `contract_recovery`；即使规则侧能继续结算，也不能计作 live-model 成功。
 - FastAPI 路由已拆为 auth/catalog/session/settings；`GameEngine` 仍是玩法门面，开局、普通回合、突破和 fallback 分别由 flow/policy 模块承担。
 - 前端关键面板使用 SVG 九宫双线内收角与同轮廓背景蒙版；工具按钮、寿元条、细滚动条和 A/B/C/D 六态已按当前素材规范统一，移动端保留同一视觉语言。
+- 服务器已通过 Docker/Compose、Redis、Squid 和 egress ACL 隔离门禁，并完成生产备份与 Stage 1 部署；但首个生产 choice 因 Narrator 正文英文残留进入 fallback，当前生产健康但尚未通过发布验收，v2 切换、回滚演练和 ACL 持久化仍未完成。
 当前本地门禁、strict live 证据、性能数据和残余风险统一见
-[docs/PROJECT_AUDIT.md](docs/PROJECT_AUDIT.md)。本地通过不等于生产通过；当前未提交工作树尚未执行生产部署或生产验收。
+[docs/PROJECT_AUDIT.md](docs/PROJECT_AUDIT.md)。本地通过不等于生产通过，生产状态必须以服务器侧脱敏复验为准。
 
 ## Local PostgreSQL
 
@@ -114,9 +115,10 @@ Narrator `ok`、`fallback=false`、`fallback_prompt.active=false`、`contract_re
 - `deploy/docker-compose.yml` 使用一次性 `agens-web-migrate` 服务执行 Alembic。
 - 应用副本不执行迁移；镜像使用锁定依赖、非 root 用户和只读根文件系统。
 - Compose 默认 drop capabilities、启用 `no-new-privileges`、tmpfs 和 CPU/内存/PID 限制。
-- PostgreSQL 只在内部网络可见，不对公网或 LAN 暴露。
-
-本机当前未安装 Docker CLI，因此本批 Docker build 需在具备 Docker 的本地环境补验；这不等于生产验证。
+- PostgreSQL、Redis 和 Squid 仅在内部网络可见，不对公网或 LAN 暴露。
+- 生产限流使用 Redis 原子滑动窗口；Redis 不可用时敏感写请求返回 503，不降级为各实例独立计数。
+- 模型请求只通过显式 Squid HTTPS CONNECT 代理访问允许域名，`DOCKER-USER` 专用链阻止应用绕过代理直连公网或私网。
+- 主机 ACL 必须先完整写入并置于 `DOCKER-USER` 首位，再开启 bridge filtering；不得在运行 Docker 容器的主机上执行 `modprobe -r br_netfilter`。
 
 ## Artifacts
 

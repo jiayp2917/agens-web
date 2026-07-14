@@ -2,7 +2,7 @@
 
 ## Scope
 
-本审计描述 2026-07-12 本地 `master@019b941` 工作树（clean；在 `ea18398` 之上叠加 LLM 错误路径专项测试、`database_postgres` repository 拆分和 `test_web_api.py` 主题拆分，自动化门禁在该提交链复跑通过）。本批次新增真实模型矩阵证据：独立 `agens_web_live` PG 库 + headed Chrome 在 `019b941`(clean) 重跑 A/B/C/D 各 20 回合 + mixed 60 回合。旧 `master@ea5ab36` 的 dirty 工作树证据只作历史。未连接生产环境、未读取 secrets、未执行生产迁移或部署，旧生产证据不作为当前分支通过结论。
+本审计描述 2026-07-14 本地 `master@99e7915` 提交链。玩法、数据库测试、规则级 90 回合和 headed Chrome 90/20 回合证据绑定 `9b3a86e`；后续两项提交只修正主机 egress ACL 的 bridge-aware 规则与激活顺序，并完成对应静态门禁。生产已执行隔离、备份和 Stage 1，但 strict choice 触发 fallback，故当前运行健康不等于发布验收通过。
 
 ## Current Architecture
 
@@ -11,6 +11,8 @@
 - 游戏：`GameEngine` 门面 + StartFlow/TurnFlow/BreakthroughFlow/ModelFallbackPolicy。
 - Agent：项目内 `SequentialAgentGraph`，不是 LangGraph。
 - 数据：PostgreSQL-only，Alembic head `20260710_0008_runtime_consistency`。
+- 内容：v1 60 回合旧档兼容；v2 九阶段 90 回合，新局默认 v2。
+- 部署：生产 Redis 共享限流 + 内部 Squid + 应用专用 egress ACL；本地纯单测可使用内存限流。
 - 依赖：Python 使用 `uv.lock`，前端使用 `package-lock.json`。
 
 ## Closed Findings
@@ -35,8 +37,8 @@
 - 本地故事调用 `settle_turn()`，推进年龄、寿元和阶段反馈。
 - A/B/C/D 语义由后端槽位强制，D 始终为气运。
 - `GameSession.error` 随存档保存和恢复。
-- 四套世界包绑定精确版本主线；Session/存档保存 key、version 和可变剧情进度，主线第 60 回合收束，20 回合不再提前结束。
-- 第 60 回合主线收束会写入终局原因并结束 session；旧存档缺少剧情绑定时按原世界补绑，已有但不可用的精确版本显式拒绝。
+- 四套世界包绑定精确版本主线；Session/存档保存 key、version 和可变剧情进度。v1 在第 60 回合收束，v2 按九阶段推进到第 90 回合，20 回合不提前结束。
+- v2 黄金路线使用正式选择、事件和 `RealmSystem` 在第 87 回合飞升；低资质或其他路线允许死亡、失败或停留较低境界。旧存档缺少剧情绑定时按原世界补绑，已有但不可用的精确版本显式拒绝。
 - 已结束主线不重复结算结局；每四回合的阶段反馈继续写入主线 beat 和外界情报。
 - 事件表的 `allowed_delta_types` 在 Judge 前后强制执行；模型世界重置叙事由规则侧压制。
 - Web 选项索引与 `GameEngine` 字母输入共用同一 A/B/C/D 语义 helper，不再因去掉标签把风险路线误判为机遇。
@@ -137,26 +139,41 @@ run_achievements, account_rewards, legacy_bonuses
 - 最新 choice 平均 8.98s、p50 8.80s、p95 10.32s、最大 16.64s。更早的 A/B/C/D 各 20 回合和 mixed 60 回合矩阵属于前一工作树 fingerprint，只作为 `CHANGELOG.md` 中的历史证据，不冒充当前工作树完整矩阵。
 - 2026-07-12 真实模型矩阵（`master@019b941` clean + 独立 `agens_web_live` PG 库 + headed Chrome，`AGENS_START_MODEL_WORLD=1` 强制 live 开场）：A/B/C/D 各 20 回合 + mixed 60 回合，证据绑定 HEAD `019b941f`、dirty=False、`agens_web_live` 库标签与脚本哈希（`output/playwright/matrix-*` 证据集，gitignored）。140/140 choice 回合严格 live 通过（Narrator `ok`、provider JSON schema envelope ok、0 fallback、0 contract recovery、0 repair、save/load 通过）。全 live 回合 choice **p50=9069ms、p95=17529ms、max=26234ms**（目标 p50≤5s/p95≤15s 均未达）。延迟拆分：Narrator 主导 ~8.5–9.4s/回合（每回合必调，占 90%+），residual（持久化+网络+页面渲染+规则结算+Judge 摊销）仅 ~0.1–1.3s，证明瓶颈在 provider 单次调用延迟而非本地编排；Judge 间歇触发（0–6 次/局，~5.3–8.6s/次），触发回合被推到 17–26s，对应 p95/max 尖峰。开场 World Builder 7 次尝试中 2 次 `incomplete_output` 回退确定性开场（两次失败 `completion_tokens` 均为 1673，疑似截断），重跑均成功，属瞬态；开场不走 provider JSON schema（靠解析），Narrator 因强制 schema 而 140/140 稳定。fixed-c 出现 2 次 Narrator incomplete retry（已恢复，非 fallback）。mixed-60 跑满 60 回合但 `game_over` 未触发，规则终局样本本批未捕获。
 
+## 2026-07-14 Current Verification
+
+本节覆盖玩法候选 `9b3a86e` 与最终代码 `HEAD 99e7915`。本地 PostgreSQL 自动化和 Chrome 使用隔离时段；`tests\web` 清库时没有浏览器并发。浏览器证据仅保留在 Git 忽略的 `output/playwright/`，不包含 credential 或生产配置。
+
+- 自动化：compileall、Ruff、Ruff C901、mypy 通过；`tests\web -n0` 为 94 passed；串行非 live 全量为 804 passed、1 deselected、0 skipped、0 failed；Vitest 12 passed，React build 通过。
+- 规则级黄金路线：`scripts/validate_90_turns.py --seed agens-golden-169 --max-turns 90` 在第 87 回合飞升。`AGENS_VALIDATION_SEED` 仅允许非生产高资质 v2 验证，生产检测到该变量会拒绝启动。
+- Headed Chrome 90 回合：`local-visible-golden90-9b3a86e-20260714.json` 为 `passed_terminal`，第 87 回合 `finale=true`；87/87 choice strict live，fallback 0、repair 0、contract recovery 0、P0/P1 0、可见禁用词 0、精确重复 0；第 45 回合存读档和刷新后继续成功。
+- Headed Chrome 20 回合：`local-visible-mixed20-9b3a86e-20260714.json` 为 `passed`；20/20 choice strict live，双击只提交一次，第 10 回合存读档和刷新后继续成功，fallback/repair/P0/P1 0。
+- 性能：90 回合 p50 9.159s、p95 18.573s、max 19.752s；20 回合 p50 10.240s。`choice p50 <= 5s` 仍明确延期；生产 strict choice 阻塞另见下一节。
+- 真实 Chrome 暴露的两类验收问题已修复：世界/制度中的境界文本不再误报为玩家状态；成功突破叙事若写错旧阶段或目标境界，会在玩家可见前改写为准确的权威过渡。
+- `99e7915` 额外通过 compileall、Ruff、C901、mypy 和 deployment-contract 测试；其 ACL 顺序固定为“完整安装并插入链 -> 开启 bridge filtering”。
+
+## 2026-07-14 Production Gate
+
+- 从 `99e7915` 提交对象生成并扫描候选包和生产包；生产包未包含测试、运行证据、敏感路径或凭据样式。
+- 服务器隔离通过 Docker/Compose、镜像硬化、PostgreSQL、Redis 跨实例限流与故障 503、Squid 允许/拒绝矩阵、同桥私网阻断、直接公网阻断和代理 provider 连通性。
+- PostgreSQL、应用、Compose 和环境配置备份完成；生产 Stage 1 部署新镜像并保持 Alembic `20260710_0008`，Redis、Squid、应用、origin 和公网 health 均正常，egress ACL 位于 `DOCKER-USER` 首位。
+- v1 strict smoke 的 start 为 non-fallback，但首个 choice 的两次 Narrator 输出均在正文保留英文，触发 incomplete output 和本地 fallback。该结果不算 live-model 成功，流程按硬门禁停止。
+- 尚未执行旧镜像回滚演练、`story_version=2` 切换、v2 smoke 和 ACL/sysctl 持久化。当前生产运行健康但未获发布验收；恢复方向等待在“回滚到 `a5a1f0f9`”与“新提交修复后继续”之间确认。
+
 ## Residual Risks
 
 | 风险 | 级别 | 说明 |
 | --- | --- | --- |
-| DNS 校验与连接之间存在 rebinding TOCTOU | P1 | 应在公网部署层增加出站 ACL/代理，阻止私网和 metadata 地址 |
-| 本机无 Docker CLI | P1 | Docker build/compose config 只能在 CI 或具备 Docker 的本地环境补验 |
-| live 响应仍高于 5 秒目标 | P1 | 2026-07-12 矩阵全 live 回合 choice p50=9.07s、p95=17.5s、max=26.2s（目标 p50≤5s/p95≤15s 均未达）。Narrator 主导 ~8.5–9.4s/回合，residual 仅 ~0.1–1.3s，瓶颈在 provider 单次调用延迟而非本地编排；Judge 触发回合推高 p95/max。降延迟需 provider/模型侧或并发化，非本地编排能单独解决 |
-| 最新工作树矩阵已重跑，规则终局样本未捕获 | P1 | 2026-07-12 已在 `019b941`(clean) + 独立 `agens_web_live` 库重跑 A/B/C/D 各 20 + mixed 60，140/140 choice live；mixed-60 跑满 60 回合未触发 `game_over`，规则终局长局样本本批未捕获，待内容侧确认 60 回合主线收束触发条件 |
-| 开场 World Builder 偶发回退 | P1 | 矩阵 7 次开场中 2 次 `incomplete_output`（两次失败 `completion_tokens` 一致为 1673，疑似截断）回退确定性开场；重跑均成功，瞬态。开场不走 provider JSON schema（靠解析），Narrator 因强制 schema 而 140/140 稳定。可评估为开场启用 provider JSON schema 或放宽开场契约重试 |
-| 标准 90 回合目标未实现 | P1 | 当前四套内容版本在第 60 回合收束；90 回合是长期产品目标，不是当前完成事实 |
-| 生产未部署 `0008` | P1 | 当前只证明本地迁移；生产需单独备份、孤儿检查、迁移和 smoke |
+| 生产 strict choice 未通过 | P1 | Narrator 正文连续两次保留英文，严格契约拒绝后进入 fallback；需修复提示/安全改写策略并重新执行 v1/v2 smoke |
+| ACL/sysctl 尚未持久化 | P1 | 当前 ACL 运行态已验证，但服务器重启后的模块、sysctl 与链重应用尚未固化；恢复过程禁止卸载 `br_netfilter` |
+| live 响应仍高于 5 秒目标 | P1 | 当前 fingerprint 的 164 个严格 live 回合 choice p50=9.495s、p95=18.025s、max=44.636s（目标 p50≤5s/p95≤15s 均未达）。Narrator 仍是主要延迟来源，需 provider/模型侧或并发化处理 |
+| 内容路线仍有相似度风险 | P2 | 最新 A/B/C/D 硬门禁通过，但 C/D 峰值相似度约 0.743/0.769，后续应继续增加事件兑现和路线专属内容 |
 | `database_postgres.py` 仍偏大 | P2 | catalog/rewards/session_mutation 已抽到独立 repository（1332→727 行）；run/turn/progress 跟踪为剩余的最大 SQL 块，可在文件再增长时提取 |
 | `tests/web/test_web_api.py` 仍偏大 | P2 | model settings/auth/production-hardening/save-load 已拆出（2040→~1419 行）；session/turn 主题仍与 gameplay flow 混在原文件，待后续批次连同 helper 迁 conftest 一起拆 |
-| 应用内 RateLimiter 为单进程 | P2 | 多副本公网应使用反代/Redis 分布式限流 |
 | 初始 `/api/auth/me` 访客探测返回 401 | P2 | UI 正常处理，但 Chrome console 会记录一次预期资源错误；可后续评估匿名 me 返回 200/null |
-| `test_notice_board_description_is_not_treated_as_claimed_reward` 非确定性 | P2 | pre-existing flaky：仅当回合 1 随机推进 stage 时，`_narrative_conflicts_with_stage_delta`（turn_flow.py:418-420）把含「练气N层」任务等级描述的叙事误判为玩家境界声明，用规则编年史覆盖 narrator 叙事。5 次孤立运行为 3 通过 / 2 失败。属叙事一致性产品行为，修复需谨慎（正则/上下文消歧或产品判定），与模型错误路径批次无关 |
 
 ## Acceptance Boundary
 
 - 本地自动化通过不等于生产通过。
 - HTTP 200 不等于 live-model 成功。
 - `fallback=true`、`fallback_prompt.active=true`、`contract_recovery=true` 或 Narrator 非 `ok` 一律不算 live-model 成功。
-- 当前工作树的生产部署、数据库升级和真实账号验收必须由独立生产任务完成。
+- 生产 Stage 1 健康不等于发布通过；必须补齐 non-fallback choice、回滚演练、v2 smoke 和持久化门禁。

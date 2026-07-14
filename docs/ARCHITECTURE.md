@@ -94,7 +94,7 @@ React/Vite
 | `model_fallback_policy.py` | 失败决策、脱敏玩家提示 |
 | `turn_rules.py` | A/B/C/D 类别、时间、属性、寿元、事件、长期剧情和终局规则 |
 | `event_catalog.py` | 数据驱动编年史事件、阶段目标、选项提示和允许 delta 类型 |
-| `story_catalog.py` | 四套世界的版本化 60 回合主线、阶段、承诺、关系和结局 |
+| `story_catalog.py` | 四套世界的版本化主线：v1 60 回合兼容、v2 九阶段 90 回合、承诺、关系和结局 |
 | `action_delta_policy.py` | 模型 delta 清洗、叙事/落账一致性、规则字段覆盖 |
 | `game_session.py` | 权威状态、delta 分区应用、存档序列化 |
 
@@ -173,7 +173,12 @@ Compose：
 - `agens-web-migrate` 一次性执行 Alembic；
 - 应用等待 migration 成功；
 - read-only root、cap drop、no-new-privileges、tmpfs、CPU/内存/PID 限制；
-- PostgreSQL 只通过内部网络访问。
+- PostgreSQL、Redis 与 Squid 只通过内部网络访问，不发布宿主机端口；
+- 生产 `RateLimiter` 使用 Redis 原子滑动窗口，两个应用实例共享计数，Redis 故障时敏感写请求 fail closed 为 503；
+- LLM 客户端通过显式 `AGENS_EGRESS_PROXY_URL` 使用 Squid，保持 `trust_env=False`、`follow_redirects=False`；
+- `deploy/apply-egress-acl.sh` 在 `DOCKER-USER` 建立应用专用链，仅允许 DB、Redis、Squid 和必要内部流量，阻止绕过代理的直接出站。
+
+主机部署顺序是安全边界的一部分：必须先解析依赖地址、完整写入应用专用链并将其插入 `DOCKER-USER` 首位，最后才启用 `net.bridge.bridge-nf-call-iptables=1`。运行 Docker 容器的主机不得通过卸载 `br_netfilter` 恢复状态，因为它可能连带移除 `bridge` 模块并使 Docker 网络对象与内核 bridge 设备失去一致性；恢复只能保留模块并按已记录值调整 sysctl。
 
 本地迁移门禁使用独立临时库验证 0007 已有数据升级、孤儿/重复数据 fail-closed、0008 downgrade/re-upgrade 和 downgrade 阻塞条件。`scripts/verify_pg_backup_restore.py` 只接受 `TEST_DATABASE_URL`，使用 `pg_dump/pg_restore` 验证 head、18 张表和数据标记，不接受生产 `DATABASE_URL` 作为输入。
 

@@ -12,10 +12,12 @@
 - mutation API 强制 request ID + version，使用锁、CAS、幂等记录和事务提交。
 - Agent 编排是项目内 `SequentialAgentGraph`，不是 LangGraph。
 - fallback 自动切换本地故事，但不能算 live-model 成功。
-- 四套世界包绑定版本化长期主线；当前内容版本按 60 回合收束，标准 90 回合是后续产品目标。
+- 四套世界包保留 60 回合 v1 旧档兼容；新局默认绑定九阶段 90 回合 v2，黄金路线可在 90 回合内飞升。
 - gameplay recovery 与 provider fallback 分开记录；Narrator 契约不完整不能计作 live-model 成功。
+- 生产形态包含内部 Redis 共享限流、Squid 受控出站代理和专用 egress ACL；本地纯单测仍可使用内存限流。
+- 2026-07-14 服务器隔离与生产 Stage 1 已验证上述形态，但 strict choice 因 Narrator 正文英文残留触发 fallback 而停止；当前运行健康不等于发布验收通过，v2、回滚演练和 ACL 持久化仍待完成。
 - 当前本地验证结果、精确计数和 strict live 证据只在 `PROJECT_AUDIT.md` 维护。
-- 本地工作树与生产状态分开；未执行服务器侧部署和复验时，不得写成生产通过。
+- 本地工作树与生产状态分开；生产通过只接受服务器侧备份、部署、回滚和 strict smoke 的脱敏事实。
 
 ## Source Of Truth
 
