@@ -32,6 +32,9 @@ _BREAKTHROUGH_FAILURE_WORDS = (
 _BREAKTHROUGH_SUCCESS_WORDS = ("突破成功", "功成", "踏入", "晋入", "进阶", "破境已成")
 _QI_STAGE_CLAIM_RE = re.compile(r"练气\s*(?:第)?\s*([1-9一二三四五六七八九])\s*层")
 _REALM_PHASE_CLAIM_RE = re.compile(r"(筑基|金丹|元婴|化神|合体|大乘|渡劫)\s*(初期|中期|后期|圆满)")
+_REALM_TRANSITION_TARGET_RE = re.compile(
+    r"(?:突破至|突破到|踏入|迈入|晋入|晋升至|升至)\s*(筑基|金丹|元婴|化神|合体|大乘|渡劫|飞升)"
+)
 _CHINESE_STAGE_VALUES = {
     "一": 1,
     "二": 2,
@@ -70,6 +73,7 @@ class BreakthroughFlow:
             return
 
         engine.emit("on_loading", "突破中...")
+        previous_realm_label = format_realm_name(session.realm, session.realm_stage)
 
         breakthrough_delta = engine.realm_system.attempt_breakthrough(session)
         bt_result = breakthrough_delta.get("meta", {}).get("breakthrough_result", "")
@@ -107,7 +111,11 @@ class BreakthroughFlow:
         session.realm_turn_count += 1
         self._ensure_breakthrough_meta(state_delta, bt_result)
         session.apply_delta(state_delta)
-        narrative = self._coerce_breakthrough_narrative(narrative, bt_result)
+        narrative = self._coerce_breakthrough_narrative(
+            narrative,
+            bt_result,
+            previous_realm_label=previous_realm_label,
+        )
         is_finale = session.finale
         if session.game_over:
             session.last_choices = []
@@ -204,16 +212,38 @@ class BreakthroughFlow:
             or "更高境界"
         )
         if result == "success":
-            return f"规则判定：本次突破成功，从{session.realm}突破至{target}。请只写成功叙事。"
+            source_label = format_realm_name(session.realm, session.realm_stage)
+            target_label = format_realm_name(target, 1)
+            return f"规则判定：本次突破成功，从{source_label}突破至{target_label}。请只写成功叙事。"
         if result == "failure":
             effect = str(meta.get("status_effect_add") or "走火入魔")
             return f"规则判定：本次突破失败，反噬结果为{effect}。请只写失败叙事，不得提升境界。"
         return f"尝试从{session.realm}突破到更高境界"
 
-    def _coerce_breakthrough_narrative(self, narrative: str, bt_result: str) -> str:
+    def _coerce_breakthrough_narrative(
+        self,
+        narrative: str,
+        bt_result: str,
+        *,
+        previous_realm_label: str = "",
+    ) -> str:
         text = re.sub(r"\s+", " ", str(narrative or "")).strip()
         if bt_result == "success":
-            if not text or any(word in text for word in _BREAKTHROUGH_FAILURE_WORDS):
+            if (
+                not text
+                or any(word in text for word in _BREAKTHROUGH_FAILURE_WORDS)
+                or _claims_conflicting_breakthrough_transition(
+                    text,
+                    previous_realm_label,
+                    self.engine.game_session,
+                )
+            ):
+                current_label = format_realm_name(
+                    self.engine.game_session.realm,
+                    self.engine.game_session.realm_stage,
+                )
+                if previous_realm_label and previous_realm_label != current_label:
+                    return f"破境已成，自{previous_realm_label}踏入{current_label}。"
                 return "破境已成，灵机贯通，境界向前推进。"
         elif bt_result == "failure":
             if (
@@ -371,6 +401,28 @@ def _claims_conflicting_realm_stage(text: str, session: Any) -> bool:
     realm = str(getattr(session, "realm", "") or "")
     stage = int(getattr(session, "realm_stage", 1) or 1)
     expected = format_realm_name(realm, stage)
+    claims = _realm_stage_claims(text)
+    return any(claim != expected for claim in claims)
+
+
+def _claims_conflicting_breakthrough_transition(
+    text: str,
+    previous_realm_label: str,
+    session: Any,
+) -> bool:
+    current_realm = str(getattr(session, "realm", "") or "")
+    current_stage = int(getattr(session, "realm_stage", 1) or 1)
+    current_label = format_realm_name(current_realm, current_stage)
+    allowed_labels = {label for label in (previous_realm_label, current_label) if label}
+    if any(claim not in allowed_labels for claim in _realm_stage_claims(text)):
+        return True
+    return any(
+        target_realm != current_realm
+        for target_realm in _REALM_TRANSITION_TARGET_RE.findall(str(text or ""))
+    )
+
+
+def _realm_stage_claims(text: str) -> list[str]:
     claims: list[str] = []
     for value in _QI_STAGE_CLAIM_RE.findall(str(text or "")):
         claim_stage = int(value) if value.isdigit() else _CHINESE_STAGE_VALUES.get(value, 0)
@@ -380,4 +432,4 @@ def _claims_conflicting_realm_stage(text: str, session: Any) -> bool:
         f"{claim_realm}{phase}"
         for claim_realm, phase in _REALM_PHASE_CLAIM_RE.findall(str(text or ""))
     )
-    return any(claim != expected for claim in claims)
+    return claims

@@ -153,6 +153,49 @@ def test_breakthrough_success_suppresses_conflicting_failure_narrative() -> None
     assert "破境已成" in narratives[-1][0]
 
 
+def test_breakthrough_success_rewrites_wrong_previous_realm_stage() -> None:
+    engine = GameEngine()
+    engine.game_session.game_started = True
+    engine.game_session.realm = "大乘"
+    engine.game_session.realm_stage = 4
+    engine.game_session.breakthrough_flags = [
+        "foundation_aid",
+        "golden_core_aid",
+        "nascent_soul_aid",
+        "spirit_transformation_aid",
+        "unity_law_aid",
+        "mahayana_vow_aid",
+        "tribulation_preparation",
+        "tribulation_elixir",
+    ]
+    seen_inputs: list[str] = []
+
+    def runner(agent_name, user_input, session, **kwargs):
+        if agent_name == "narrator":
+            seen_inputs.append(user_input)
+            return {
+                "narrative": "大乘后期瓶颈轰然破碎，一举踏入渡劫之境。",
+                "state_delta": {},
+                "choices": ["稳固根基", "拜访同道", "探查异象", "静候天机"],
+                "llm_error": "",
+            }
+        if agent_name == "judge":
+            return {"approved": True, "corrected_delta": {}, "judgment_note": "", "llm_error": ""}
+        return {}
+
+    narratives: list[tuple[str, int]] = []
+    engine.on_narrative = lambda text, turn: narratives.append((text, turn))
+
+    with patch("agens_novel.engine.game_engine.run_turn_sync", side_effect=runner):
+        with patch("agens_novel.game.realm.random.random", return_value=0.0):
+            engine.attempt_breakthrough()
+
+    assert seen_inputs and "从大乘圆满突破至渡劫初期" in seen_inputs[0]
+    assert engine.game_session.realm == "渡劫"
+    assert engine.game_session.realm_stage == 1
+    assert narratives[-1][0] == "破境已成，自大乘圆满踏入渡劫初期。"
+
+
 def test_breakthrough_failure_suppresses_conflicting_stage_drop_claim() -> None:
     engine = GameEngine()
     engine.game_session.realm = "筑基"
