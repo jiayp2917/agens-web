@@ -10,13 +10,6 @@ command -v iptables >/dev/null 2>&1 || { echo "iptables is required" >&2; exit 1
 command -v modprobe >/dev/null 2>&1 || { echo "modprobe is required" >&2; exit 1; }
 command -v sysctl >/dev/null 2>&1 || { echo "sysctl is required" >&2; exit 1; }
 
-modprobe br_netfilter
-sysctl -q -w net.bridge.bridge-nf-call-iptables=1
-[ "$(sysctl -n net.bridge.bridge-nf-call-iptables)" = 1 ] || {
-  echo "bridge netfilter must be enabled" >&2
-  exit 1
-}
-
 app_id=$(docker compose -p "$project" -f "$compose_file" ps -q agens-web)
 proxy_id=$(docker compose -p "$project" -f "$compose_file" ps -q egress-proxy)
 redis_id=$(docker compose -p "$project" -f "$compose_file" ps -q redis)
@@ -66,4 +59,11 @@ while iptables -C DOCKER-USER -j "$chain" 2>/dev/null; do
   iptables -D DOCKER-USER -j "$chain"
 done
 iptables -I DOCKER-USER 1 -j "$chain"
+
+modprobe br_netfilter
+sysctl -q -w net.bridge.bridge-nf-call-iptables=1
+[ "$(sysctl -n net.bridge.bridge-nf-call-iptables)" = 1 ] || {
+  echo "bridge netfilter must be enabled" >&2
+  exit 1
+}
 echo "agens-web outbound ACL applied"

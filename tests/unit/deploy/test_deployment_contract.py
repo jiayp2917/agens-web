@@ -83,4 +83,5 @@ def test_host_acl_blocks_application_proxy_bypass() -> None:
     assert 'iptables -A "$chain" -s "$app_ip" -j REJECT' in script
     delete_jump = script.index('iptables -D DOCKER-USER -j "$chain"')
     insert_jump = script.index('iptables -I DOCKER-USER 1 -j "$chain"')
-    assert delete_jump < insert_jump
+    enable_bridge_filtering = script.index("modprobe br_netfilter")
+    assert delete_jump < insert_jump < enable_bridge_filtering
