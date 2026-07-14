@@ -242,6 +242,9 @@ console.log(JSON.stringify({{
   worldClaims: audit.narrativeRealmClaims("潮音阁重修课业簿，练气二层根基有了可见标尺。"),
   mixedClaims: audit.narrativeRealmClaims("完成宗门任务后，他突破至练气三层。"),
   playerClaims: audit.narrativeRealmClaims("其筑基初期根基已经稳固。"),
+  transitionClaims: audit.narrativeRealmClaims("其在大乘圆满之际成功破境迈入渡劫期。"),
+  transitionMatches: audit.narrativeRealmClaims("其在大乘圆满之际成功破境迈入渡劫期。")
+    .some((claim) => audit.realmClaimMatchesCurrent(claim, "渡劫初期")),
   stabilizeIntent: audit.hasBreakthroughIntent("闭关温养灵力，稳固渡劫根基"),
   ascensionIntent: audit.hasBreakthroughIntent("正式冲击飞升，承担破境失败风险"),
   clueIntent: audit.hasBreakthroughIntent("寻找飞升线索，补足渡劫准备"),
@@ -259,6 +262,8 @@ console.log(JSON.stringify({{
     assert payload["worldClaims"] == []
     assert payload["mixedClaims"] == ["练气3层"]
     assert payload["playerClaims"] == ["筑基初期"]
+    assert payload["transitionClaims"] == ["大乘圆满", "渡劫"]
+    assert payload["transitionMatches"] is True
     assert payload["stabilizeIntent"] is False
     assert payload["ascensionIntent"] is True
     assert payload["clueIntent"] is False

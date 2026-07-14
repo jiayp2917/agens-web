@@ -287,14 +287,21 @@ function normalizedRealmLabel(value) {
   return String(value || "")
     .replace(/\s+/g, "")
     .replace(/第(?=[1-9一二三四五六七八九]层)/g, "")
-    .replace(/[一二三四五六七八九]/g, (char) => digits[char] || char);
+    .replace(/[一二三四五六七八九]/g, (char) => digits[char] || char)
+    .replace(/^(筑基|金丹|元婴|化神|合体|大乘|渡劫)期$/u, "$1");
+}
+
+function realmClaimMatchesCurrent(claim, currentRealm) {
+  if (claim === currentRealm) return true;
+  const currentBase = String(currentRealm || "").match(/^(筑基|金丹|元婴|化神|合体|大乘|渡劫)/u)?.[1] || "";
+  return Boolean(currentBase && claim === currentBase);
 }
 
 function narrativeRealmClaims(text) {
   const source = String(text || "");
   const claims = [];
   for (const segment of source.split(/[。！？；\n]/u)) {
-    const matches = segment.match(/[练炼]气\s*(?:第)?\s*[1-9一二三四五六七八九]\s*层|(?:筑基|金丹|元婴|化神|合体|大乘|渡劫)\s*(?:初期|中期|后期|圆满)/gu) || [];
+    const matches = segment.match(/[练炼]气\s*(?:第)?\s*[1-9一二三四五六七八九]\s*层|(?:筑基|金丹|元婴|化神|合体|大乘|渡劫)\s*(?:初期|中期|后期|圆满|期)/gu) || [];
     if (!matches.length) continue;
     const playerProgress = /突破至|突破到|踏入|晋入|晋升|修至|升至|跌落至|跌至|降至|迈入|进入/u.test(segment);
     const playerSubject = /(?:^|[，,\s])(?:其人|其|他|她|玩家|验真者)(?:已|仍|尚|的|修为|境界|根基|(?=[练炼]气|筑基|金丹|元婴|化神|合体|大乘|渡劫))/u.test(segment);
@@ -794,7 +801,7 @@ function auditVisibleContent({
   const currentRealm = normalizedRealmLabel(turnRecord.status_realm);
   for (const entry of newEntries) {
     const realmClaims = narrativeRealmClaims(entry.text);
-    if (realmClaims.length && currentRealm && !realmClaims.includes(currentRealm)) {
+    if (realmClaims.length && currentRealm && !realmClaims.some((claim) => realmClaimMatchesCurrent(claim, currentRealm))) {
       issue("P1", "chronicle realm claim contradicts authoritative status", {
         turn_index: turnRecord.turn_index,
         phase: turnRecord.phase || "main",
@@ -962,6 +969,7 @@ module.exports = {
   hasBreakthroughIntent,
   narrativeRealmClaims,
   normalizedRealmLabel,
+  realmClaimMatchesCurrent,
 };
 
 if (require.main === module) {
