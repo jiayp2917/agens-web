@@ -105,3 +105,25 @@ class TestAscensionFinale:
         meta = delta.get("meta", {})
         assert meta.get("breakthrough_result") == "failure"
         assert "finale" not in meta
+
+    def test_validation_seed_keeps_high_aptitude_v2_ascension_world_independent(
+        self, monkeypatch
+    ) -> None:
+        monkeypatch.setenv("AGENS_VALIDATION_SEED", "agens-golden-169")
+        rs = RealmSystem()
+
+        for story_key in ("local-world", "live-model-world"):
+            session = _make_session_at_final_stage(
+                "渡劫",
+                story_version=2,
+                story_key=story_key,
+                attributes={
+                    "root_bone": 7,
+                    "comprehension": 7,
+                    "luck": 7,
+                },
+            )
+            delta = rs.attempt_breakthrough(session)
+
+            assert delta["meta"]["breakthrough_result"] == "success"
+            assert delta["meta"]["finale"] is True

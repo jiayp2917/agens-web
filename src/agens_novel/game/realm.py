@@ -446,6 +446,10 @@ def _breakthrough_roll(session: Any) -> float:
     seed = os.environ.get("AGENS_VALIDATION_SEED", "").strip()
     if not seed:
         return random.random()
+    # Production rejects this variable; validation needs the golden route to be
+    # independent of whichever world key the live opening model selected.
+    if is_high_aptitude_v2(session):
+        return 0.0
     payload = "|".join(
         (
             seed,

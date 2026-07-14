@@ -2,7 +2,11 @@ from __future__ import annotations
 
 import csv
 import json
+import shutil
+import subprocess
 from pathlib import Path
+
+import pytest
 
 from scripts import playwright_evidence
 from scripts.playwright_evidence import write_playwright_evidence
@@ -214,6 +218,50 @@ def test_visible_playtest_golden_strategy_uses_real_profile_controls_and_breakth
     assert "luck: 7" in source
     assert "willpower: 3" in source
     assert "hasBreakthroughIntent(choice.text)" in source
+    assert "AGENS_PLAYTEST_SAVE_LOAD_TURN" in source
+    assert "runSaveLoadProbe(page" in source
+
+
+def test_content_audit_distinguishes_breakthrough_actions_from_realm_context() -> None:
+    source = (ROOT / "scripts" / "local_visible_playtest.cjs").read_text(encoding="utf-8")
+
+    assert "playerProgress" in source
+    assert "playerSubject" in source
+    assert "冲击\\s*(?:筑基|金丹|元婴|化神|合体|大乘|渡劫|飞升)" in source
+    assert "return /突破|破境|冲关/u.test(body)" in source
+
+
+def test_content_audit_helpers_reject_world_context_and_stabilization_false_positives() -> None:
+    node = shutil.which("node")
+    if node is None:
+        pytest.skip("node is required to execute the browser-audit helper contract")
+    module_path = json.dumps(str(ROOT / "scripts" / "local_visible_playtest.cjs"))
+    script = f"""
+const audit = require({module_path});
+console.log(JSON.stringify({{
+  worldClaims: audit.narrativeRealmClaims("潮音阁重修课业簿，练气二层根基有了可见标尺。"),
+  mixedClaims: audit.narrativeRealmClaims("完成宗门任务后，他突破至练气三层。"),
+  playerClaims: audit.narrativeRealmClaims("其筑基初期根基已经稳固。"),
+  stabilizeIntent: audit.hasBreakthroughIntent("闭关温养灵力，稳固渡劫根基"),
+  ascensionIntent: audit.hasBreakthroughIntent("正式冲击飞升，承担破境失败风险"),
+  clueIntent: audit.hasBreakthroughIntent("寻找飞升线索，补足渡劫准备"),
+}}));
+"""
+    completed = subprocess.run(
+        [node, "-e", script],
+        check=True,
+        capture_output=True,
+        text=True,
+        encoding="utf-8",
+    )
+    payload = json.loads(completed.stdout)
+
+    assert payload["worldClaims"] == []
+    assert payload["mixedClaims"] == ["练气3层"]
+    assert payload["playerClaims"] == ["筑基初期"]
+    assert payload["stabilizeIntent"] is False
+    assert payload["ascensionIntent"] is True
+    assert payload["clueIntent"] is False
 
 
 def test_content_audit_playtest_allows_terminal_turn_without_choices() -> None:

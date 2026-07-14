@@ -21,6 +21,7 @@ const GENERIC_CHOICE_PATTERNS = [
 ];
 const CHOICE_STRATEGY = (process.env.AGENS_PLAYTEST_CHOICE_STRATEGY || "cycle").toLowerCase();
 const POST_LOAD_TURNS = Number(process.env.AGENS_PLAYTEST_POST_LOAD_TURNS || (CONTENT_AUDIT ? "3" : "0"));
+const SAVE_LOAD_TURN = Number(process.env.AGENS_PLAYTEST_SAVE_LOAD_TURN || "0");
 const REFRESH_PROBE = process.env.AGENS_PLAYTEST_REFRESH_PROBE === "1";
 const DOUBLE_CLICK_PROBE = process.env.AGENS_PLAYTEST_DOUBLE_CLICK_PROBE === "1";
 const CONFLICT_PROBE = process.env.AGENS_PLAYTEST_CONFLICT_PROBE === "1";
@@ -291,8 +292,16 @@ function normalizedRealmLabel(value) {
 
 function narrativeRealmClaims(text) {
   const source = String(text || "");
-  const matches = source.match(/[练炼]气\s*(?:第)?\s*[1-9一二三四五六七八九]\s*层|(?:筑基|金丹|元婴|化神|合体|大乘|渡劫)\s*(?:初期|中期|后期|圆满)/gu) || [];
-  return matches.map((match) => normalizedRealmLabel(match).replace(/^炼气/u, "练气"));
+  const claims = [];
+  for (const segment of source.split(/[。！？；\n]/u)) {
+    const matches = segment.match(/[练炼]气\s*(?:第)?\s*[1-9一二三四五六七八九]\s*层|(?:筑基|金丹|元婴|化神|合体|大乘|渡劫)\s*(?:初期|中期|后期|圆满)/gu) || [];
+    if (!matches.length) continue;
+    const playerProgress = /突破至|突破到|踏入|晋入|晋升|修至|升至|跌落至|跌至|降至|迈入|进入/u.test(segment);
+    const playerSubject = /(?:^|[，,\s])(?:其人|其|他|她|玩家|验真者)(?:已|仍|尚|的|修为|境界|根基|(?=[练炼]气|筑基|金丹|元婴|化神|合体|大乘|渡劫))/u.test(segment);
+    if (!playerProgress && !playerSubject) continue;
+    claims.push(...matches.map((match) => normalizedRealmLabel(match).replace(/^炼气/u, "练气")));
+  }
+  return unique(claims);
 }
 
 function hasBreakthroughIntent(text) {
@@ -304,7 +313,9 @@ function hasBreakthroughIntent(text) {
   if (/所需|准备|底蕴|线索|打听|寻找|静候|机缘/u.test(body) && !/尝试|正式|强行|开始/u.test(body)) {
     return false;
   }
-  return /突破|破境|冲关|冲击|渡劫|飞升/u.test(body);
+  return /突破|破境|冲关/u.test(body)
+    || /冲击\s*(?:筑基|金丹|元婴|化神|合体|大乘|渡劫|飞升)/u.test(body)
+    || /(?:尝试|正式|强行|开始|立即|直接)\s*(?:渡劫|飞升)/u.test(body);
 }
 
 function routeIndexForTurn(turn, choices, snapshot) {
@@ -518,6 +529,58 @@ async function firstVisible(page, selectors, timeout = 30000) {
 async function clickFirstVisible(page, selectors, timeout) {
   const locator = await firstVisible(page, selectors, timeout);
   await locator.click();
+}
+
+async function runSaveLoadProbe(page, { summary, issue, screenshotBase, label }) {
+  if (summary.save_load_passed) return;
+  await page.locator('button.icon-btn[aria-label="存档"]').click();
+  await page.waitForSelector(".settings-dialog", { timeout: 30000 });
+  await page.waitForTimeout(300);
+  if (CONTENT_AUDIT) {
+    summary.save_dialog_ui_snapshot = await uiSnapshot(page, `${label}-save-dialog-open`);
+    const dialogSnapshot = summary.save_dialog_ui_snapshot;
+    if (
+      dialogSnapshot.viewport?.horizontal_overflow
+      || dialogSnapshot.element_bounds?.dialog?.within_viewport === false
+    ) {
+      issue("P1", "save dialog does not fit the configured viewport", {
+        viewport: dialogSnapshot.viewport,
+        dialog_bounds: dialogSnapshot.element_bounds?.dialog,
+      });
+    }
+    await page.screenshot({ path: `${screenshotBase}-${label}-save-dialog.png`, fullPage: true });
+  }
+  await clickFirstVisible(page, [".save-row:nth-child(1) .save-row-actions button:last-child"], 30000);
+  await page.waitForTimeout(1000);
+  await clickFirstVisible(page, [".save-row:nth-child(1) .save-row-actions button:first-child"], 30000);
+  await page.waitForSelector(".choice-button", { timeout: 30000 });
+  await page.screenshot({ path: `${screenshotBase}-${label}-save-load.png`, fullPage: true });
+  summary.save_load_passed = true;
+  summary.save_load_probe_label = label;
+  if (CONTENT_AUDIT) {
+    summary.save_load_ui_snapshot = await uiSnapshot(page, `${label}-save-load-after`);
+    if (summary.save_load_ui_snapshot.viewport?.horizontal_overflow) {
+      issue("P1", "page has horizontal overflow after save/load", {
+        viewport: summary.save_load_ui_snapshot.viewport,
+      });
+    }
+  }
+  if (REFRESH_PROBE) {
+    try {
+      await page.reload({ waitUntil: "domcontentloaded", timeout: 30000 });
+      await page.waitForSelector(".choice-button", { timeout: 10000 });
+      summary.refresh_probe_passed = true;
+      if (CONTENT_AUDIT) {
+        summary.refresh_probe_ui_snapshot = await uiSnapshot(page, `${label}-refresh-after`);
+      }
+    } catch (error) {
+      summary.refresh_probe_passed = false;
+      issue("P1", "refresh probe did not restore visible game choices", {
+        error: String(error).slice(0, 500),
+      });
+    }
+    await page.screenshot({ path: `${screenshotBase}-${label}-refresh.png`, fullPage: true });
+  }
 }
 
 function redactedUrl(url) {
@@ -894,6 +957,14 @@ function updateIssueCounts(summary, issues) {
   summary.p1_issues = issues.filter((item) => item.level === "P1").length;
 }
 
+module.exports = {
+  canBreakthroughFromRealmText,
+  hasBreakthroughIntent,
+  narrativeRealmClaims,
+  normalizedRealmLabel,
+};
+
+if (require.main === module) {
 (async () => {
   fs.mkdirSync(OUT_DIR, { recursive: true });
   const inviteCode = `local-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
@@ -908,6 +979,7 @@ function updateIssueCounts(summary, issues) {
     content_audit_fail_on_p1: CONTENT_AUDIT_FAIL_ON_P1,
     choice_strategy: CHOICE_STRATEGY,
     post_load_turns: POST_LOAD_TURNS,
+    save_load_turn: SAVE_LOAD_TURN,
     refresh_probe: REFRESH_PROBE,
     double_click_probe: DOUBLE_CLICK_PROBE,
     conflict_probe: CONFLICT_PROBE,
@@ -1406,60 +1478,22 @@ function updateIssueCounts(summary, issues) {
         await page.screenshot({ path: `${screenshotBase}-stopped-turn${turn}.png`, fullPage: true });
         break;
       }
+      if (SAVE_LOAD_TURN > 0 && turn === SAVE_LOAD_TURN) {
+        await runSaveLoadProbe(page, {
+          summary,
+          issue,
+          screenshotBase,
+          label: `turn${turn}`,
+        });
+      }
     }
 
     updateSummaryFromTurns(summary, turns, auditState);
 
     if (summary.ended_early_game_over) {
-      summary.save_load_skipped_terminal = true;
+      if (!summary.save_load_passed) summary.save_load_skipped_terminal = true;
     } else if (summary.accepted_live_turns >= TARGET_TURNS && summary.fallback_count === 0 && !issues.some((item) => item.level === "P0")) {
-      await page.locator('button.icon-btn[aria-label="存档"]').click();
-      await page.waitForSelector(".settings-dialog", { timeout: 30000 });
-      await page.waitForTimeout(300);
-      if (CONTENT_AUDIT) {
-        summary.save_dialog_ui_snapshot = await uiSnapshot(page, "save-dialog-open");
-        const dialogSnapshot = summary.save_dialog_ui_snapshot;
-        if (
-          dialogSnapshot.viewport?.horizontal_overflow
-          || dialogSnapshot.element_bounds?.dialog?.within_viewport === false
-        ) {
-          issue("P1", "save dialog does not fit the configured viewport", {
-            viewport: dialogSnapshot.viewport,
-            dialog_bounds: dialogSnapshot.element_bounds?.dialog,
-          });
-        }
-        await page.screenshot({ path: `${screenshotBase}-save-dialog.png`, fullPage: true });
-      }
-      await clickFirstVisible(page, [".save-row:nth-child(1) .save-row-actions button:last-child"], 30000);
-      await page.waitForTimeout(1000);
-      await clickFirstVisible(page, [".save-row:nth-child(1) .save-row-actions button:first-child"], 30000);
-      await page.waitForSelector(".choice-button", { timeout: 30000 });
-      await page.screenshot({ path: `${screenshotBase}-save-load.png`, fullPage: true });
-      summary.save_load_passed = true;
-      if (CONTENT_AUDIT) {
-        summary.save_load_ui_snapshot = await uiSnapshot(page, "save-load-after");
-        if (summary.save_load_ui_snapshot.viewport?.horizontal_overflow) {
-          issue("P1", "page has horizontal overflow after save/load", {
-            viewport: summary.save_load_ui_snapshot.viewport,
-          });
-        }
-      }
-      if (REFRESH_PROBE) {
-        try {
-          await page.reload({ waitUntil: "domcontentloaded", timeout: 30000 });
-          await page.waitForSelector(".choice-button", { timeout: 10000 });
-          summary.refresh_probe_passed = true;
-          if (CONTENT_AUDIT) {
-            summary.refresh_probe_ui_snapshot = await uiSnapshot(page, "refresh-after");
-          }
-        } catch (error) {
-          summary.refresh_probe_passed = false;
-          issue("P1", "refresh probe did not restore visible game choices", {
-            error: String(error).slice(0, 500),
-          });
-        }
-        await page.screenshot({ path: `${screenshotBase}-refresh.png`, fullPage: true });
-      }
+      await runSaveLoadProbe(page, { summary, issue, screenshotBase, label: "final" });
       const postLoadStartTurn = Number(summary.last_turn_count || TARGET_TURNS) + 1;
       const postLoadChoicesAvailable = (await page.locator(".choice-button").count()) > 0;
       if (POST_LOAD_TURNS > 0 && !postLoadChoicesAvailable) {
@@ -1638,6 +1672,7 @@ function updateIssueCounts(summary, issues) {
     }
   }
 })();
+}
 
 function avgMetric(rows, key) {
   const values = rows.map((row) => Number(row[key] || 0)).filter((value) => value > 0);
