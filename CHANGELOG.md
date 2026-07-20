@@ -1,5 +1,14 @@
 # Changelog
 
+## 2026-07-20
+
+### Release-closure audit and stop condition
+
+- Audited the release-closure plan without deploying. `35fe2dc` added Chinese-only Narrator contract enforcement; `f4c7333` added version-controlled egress persistence assets. Neither commit is treated as a completed release.
+- The clean `f4c7333` headed Chrome 90-turn run had 90/90 strict live choices with fallback, repair, contract recovery and visible forbidden text all zero, and save/load plus refresh passed. It still failed content acceptance: a breakthrough at turn 65 reused the prior narrative and produced no new visible chronicle entry. The run lacked the deterministic validation seed and ended at turn 90 without ascension, so it is not golden-route acceptance evidence. Choice p50/p95/max were 11.071s/47.487s/63.906s.
+- The follow-up content patch remains uncommitted and failed 16 targeted engine tests because a helper indentation regression removed breakthrough class methods. It was not staged or deployed.
+- A post-reboot server read-only check found the v1 application stack and Alembic healthy, but `br_netfilter`, bridge filtering, `AGENS_WEB_EGRESS` and the persistence systemd service absent. The persistence assets have not been installed; release acceptance remains blocked.
+
 ## 2026-07-14
 
 ### 90-turn v2, controlled egress, shared limiting, and browser acceptance

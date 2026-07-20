@@ -2,7 +2,7 @@
 
 ## Scope
 
-本审计描述 2026-07-14 本地 `master@99e7915` 提交链。玩法、数据库测试、规则级 90 回合和 headed Chrome 90/20 回合证据绑定 `9b3a86e`；后续两项提交只修正主机 egress ACL 的 bridge-aware 规则与激活顺序，并完成对应静态门禁。生产已执行隔离、备份和 Stage 1，但 strict choice 触发 fallback，故当前运行健康不等于发布验收通过。
+本审计覆盖 2026-07-14 的 `master@99e7915` 提交链，以及 2026-07-20 对 `35fe2dc`、`f4c7333` 和当前工作树的发布收口复核。`9b3a86e` 的玩法、数据库和 Chrome 90/20 回合结果仅是历史证据，不能替代当前候选验证。生产曾执行隔离、备份和 Stage 1，但 strict choice 触发 fallback；服务器重启后出站 ACL 未恢复，故当前运行健康不等于发布验收通过。
 
 ## Current Architecture
 
@@ -159,12 +159,22 @@ run_achievements, account_rewards, legacy_bonuses
 - v1 strict smoke 的 start 为 non-fallback，但首个 choice 的两次 Narrator 输出均在正文保留英文，触发 incomplete output 和本地 fallback。该结果不算 live-model 成功，流程按硬门禁停止。
 - 尚未执行旧镜像回滚演练、`story_version=2` 切换、v2 smoke 和 ACL/sysctl 持久化。当前生产运行健康但未获发布验收；恢复方向等待在“回滚到 `a5a1f0f9`”与“新提交修复后继续”之间确认。
 
+## 2026-07-20 Release-Closure Audit
+
+- `35fe2dc` 已收紧 Narrator 的 schema、标签 prompt、单次 incomplete retry 与脱敏诊断，要求正文和四个选项为全中文；`f4c7333` 已加入受版本控制的 `br_netfilter` 与 egress ACL 持久化资产。两项提交均存在，但尚未形成一个可发布的最终候选。
+- `release-f4c7333-golden90-20260720.json` 绑定 clean `f4c7333` 和独立本地 PostgreSQL：90/90 choice 为 strict live，fallback、repair、contract recovery、可见禁词均为 0，存读档与刷新通过；但结果为 `failed_content`。第 65 回合的突破复用了第 64 回合叙事，页面没有新增可见编年史条目。该回放没有设置 `AGENS_VALIDATION_SEED`，第 90 回合为非飞升终局，不能证明黄金路线在 90 回合内飞升。性能仅记录：p50 11.071s、p95 47.487s、max 63.906s。
+- 当前工作树另有未提交的内容质量补丁。2026-07-20 针对其三个引擎测试文件的复核为 109 passed、16 failed：`breakthrough_flow.py` 中新 helper 的缩进使后续类方法脱离 `BreakthroughFlow`，并且时间跨度与通用替代文案的改动破坏既有质量契约。因此该补丁不得进入发布或作为通过证据。
+- 服务器重启后只读预检：应用、PostgreSQL、Redis、Squid、origin/public health 和 Alembic `20260710_0008` 正常，运行镜像仍为历史 v1；但 `br_netfilter` 未加载、bridge filtering 不可用、`AGENS_WEB_EGRESS` 链不存在且未安装持久化 systemd 服务。`f4c7333` 的持久化资产尚未部署，不能把此前运行态 ACL 视为当前保护。
+- 结论：无新增 P0 证据，但存在发布阻塞的 P1。须先修复并提交内容补丁、通过全量本地门禁和两局新 Chrome 验收，之后才可重新开始生产 v1 strict smoke、回滚演练、v2 smoke 与持久化部署；本轮未执行生产写操作、模型重试或发布。
+
 ## Residual Risks
 
 | 风险 | 级别 | 说明 |
 | --- | --- | --- |
 | 生产 strict choice 未通过 | P1 | Narrator 正文连续两次保留英文，严格契约拒绝后进入 fallback；需修复提示/安全改写策略并重新执行 v1/v2 smoke |
-| ACL/sysctl 尚未持久化 | P1 | 当前 ACL 运行态已验证，但服务器重启后的模块、sysctl 与链重应用尚未固化；恢复过程禁止卸载 `br_netfilter` |
+| 当前内容补丁破坏突破流程 | P1 | 未提交的 `breakthrough_flow.py` 缩进回归导致 16 个引擎测试失败；先恢复类方法边界并重新验证，禁止暂存或部署该工作树 |
+| 当前候选未通过 90 回合内容验收 | P1 | clean `f4c7333` 的 90 回合运行虽无 fallback，但第 65 回合突破叙事重复且没有新编年史条目；未设置验证种子且第 90 回合未飞升 |
+| ACL/sysctl 当前未持久化 | P1 | 重启后 `br_netfilter`、bridge filtering、`AGENS_WEB_EGRESS` 和 systemd 持久化服务均不存在；恢复过程禁止卸载 `br_netfilter` |
 | live 响应仍高于 5 秒目标 | P1 | 当前 fingerprint 的 164 个严格 live 回合 choice p50=9.495s、p95=18.025s、max=44.636s（目标 p50≤5s/p95≤15s 均未达）。Narrator 仍是主要延迟来源，需 provider/模型侧或并发化处理 |
 | 内容路线仍有相似度风险 | P2 | 最新 A/B/C/D 硬门禁通过，但 C/D 峰值相似度约 0.743/0.769，后续应继续增加事件兑现和路线专属内容 |
 | `database_postgres.py` 仍偏大 | P2 | catalog/rewards/session_mutation 已抽到独立 repository（1332→727 行）；run/turn/progress 跟踪为剩余的最大 SQL 块，可在文件再增长时提取 |

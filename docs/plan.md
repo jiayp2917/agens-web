@@ -23,17 +23,17 @@
 - [x] 模型地址已具备应用层协议、主机、DNS/IP、重定向和环境代理防护；Key 加密并保持脱敏边界。
 - [x] 当前数据库迁移链、异常数据 fail-closed、空库升级、备份与恢复已完成本地验证。
 - [x] 桌面端、移动端、键盘焦点、重复提交、HTTP 409、存读档和 20 回合 live 垂直切片已完成本地验收。
-- [x] 新局默认九阶段 90 回合 v2，黄金路线在第 90 回合前飞升；v1 60 回合旧存档保持兼容。
-- [x] 最新提交已完成 headed Chrome 90 回合终局与 20 回合混合/双击/存读档复验，严格 live 与内容门禁通过。
+- [x] 新局默认九阶段 90 回合 v2，非生产黄金路线验证器与 v1 60 回合旧存档兼容能力已经实现。
 - [x] Web API 测试已按领域拆分，生产共享限流已改为 Redis，Redis 故障按 fail-closed 处理。
-- [x] Docker/Compose、非 root、只读根目录、一次性 migration、Redis/Squid 和 egress ACL 已在服务器隔离及生产 Stage 1 验证；生产备份已完成。
+- [x] Docker/Compose、非 root、只读根目录、一次性 migration、Redis/Squid、egress ACL 资产与生产备份已经完成本地门禁及历史 Stage 1 验证。
 - [x] `plan/spec/audit/backlog/changelog` 的长期目标、当前事实、未完成项和历史证据已分离。
 
 ### 未完成
 
 - [ ] 将同一 provider/network 下的 choice p50 降到 5 秒以内，并完成 408/429/5xx、超时和取消专项验证。
 - [ ] 修复生产 Narrator 正文英文残留导致的 choice fallback，完成 strict live smoke、旧镜像回滚演练、v2 切换与 v2 smoke。
-- [ ] 持久化生产 `br_netfilter`、bridge sysctl 和 ACL 重应用；失败恢复不得卸载 `br_netfilter`。
+- [ ] 以当前 clean 候选重跑 headed Chrome：90 回合固定种子黄金路线必须在 90 回合内 `finale=true`，另完成 20 回合混合/双击/存读档回归；不得有重复编年史或玩家可见兜底文案。
+- [ ] 持久化生产 `br_netfilter`、bridge sysctl 和 ACL 重应用，并完成 service restart 与受控主机重启复验；失败恢复不得卸载 `br_netfilter`。
 
 ## 1. 总体目标
 

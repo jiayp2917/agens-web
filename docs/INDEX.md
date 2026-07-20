@@ -15,7 +15,7 @@
 - 四套世界包保留 60 回合 v1 旧档兼容；新局默认绑定九阶段 90 回合 v2，黄金路线可在 90 回合内飞升。
 - gameplay recovery 与 provider fallback 分开记录；Narrator 契约不完整不能计作 live-model 成功。
 - 生产形态包含内部 Redis 共享限流、Squid 受控出站代理和专用 egress ACL；本地纯单测仍可使用内存限流。
-- 2026-07-14 服务器隔离与生产 Stage 1 已验证上述形态，但 strict choice 因 Narrator 正文英文残留触发 fallback 而停止；当前运行健康不等于发布验收通过，v2、回滚演练和 ACL 持久化仍待完成。
+- 2026-07-14 服务器隔离与生产 Stage 1 曾验证上述形态，但 strict choice 因 Narrator 正文英文残留触发 fallback 而停止；2026-07-20 重启后只读复核确认 ACL、bridge filtering 和持久化服务均未恢复。当前运行健康不等于发布验收通过，v2、回滚演练、当前候选的 strict smoke 与 ACL 持久化均待完成。
 - 当前本地验证结果、精确计数和 strict live 证据只在 `PROJECT_AUDIT.md` 维护。
 - 本地工作树与生产状态分开；生产通过只接受服务器侧备份、部署、回滚和 strict smoke 的脱敏事实。
 
