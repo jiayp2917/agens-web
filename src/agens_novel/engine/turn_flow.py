@@ -414,6 +414,9 @@ class TurnFlow:
             state_delta = {**state_delta, "character": char_delta}
 
         state_delta = merge_rule_delta(state_delta, rule_delta)
+        if _has_unapproved_time_span(narrative, state_delta):
+            log.info("narrative exact time span conflicted with rule settlement; using rule chronicle")
+            narrative = ""
         consistent, consistency_reason = validate_narrative_delta_consistency(
             narrative,
             state_delta,
@@ -435,6 +438,10 @@ class TurnFlow:
                     "narrative realm stage contradicted post-settlement stage; using rule chronicle"
                 )
                 narrative = self._narrative_from_rule_delta(state_delta)
+
+        if _narrative_conflicts_with_authoritative_realm(narrative, session):
+            log.info("narrative realm claim contradicted authoritative current realm; using rule chronicle")
+            narrative = _generic_distinct_chronicle(state_delta, session)
 
         if not str(narrative or "").strip():
             narrative = self._narrative_from_rule_delta(state_delta)
@@ -584,12 +591,12 @@ class TurnFlow:
             and world["lore_add"]
         ):
             lore = str(world["lore_add"][0] or "").strip()
-        years = f"{elapsed}年间，" if elapsed > 0 else ""
+        passage = "岁月流转，" if elapsed > 0 else ""
         if lore:
-            return f"{years}{lore}"
+            return f"{passage}{lore}"
         if stage_goal:
-            return f"{years}其沿所选道路推进，{stage_goal}。"
-        return f"{years}其按所选道路修行，外界局势仍在暗中变化。"
+            return f"{passage}{stage_goal}仍是眼前要务。"
+        return f"{passage}其暂守所选道路，外界局势仍在变化。"
 
 
 def _should_retry_narrator_result(result: dict[str, Any]) -> bool:
@@ -638,6 +645,8 @@ def _is_recent_duplicate_narrative(session: Any, narrative: str, *, limit: int =
     key = _narrative_key(narrative)
     if len(key) < 16:
         return False
+    if hasattr(session, "has_recent_narrative") and session.has_recent_narrative(narrative):
+        return True
     history = getattr(session, "turn_history", []) or []
     if not isinstance(history, list):
         return False
@@ -648,6 +657,31 @@ def _is_recent_duplicate_narrative(session: Any, narrative: str, *, limit: int =
         if _narrative_keys_overlap(key, previous_key):
             return True
     return False
+
+
+def _narrative_conflicts_with_authoritative_realm(narrative: str, session: Any) -> bool:
+    """Reject lone player-stage claims that lag behind the settled current realm."""
+    text = str(narrative or "")
+    realm = str(getattr(session, "realm", "") or "")
+    stage = int(getattr(session, "realm_stage", 1) or 1)
+    if realm == "练气":
+        qi_claims = {
+            _qi_stage_claim_value(match)
+            for match in _QI_STAGE_CLAIM_RE.finditer(text)
+            if not _is_non_player_stage_reference(text, match.start(), match.end())
+        }
+        qi_claims.discard(0)
+        return bool(qi_claims) and stage not in qi_claims
+    if realm not in {"筑基", "金丹", "元婴", "化神", "合体", "大乘", "渡劫"}:
+        return False
+    labels = ("初期", "中期", "后期", "圆满")
+    expected = labels[max(1, min(4, stage)) - 1]
+    phase_claims = {
+        str(match.group(2))
+        for match in _REALM_PHASE_CLAIM_RE.finditer(text)
+        if match.group(1) == realm and not _is_non_player_stage_reference(text, match.start(), match.end())
+    }
+    return bool(phase_claims) and expected not in phase_claims
 
 
 def _narrative_key(text: str) -> str:
@@ -690,6 +724,24 @@ _CHINESE_STAGE_VALUES = {
     "九": 9,
 }
 _CLAUSE_BOUNDARY_RE = re.compile(r"[。！？!?；;\n]")
+_EXPLICIT_TIME_SPAN_RE = re.compile(
+    r"(?P<value>\d+|[零〇一二三四五六七八九十百千万两]+)\s*(?:年|载)"
+)
+_CHINESE_NUMBER_VALUES = {
+    "零": 0,
+    "〇": 0,
+    "一": 1,
+    "二": 2,
+    "三": 3,
+    "四": 4,
+    "五": 5,
+    "六": 6,
+    "七": 7,
+    "八": 8,
+    "九": 9,
+    "两": 2,
+}
+_CHINESE_NUMBER_UNITS = {"十": 10, "百": 100, "千": 1000, "万": 10000}
 _PLAYER_REALM_TRANSITION_BEFORE_RE = re.compile(
     r"(?:突破至|踏入|晋入|修至|跌落至|退回|重返|迈入|臻至|升至)\s*$"
 )
@@ -760,53 +812,96 @@ def _qi_stage_claim_value(match: re.Match[str]) -> int:
     return int(raw) if raw.isdigit() else _CHINESE_STAGE_VALUES.get(raw, 0)
 
 
+def _has_unapproved_time_span(narrative: str, state_delta: dict[str, Any]) -> bool:
+    """Reject exact narrator time spans that disagree with rule-owned elapsed years."""
+    matches = list(_EXPLICIT_TIME_SPAN_RE.finditer(str(narrative or "")))
+    if not matches:
+        return False
+    meta = state_delta.get("meta") if isinstance(state_delta, dict) else {}
+    elapsed = int(meta.get("elapsed_years") or 0) if isinstance(meta, dict) else 0
+    return any(_time_span_value(match.group("value")) != elapsed for match in matches)
+
+
+def _time_span_value(raw: str) -> int:
+    value = str(raw or "").strip()
+    if value.isdigit():
+        return int(value)
+    total = 0
+    current = 0
+    for char in value:
+        if char in _CHINESE_NUMBER_VALUES:
+            current = _CHINESE_NUMBER_VALUES[char]
+            continue
+        unit = _CHINESE_NUMBER_UNITS.get(char)
+        if unit is None:
+            return 0
+        if unit == 10000:
+            total = (total + current) * unit
+            current = 0
+        else:
+            total += max(current, 1) * unit
+            current = 0
+    return total + current
+
+
 def _generic_distinct_chronicle(state_delta: dict[str, Any], session: Any) -> str:
     meta = state_delta.get("meta") if isinstance(state_delta, dict) else {}
+    world = state_delta.get("world") if isinstance(state_delta, dict) else {}
     elapsed = 0
     stage_goal = ""
     category = ""
+    lore = ""
     if isinstance(meta, dict):
         elapsed = int(meta.get("elapsed_years") or 0)
         stage_goal = str(meta.get("story_goal") or meta.get("stage_goal") or "").strip()
         category = str(meta.get("choice_category") or "").strip()
-    years = f"{elapsed}年间，" if elapsed > 0 else ""
+        lore = str(meta.get("story_beat") or meta.get("event_lore") or "").strip()
+    if isinstance(world, dict) and isinstance(world.get("lore_add"), list) and world["lore_add"]:
+        lore = str(world["lore_add"][0] or "").strip()
+    passage = "岁月流转，" if elapsed > 0 else ""
     turn = int(getattr(session, "turn_count", 0) or 0)
-    route = f"沿{category}之路" if category else "沿所选道路"
-    closures = (
-        "卷末另记山门风声已有转向。",
-        "旁注称坊市议论也随之变化。",
-        "同门对此各有取舍，旧局不再原样延续。",
-        "外界传闻因此出现新的解释。",
-        "势力间的应对已与上一阶段不同。",
-        "此后数年的因果由此改换落点。",
-        "旧有线索被重新排序，后续行止随之调整。",
-        "本阶段留下的新旁证已写入卷册。",
+    route_actions = {
+        "稳妥": "先稳住现有局面",
+        "机遇": "循着新线索继续查访",
+        "风险": "以更高风险逼近真相",
+        "气运": "顺着突现的机缘试探去向",
+    }
+    route_action = route_actions.get(category, "依眼前局势调整行止")
+    openings = (
+        "山门的晨钟照常响起，",
+        "渡口的风声比往日更紧，",
+        "坊市传来的消息仍在发酵，",
+        "洞府外的灵机起伏未定，",
+        "同门之间的议论渐有分歧，",
+        "远处的旧路又显出新的痕迹，",
+        "执事的安排悄然改变，",
+        "夜色落下时，外界仍无人肯退，",
+        "山道上的来客比平日更多，",
+        "书信与口信接连送到门前，",
+        "一场未尽的争执牵动了四方，",
+        "云层低压，局势也随之收紧，",
     )
+    developments = (
+        "他没有急着表态，先辨明各方的意图。",
+        "他将眼前线索逐一核实，再定下一步。",
+        "他暂缓旧策，留意局势中新露出的空隙。",
+        "他在取舍之间稳住心神，等待更清楚的讯号。",
+        "他把得失放在明处衡量，不让旧事牵着走。",
+        "他循着人情与地势的变化，重新安排去向。",
+        "他将散乱的消息连成脉络，判断谁在暗中推动。",
+        "他不再照搬先前的做法，转而试探新的回应。",
+        "他守住应有的分寸，同时为变化预留余地。",
+        "他从细微处看出端倪，决定先处理最紧迫的一环。",
+    )
+    index = max(turn, 1) - 1
+    opening = openings[index % len(openings)]
+    development = developments[(index // len(openings)) % len(developments)]
+    if lore:
+        return f"{passage}{opening}{lore}{route_action}。{development}"
     if stage_goal:
-        variants = (
-            f"{route}暂收旧议，依当前局势推进{stage_goal}。",
-            f"{route}重新梳理线索，将{stage_goal}列为下一阶段要务。",
-            f"{route}核对前因后果，围绕{stage_goal}调整后续安排。",
-            f"{route}把散落见闻归入本阶段卷册，继续推进{stage_goal}。",
-            f"{route}从外界变化中确认新的侧证，转而处理{stage_goal}。",
-            f"{route}对照旧卷与新讯，重新安排{stage_goal}的先后次序。",
-            f"{route}暂缓沿用旧策，依据眼前局势续办{stage_goal}。",
-            f"{route}将本轮见闻交叉核验，再从新的切口推进{stage_goal}。",
-        )
-        closure = closures[(turn // len(variants)) % len(closures)]
-        return f"{years}{variants[turn % len(variants)]}{closure}"
-    variants = (
-        f"{route}留下新的编年史旁证，外界局势继续变化。",
-        f"{route}重整旧日见闻，山门内外又有新的动向浮现。",
-        f"{route}核对这一阶段的得失，下一段因果随之展开。",
-        f"{route}将零散传闻归档，势力间的暗流仍未停歇。",
-        f"{route}结束本段修行，外界风向已与往日不同。",
-        f"{route}对照新旧消息，确认下一阶段已不能照搬前策。",
-        f"{route}暂收眼前得失，转而观察各方随后作出的回应。",
-        f"{route}把本轮旁证写入卷册，后续因果另有新的落点。",
-    )
-    closure = closures[(turn // len(variants)) % len(closures)]
-    return f"{years}{variants[turn % len(variants)]}{closure}"
+        return f"{passage}{opening}{route_action}，{stage_goal}仍待了结。{development}"
+    location = str(getattr(session, "location", "") or "外界").strip()
+    return f"{passage}{opening}{location}传来新的动静，{route_action}。{development}"
 
 
 def _visible_delta_chronicle(state_delta: dict[str, Any]) -> str:

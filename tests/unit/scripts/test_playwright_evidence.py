@@ -348,3 +348,13 @@ def test_content_audit_does_not_treat_previous_latest_as_new_turn() -> None:
     assert "non-fallback turn produced no new visible chronicle entry" in source
     assert "return latest.length ? latest : after.slice(-1)" not in source
     assert "所需|准备|底蕴|线索|打听|寻找|静候|机缘" in source
+
+
+def test_content_audit_can_verify_final_persisted_turns_without_raw_text() -> None:
+    source = (ROOT / "scripts" / "local_visible_playtest.cjs").read_text(encoding="utf-8")
+
+    assert "AGENS_PLAYTEST_REQUIRE_PERSISTED_AUDIT" in source
+    assert "function readPersistedTurnAudit" in source
+    assert "duplicate_narrative_count" in source
+    assert "narrative_sha256" in source
+    assert "persisted chronicle text repeated exactly" in source

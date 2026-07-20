@@ -22,7 +22,10 @@ from agens_novel.engine.model_fallback_policy import (
 )
 from agens_novel.engine.turn_flow import (
     _generic_distinct_chronicle,
+    _has_unapproved_time_span,
     _has_visible_authoritative_delta,
+    _is_recent_duplicate_narrative,
+    _narrative_conflicts_with_authoritative_realm,
     _narrative_conflicts_with_stage_delta,
     _narrative_key,
     _narrative_keys_overlap,
@@ -295,7 +298,7 @@ def test_local_story_fallback_turn_applies_authoritative_rule_event(monkeypatch)
     assert last_turn["delta"]["meta"]["local_story_fallback"] is True
     assert last_turn["delta"]["meta"]["elapsed_years"] == 3
     assert "药圃账册" in last_turn["narrative"]
-    assert "3年间" in last_turn["narrative"]
+    assert "岁月流转" in last_turn["narrative"]
 
 
 def test_duplicate_model_narrative_is_replaced_by_rule_chronicle(monkeypatch) -> None:
@@ -532,9 +535,42 @@ def test_generic_replacement_has_no_exact_reuse_across_sixty_turns() -> None:
     keys = []
     for turn in range(1, 61):
         session.turn_count = turn
-        keys.append(_narrative_key(_generic_distinct_chronicle(delta, session)))
+        chronicle = _generic_distinct_chronicle(delta, session)
+        assert not any(marker in chronicle for marker in ("旁证", "卷册", "本阶段"))
+        keys.append(_narrative_key(chronicle))
 
     assert len(set(keys)) == 60
+
+
+def test_time_span_guard_accepts_authoritative_years_and_rejects_conflicts() -> None:
+    three_years = {"meta": {"elapsed_years": 3}}
+    forty_two_years = {"meta": {"elapsed_years": 42}}
+
+    assert not _has_unapproved_time_span("三年间，山门旧案未平。", three_years)
+    assert not _has_unapproved_time_span("42年后，旧案终于有了回音。", forty_two_years)
+    assert not _has_unapproved_time_span("四十二载间，山门旧案未平。", forty_two_years)
+    assert _has_unapproved_time_span("四十二载间，山门旧案未平。", three_years)
+    assert _has_unapproved_time_span("三年间，冲关未成。", {"meta": {"elapsed_years": 0}})
+
+
+def test_recent_narrative_hashes_survive_compacted_history() -> None:
+    session = GameSession()
+    duplicate = "潮音阁将验真者正式记入勤修榜，渡口同门纷纷效仿。"
+    session.record_turn("A", duplicate, {})
+    session.turn_history = []
+
+    assert _is_recent_duplicate_narrative(session, duplicate)
+
+
+def test_current_realm_guard_rejects_lone_stale_player_stage_claim() -> None:
+    session = GameSession(realm="合体", realm_stage=2)
+
+    assert _narrative_conflicts_with_authoritative_realm(
+        "潮音阁将验真者记入勤修榜，其合体初期根基愈发深厚。", session
+    )
+    assert not _narrative_conflicts_with_authoritative_realm(
+        "潮音阁将验真者记入勤修榜，其合体中期根基愈发深厚。", session
+    )
 
 
 def test_post_settlement_stage_claim_must_match_authoritative_stage() -> None:

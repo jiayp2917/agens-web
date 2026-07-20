@@ -83,7 +83,7 @@ export const modelPresets = [
   { provider: "GLM", base_url: "https://open.bigmodel.cn/api/paas/v4", model: "glm-4-flash" },
 ] as const;
 
-export const visibleEventTypes = new Set(["narrative", "info", "error", "model_failure", "game_over", "finale"]);
+export const visibleEventTypes = new Set(["narrative", "error", "model_failure", "game_over", "finale"]);
 export const hiddenEventTexts = [
   "新会话已创建。",
   "推演天道，生成世界中...",

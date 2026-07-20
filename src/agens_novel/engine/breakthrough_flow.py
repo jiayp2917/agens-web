@@ -35,6 +35,7 @@ _REALM_PHASE_CLAIM_RE = re.compile(r"(筑基|金丹|元婴|化神|合体|大乘|
 _REALM_TRANSITION_TARGET_RE = re.compile(
     r"(?:突破至|突破到|踏入|迈入|晋入|晋升至|升至)\s*(筑基|金丹|元婴|化神|合体|大乘|渡劫|飞升)"
 )
+_EXPLICIT_TIME_SPAN_RE = re.compile(r"(?:\d+|[一二三四五六七八九十百千万两]+)\s*(?:年|载)")
 _CHINESE_STAGE_VALUES = {
     "一": 1,
     "二": 2,
@@ -46,6 +47,10 @@ _CHINESE_STAGE_VALUES = {
     "八": 8,
     "九": 9,
 }
+
+
+def _chronicle_key(text: str) -> str:
+    return re.sub(r"[\s，,。！？!?；;：:]", "", str(text or ""))
 
 
 class BreakthroughFlow:
@@ -112,6 +117,11 @@ class BreakthroughFlow:
         self._ensure_breakthrough_meta(state_delta, bt_result)
         session.apply_delta(state_delta)
         narrative = self._coerce_breakthrough_narrative(
+            narrative,
+            bt_result,
+            previous_realm_label=previous_realm_label,
+        )
+        narrative = self._dedupe_breakthrough_narrative(
             narrative,
             bt_result,
             previous_realm_label=previous_realm_label,
@@ -228,6 +238,8 @@ class BreakthroughFlow:
         previous_realm_label: str = "",
     ) -> str:
         text = re.sub(r"\s+", " ", str(narrative or "")).strip()
+        if _EXPLICIT_TIME_SPAN_RE.search(text):
+            text = ""
         if bt_result == "success":
             if (
                 not text
@@ -253,6 +265,45 @@ class BreakthroughFlow:
             ):
                 return "破境未成，灵机反噬，需先稳住根基再图后续。"
         return text
+
+    def _dedupe_breakthrough_narrative(
+        self,
+        narrative: str,
+        bt_result: str,
+        *,
+        previous_realm_label: str,
+    ) -> str:
+        session = self.engine.game_session
+        history = session.turn_history
+        narrative_key = _chronicle_key(narrative)
+        seen_in_history = any(
+            _chronicle_key(str(entry.get("narrative") or "")) == narrative_key
+            for entry in history[-60:]
+            if isinstance(entry, dict)
+        )
+        if not narrative_key or not (seen_in_history or session.has_recent_narrative(narrative)):
+            return narrative
+        if bt_result == "success":
+            current_label = format_realm_name(
+                self.engine.game_session.realm,
+                self.engine.game_session.realm_stage,
+            )
+            if previous_realm_label and previous_realm_label != current_label:
+                return f"破境已成，自{previous_realm_label}踏入{current_label}。"
+            return f"破境已成，已立于{current_label}，此前积累终于兑现。"
+        if bt_result == "failure":
+            current_label = format_realm_name(
+                self.engine.game_session.realm,
+                self.engine.game_session.realm_stage,
+            )
+            variants = (
+                "反噬已落，需先稳住根基再图后续。",
+                "灵机散乱，尚须调息后再觅良机。",
+                "旧患未消，此刻不宜再强行冲关。",
+                "道基受震，应先收束心神以免伤势加深。",
+            )
+            return f"破境未成，{current_label}{variants[self.engine.game_session.turn_count % len(variants)]}"
+        return "本次冲关未能改写既有局势，修行仍须另觅时机。"
 
     def _ensure_breakthrough_meta(self, state_delta: dict[str, Any], bt_result: str) -> None:
         meta = state_delta.setdefault("meta", {})

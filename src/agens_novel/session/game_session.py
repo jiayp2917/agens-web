@@ -6,6 +6,7 @@ world state, and turn history.  Supports serialization for save/load.
 
 from __future__ import annotations
 
+import hashlib
 import json
 import logging
 from dataclasses import dataclass, field
@@ -22,6 +23,14 @@ from ..game.constants import (
 )
 
 log = logging.getLogger(__name__)
+_RECENT_NARRATIVE_HASH_LIMIT = 120
+
+
+def _narrative_hash(narrative: str) -> str:
+    normalized = "".join(str(narrative or "").split())
+    if not normalized:
+        return ""
+    return hashlib.sha256(normalized.encode("utf-8")).hexdigest()
 
 _LEGACY_CHARACTER_FIELDS = {
     "hp",
@@ -94,6 +103,7 @@ class GameSession:
 
     # ── Turn history ──
     turn_history: list[dict] = field(default_factory=list)
+    recent_narrative_hashes: list[str] = field(default_factory=list)
     chat_history: list[dict] = field(default_factory=list)
     last_choices: list[str] = field(default_factory=list)
 
@@ -218,6 +228,7 @@ class GameSession:
         if local_story is not None:
             entry["local_story"] = local_story
         self.turn_history.append(entry)
+        self._remember_narrative(narrative)
         self.chat_history.append({"role": "user", "content": input_text})
         # Keep an accepted three-part response in model history so later turns
         # imitate the contract instead of treating visible prose as the whole
@@ -231,6 +242,17 @@ class GameSession:
             from ..engine.history import compact_chat_history
 
             self.chat_history = compact_chat_history(self.chat_history, max_entries=20)
+
+    def has_recent_narrative(self, narrative: str) -> bool:
+        digest = _narrative_hash(narrative)
+        return bool(digest) and digest in self.recent_narrative_hashes
+
+    def _remember_narrative(self, narrative: str) -> None:
+        digest = _narrative_hash(narrative)
+        if not digest:
+            return
+        self.recent_narrative_hashes.append(digest)
+        self.recent_narrative_hashes = self.recent_narrative_hashes[-_RECENT_NARRATIVE_HASH_LIMIT:]
 
     # ─────────────────────────────────────────────────────────────────────────
     # Serialization
@@ -280,6 +302,7 @@ class GameSession:
                 "story_state": self.story_state,
             },
             "turn_history": self.turn_history[-20:],
+            "recent_narrative_hashes": self.recent_narrative_hashes[-_RECENT_NARRATIVE_HASH_LIMIT:],
             "chat_history": self.chat_history[-20:],
             "last_choices": self.last_choices,
             "local_story": {
@@ -363,7 +386,21 @@ class GameSession:
         )
         story_state = world.get("story_state", {})
         session.story_state = dict(story_state) if isinstance(story_state, dict) else {}
-        session.turn_history = data.get("turn_history", [])
+        turn_history = data.get("turn_history", [])
+        session.turn_history = turn_history if isinstance(turn_history, list) else []
+        stored_hashes = data.get("recent_narrative_hashes", [])
+        session.recent_narrative_hashes = [
+            item
+            for item in stored_hashes
+            if isinstance(item, str) and len(item) == 64 and all(char in "0123456789abcdef" for char in item)
+        ][-_RECENT_NARRATIVE_HASH_LIMIT:]
+        if not session.recent_narrative_hashes:
+            session.recent_narrative_hashes = [
+                digest
+                for entry in session.turn_history
+                if isinstance(entry, dict)
+                if (digest := _narrative_hash(str(entry.get("narrative") or "")))
+            ][-_RECENT_NARRATIVE_HASH_LIMIT:]
         chat_history = data.get("chat_history", [])
         session.chat_history = chat_history if isinstance(chat_history, list) else []
         session.last_choices = data.get("last_choices", [])

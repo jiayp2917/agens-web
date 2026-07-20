@@ -474,6 +474,18 @@ class TestGameSessionSerialization:
             in assistant["content"]
         )
 
+    def test_recent_narrative_hashes_round_trip_without_storing_plaintext(self):
+        s = GameSession()
+        narrative = "山门外的风声已传入洞府。"
+        s.record_turn("稳固根基", narrative, {})
+
+        saved = s.to_save_dict()
+        restored = GameSession.from_save_dict(saved)
+
+        assert saved["recent_narrative_hashes"]
+        assert narrative not in saved["recent_narrative_hashes"]
+        assert restored.has_recent_narrative(narrative)
+
 
 class TestGameSessionReset:
     """Test reset clears all new fields."""

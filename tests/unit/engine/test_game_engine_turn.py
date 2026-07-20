@@ -369,7 +369,7 @@ class TestGameEngineHandleAction:
                 return {"narrative": "", "state_delta": {}, "choices": [], "llm_error": ""}
             if agent_name == "narrator":
                 return {
-                    "narrative": "此后一年，许满避开山径纷争，借村落香火安稳调息。",
+                    "narrative": "此后，许满避开山径纷争，借村落香火安稳调息。",
                     "state_delta": {"character": {}, "world": {}, "meta": {}},
                     "choices": ["继续静养", "打听山门消息", "查看旧伤", "随缘等候"],
                     "llm_error": "",
@@ -510,6 +510,28 @@ class TestGameEngineHandleAction:
         assert calls == 2
         assert engine.game_session.local_story_active is True
         assert "foreign chronicle" not in engine.game_session.turn_history[-1]["narrative"]
+
+    def test_turn_rewrites_model_invented_exact_time_span(self) -> None:
+        engine = GameEngine()
+        engine.game_session.game_started = True
+        engine.game_session.last_choices = ["闭门吐纳", "外出访友", "夜探山径", "随缘静候"]
+
+        def runner(agent_name, user_input, session, **kw):
+            if agent_name == "narrator":
+                return {
+                    "narrative": "四十二载间，山门旧案未平，其人仍在洞府中调息。",
+                    "state_delta": {"character": {}, "world": {}, "meta": {}},
+                    "choices": ["闭门吐纳", "寻访同门", "夜探山径", "随缘静候"],
+                    "llm_error": "",
+                }
+            return {"approved": True, "corrected_delta": {}, "llm_error": ""}
+
+        with patch("agens_novel.engine.game_engine.run_turn_sync", side_effect=runner):
+            engine.handle_action("A")
+
+        narrative = engine.game_session.turn_history[-1]["narrative"]
+        assert "四十二载" not in narrative
+        assert "岁月流转" in narrative
 
     def test_json_only_narrator_delta_settles_by_rules_without_retry_or_local_story(
         self, monkeypatch

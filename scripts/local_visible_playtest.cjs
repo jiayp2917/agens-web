@@ -25,6 +25,8 @@ const SAVE_LOAD_TURN = Number(process.env.AGENS_PLAYTEST_SAVE_LOAD_TURN || "0");
 const REFRESH_PROBE = process.env.AGENS_PLAYTEST_REFRESH_PROBE === "1";
 const DOUBLE_CLICK_PROBE = process.env.AGENS_PLAYTEST_DOUBLE_CLICK_PROBE === "1";
 const CONFLICT_PROBE = process.env.AGENS_PLAYTEST_CONFLICT_PROBE === "1";
+const REQUIRE_FINALE = process.env.AGENS_PLAYTEST_REQUIRE_FINALE === "1";
+const REQUIRE_PERSISTED_AUDIT = process.env.AGENS_PLAYTEST_REQUIRE_PERSISTED_AUDIT === "1";
 const VIEWPORT = parseViewport(process.env.AGENS_PLAYTEST_VIEWPORT || "1440x1000");
 
 const FORBIDDEN_VISIBLE_PATTERNS = [
@@ -173,6 +175,74 @@ print("ok")
   if (result.status !== 0) {
     throw new Error(`Failed to seed local invite: ${(result.stderr || result.stdout || "").trim()}`);
   }
+}
+
+function readPersistedTurnAudit(sessionId) {
+  const py = `
+import hashlib
+import json
+import os
+import re
+
+from sqlalchemy import text
+
+from web.backend.database import create_database
+
+session_id = os.environ["AGENS_PLAYTEST_SESSION_ID"]
+db = create_database()
+with db.engine.connect() as conn:
+    rows = conn.execute(
+        text("""
+            SELECT game_turns.turn_no, game_turns.narrative
+            FROM game_turns
+            JOIN game_runs ON game_runs.id = game_turns.run_id
+            WHERE game_runs.session_id = :session_id
+            ORDER BY game_turns.turn_no
+        """),
+        {"session_id": session_id},
+    ).mappings().all()
+
+turns = [int(row["turn_no"]) for row in rows]
+seen = {}
+duplicates = []
+for row in rows:
+    turn_no = int(row["turn_no"])
+    normalized = re.sub(r"\\s+", "", str(row["narrative"] or ""))
+    if not normalized:
+        continue
+    digest = hashlib.sha256(normalized.encode("utf-8")).hexdigest()
+    previous = seen.get(digest)
+    if previous is not None:
+        duplicates.append({
+            "turn_no": turn_no,
+            "previous_turn_no": previous,
+            "narrative_sha256": digest,
+        })
+    else:
+        seen[digest] = turn_no
+
+print(json.dumps({
+    "status": "ok",
+    "turn_count": len(turns),
+    "last_turn": turns[-1] if turns else 0,
+    "continuous": turns == list(range(1, len(turns) + 1)),
+    "duplicate_narrative_count": len(duplicates),
+    "duplicates": duplicates,
+}, ensure_ascii=True))
+`;
+  const result = spawnSync(pythonExe(), ["-c", py], {
+    cwd: ROOT,
+    env: {
+      ...process.env,
+      AGENS_PLAYTEST_SESSION_ID: sessionId,
+    },
+    encoding: "utf8",
+    maxBuffer: 1024 * 1024,
+  });
+  if (result.status !== 0) {
+    throw new Error(`Failed to audit persisted turns: ${(result.stderr || result.stdout || "").trim()}`);
+  }
+  return JSON.parse(result.stdout);
 }
 
 function writeStrictEvidence(rawPath, name) {
@@ -991,6 +1061,7 @@ if (require.main === module) {
     refresh_probe: REFRESH_PROBE,
     double_click_probe: DOUBLE_CLICK_PROBE,
     conflict_probe: CONFLICT_PROBE,
+    require_finale: REQUIRE_FINALE,
     viewport: VIEWPORT,
     evidence_context: evidenceContext(),
     base_url: BASE_URL,
@@ -1063,6 +1134,7 @@ if (require.main === module) {
   }
 
   let browser;
+  let playtestSessionId = "";
   try {
     ensureInvite(inviteCode);
     summary.invite_seeded = true;
@@ -1136,6 +1208,7 @@ if (require.main === module) {
     } catch {
       // Keep null; status will still be recorded.
     }
+    playtestSessionId = cleanText(startBody?.session_id);
     Object.assign(summary, startAcceptance(startBody, startResponse.status()));
     await page.waitForSelector(".choice-button", { timeout: REQUEST_TIMEOUT_MS });
     const startUiSnapshot = CONTENT_AUDIT ? await uiSnapshot(page, "start") : null;
@@ -1653,6 +1726,39 @@ if (require.main === module) {
     issue("P0", "validation script failed", { error: String(error).slice(0, 1000) });
   } finally {
     summary.completed_at = new Date().toISOString();
+    if (REQUIRE_FINALE && !summary.ended_finale) {
+      issue("P1", "validation required a finale but the run did not reach ascension", {
+        ended_at_turn: summary.ended_at_turn || 0,
+        turns_completed: summary.turns_completed || 0,
+      });
+      summary.result = "failed_terminal";
+    }
+    if (REQUIRE_PERSISTED_AUDIT) {
+      if (!playtestSessionId) {
+        issue("P0", "persisted turn audit could not identify the playtest session");
+      } else {
+        try {
+          const persisted = readPersistedTurnAudit(playtestSessionId);
+          summary.persisted_turn_audit = persisted;
+          if (!persisted.continuous || persisted.turn_count !== Number(summary.last_turn_count || 0)) {
+            issue("P0", "persisted game turns were not continuous", {
+              turn_count: persisted.turn_count,
+              last_turn: persisted.last_turn,
+              continuous: persisted.continuous,
+              browser_turn_count: Number(summary.last_turn_count || 0),
+            });
+          }
+          if (persisted.duplicate_narrative_count > 0) {
+            issue("P1", "persisted chronicle text repeated exactly", {
+              duplicate_count: persisted.duplicate_narrative_count,
+              duplicates: persisted.duplicates,
+            });
+          }
+        } catch (error) {
+          issue("P0", "persisted turn audit failed", { error: String(error).slice(0, 1000) });
+        }
+      }
+    }
     updateIssueCounts(summary, issues);
     if (CONTENT_AUDIT_FAIL_ON_P1 && ["passed", "passed_terminal"].includes(summary.result) && summary.p1_issues > 0) {
       summary.result = "failed_content";

@@ -210,6 +210,51 @@ def test_breakthrough_failure_suppresses_conflicting_stage_drop_claim() -> None:
     assert narrative == "破境未成，灵机反噬，需先稳住根基再图后续。"
 
 
+def test_breakthrough_rewrites_duplicate_chronicle() -> None:
+    engine = GameEngine()
+    engine.game_session.game_started = True
+    engine.game_session.realm = "练气"
+    engine.game_session.realm_stage = 9
+    engine.game_session.breakthrough_flags = ["foundation_aid"]
+    engine.game_session.turn_history = [
+        {
+            "turn": 1,
+            "narrative": "旧案牵动山门，外门执事已开始清查旧册。",
+            "delta": {},
+            "choices": [],
+        },
+        {
+            "turn": 2,
+            "narrative": "渡口来客渐多，坊市的议论也未停歇。",
+            "delta": {},
+            "choices": [],
+        }
+    ]
+
+    def runner(agent_name, user_input, session, **kwargs):
+        if agent_name == "narrator":
+            return {
+                "narrative": "旧案牵动山门，外门执事已开始清查旧册。",
+                "state_delta": {},
+                "choices": ["稳固道台", "拜访师门", "查看新境", "随缘听命"],
+                "llm_error": "",
+            }
+        if agent_name == "judge":
+            return {"approved": True, "corrected_delta": {}, "judgment_note": "", "llm_error": ""}
+        return {}
+
+    with patch("agens_novel.engine.game_engine.run_turn_sync", side_effect=runner):
+        with patch("agens_novel.game.realm.random.random", return_value=0.0):
+            engine.attempt_breakthrough()
+
+    narrative = engine.game_session.turn_history[-1]["narrative"]
+    assert narrative not in {
+        engine.game_session.turn_history[-2]["narrative"],
+        engine.game_session.turn_history[-3]["narrative"],
+    }
+    assert "破境已成" in narrative
+
+
 def test_breakthrough_model_delta_cannot_inject_authoritative_character_state() -> None:
     engine = GameEngine()
     engine.game_session.game_started = True
