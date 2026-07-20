@@ -1,0 +1,20 @@
+[Unit]
+Description=Reapply agens-web outbound ACL after Docker runtime is healthy
+Requires=docker.service
+After=docker.service network-online.target
+Wants=network-online.target
+StartLimitIntervalSec=300
+StartLimitBurst=12
+
+[Service]
+Type=oneshot
+Environment=COMPOSE_PROJECT_NAME=agens-web
+Environment=COMPOSE_FILE=@AGENS_WEB_DIR@/deploy/docker-compose.yml
+ExecStartPre=/bin/sh @AGENS_WEB_DIR@/deploy/wait-for-egress-runtime.sh
+ExecStart=/bin/sh @AGENS_WEB_DIR@/deploy/apply-egress-acl.sh
+RemainAfterExit=yes
+Restart=on-failure
+RestartSec=5s
+
+[Install]
+WantedBy=multi-user.target

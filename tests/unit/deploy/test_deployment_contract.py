@@ -10,6 +10,10 @@ from agens_novel.llm.url_security import OFFICIAL_MODEL_HOSTS
 
 ROOT = Path(__file__).resolve().parents[3]
 COMPOSE_PATH = ROOT / "deploy" / "docker-compose.yml"
+SYSTEMD_SERVICE_PATH = ROOT / "deploy" / "systemd" / "agens-web-egress-acl.service"
+MODULE_CONFIG_PATH = ROOT / "deploy" / "systemd" / "agens-web-br-netfilter.conf"
+PERSISTENCE_INSTALLER_PATH = ROOT / "deploy" / "install-egress-acl-persistence.sh"
+RUNTIME_WAIT_PATH = ROOT / "deploy" / "wait-for-egress-runtime.sh"
 
 
 def _compose() -> dict:
@@ -85,3 +89,26 @@ def test_host_acl_blocks_application_proxy_bypass() -> None:
     insert_jump = script.index('iptables -I DOCKER-USER 1 -j "$chain"')
     enable_bridge_filtering = script.index("modprobe br_netfilter")
     assert delete_jump < insert_jump < enable_bridge_filtering
+
+
+def test_host_acl_persistence_waits_for_healthy_runtime_before_enabling_filtering() -> None:
+    service = SYSTEMD_SERVICE_PATH.read_text(encoding="utf-8")
+    modules = MODULE_CONFIG_PATH.read_text(encoding="utf-8")
+    installer = PERSISTENCE_INSTALLER_PATH.read_text(encoding="utf-8")
+    runtime_wait = RUNTIME_WAIT_PATH.read_text(encoding="utf-8")
+
+    assert modules == "br_netfilter\n"
+    assert "bridge-nf-call-iptables" not in modules
+    assert "Requires=docker.service" in service
+    assert "After=docker.service network-online.target" in service
+    assert "ExecStartPre=/bin/sh" in service
+    assert "ExecStart=/bin/sh" in service
+    assert "wait-for-egress-runtime.sh" in service
+    assert "apply-egress-acl.sh" in service
+    assert "Restart=on-failure" in service
+    assert "StartLimitBurst=12" in service
+    assert "systemctl enable --now agens-web-egress-acl.service" in installer
+    assert "modprobe -r br_netfilter" not in installer
+    assert "modprobe -r br_netfilter" not in runtime_wait
+    assert "for service in agens-web egress-proxy redis" in runtime_wait
+    assert 'if [ "$health" != "healthy" ]' in runtime_wait
