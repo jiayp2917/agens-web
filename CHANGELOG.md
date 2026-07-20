@@ -2,6 +2,13 @@
 
 ## 2026-07-20
 
+### Content continuity patch and local acceptance
+
+- `f302d37` repaired the `BreakthroughFlow` class boundary, made duplicate protection span ordinary and breakthrough turns plus save/load history, constrained precise elapsed-year prose to rule-owned values, and removed player-visible fallback wording that exposed internal scheduling concepts.
+- Current local gates passed: compileall, Ruff, Ruff C901, mypy, PostgreSQL Web tests (94 passed), serial non-live pytest (804 passed, 1 deselected, no skipped or failed), Vitest (13 passed), React build and npm audit.
+- The fixed-seed rule validator reached ascension on turn 87. Headed Chrome evidence recorded a clean 87-turn golden terminal run at `c79d05c` and a current-commit 23-turn mixed run at `f302d37`; both had zero fallback, repair, contract recovery, visible forbidden text, exact repeat, P0/P1 issue and persisted-turn continuity failure. Save/load, refresh and double-click checks passed. The `f302d37` delta from `c79d05c` only renamed local variables for mypy and did not change runtime behavior.
+- Docker CLI is unavailable on this workstation, so Compose config and image-build gates for `f302d37` were not run. No production deployment, production smoke, rollback, v2 switch, ACL installation or reboot validation was performed.
+
 ### Release-closure audit and stop condition
 
 - Audited the release-closure plan without deploying. `35fe2dc` added Chinese-only Narrator contract enforcement; `f4c7333` added version-controlled egress persistence assets. Neither commit is treated as a completed release.

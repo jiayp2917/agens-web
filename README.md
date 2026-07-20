@@ -19,6 +19,7 @@ Web-only 文字修仙模拟器。当前主线由 React/Vite、FastAPI、PostgreS
 - Narrator 缺任一契约段时会记录 `contract_recovery`；即使规则侧能继续结算，也不能计作 live-model 成功。
 - FastAPI 路由已拆为 auth/catalog/session/settings；`GameEngine` 仍是玩法门面，开局、普通回合、突破和 fallback 分别由 flow/policy 模块承担。
 - 前端关键面板使用 SVG 九宫双线内收角与同轮廓背景蒙版；工具按钮、寿元条、细滚动条和 A/B/C/D 六态已按当前素材规范统一，移动端保留同一视觉语言。
+- `f302d37` 已完成内容连续性修复、全量本地代码门禁，以及 90 回合黄金路线和 20 回合混合 headed Chrome 验收；当前本机没有 Docker CLI，因此该提交的 Compose config 与镜像构建尚未执行。
 - 服务器曾完成 Docker/Compose、Redis、Squid、egress ACL 隔离、备份和 v1 Stage 1；但首个生产 choice 因 Narrator 正文英文残留进入 fallback。2026-07-20 的重启后只读复核还确认 ACL、bridge filtering 与持久化服务均未恢复。当前应用健康，但不具备发布验收或持续出站隔离结论。
 当前本地门禁、strict live 证据、性能数据和残余风险统一见
 [docs/PROJECT_AUDIT.md](docs/PROJECT_AUDIT.md)。本地通过不等于生产通过，生产状态必须以服务器侧脱敏复验为准。

@@ -2,7 +2,7 @@
 
 ## Scope
 
-本审计覆盖 2026-07-14 的 `master@99e7915` 提交链，以及 2026-07-20 对 `35fe2dc`、`f4c7333` 和当前工作树的发布收口复核。`9b3a86e` 的玩法、数据库和 Chrome 90/20 回合结果仅是历史证据，不能替代当前候选验证。生产曾执行隔离、备份和 Stage 1，但 strict choice 触发 fallback；服务器重启后出站 ACL 未恢复，故当前运行健康不等于发布验收通过。
+本审计覆盖 2026-07-14 的 `master@99e7915` 提交链，以及截至 2026-07-20 `master@f302d37` 的发布收口复核。`9b3a86e` 的玩法、数据库和 Chrome 90/20 回合结果仅是历史证据；当前候选的完整本地门禁和混合路线 Chrome 已重新验证，90 回合黄金路线证据准确绑定其行为等价的前一 clean 提交 `c79d05c`。生产曾执行隔离、备份和 Stage 1，但 strict choice 触发 fallback；服务器重启后出站 ACL 未恢复，故当前运行健康不等于发布验收通过。
 
 ## Current Architecture
 
@@ -159,21 +159,22 @@ run_achievements, account_rewards, legacy_bonuses
 - v1 strict smoke 的 start 为 non-fallback，但首个 choice 的两次 Narrator 输出均在正文保留英文，触发 incomplete output 和本地 fallback。该结果不算 live-model 成功，流程按硬门禁停止。
 - 尚未执行旧镜像回滚演练、`story_version=2` 切换、v2 smoke 和 ACL/sysctl 持久化。当前生产运行健康但未获发布验收；恢复方向等待在“回滚到 `a5a1f0f9`”与“新提交修复后继续”之间确认。
 
-## 2026-07-20 Release-Closure Audit
+## 2026-07-20 Content Patch And Local Acceptance
 
-- `35fe2dc` 已收紧 Narrator 的 schema、标签 prompt、单次 incomplete retry 与脱敏诊断，要求正文和四个选项为全中文；`f4c7333` 已加入受版本控制的 `br_netfilter` 与 egress ACL 持久化资产。两项提交均存在，但尚未形成一个可发布的最终候选。
-- `release-f4c7333-golden90-20260720.json` 绑定 clean `f4c7333` 和独立本地 PostgreSQL：90/90 choice 为 strict live，fallback、repair、contract recovery、可见禁词均为 0，存读档与刷新通过；但结果为 `failed_content`。第 65 回合的突破复用了第 64 回合叙事，页面没有新增可见编年史条目。该回放没有设置 `AGENS_VALIDATION_SEED`，第 90 回合为非飞升终局，不能证明黄金路线在 90 回合内飞升。性能仅记录：p50 11.071s、p95 47.487s、max 63.906s。
-- 当前工作树另有未提交的内容质量补丁。2026-07-20 针对其三个引擎测试文件的复核为 109 passed、16 failed：`breakthrough_flow.py` 中新 helper 的缩进使后续类方法脱离 `BreakthroughFlow`，并且时间跨度与通用替代文案的改动破坏既有质量契约。因此该补丁不得进入发布或作为通过证据。
-- 服务器重启后只读预检：应用、PostgreSQL、Redis、Squid、origin/public health 和 Alembic `20260710_0008` 正常，运行镜像仍为历史 v1；但 `br_netfilter` 未加载、bridge filtering 不可用、`AGENS_WEB_EGRESS` 链不存在且未安装持久化 systemd 服务。`f4c7333` 的持久化资产尚未部署，不能把此前运行态 ACL 视为当前保护。
-- 结论：无新增 P0 证据，但存在发布阻塞的 P1。须先修复并提交内容补丁、通过全量本地门禁和两局新 Chrome 验收，之后才可重新开始生产 v1 strict smoke、回滚演练、v2 smoke 与持久化部署；本轮未执行生产写操作、模型重试或发布。
+- `35fe2dc` 已收紧 Narrator 的 schema、标签 prompt、单次 incomplete retry 与脱敏诊断，要求正文和四个选项为全中文；`f4c7333` 已加入受版本控制的 `br_netfilter` 与 egress ACL 持久化资产。`f302d37` 修复了内容补丁的 `BreakthroughFlow` 类边界，并将突破与普通回合的叙事去重、精确时长校验、通用替代文本和持久化叙事 hash 纳入同一质量守卫。
+- `f302d37` 工作树 clean。本地通过 compileall、Ruff、Ruff C901、mypy、`tests\\web -n0`（94 passed）、串行非 live pytest（804 passed、1 deselected、0 skipped、0 failed）、Vitest（13 passed）、React build 和 npm audit。固定种子规则验证在第 87 回合飞升。
+- `release-c79d05c-golden90-20260720.json` 绑定独立 PostgreSQL 和 clean `c79d05c`：87/87 choice strict live，第 87 回合终局；fallback、repair、contract recovery、可见禁词、精确重复和 P0/P1 均为 0，存读档、刷新、双击与持久化 turn 连续性/重复审计均通过。p50/p95/max 为 8.892s/44.968s/69.984s。`f302d37` 相对 `c79d05c` 仅将两个局部类型推断变量改名以通过 mypy，不改变运行分支；证据仍以实际执行 commit 为准。
+- `release-f302d37-mixed20-20260720.json` 精确绑定当前提交：20 个主回合加读档后 3 回合均 strict live；fallback、repair、contract recovery、可见禁词、精确重复和 P0/P1 均为 0，存读档、刷新、双击与 23 条持久化回合连续性/重复审计均通过。p50/p95/max 为 8.930s/48.215s/60.877s。
+- 当前本机未找到 Docker CLI，故当前提交的 Compose config 和镜像构建门禁未执行；这不是测试通过。生产未在本轮发生写操作、模型重试或部署。
+- 服务器重启后的只读预检仍显示应用、PostgreSQL、Redis、Squid、origin/public health 和 Alembic `20260710_0008` 正常，运行镜像仍为历史 v1；但 `br_netfilter` 未加载、bridge filtering 不可用、`AGENS_WEB_EGRESS` 链不存在且未安装持久化 systemd 服务。`f4c7333` 的持久化资产尚未部署。
+- 结论：此前内容补丁回归和本地 Chrome 阻塞已关闭，无新增 P0；生产发布仍被当前候选的 Docker 门禁、v1 strict smoke、旧镜像回滚演练、v2 smoke 和 ACL 持久化/重启验收阻塞。不得将本地全绿或当前服务器 health 写成生产发布完成。
 
 ## Residual Risks
 
 | 风险 | 级别 | 说明 |
 | --- | --- | --- |
 | 生产 strict choice 未通过 | P1 | Narrator 正文连续两次保留英文，严格契约拒绝后进入 fallback；需修复提示/安全改写策略并重新执行 v1/v2 smoke |
-| 当前内容补丁破坏突破流程 | P1 | 未提交的 `breakthrough_flow.py` 缩进回归导致 16 个引擎测试失败；先恢复类方法边界并重新验证，禁止暂存或部署该工作树 |
-| 当前候选未通过 90 回合内容验收 | P1 | clean `f4c7333` 的 90 回合运行虽无 fallback，但第 65 回合突破叙事重复且没有新编年史条目；未设置验证种子且第 90 回合未飞升 |
+| 当前候选 Docker 门禁未执行 | P1 | 本机没有可用 Docker CLI，当前 `f302d37` 尚未完成 Compose config 与镜像构建；生产部署前必须补齐，历史服务器 Stage 1 不可替代 |
 | ACL/sysctl 当前未持久化 | P1 | 重启后 `br_netfilter`、bridge filtering、`AGENS_WEB_EGRESS` 和 systemd 持久化服务均不存在；恢复过程禁止卸载 `br_netfilter` |
 | live 响应仍高于 5 秒目标 | P1 | 当前 fingerprint 的 164 个严格 live 回合 choice p50=9.495s、p95=18.025s、max=44.636s（目标 p50≤5s/p95≤15s 均未达）。Narrator 仍是主要延迟来源，需 provider/模型侧或并发化处理 |
 | 内容路线仍有相似度风险 | P2 | 最新 A/B/C/D 硬门禁通过，但 C/D 峰值相似度约 0.743/0.769，后续应继续增加事件兑现和路线专属内容 |
