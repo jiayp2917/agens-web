@@ -432,6 +432,85 @@ class TestGameEngineHandleAction:
         assert engine.game_session.local_story_active is False
         assert engine.game_session.last_choices == ["闭门整理", "拜访执事", "夜探山径", "静候命数"]
 
+    def test_schema_narrator_retries_english_residue_with_chinese_contract(self) -> None:
+        engine = GameEngine()
+        engine.game_session.game_started = True
+        engine.game_session.last_choices = ["闭门吐纳", "外出访友", "夜探山径", "随缘静候"]
+        calls: list[str] = []
+
+        def runner(agent_name, user_input, session, **kw):
+            if agent_name == "narrator":
+                calls.append(user_input)
+                if len(calls) == 1:
+                    return {
+                        "narrative": "他在宗门外整理 old records，等候新的榜文。",
+                        "state_delta": {"character": {}, "world": {}, "meta": {}},
+                        "choices": ["闭门吐纳", "寻访同门", "夜探山径", "随缘静候"],
+                        "contract_diagnostics": {
+                            "english_residue": True,
+                            "narrative_english_residue": True,
+                            "choice_english_indices": [],
+                        },
+                        "provider_json_schema": True,
+                        "provider_json_envelope_ok": True,
+                        "llm_error": "",
+                    }
+                return {
+                    "narrative": "其人在宗门外整理旧录，等候新榜传来，外门执事已开始清查旧案。",
+                    "state_delta": {"character": {}, "world": {}, "meta": {}},
+                    "choices": ["闭门吐纳", "寻访同门", "夜探山径", "随缘静候"],
+                    "contract_diagnostics": {
+                        "english_residue": False,
+                        "narrative_english_residue": False,
+                        "choice_english_indices": [],
+                    },
+                    "provider_json_schema": True,
+                    "provider_json_envelope_ok": True,
+                    "llm_error": "",
+                }
+            return {"approved": True, "corrected_delta": {}, "llm_error": ""}
+
+        with patch("agens_novel.engine.game_engine.run_turn_sync", side_effect=runner):
+            engine.handle_action("A")
+
+        assert len(calls) == 2
+        assert "不得含任何英文字母" in calls[1]
+        assert engine.game_session.local_story_active is False
+        assert engine.game_session.turn_count == 1
+        assert "old records" not in engine.game_session.turn_history[-1]["narrative"]
+
+    def test_schema_narrator_two_english_attempts_fall_back_without_visible_residue(self) -> None:
+        engine = GameEngine()
+        engine.game_session.game_started = True
+        engine.game_session.last_choices = ["闭门吐纳", "外出访友", "夜探山径", "随缘静候"]
+        calls = 0
+
+        def runner(agent_name, user_input, session, **kw):
+            nonlocal calls
+            if agent_name == "narrator":
+                calls += 1
+                return {
+                    "narrative": "He keeps a foreign chronicle in the hall.",
+                    "state_delta": {"character": {}, "world": {}, "meta": {}},
+                    "choices": ["闭门吐纳", "寻访同门", "夜探山径", "随缘静候"],
+                    "contract_diagnostics": {
+                        "english_residue": True,
+                        "narrative_english_residue": True,
+                        "choice_english_indices": [],
+                    },
+                    "provider_json_schema": True,
+                    "provider_json_envelope_ok": True,
+                    "llm_error": "",
+                }
+            return {"approved": True, "corrected_delta": {}, "llm_error": ""}
+
+        with patch("agens_novel.engine.game_engine.run_turn_sync", side_effect=runner):
+            engine.handle_action("A")
+
+        assert calls == 2
+        assert engine.game_session.local_story_active is True
+        assert "foreign chronicle" not in engine.game_session.turn_history[-1]["narrative"]
+
     def test_json_only_narrator_delta_settles_by_rules_without_retry_or_local_story(
         self, monkeypatch
     ) -> None:

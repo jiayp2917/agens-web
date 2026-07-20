@@ -6,6 +6,7 @@ import asyncio
 import json
 
 from agens_novel.agents.narrator.nodes import (
+    _NARRATOR_RESPONSE_FORMAT,
     _contract_diagnostics,
     _parse_narrator_output,
     _should_use_narrator_schema,
@@ -72,6 +73,7 @@ class TestNarratorParse:
         assert "<state_update>{}</state_update>" in result["user_message"]
         assert "两个标签都不得省略" in result["user_message"]
         assert "第一个字符不得是 <、{、[" in result["user_message"]
+        assert "不得含任何英文字母" in result["user_message"]
 
     def test_build_prompt_uses_schema_fields_without_tag_contract(self, tmp_path, monkeypatch) -> None:
         monkeypatch.setattr(
@@ -92,6 +94,7 @@ class TestNarratorParse:
         assert result["provider_json_schema"] is True
         assert "narrative、state_update_json、choices" in result["user_message"]
         assert "非空且互不重复" in result["user_message"]
+        assert "不得含任何英文字母" in result["user_message"]
         assert "<state_update>{}</state_update>" not in result["user_message"]
         assert "<choices>[" not in result["user_message"]
 
@@ -349,11 +352,13 @@ class TestNarratorParse:
             "raw_has_choices_tag": True,
             "structured_residue": False,
             "english_residue": False,
+            "narrative_english_residue": False,
+            "choice_english_indices": [],
         }
 
     def test_contract_diagnostics_reject_any_visible_english_word(self) -> None:
         text = (
-            "他在山门前获得 prowess 提升。\n"
+            "他在山门前获得 foreign chronicle。\n"
             '<state_update>{"character":{},"world":{},"meta":{}}</state_update>\n'
             '<choices>["闭关", "Explore ruins", "历练", "随缘"]</choices>'
         )
@@ -362,6 +367,14 @@ class TestNarratorParse:
         diagnostics = _contract_diagnostics(text, narrative, delta, choices)
 
         assert diagnostics["english_residue"] is True
+        assert diagnostics["narrative_english_residue"] is True
+        assert diagnostics["choice_english_indices"] == [1]
+
+    def test_schema_disallows_ascii_letters_in_visible_fields(self) -> None:
+        properties = _NARRATOR_RESPONSE_FORMAT["json_schema"]["schema"]["properties"]
+
+        assert properties["narrative"]["pattern"] == "^[^A-Za-z]*$"
+        assert properties["choices"]["items"]["pattern"] == "^[^A-Za-z]*$"
 
     def test_contract_diagnostics_do_not_accept_fake_tag_substrings(self) -> None:
         text = (

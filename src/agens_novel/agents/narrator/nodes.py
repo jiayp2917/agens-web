@@ -38,6 +38,7 @@ _RECENT_HISTORY_MESSAGES = 6
 # sent verbatim, which correlates with rising repair rates at high history counts.
 _HISTORY_PROMPT_SOFT_CAP = _RECENT_HISTORY_MESSAGES + 1
 _NARRATOR_SCHEMA_ENV = "AGENS_NARRATOR_RESPONSE_SCHEMA"
+_NO_ASCII_LETTERS_PATTERN = r"^[^A-Za-z]*$"
 _NARRATOR_RESPONSE_FORMAT: dict[str, Any] = {
     "type": "json_schema",
     "json_schema": {
@@ -46,11 +47,15 @@ _NARRATOR_RESPONSE_FORMAT: dict[str, Any] = {
         "schema": {
             "type": "object",
             "properties": {
-                "narrative": {"type": "string"},
+                "narrative": {"type": "string", "pattern": _NO_ASCII_LETTERS_PATTERN},
                 "state_update_json": {"type": "string"},
                 "choices": {
                     "type": "array",
-                    "items": {"type": "string", "minLength": 1},
+                    "items": {
+                        "type": "string",
+                        "minLength": 1,
+                        "pattern": _NO_ASCII_LETTERS_PATTERN,
+                    },
                     "minItems": 4,
                     "maxItems": 4,
                 },
@@ -92,6 +97,8 @@ def build_prompt(state: dict[str, Any]) -> dict[str, Any]:
             "narrative 必须是 80-140 个中文字符的第三人称编年史，"
             "state_update_json 必须是可解析为 JSON 对象的字符串，"
             "choices 必须恰好四项、非空且互不重复，并依次对应稳妥、机遇、风险、气运。"
+            "narrative 和 choices 只能使用中文，不得含任何英文字母、英文缩写或拉丁字母。"
+            "发现英文时必须在输出前改写为中文或省略该句。"
             "任何字段都不得包含标签、Markdown 或额外包装。"
         )
     else:
@@ -99,7 +106,8 @@ def build_prompt(state: dict[str, Any]) -> dict[str, Any]:
             "响应必须以 80-140 个中文字符的第三人称编年史正文开头，第一个字符不得是 <、{、[；随后依次输出 "
             "<state_update>{}</state_update> 和恰好四项的 "
             "<choices>[\"...\", \"...\", \"...\", \"...\"]</choices>；"
-            "两个标签都不得省略。"
+            "两个标签都不得省略。叙事正文和四个选项只能使用中文，"
+            "不得含任何英文字母、英文缩写或拉丁字母；发现英文时必须改写为中文或省略。"
         )
     user_content = (
         f"<当前状态>\n{game_state_json}\n</当前状态>\n\n"
@@ -436,6 +444,12 @@ def _contract_diagnostics(
     choices: list[str],
 ) -> dict[str, Any]:
     """Return non-secret narrator contract facts for logs and evidence."""
+    narrative_english_residue = bool(_VISIBLE_ENGLISH_RE.search(str(narrative or "")))
+    choice_english_indices = [
+        index
+        for index, choice in enumerate(choices)
+        if _VISIBLE_ENGLISH_RE.search(str(choice or ""))
+    ]
     visible_text = "\n".join([str(narrative or ""), *[str(choice or "") for choice in choices]])
     return {
         "missing_narrative": not bool(str(narrative or "").strip()),
@@ -445,7 +459,9 @@ def _contract_diagnostics(
         "raw_has_state_update_tag": bool(_TAG_RE.search(str(raw_text or ""))),
         "raw_has_choices_tag": bool(_CHOICES_RE.search(str(raw_text or ""))),
         "structured_residue": bool(_VISIBLE_STRUCTURED_RE.search(visible_text)),
-        "english_residue": bool(_VISIBLE_ENGLISH_RE.search(visible_text)),
+        "english_residue": narrative_english_residue or bool(choice_english_indices),
+        "narrative_english_residue": narrative_english_residue,
+        "choice_english_indices": choice_english_indices,
     }
 
 

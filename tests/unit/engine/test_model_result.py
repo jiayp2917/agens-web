@@ -188,6 +188,8 @@ def test_result_diagnostics_are_non_secret_shape_facts() -> None:
         "contract_raw_has_choices_tag": False,
         "contract_structured_residue": False,
         "contract_english_residue": False,
+        "contract_narrative_english_residue": False,
+        "contract_choice_english_indices": [],
         "provider_json_schema": False,
         "provider_json_envelope_ok": False,
     }

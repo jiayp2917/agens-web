@@ -167,6 +167,7 @@ def result_diagnostics(result: dict[str, Any]) -> dict[str, Any]:
         prompt_metrics_value if isinstance(prompt_metrics_value, dict) else {}
     )
     contract: dict[str, Any] = contract_value if isinstance(contract_value, dict) else {}
+    choice_english_indices = _choice_english_indices(contract.get("choice_english_indices"))
     if isinstance(generated, dict):
         raw_choices = generated.get("choices", raw_choices)
         narrative = generated.get("opening_narrative") or narrative
@@ -200,6 +201,8 @@ def result_diagnostics(result: dict[str, Any]) -> dict[str, Any]:
         "contract_raw_has_choices_tag": bool(contract.get("raw_has_choices_tag")),
         "contract_structured_residue": bool(contract.get("structured_residue")),
         "contract_english_residue": bool(contract.get("english_residue")),
+        "contract_narrative_english_residue": bool(contract.get("narrative_english_residue")),
+        "contract_choice_english_indices": choice_english_indices,
         "provider_json_schema": bool(result.get("provider_json_schema")),
         "provider_json_envelope_ok": bool(result.get("provider_json_envelope_ok")),
     }
@@ -212,3 +215,13 @@ def _int_metric(value: Any) -> int:
         return max(0, int(value or 0))
     except (TypeError, ValueError):
         return 0
+
+
+def _choice_english_indices(value: Any) -> list[int]:
+    if not isinstance(value, list):
+        return []
+    return [
+        index
+        for index in value
+        if isinstance(index, int) and not isinstance(index, bool) and 0 <= index < 4
+    ]
