@@ -14,7 +14,9 @@ from typing import Any
 
 from ..game.constants import REALM_LIFESPANS
 from ..game.realm import breakthrough_blocking_effects, golden_breakthrough_flags
+from ..rule_rng import RuleRng, rule_rng_for_session
 from .event_catalog import event_summary, select_chronicle_event, stage_feedback_due
+from .rule_contracts import SLOT_TO_CATEGORY, ChoiceIntentV1, RuleTurnOutcomeV1
 from .story_catalog import story_turn_delta
 
 # ── Realm → base years per turn ─────────────────────────────────────────────
@@ -34,12 +36,7 @@ _REALM_YEAR_RANGES: dict[str, tuple[int, int]] = {
 
 # ── Choice category → risk multiplier for elapsed years ─────────────────────
 
-_CHOICE_CATEGORY_MAP: dict[str, str] = {
-    "A": "稳妥",
-    "B": "机遇",
-    "C": "风险",
-    "D": "气运",
-}
+_CHOICE_CATEGORY_MAP: dict[str, str] = dict(SLOT_TO_CATEGORY)
 
 _RISK_YEAR_MULTIPLIER: dict[str, float] = {
     "稳妥": 0.8,
@@ -77,17 +74,22 @@ def classify_choice(text: str) -> str:
 
     Falls back to '机遇' for free-text actions that don't match A/B/C/D.
     """
-    raw = text.strip()
+    return choice_intent(text).category
+
+
+def choice_intent(text: str) -> ChoiceIntentV1:
+    """Return the fixed A/B/C/D semantics for a player-visible action."""
+    raw = str(text or "").strip()
     if not raw:
-        return "机遇"
+        return ChoiceIntentV1("B", "机遇", raw)
     # Direct A/B/C/D letter
     upper = raw.upper()
     if upper in _CHOICE_CATEGORY_MAP and len(raw) == 1:
-        return _CHOICE_CATEGORY_MAP[upper]
+        return ChoiceIntentV1(upper, _CHOICE_CATEGORY_MAP[upper], raw)
     # Text starting with A/B/C/D marker
     for letter, category in _CHOICE_CATEGORY_MAP.items():
         if raw.startswith(letter) or raw.startswith(letter.lower()):
-            return category
+            return ChoiceIntentV1(letter, category, raw)
     for category in _CHOICE_CATEGORY_MAP.values():
         if (
             raw.startswith(category)
@@ -95,9 +97,10 @@ def classify_choice(text: str) -> str:
             or raw.startswith(f"{category}:")
             or raw.startswith(f"{category}：")
         ):
-            return category
+            slot = next(letter for letter, value in _CHOICE_CATEGORY_MAP.items() if value == category)
+            return ChoiceIntentV1(slot, category, raw)
     # Default for free-text actions
-    return "机遇"
+    return ChoiceIntentV1("B", "机遇", raw)
 
 
 def settle_turn(
@@ -118,12 +121,23 @@ def settle_turn(
             meta: game_over, game_over_reason, elapsed_years
             turn_summary: human-readable summary for model prompt
     """
-    category = classify_choice(choice_text)
+    return settle_turn_outcome(choice_text, session, difficulty_config).state_delta
+
+
+def settle_turn_outcome(
+    choice_text: str,
+    session: Any,
+    difficulty_config: dict[str, Any] | None = None,
+) -> RuleTurnOutcomeV1:
+    """Generate a rule-owned outcome before Narrator or Judge is invoked."""
+    intent = choice_intent(choice_text)
+    category = intent.category
     difficulty = (difficulty_config or {}).get("name") or session.difficulty or "普通"
+    rng = rule_rng_for_session(session)
 
     realm = session.realm or "练气"
-    elapsed_years = _elapsed_years(realm, category, difficulty)
-    char_delta = _attribute_changes(category)
+    elapsed_years = _elapsed_years(realm, category, difficulty, rng)
+    char_delta = _attribute_changes(category, rng)
     char_delta["age"] = f"+{elapsed_years}"
     recovered_effects = _steady_recovery_effects(session, category)
     if recovered_effects:
@@ -137,6 +151,9 @@ def settle_turn(
         char_delta["breakthrough_flags_add"] = preparation_flags
     new_age = session.age + elapsed_years
     remaining_lifespan, game_over_reason = _settle_lifespan(session, realm, new_age, char_delta)
+    risk_death_reason = _risk_death_reason(session, category, difficulty, new_age, rng)
+    if risk_death_reason:
+        game_over_reason = risk_death_reason
     event = select_chronicle_event(session, category, new_age)
     if event.get("id") == "steady-merit-recognition":
         char_delta["title_add"] = ["外门勤修弟子"]
@@ -172,6 +189,7 @@ def settle_turn(
         "world": world_delta,
         "meta": {
             "elapsed_years": elapsed_years,
+            "choice_slot": intent.slot,
             "choice_category": category,
             "event_id": event.get("id", ""),
             "event_type": event.get("event_type", ""),
@@ -184,6 +202,7 @@ def settle_turn(
             "story_status": story.get("story_status", ""),
             "breakthrough_preparation": preparation_flags,
             "turn_summary": turn_summary,
+            "risk_death": bool(risk_death_reason),
         },
     }
 
@@ -191,24 +210,37 @@ def settle_turn(
         state_delta["meta"]["game_over"] = True
         state_delta["meta"]["game_over_reason"] = game_over_reason
 
-    return state_delta
+    return RuleTurnOutcomeV1(intent, state_delta, turn_summary)
 
 
-def _elapsed_years(realm: str, category: str, difficulty: str) -> int:
+def _elapsed_years(
+    realm: str, category: str, difficulty: str, rng: RuleRng | None
+) -> int:
     year_min, year_max = _REALM_YEAR_RANGES.get(realm, (1, 3))
     difficulty_multiplier = {"简单": 0.7, "困难": 1.3}.get(difficulty, 1.0)
-    base_years = random.randint(year_min, year_max)
+    base_years = (
+        rng.randint(year_min, year_max, "elapsed_years")
+        if rng is not None
+        else random.randint(year_min, year_max)
+    )
     return max(
         1, int(base_years * _RISK_YEAR_MULTIPLIER.get(category, 1.0) * difficulty_multiplier)
     )
 
 
-def _attribute_changes(category: str) -> dict[str, Any]:
+def _attribute_changes(category: str, rng: RuleRng | None) -> dict[str, Any]:
     impact = _CHOICE_ATTRIBUTE_IMPACT.get(category, _CHOICE_ATTRIBUTE_IMPACT["机遇"])
     changes = {
         attr: change
         for attr, (low, high) in impact.get("attributes", {}).items()
-        if (change := random.randint(low, high)) != 0
+        if (
+            change := (
+                rng.randint(low, high, f"attribute:{attr}")
+                if rng is not None
+                else random.randint(low, high)
+            )
+        )
+        != 0
     }
     return {"attributes": changes} if changes else {}
 
@@ -231,6 +263,39 @@ def _settle_lifespan(
         char_delta["status_effects_add"] = [pressure["status_effect"]]
     reason = str(pressure.get("game_over_reason") or "寿元耗尽，坐化而去。")
     return (remaining, reason) if remaining <= 0 else (remaining, "")
+
+
+def _risk_death_reason(
+    session: Any,
+    category: str,
+    difficulty: str,
+    new_age: int,
+    rng: RuleRng | None,
+) -> str:
+    """Resolve seeded v3 adversity without changing legacy snapshots."""
+    if rng is None or int(getattr(session, "story_version", 0) or 0) != 3:
+        return ""
+    attributes = getattr(session, "attributes", {})
+    aptitude = (
+        sum(int(attributes.get(key) or 0) for key in ("root_bone", "comprehension", "luck"))
+        if isinstance(attributes, dict)
+        else 0
+    )
+    risk_route = category == "风险"
+    chance = 0.008 if risk_route else 0.0
+    if difficulty == "困难":
+        chance += 0.012 if risk_route else 0.003
+    chance += max(0, 12 - aptitude) * 0.004
+    lifespan = max(1, int(getattr(session, "lifespan", 100) or 100))
+    age_pressure = max(0.0, new_age / lifespan - 0.65)
+    chance += age_pressure * (0.02 if risk_route else 0.006)
+    if chance <= 0:
+        return ""
+    if rng.random("risk_death") >= min(0.12, chance):
+        return ""
+    if risk_route:
+        return "险境失手，伤势未及挽回而身死道消。"
+    return "时局艰险，旧患叠加而身死道消。"
 
 
 def _turn_summary(

@@ -44,7 +44,6 @@ def classify_narrator_result(result: dict[str, Any]) -> ModelResultStatus:
             f"叙述失败: {result['llm_error']}",
         )
     narrative = str(result.get("narrative") or "").strip()
-    state_delta = result.get("state_delta")
     choices = normalize_choices(result.get("choices"))
     contract_value = result.get("contract_diagnostics")
     contract: dict[str, Any] = contract_value if isinstance(contract_value, dict) else {}
@@ -52,10 +51,6 @@ def classify_narrator_result(result: dict[str, Any]) -> ModelResultStatus:
     if contract_failure is not None:
         return contract_failure
 
-    if state_delta is None or not isinstance(state_delta, dict):
-        return ModelResultStatus(
-            ModelResultKind.INCOMPLETE_OUTPUT, "模型已返回叙事，但状态更新格式不完整。"
-        )
     if not narrative:
         return ModelResultStatus(ModelResultKind.INCOMPLETE_OUTPUT, "模型输出缺少叙事正文。")
     if narrative and not choices:
@@ -73,20 +68,19 @@ def _narrator_contract_failure(
     result: dict[str, Any],
     contract: dict[str, Any],
 ) -> ModelResultStatus | None:
-    if result.get("provider_json_schema") and not result.get("provider_json_envelope_ok"):
+    transport = str(result.get("provider_transport") or "legacy_tags")
+    if transport not in {"json_schema", "json_object", "legacy_tags"}:
+        return ModelResultStatus(ModelResultKind.INCOMPLETE_OUTPUT, "模型返回了未知传输格式。")
+    if transport in {"json_schema", "json_object"} and not result.get("provider_json_envelope_ok"):
         return ModelResultStatus(
             ModelResultKind.INCOMPLETE_OUTPUT,
-            "模型未按 provider JSON schema 返回完整字段。",
+            "模型未按 provider JSON 契约返回完整字段。",
         )
     if contract.get("structured_residue"):
         return ModelResultStatus(ModelResultKind.INCOMPLETE_OUTPUT, "模型可见文本仍含结构化残留。")
     if contract.get("english_residue"):
         return ModelResultStatus(ModelResultKind.INCOMPLETE_OUTPUT, "模型可见文本仍含英文残留。")
-    if contract and not contract.get("raw_has_state_update_tag"):
-        return ModelResultStatus(
-            ModelResultKind.INCOMPLETE_OUTPUT, "模型输出缺少 state_update 标签。"
-        )
-    if contract and not contract.get("raw_has_choices_tag"):
+    if transport == "legacy_tags" and contract and not contract.get("raw_has_choices_tag"):
         return ModelResultStatus(ModelResultKind.INCOMPLETE_OUTPUT, "模型输出缺少 choices 标签。")
     return None
 

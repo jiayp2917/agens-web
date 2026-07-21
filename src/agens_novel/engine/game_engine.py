@@ -183,7 +183,15 @@ class GameEngine:
     def run_agent(self, agent_name: str, user_input: str, session: GameSession, **kwargs: Any) -> dict[str, Any]:
         """Call the agent runner through the GameEngine module patch seam."""
         model_config = self.model_config if isinstance(self.model_config, dict) else {}
-        for key in ("model", "base_url", "api_key", "api_key_set", "source", "key_error"):
+        for key in (
+            "provider",
+            "model",
+            "base_url",
+            "api_key",
+            "api_key_set",
+            "source",
+            "key_error",
+        ):
             if key in model_config:
                 kwargs.setdefault(key, model_config.get(key))
         return run_turn_sync(agent_name, user_input, session, **kwargs)

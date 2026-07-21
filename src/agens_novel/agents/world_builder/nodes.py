@@ -17,9 +17,17 @@ from typing import Any
 from ... import paths
 from ...artifacts import store
 from ...engine.world_generator import is_complete_opening_payload
+from ...llm.provider_adapter import (
+    ProviderTransport,
+    world_opening_transport,
+)
+from ...llm.provider_adapter import (
+    response_format as provider_response_format,
+)
 from ...llm.types import Message
 from ...utils.timing import utcnow_iso
 from ..common import call_agnes_llm_common, load_agent_settings, normalize_choices
+from ..contracts import WorldOpeningEnvelopeV1
 
 log = logging.getLogger(__name__)
 
@@ -206,8 +214,12 @@ def load_settings(state: dict[str, Any]) -> dict[str, Any]:
 
 
 def build_prompt(state: dict[str, Any]) -> dict[str, Any]:
-    provider_json_schema = _should_use_world_builder_schema(state)
-    prompt_name = "world_builder_schema" if provider_json_schema else "world_builder"
+    transport = world_opening_transport(state)
+    provider_structured = transport in {
+        ProviderTransport.JSON_SCHEMA,
+        ProviderTransport.JSON_OBJECT,
+    }
+    prompt_name = "world_builder_schema" if provider_structured else "world_builder"
     system_path = paths.system_prompt_path(prompt_name)
     if not system_path.exists():
         raise FileNotFoundError(f"System prompt not found: {system_path}")
@@ -237,20 +249,24 @@ def build_prompt(state: dict[str, Any]) -> dict[str, Any]:
         "system_message": system_message,
         "user_message": user_content,
         "messages": messages,
-        "provider_json_schema": provider_json_schema,
+        "provider_transport": transport.value,
+        "provider_json_schema": transport == ProviderTransport.JSON_SCHEMA,
+        "provider_json_object": transport == ProviderTransport.JSON_OBJECT,
     }
 
 
 async def call_agnes_llm(state: dict[str, Any]) -> dict[str, Any]:
-    return await call_agnes_llm_common(
+    transport = _world_transport(state)
+    result = await call_agnes_llm_common(
         state,
         agent_name=AGENT_NAME,
         temperature=0.6,
         max_tokens=4096,
-        response_format=_WORLD_BUILDER_RESPONSE_FORMAT
-        if state.get("provider_json_schema")
-        else None,
+        response_format=provider_response_format(transport, _WORLD_BUILDER_RESPONSE_FORMAT),
     )
+    result["provider_transport"] = transport.value
+    result["provider_json_schema"] = transport == ProviderTransport.JSON_SCHEMA
+    return result
 
 
 def save_artifact(state: dict[str, Any]) -> dict[str, Any]:
@@ -264,7 +280,11 @@ def save_artifact(state: dict[str, Any]) -> dict[str, Any]:
         world_description = ""
         opening_narrative = ""
     else:
-        if state.get("provider_json_schema"):
+        transport = str(state.get("provider_transport") or "")
+        provider_structured = transport in {"json_schema", "json_object"} or bool(
+            state.get("provider_json_schema")
+        )
+        if provider_structured:
             generated_data, world_description, opening_narrative = _parse_schema_world_output(text)
         else:
             generated_data, world_description, opening_narrative = _parse_world_output(text)
@@ -301,6 +321,11 @@ def save_artifact(state: dict[str, Any]) -> dict[str, Any]:
         }
     )
 
+    provider_structured = str(state.get("provider_transport") or "") in {
+        "json_schema",
+        "json_object",
+    } or bool(state.get("provider_json_schema"))
+    envelope = WorldOpeningEnvelopeV1.from_payload(generated_data)
     return {
         "generated_data": generated_data,
         "world_description": world_description,
@@ -308,10 +333,9 @@ def save_artifact(state: dict[str, Any]) -> dict[str, Any]:
         "output_path": str(out_path),
         "audit_path": str(audit_path),
         "finished_at": audit["finished_at"],
+        "provider_transport": str(state.get("provider_transport") or "legacy_tags"),
         "provider_json_schema": bool(state.get("provider_json_schema")),
-        "provider_json_envelope_ok": bool(generated_data)
-        if state.get("provider_json_schema")
-        else False,
+        "provider_json_envelope_ok": bool(envelope) if provider_structured else False,
     }
 
 
@@ -331,6 +355,15 @@ def _should_use_world_builder_schema(state: dict[str, Any]) -> bool:
         return False
     model = str(state.get("model") or os.environ.get("AGNES_MODEL") or "").strip().lower()
     return model.startswith("agnes-")
+
+
+def _world_transport(state: dict[str, Any]) -> ProviderTransport:
+    configured = str(state.get("provider_transport") or "").strip()
+    if configured:
+        return ProviderTransport(configured)
+    if state.get("provider_json_schema"):
+        return ProviderTransport.JSON_SCHEMA
+    return ProviderTransport.LEGACY_TAGS
 
 
 def _parse_schema_world_output(text: str) -> tuple[dict, str, str]:

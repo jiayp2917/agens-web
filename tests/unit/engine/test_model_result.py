@@ -78,13 +78,14 @@ def test_schema_narrator_requires_accepted_provider_envelope() -> None:
         "state_delta": {},
         "choices": ["闭关", "寻访", "历练", "随缘"],
         "provider_json_schema": True,
+        "provider_transport": "json_schema",
         "provider_json_envelope_ok": False,
     }
 
     status = classify_narrator_result(result)
 
     assert status.kind == ModelResultKind.INCOMPLETE_OUTPUT
-    assert "JSON schema" in status.reason
+    assert "JSON" in status.reason
 
 
 def test_narrator_compatibility_parse_without_raw_tags_is_not_strict_ok() -> None:
@@ -102,7 +103,7 @@ def test_narrator_compatibility_parse_without_raw_tags_is_not_strict_ok() -> Non
     status = classify_narrator_result(result)
 
     assert status.kind == ModelResultKind.INCOMPLETE_OUTPUT
-    assert "state_update 标签" in status.reason
+    assert "choices 标签" in status.reason
 
 
 def test_request_failure_is_separate_from_incomplete_output() -> None:

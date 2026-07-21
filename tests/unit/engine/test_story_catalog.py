@@ -9,6 +9,7 @@ from agens_novel.engine.story_catalog import (
     STORY_ARCS,
     STORY_RESOLUTION_TURN,
     STORY_V2_RESOLUTION_TURN,
+    STORY_V3_RESOLUTION_TURN,
     opening_story_binding,
     story_arc_for_binding,
     story_arc_for_world,
@@ -80,7 +81,7 @@ def test_story_binding_requires_exact_version() -> None:
     binding = opening_story_binding("ocean", ["天命"])
 
     assert story_arc_for_binding(binding["story_key"], binding["story_version"]) is not None
-    assert story_arc_for_binding(binding["story_key"], binding["story_version"] + 1) is None
+    assert story_arc_for_binding(binding["story_key"], binding["story_version"] + 10) is None
 
 
 def test_story_progress_is_rule_owned_and_visible_every_four_turns() -> None:
@@ -290,3 +291,83 @@ def test_low_aptitude_v2_run_can_end_without_ascension() -> None:
     assert delta["meta"]["game_over"] is True
     assert delta["meta"]["story_status"] == "resolved"
     assert delta["meta"].get("finale") is not True
+
+
+def test_v3_catalog_has_two_major_events_for_each_world_phase_and_route_effects() -> None:
+    v3_arcs = [arc for arc in STORY_ARCS if arc.version == 3]
+
+    assert len(v3_arcs) == 4
+    assert sum(len(phase.events) for arc in v3_arcs for phase in arc.phases) == 72
+    for arc in v3_arcs:
+        assert len(arc.phases) == 9
+        for phase in arc.phases:
+            assert len(phase.events) == 2
+            effects = dict(phase.route_consequences)
+            assert set(effects) == {"稳妥", "机遇", "风险", "气运"}
+            assert all(len(dimensions) >= 2 for dimensions in effects.values())
+
+
+def test_v3_resolves_into_post_arc_and_preserves_two_seeded_commitments() -> None:
+    binding = opening_story_binding(
+        "ocean",
+        ["天命"],
+        content_version=3,
+        run_seed="v3-fixed-seed",
+        character_name="验真者",
+    )
+    session = GameSession(
+        story_key=binding["story_key"],
+        story_version=binding["story_version"],
+        story_state=binding["story_state"],
+        run_seed="v3-fixed-seed",
+    )
+
+    assert len(session.story_state["commitments"]) == 2
+    for turn in range(1, STORY_V3_RESOLUTION_TURN + 1):
+        session.turn_count = turn
+        story = story_turn_delta(session, "气运", {}, 16 + turn)
+        session.story_state = story["story_update"]
+
+    assert story["story_status"] == "post_arc"
+    assert session.story_state["status"] == "post_arc"
+    assert session.story_state["arc_resolution"] == "resolved"
+    assert {item["status"] for item in session.story_state["commitments"]} == {"fulfilled"}
+    assert len(session.story_state["recent_motifs"]) == len(set(session.story_state["recent_motifs"]))
+
+    endings: list[str] = []
+    for turn in range(91, 96):
+        session.turn_count = turn
+        story = story_turn_delta(session, "机遇", {}, 16 + turn)
+        session.story_state = story["story_update"]
+        endings.append(str(session.story_state["ending"]))
+        assert story["story_status"] == "post_arc"
+        assert story["story_phase"] == "余波"
+
+    assert len(set(endings)) == 1
+    assert all(entry["dimensions"] for entry in session.story_state["consequence_log"])
+
+
+def test_v3_routes_apply_distinct_rule_owned_consequences() -> None:
+    binding = opening_story_binding("forest", ["苦修"], content_version=3, run_seed="routes")
+    base = GameSession(
+        story_key=binding["story_key"],
+        story_version=3,
+        story_state=binding["story_state"],
+    )
+    base.story_state["pressure"] = 2
+
+    steady = story_turn_delta(base, "稳妥", {}, 17)["story_update"]
+    opportunity = story_turn_delta(base, "机遇", {}, 17)["story_update"]
+    risk = story_turn_delta(base, "风险", {}, 17)["story_update"]
+    luck = story_turn_delta(base, "气运", {}, 17)["story_update"]
+
+    arc = story_arc_for_binding(base.story_key, base.story_version)
+    assert arc is not None
+    assert steady["pressure"] == 1
+    assert steady["faction_attitudes"][arc.ally_faction] == 1
+    assert opportunity["clue_count"] == 1
+    assert opportunity["faction_attitudes"][arc.neutral_faction] == 1
+    assert risk["pressure"] == 3
+    assert risk["risk_marks"] == 1
+    assert luck["event_weight_modifiers"]["气运"] == 1
+    assert luck["commitment_focus"] == 1

@@ -14,6 +14,7 @@ import random
 from dataclasses import dataclass, field
 from typing import Any
 
+from ..rule_rng import RuleRng, rule_rng_for_session
 from .constants import (
     ATTRIBUTE_DEFAULT,
     REALM_CONFIGS,
@@ -240,7 +241,7 @@ class RealmSystem:
             return {"meta": {"breakthrough_result": "ineligible", "reason": reason}}
 
         rate = self.calculate_breakthrough_rate(session)
-        success = _breakthrough_roll(session) < rate
+        success = _breakthrough_roll(session, rule_rng_for_session(session)) < rate
 
         realm = getattr(session, "realm", "练气")
         next_realm = self.get_next_realm(realm)
@@ -291,7 +292,9 @@ class RealmSystem:
     # Small-layer (stage) advancement within a realm
     # ─────────────────────────────────────────────────────────────────────
 
-    def try_advance_stage(self, session: Any) -> dict[str, Any] | None:
+    def try_advance_stage(
+        self, session: Any, *, rule_rng: RuleRng | None = None
+    ) -> dict[str, Any] | None:
         """Check if the player can advance to the next small layer.
 
         Called after settled chronicle turns. Stage progress is event-like:
@@ -336,7 +339,9 @@ class RealmSystem:
             + max(0, comprehension - ATTRIBUTE_DEFAULT) * 0.03
             + max(0, root_bone - ATTRIBUTE_DEFAULT) * 0.03
         )
-        if random.random() > min(0.55, rate):
+        rng = rule_rng or rule_rng_for_session(session)
+        roll = rng.random("stage_advance") if rng is not None else random.random()
+        if roll > min(0.55, rate):
             return None
 
         # Advance to next layer within the same realm.
@@ -426,7 +431,10 @@ def is_high_aptitude_v2(session: Any) -> bool:
 
 
 def golden_breakthrough_flags(session: Any) -> tuple[str, ...]:
-    """Return v2 event rewards once the golden route reaches its stage cap."""
+    """Return rule-owned breakthrough prerequisites for long-form stories."""
+    story_version = int(getattr(session, "story_version", 0) or 0)
+    if story_version == 3:
+        return _v3_breakthrough_flags(session)
     if not is_high_aptitude_v2(session):
         return ()
     realm = str(getattr(session, "realm", "练气") or "练气")
@@ -442,10 +450,24 @@ def golden_breakthrough_flags(session: Any) -> tuple[str, ...]:
     return _GOLDEN_BREAKTHROUGH_FLAGS.get(realm, ())
 
 
-def _breakthrough_roll(session: Any) -> float:
+def _v3_breakthrough_flags(session: Any) -> tuple[str, ...]:
+    """Grant v3 preparation from visible long-term rule progress, not model text."""
+    realm = str(getattr(session, "realm", "练气") or "练气")
+    cfg = REALM_CONFIGS.get(realm)
+    if not isinstance(cfg, dict):
+        return ()
+    stage = int(getattr(session, "realm_stage", 1) or 1)
+    required_turns = max(4, (int(cfg.get("stages") or 1) - 1) * 2)
+    realm_turns = max(0, int(getattr(session, "realm_turn_count", 0) or 0))
+    if stage < int(cfg.get("stages") or 1) - 1 or realm_turns < required_turns:
+        return ()
+    return _GOLDEN_BREAKTHROUGH_FLAGS.get(realm, ())
+
+
+def _breakthrough_roll(session: Any, rule_rng: RuleRng | None = None) -> float:
     seed = os.environ.get("AGENS_VALIDATION_SEED", "").strip()
     if not seed:
-        return random.random()
+        return rule_rng.random("breakthrough") if rule_rng is not None else random.random()
     # Production rejects this variable; validation needs the golden route to be
     # independent of whichever world key the live opening model selected.
     if is_high_aptitude_v2(session):

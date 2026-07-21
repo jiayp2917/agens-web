@@ -17,8 +17,10 @@ from typing import Any
 from agens_novel.settings import Settings
 
 from ..artifacts import store
+from ..artifacts.sink import ensure_evaluation_sink_ready
 from ..engine.choices import clean_choice_text
 from ..llm.client import LLMError, call_llm
+from ..llm.runtime_context import current_model_runtime, runtime_api_key
 from ..llm.types import Message
 from ..utils.timing import utcnow_iso
 
@@ -33,12 +35,21 @@ def load_agent_settings(agent_name: str, state: dict[str, Any] | None = None) ->
     user's key cannot leak into another request through process globals.
     """
     state = state or {}
-    base_url = str(state.get("base_url") or os.environ.get("AGNES_BASE_URL") or Settings().base_url)
-    model = str(state.get("model") or os.environ.get("AGNES_MODEL") or Settings().model)
-    if "api_key" in state:
-        api_key = str(state.get("api_key") or "")
-    else:
-        api_key = os.environ.get("AGNES_API_KEY", "")
+    ensure_evaluation_sink_ready()
+    runtime = current_model_runtime()
+    base_url = str(
+        state.get("base_url")
+        or (runtime.base_url if runtime is not None else "")
+        or os.environ.get("AGNES_BASE_URL")
+        or Settings().base_url
+    )
+    model = str(
+        state.get("model")
+        or (runtime.model if runtime is not None else "")
+        or os.environ.get("AGNES_MODEL")
+        or Settings().model
+    )
+    api_key = runtime_api_key() or str(state.get("api_key") or os.environ.get("AGNES_API_KEY") or "")
     if "api_key_set" in state:
         api_key_set = bool(state.get("api_key_set")) and bool(api_key)
     else:
@@ -50,7 +61,6 @@ def load_agent_settings(agent_name: str, state: dict[str, Any] | None = None) ->
     return {
         "model": model,
         "base_url": base_url,
-        "api_key": api_key,
         "api_key_set": api_key_set,
         "run_id": run_id,
         "started_at": utcnow_iso(),
@@ -137,7 +147,7 @@ async def call_agnes_llm_common(
             messages,
             model=state.get("model"),
             base_url=state.get("base_url"),
-            api_key=state.get("api_key"),
+            api_key=runtime_api_key(),
             temperature=temperature,
             max_tokens=max_tokens,
             stream=False,

@@ -40,6 +40,14 @@ def _canned_world_builder() -> dict[str, Any]:
     }
 
 
+class _FixedRuleRng:
+    def __init__(self, value: float) -> None:
+        self.value = value
+
+    def random(self, _stream: str) -> float:
+        return self.value
+
+
 def _canned_judge() -> dict[str, Any]:
     return {
         "approved": True,
@@ -132,7 +140,10 @@ class TestFinaleCallback:
 
         # Mock random and LLM to guarantee deterministic unit behavior.
         with _patch_turn_runner():
-            with patch("agens_novel.game.realm.random.random", return_value=0.001):
+            with patch(
+                "agens_novel.game.realm.rule_rng_for_session",
+                return_value=_FixedRuleRng(0.001),
+            ):
                 engine.attempt_breakthrough()
 
         assert len(finales) == 1

@@ -67,6 +67,14 @@ def _canned_judge() -> dict[str, Any]:
     }
 
 
+class _FixedRuleRng:
+    def __init__(self, value: float) -> None:
+        self.value = value
+
+    def random(self, _stream: str) -> float:
+        return self.value
+
+
 def _patch_turn_runner(call_log: list | None = None) -> Any:
     if call_log is None:
         call_log = []
@@ -696,7 +704,9 @@ class TestGameEngineHandleAction:
         assert narratives and "残破木符" in narratives[-1][0]
         assert not any("基础规则结算" in msg or "状态栏为准" in msg for msg in infos)
 
-    def test_notice_board_description_is_not_treated_as_claimed_reward(self, monkeypatch) -> None:
+    def test_notice_board_narrative_keeps_non_reward_text_but_ignores_model_location(
+        self, monkeypatch
+    ) -> None:
         monkeypatch.setenv("AGNES_API_KEY", "sk-test-1234567890")
         monkeypatch.setattr("agens_novel.game.realm.random.random", lambda: 0.0)
         monkeypatch.setattr(
@@ -747,11 +757,15 @@ class TestGameEngineHandleAction:
             engine.handle_action("去悬赏榜看看")
 
         assert narratives and narratives[-1][0] == board_text
-        assert engine.game_session.location == "青云小传宗·悬赏榜广场"
+        assert engine.game_session.location == ""
+        assert engine.game_session.current_scene == ""
         assert engine.game_session.active_quests == []
+        assert engine.game_session.turn_history[-1]["delta"]["meta"]["model_state_update_ignored"]
         assert not any("状态栏为准" in msg for msg in infos)
 
-    def test_structured_delta_updates_inventory_skills_quests_and_map(self, monkeypatch) -> None:
+    def test_model_structured_delta_cannot_grant_inventory_skills_quests_or_map(
+        self, monkeypatch
+    ) -> None:
         monkeypatch.setenv("AGNES_API_KEY", "sk-test-1234567890")
         engine = GameEngine()
         engine.game_session.game_started = True
@@ -796,10 +810,11 @@ class TestGameEngineHandleAction:
         ):
             engine.handle_action("接受师兄赠丹并请教功法")
 
-        assert any(item.get("name") == "清灵丹" for item in engine.game_session.inventory)
-        assert any(item.get("name") == "云水诀" for item in engine.game_session.techniques)
-        assert "后山药谷" in engine.game_session.discovered_locations
-        assert any(item.get("name") == "采药任务" for item in engine.game_session.active_quests)
+        assert engine.game_session.inventory == []
+        assert engine.game_session.techniques == []
+        assert engine.game_session.discovered_locations == []
+        assert engine.game_session.active_quests == []
+        assert engine.game_session.turn_history[-1]["delta"]["meta"]["model_state_update_ignored"]
 
     def test_judge_exception_fallback(self, monkeypatch) -> None:
         """Judge crashes — default to NOT approving (safe default)."""
@@ -885,7 +900,9 @@ class TestGameEngineHandleAction:
         with patch("agens_novel.engine.game_engine.run_turn_sync", side_effect=selective_runner):
             engine.handle_action("C")
 
-        assert "轻伤" in engine.game_session.status_effects
+        assert "轻伤" not in engine.game_session.status_effects
+        assert "阴风侵体" not in engine.game_session.status_effects
+        assert engine.game_session.turn_history[-1]["delta"]["meta"]["model_state_update_ignored"]
 
     def test_judge_reject_without_correction_suppresses_drift_narrative(self, monkeypatch) -> None:
         monkeypatch.setenv("AGNES_API_KEY", "sk-test-1234567890")
@@ -1107,8 +1124,10 @@ class TestStageAdvancement:
         with _patch_turn_runner():
             engine.new_game("许满")
 
-        with patch("agens_novel.game.realm.random.random", return_value=0.0):
-            delta = engine.realm_system.try_advance_stage(engine.game_session)
+        delta = engine.realm_system.try_advance_stage(
+            engine.game_session,
+            rule_rng=_FixedRuleRng(0.0),
+        )
         assert delta is not None
         assert delta["character"]["realm_stage"] == 2
         engine.game_session.apply_delta(delta)
@@ -1152,7 +1171,10 @@ class TestStageAdvancement:
 
         with patch("agens_novel.engine.game_engine.run_turn_sync", side_effect=runner):
             engine.new_game("许满")
-            with patch("agens_novel.game.realm.random.random", return_value=0.0):
+            with patch(
+                "agens_novel.game.realm.rule_rng_for_session",
+                return_value=_FixedRuleRng(0.0),
+            ):
                 engine.handle_action("闭关修炼")
 
         assert engine.game_session.realm_stage == 2
@@ -1465,7 +1487,10 @@ class TestBreakthroughPreparationGate:
             return {}
 
         with patch("agens_novel.engine.game_engine.run_turn_sync", side_effect=runner):
-            with patch("agens_novel.game.realm.random.random", return_value=0.0):
+            with patch(
+                "agens_novel.game.realm.rule_rng_for_session",
+                return_value=_FixedRuleRng(0.0),
+            ):
                 engine.attempt_breakthrough()
 
         assert engine.game_session.realm == "筑基"

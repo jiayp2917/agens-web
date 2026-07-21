@@ -58,7 +58,8 @@ def select_chronicle_event(session: Any, category: str, new_age: int) -> dict[st
     selectable = [item for item in scored if item[2].id not in recent_ids] or scored
     window = selectable[: min(4, len(selectable))]
     phase_index = max(0, (turn // 4) - 1)
-    _, _, selected = window[phase_index % len(window)]
+    route_modifier = _story_event_weight_modifier(session, category)
+    _, _, selected = window[(phase_index + route_modifier) % len(window)]
     lore = _format_event_lore(selected, session, new_age, world_key)
     return {
         "id": selected.id,
@@ -70,6 +71,7 @@ def select_chronicle_event(session: Any, category: str, new_age: int) -> dict[st
         "allowed_delta_types": list(selected.allowed_delta_types),
         "choice_hints": list(selected.choice_hints),
         "matched_fates": [tag for tag in selected.fate_tags if tag in fate_scores],
+        "route_weight_modifier": route_modifier,
     }
 
 
@@ -195,6 +197,19 @@ def _world_event_weights(session: Any, world_key: str) -> dict[str, int]:
         }
     pack = world_pack_for_key(world_key)
     return dict(pack.get("event_weights") or {})
+
+
+def _story_event_weight_modifier(session: Any, category: str) -> int:
+    story_state = getattr(session, "story_state", {})
+    if not isinstance(story_state, dict):
+        return 0
+    modifiers = story_state.get("event_weight_modifiers")
+    if not isinstance(modifiers, dict):
+        return 0
+    value = modifiers.get(category, 0)
+    if isinstance(value, int) and not isinstance(value, bool):
+        return max(-3, min(3, value))
+    return 0
 
 
 CHRONICLE_EVENTS: tuple[ChronicleEvent, ...] = (

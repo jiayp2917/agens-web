@@ -15,6 +15,7 @@ from typing import Any
 
 from agens_novel.settings import Settings
 
+from ..llm.runtime_context import RuntimeModelConfig, model_runtime
 from ..session.game_session import GameSession
 
 log = logging.getLogger(__name__)
@@ -81,13 +82,27 @@ def run_turn_sync(
     # Extract stream_callback before building the data-only agent state.
     stream_callback: Callable[[str], None] | None = kwargs.pop("stream_callback", None)
 
+    model = str(kwargs.pop("model", None) or os.environ.get("AGNES_MODEL", Settings().model))
+    base_url = str(
+        kwargs.pop("base_url", None) or os.environ.get("AGNES_BASE_URL", Settings().base_url)
+    )
+    api_key = str(kwargs.pop("api_key", None) or os.environ.get("AGNES_API_KEY", ""))
+    runtime = RuntimeModelConfig(
+        provider=str(kwargs.pop("provider", None) or "Agens"),
+        model=model,
+        base_url=base_url,
+        api_key=api_key,
+        source=str(kwargs.pop("source", None) or "env"),
+        key_error=str(kwargs.pop("key_error", None) or ""),
+    )
     state: dict[str, Any] = {
         "user_input": user_input,
         "game_state_json": json.dumps(session.as_game_state(), ensure_ascii=False),
         "thread_id": kwargs.pop("thread_id", None) or f"turn-{uuid.uuid4().hex[:8]}",
-        "model": os.environ.get("AGNES_MODEL", Settings().model),
-        "base_url": os.environ.get("AGNES_BASE_URL", Settings().base_url),
-        "api_key_set": bool(os.environ.get("AGNES_API_KEY", "")),
+        "model": runtime.model,
+        "base_url": runtime.base_url,
+        "provider": runtime.provider,
+        "api_key_set": runtime.api_key_set,
     }
 
     # Pass chat history for narrator.
@@ -108,5 +123,6 @@ def run_turn_sync(
     # Stream callback for narrator — passed via closure, NOT in state dict.
     # Putting it in state causes msgpack serialization failure at checkpoint.
     state.update(kwargs)
-    return _run_agent_graph(agent_name, state, stream_callback=stream_callback)
+    with model_runtime(runtime):
+        return _run_agent_graph(agent_name, state, stream_callback=stream_callback)
 

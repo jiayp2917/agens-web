@@ -458,21 +458,41 @@ class TestGameSessionSerialization:
         s.age = 18
         assert s.remaining_lifespan == 82
 
-    def test_record_turn_keeps_narrator_contract_in_model_history(self):
+    def test_record_turn_projects_semantic_context_without_legacy_tags(self):
         s = GameSession()
         s.turn_count = 1
+        s.story_key = "border-vein-crisis"
+        s.story_version = 3
+        s.story_state = {"recent_motifs": ["frontier-record-1"]}
         s.last_choices = ["稳固根基", "寻访机缘", "踏入险地", "静候气运"]
 
-        s.record_turn("稳固根基", "其人在外门静修一年。", {})
+        s.record_turn(
+            "稳固根基",
+            "其人在外门静修一年。",
+            {
+                "character": {"age": "+1"},
+                "world": {"lore_add": ["外门课业有了新记载。"]},
+                "meta": {
+                    "choice_slot": "A",
+                    "event_id": "steady-root-ledger",
+                    "story_beat": "外门课业有了新记载。",
+                    "turn_summary": "稳妥路线推进了一年。",
+                },
+            },
+        )
 
         assistant = s.chat_history[-1]
         assert assistant["role"] == "assistant"
-        assert assistant["content"].startswith("其人在外门静修一年。")
-        assert "<state_update>{}</state_update>" in assistant["content"]
-        assert (
-            '<choices>["稳固根基", "寻访机缘", "踏入险地", "静候气运"]</choices>'
-            in assistant["content"]
-        )
+        assert assistant["content"] == "其人在外门静修一年。"
+        assert "<state_update>" not in assistant["content"]
+        context = assistant["accepted_turn_context"]
+        assert context["contract_version"] == "accepted-turn-context-v1"
+        assert context["choices"] == s.last_choices
+        assert context["choice_slot"] == "A"
+        assert context["event_id"] == "steady-root-ledger"
+        assert context["motif"] == "frontier-record-1"
+        assert "character" not in context
+        assert "world" not in context
 
     def test_recent_narrative_hashes_round_trip_without_storing_plaintext(self):
         s = GameSession()

@@ -2,14 +2,16 @@
 
 from __future__ import annotations
 
+import hashlib
 import os
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from typing import Any
 
 from .world_catalog import world_key_for_name
 
 STORY_RESOLUTION_TURN = 60
 STORY_V2_RESOLUTION_TURN = 90
+STORY_V3_RESOLUTION_TURN = 90
 DEFAULT_STORY_CONTENT_VERSION = 2
 
 
@@ -22,6 +24,17 @@ class StoryPhase:
     goal: str
     thread: str
     beats: dict[str, str]
+    events: tuple[StoryEvent, ...] = ()
+    route_consequences: tuple[tuple[str, tuple[str, str]], ...] = ()
+
+
+@dataclass(frozen=True)
+class StoryEvent:
+    """One catalog-owned v3 event with a stable anti-repetition motif."""
+
+    id: str
+    motif: str
+    summary: str
 
 
 @dataclass(frozen=True)
@@ -371,9 +384,72 @@ def _story_arc_v2(arc: StoryArc) -> StoryArc:
     )
 
 
+_V3_ROUTE_CONSEQUENCES: tuple[tuple[str, tuple[str, str]], ...] = (
+    ("稳妥", ("势力", "压力")),
+    ("机遇", ("势力", "线索")),
+    ("风险", ("压力", "结局条件")),
+    ("气运", ("事件权重", "承诺")),
+)
+
+
+def _phases_v3(arc: StoryArc) -> tuple[StoryPhase, ...]:
+    """Build a two-event v3 catalog from each of the nine v2 phases."""
+    source = _phases_v2(
+        _V2_SUBJECTS[arc.key],
+        arc.ally_faction,
+        arc.rival_faction,
+        arc.neutral_faction,
+    )
+    phases: list[StoryPhase] = []
+    for index, phase in enumerate(source, start=1):
+        events = (
+            StoryEvent(
+                id=f"{arc.key}-v3-{index}-record",
+                motif=f"{arc.key}-record-{index}",
+                summary=f"{phase.title}中，一份可复核的旧录迫使各方重新核对此前说法。",
+            ),
+            StoryEvent(
+                id=f"{arc.key}-v3-{index}-pressure",
+                motif=f"{arc.key}-pressure-{index}",
+                summary=f"{phase.title}中，外界压力沿着既有矛盾逼近，先前选择开始显出代价。",
+            ),
+        )
+        phases.append(
+            replace(
+                phase,
+                events=events,
+                route_consequences=_V3_ROUTE_CONSEQUENCES,
+            )
+        )
+    return tuple(phases)
+
+
+def _story_arc_v3(arc: StoryArc) -> StoryArc:
+    return StoryArc(
+        key=arc.key,
+        version=3,
+        title=f"{arc.title}命数九章",
+        worlds=arc.worlds,
+        fate_tags=arc.fate_tags,
+        opening=f"{arc.opening} 本局以命数承诺和九阶段因果推进，主线收束后仍可进入余波篇章。",
+        unresolved_thread=arc.unresolved_thread,
+        ally_faction=arc.ally_faction,
+        rival_faction=arc.rival_faction,
+        neutral_faction=arc.neutral_faction,
+        phases=_phases_v3(arc),
+        commitments=arc.commitments,
+        failure_branch=f"{arc.failure_branch} 两条命数承诺未能同时兑现。",
+        endings={
+            category: f"{ending} 两条命数承诺在主线收束时得到明确回应。"
+            for category, ending in arc.endings.items()
+        },
+    )
+
+
 STORY_ARCS: tuple[StoryArc, ...] = (
     *_STORY_ARCS_V1,
     *(_story_arc_v2(arc) for arc in _STORY_ARCS_V1),
+    *(_story_arc_v3(arc) for arc in _STORY_ARCS_V1),
 )
 
 
@@ -409,32 +485,48 @@ def opening_story_binding(
     fate_tags: list[str] | tuple[str, ...],
     *,
     content_version: int | None = None,
+    run_seed: str = "",
+    character_name: str = "",
 ) -> dict[str, Any]:
     arc = story_arc_for_world(world_key, fate_tags, content_version=content_version)
     first = arc.phases[0]
+    state: dict[str, Any] = {
+        "status": "active",
+        "phase_key": first.key,
+        "phase_title": first.title,
+        "stage_goal": first.goal,
+        "progress_turns": 0,
+        "route_counts": {category: 0 for category in ("稳妥", "机遇", "风险", "气运")},
+        "pressure": 0,
+        "unresolved_threads": [arc.unresolved_thread, first.thread],
+        "faction_attitudes": {
+            arc.ally_faction: 0,
+            arc.rival_faction: 0,
+            arc.neutral_faction: 0,
+        },
+        "key_promises": [],
+        "recent_beats": [],
+        "ending": "",
+    }
+    if arc.version == 3:
+        state.update(
+            {
+                "commitments": _v3_commitments(arc, run_seed, character_name),
+                "run_seed": run_seed,
+                "recent_motifs": [],
+                "consequence_log": [],
+                "clue_count": 0,
+                "event_weight_modifiers": {"稳妥": 0, "机遇": 0, "风险": 0, "气运": 0},
+                "arc_resolution": "",
+                "post_arc_turns": 0,
+            }
+        )
     return {
         "story_key": arc.key,
         "story_version": arc.version,
         "story_title": arc.title,
         "story_opening": arc.opening,
-        "story_state": {
-            "status": "active",
-            "phase_key": first.key,
-            "phase_title": first.title,
-            "stage_goal": first.goal,
-            "progress_turns": 0,
-            "route_counts": {category: 0 for category in ("稳妥", "机遇", "风险", "气运")},
-            "pressure": 0,
-            "unresolved_threads": [arc.unresolved_thread, first.thread],
-            "faction_attitudes": {
-                arc.ally_faction: 0,
-                arc.rival_faction: 0,
-                arc.neutral_faction: 0,
-            },
-            "key_promises": [],
-            "recent_beats": [],
-            "ending": "",
-        },
+        "story_state": state,
     }
 
 
@@ -450,7 +542,13 @@ def ensure_story_binding(session: Any, *, content_version: int | None = None) ->
             str(world_profile.get("world_name") or getattr(session, "region", ""))
         )
     fate_tags = _fate_tags(world_profile)
-    binding = opening_story_binding(world_key, fate_tags, content_version=content_version)
+    binding = opening_story_binding(
+        world_key,
+        fate_tags,
+        content_version=content_version,
+        run_seed=str(getattr(session, "run_seed", "") or ""),
+        character_name=str(getattr(session, "char_name", "") or ""),
+    )
     session.story_key = binding["story_key"]
     session.story_version = binding["story_version"]
     session.story_state = binding["story_state"]
@@ -468,6 +566,8 @@ def story_turn_delta(
     if binding is None:
         return {}
     arc, state = binding
+    if state.get("status") == "post_arc":
+        return _post_arc_turn_delta(arc, state, category, event, new_age)
     if state.get("status") != "active":
         return {}
     turn = max(1, int(getattr(session, "turn_count", 1) or 1))
@@ -476,9 +576,13 @@ def story_turn_delta(
     route_counts[category] = route_counts.get(category, 0) + 1
     due = turn % 4 == 0
     pressure_change = _pressure_change(category) if due else 0
+    v3_effect = _v3_route_effect(state, phase, category, turn) if arc.version == 3 else {}
+    pressure_change += int(v3_effect.get("pressure_delta") or 0)
     pressure = max(0, int(state.get("pressure") or 0) + pressure_change)
+    v3_resolution = _v3_resolution_context(state, v3_effect)
     attitudes = _faction_attitudes(state, arc)
     _adjust_attitudes(attitudes, arc, category)
+    story_event = _v3_story_event(arc, state, phase, category, turn) if arc.version == 3 else None
     status, ending, beat = _story_outcome(
         arc,
         phase,
@@ -491,7 +595,10 @@ def story_turn_delta(
         event,
         new_age,
         game_over_reason,
+        v3_resolution,
     )
+    if story_event is not None and due:
+        beat = _format_v3_beat(phase, story_event, category, session, event, new_age)
     next_state = _next_story_state(
         state,
         arc,
@@ -506,12 +613,245 @@ def story_turn_delta(
         ending,
         beat,
     )
+    reported_status = status
+    if arc.version == 3:
+        _apply_v3_turn_state(
+            next_state,
+            state,
+            phase,
+            category,
+            turn,
+            status,
+            story_event,
+            v3_effect,
+        )
+        if status in {"resolved", "failed"} and not game_over_reason:
+            next_state["status"] = "post_arc"
+            next_state["arc_resolution"] = status
+            next_state["post_arc_turns"] = 0
+            reported_status = "post_arc"
     return {
         "story_update": next_state,
         "story_phase": phase.title,
         "story_goal": phase.goal,
         "story_beat": beat,
-        "story_status": status,
+        "story_status": reported_status,
+    }
+
+
+def _v3_commitments(arc: StoryArc, run_seed: str, character_name: str) -> list[dict[str, str]]:
+    """Generate exactly two catalog-owned commitments for one v3 run."""
+    seed = run_seed or f"catalog:{arc.key}:{character_name}"
+    categories = ("稳妥", "机遇", "风险", "气运")
+    ranked = sorted(
+        categories,
+        key=lambda category: hashlib.sha256(f"{seed}|{arc.key}|{category}".encode()).hexdigest(),
+    )
+    commitments: list[dict[str, str]] = []
+    for index, category in enumerate(ranked[:2], start=1):
+        commitments.append(
+            {
+                "commitment_id": f"{arc.key}:v3:{index}:{category}",
+                "category": category,
+                "description": arc.commitments[category],
+                "trigger_condition": "前三阶段留下可复核钩子",
+                "failure_condition": "第九阶段前未能承受对应代价或压力失控",
+                "status": "pending",
+            }
+        )
+    return commitments
+
+
+def _v3_route_effect(
+    state: dict[str, Any], phase: StoryPhase, category: str, turn: int
+) -> dict[str, Any]:
+    dimensions = dict(phase.route_consequences).get(category, ())
+    if category == "稳妥":
+        return {"dimensions": dimensions, "pressure_delta": -1}
+    if category == "机遇":
+        return {"dimensions": dimensions, "clue_delta": 1}
+    if category == "风险":
+        return {"dimensions": dimensions, "pressure_delta": 1, "risk_mark_delta": 1}
+    if category == "气运":
+        return {
+            "dimensions": dimensions,
+            "weight_adjustment": 1 if turn % 2 else -1,
+            "commitment_focus_delta": 1,
+        }
+    return {"dimensions": dimensions}
+
+
+def _v3_story_event(
+    arc: StoryArc,
+    state: dict[str, Any],
+    phase: StoryPhase,
+    category: str,
+    turn: int,
+) -> StoryEvent | None:
+    if not phase.events:
+        return None
+    recent = _string_list(state.get("recent_motifs"))[-5:]
+    candidates = [event for event in phase.events if event.motif not in recent]
+    seed = str(state.get("run_seed") or getattr(arc, "key", ""))
+    digest = hashlib.sha256(f"{seed}|{arc.key}|{turn}|{category}".encode()).digest()
+    if not candidates:
+        selected = phase.events[int.from_bytes(digest[:2], "big") % len(phase.events)]
+        return replace(selected, motif=f"{selected.motif}:turn-{turn}")
+    return candidates[int.from_bytes(digest[:2], "big") % len(candidates)]
+
+
+def _format_v3_beat(
+    phase: StoryPhase,
+    story_event: StoryEvent,
+    category: str,
+    session: Any,
+    event: dict[str, Any],
+    new_age: int,
+) -> str:
+    route_beat = phase.beats.get(category) or phase.beats["机遇"]
+    return _format_beat(f"{story_event.summary} {route_beat}", session, event, new_age)
+
+
+def _apply_v3_turn_state(
+    next_state: dict[str, Any],
+    previous_state: dict[str, Any],
+    phase: StoryPhase,
+    category: str,
+    turn: int,
+    status: str,
+    story_event: StoryEvent | None,
+    effect: dict[str, Any],
+) -> None:
+    """Record rule-owned v3 commitments, motifs, and route consequences."""
+    motifs = _string_list(previous_state.get("recent_motifs"))
+    if story_event is not None and turn % 4 == 0:
+        motifs.append(story_event.motif)
+    next_state["recent_motifs"] = motifs[-5:]
+    clues = max(0, int(previous_state.get("clue_count") or 0) + int(effect.get("clue_delta") or 0))
+    next_state["clue_count"] = clues
+    weights = dict(previous_state.get("event_weight_modifiers") or {})
+    weights.setdefault("稳妥", 0)
+    weights.setdefault("机遇", 0)
+    weights.setdefault("风险", 0)
+    weights.setdefault("气运", 0)
+    if "weight_adjustment" in effect:
+        weights[category] = max(-3, min(3, int(weights[category]) + int(effect["weight_adjustment"])))
+    next_state["event_weight_modifiers"] = weights
+    next_state["risk_marks"] = max(
+        0,
+        int(previous_state.get("risk_marks") or 0) + int(effect.get("risk_mark_delta") or 0),
+    )
+    commitment_focus = max(
+        0,
+        int(previous_state.get("commitment_focus") or 0)
+        + int(effect.get("commitment_focus_delta") or 0),
+    )
+    next_state["commitment_focus"] = commitment_focus
+    next_state["commitments"] = _advance_v3_commitments(
+        previous_state.get("commitments"),
+        turn,
+        status,
+        category,
+        commitment_focus,
+    )
+    log_entries = list(previous_state.get("consequence_log") or [])
+    dimensions = list(effect.get("dimensions") or ())
+    log_entries.append(
+        {
+            "turn": turn,
+            "phase": phase.key,
+            "route": category,
+            "dimensions": dimensions,
+        }
+    )
+    next_state["consequence_log"] = log_entries[-30:]
+
+
+def _v3_resolution_context(state: dict[str, Any], effect: dict[str, Any]) -> dict[str, int]:
+    return {
+        "clue_count": max(
+            0,
+            int(state.get("clue_count") or 0) + int(effect.get("clue_delta") or 0),
+        ),
+        "risk_marks": max(
+            0,
+            int(state.get("risk_marks") or 0) + int(effect.get("risk_mark_delta") or 0),
+        ),
+    }
+
+
+def _advance_v3_commitments(
+    value: Any,
+    turn: int,
+    status: str,
+    category: str,
+    commitment_focus: int,
+) -> list[dict[str, str]]:
+    items = value if isinstance(value, list) else []
+    stage = "hooked" if turn <= 30 else "pressured" if turn <= 60 else "due"
+    stage_rank = {"pending": 0, "hooked": 1, "pressured": 2, "due": 3}
+    luck_target = commitment_focus % len(items) if items else -1
+    out: list[dict[str, str]] = []
+    for index, item in enumerate(items):
+        if not isinstance(item, dict):
+            continue
+        copied = {str(key): str(raw) for key, raw in item.items() if isinstance(raw, str)}
+        if not copied.get("commitment_id"):
+            continue
+        matches_route = copied.get("category") == category
+        if category == "气运" and index == luck_target:
+            matches_route = True
+        current = copied.get("status") or "pending"
+        if matches_route and stage_rank.get(stage, 0) > stage_rank.get(current, 0):
+            current = stage
+        if status == "resolved":
+            current = "fulfilled" if current == "due" else "failed"
+        elif status == "failed":
+            current = "failed"
+        copied["status"] = current
+        out.append(copied)
+    return out[:2]
+
+
+def _post_arc_turn_delta(
+    arc: StoryArc,
+    state: dict[str, Any],
+    category: str,
+    event: dict[str, Any],
+    new_age: int,
+) -> dict[str, Any]:
+    """Continue v3 after its main arc without replaying the final resolution."""
+    turn = max(1, int(state.get("progress_turns") or 0) + 1)
+    post_turns = max(1, int(state.get("post_arc_turns") or 0) + 1)
+    motifs = _string_list(state.get("recent_motifs"))
+    post_events = (
+        ("余波整饬", "主线收束后的势力仍在重新分配旧账。"),
+        ("远行新讯", "一份不属于旧主线的新讯从远方抵达。"),
+        ("旧人回响", "此前同行者带来与旧结局不同的后续选择。"),
+    )
+    available = [item for item in post_events if item[0] not in motifs] or list(post_events)
+    selected = available[(post_turns - 1) % len(available)]
+    motifs.append(selected[0])
+    next_state = dict(state)
+    next_state.update(
+        {
+            "status": "post_arc",
+            "post_arc_turns": post_turns,
+            "progress_turns": turn,
+            "recent_motifs": motifs[-5:],
+            "phase_key": "post_arc",
+            "phase_title": "余波",
+            "stage_goal": "在主线收束后选择下一段道途，不重演已结算的因果。",
+            "recent_beats": [*_string_list(state.get("recent_beats"))[-5:], f"{new_age}岁时，{selected[1]}"],
+        }
+    )
+    beat = f"{new_age}岁时，{selected[1]}"
+    return {
+        "story_update": next_state,
+        "story_phase": "余波",
+        "story_goal": next_state["stage_goal"],
+        "story_beat": beat,
+        "story_status": "post_arc",
     }
 
 
@@ -532,6 +872,8 @@ def _session_story_binding(session: Any) -> tuple[StoryArc, dict[str, Any]] | No
             arc.worlds[0],
             list(arc.fate_tags),
             content_version=arc.version,
+            run_seed=str(getattr(session, "run_seed", "") or ""),
+            character_name=str(getattr(session, "char_name", "") or ""),
         )["story_state"]
     )
     return arc, state
@@ -549,6 +891,7 @@ def _story_outcome(
     event: dict[str, Any],
     new_age: int,
     game_over_reason: str,
+    v3_resolution: dict[str, int],
 ) -> tuple[str, str, str]:
     beat = (
         _format_beat(phase.beats.get(category) or phase.beats["机遇"], session, event, new_age)
@@ -559,7 +902,16 @@ def _story_outcome(
         return "failed", arc.failure_branch, f"{game_over_reason}{arc.failure_branch}"
     if turn < arc.phases[-1].max_turn:
         return "active", "", beat
-    ending = arc.failure_branch if pressure >= 8 else arc.endings[_dominant_route(route_counts)]
+    if pressure >= 8:
+        return ("failed" if arc.version == 3 else "resolved"), arc.failure_branch, arc.failure_branch
+    if arc.version == 3:
+        if int(v3_resolution.get("risk_marks") or 0) >= 12:
+            return "failed", arc.failure_branch, arc.failure_branch
+        if _dominant_route(route_counts) == "机遇" and int(
+            v3_resolution.get("clue_count") or 0
+        ) < 3:
+            return "failed", arc.failure_branch, arc.failure_branch
+    ending = arc.endings[_dominant_route(route_counts)]
     return "resolved", ending, ending
 
 
@@ -615,9 +967,9 @@ def story_content_version() -> int:
     try:
         version = int(raw)
     except ValueError as exc:
-        raise RuntimeError("AGENS_STORY_CONTENT_VERSION must be 1 or 2.") from exc
-    if version not in {1, 2}:
-        raise RuntimeError("AGENS_STORY_CONTENT_VERSION must be 1 or 2.")
+        raise RuntimeError("AGENS_STORY_CONTENT_VERSION must be 1, 2, or 3.") from exc
+    if version not in {1, 2, 3}:
+        raise RuntimeError("AGENS_STORY_CONTENT_VERSION must be 1, 2, or 3.")
     return version
 
 

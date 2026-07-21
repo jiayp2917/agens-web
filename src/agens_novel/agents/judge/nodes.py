@@ -18,15 +18,40 @@ from typing import Any
 
 from ... import paths
 from ...artifacts import store
+from ...llm.provider_adapter import (
+    ProviderTransport,
+    judge_transport,
+)
+from ...llm.provider_adapter import (
+    response_format as provider_response_format,
+)
 from ...llm.types import Message
 from ...utils.timing import utcnow_iso
 from ..common import call_agnes_llm_common, load_agent_settings
 from ..common import prompt_metrics as _prompt_metrics
+from ..contracts import JudgeDecisionV1
 
 log = logging.getLogger(__name__)
 
 AGENT_NAME = "judge"
 _MAX_CANDIDATE_LEN = 65536
+_JUDGE_RESPONSE_FORMAT: dict[str, Any] = {
+    "type": "json_schema",
+    "json_schema": {
+        "name": "judge_decision",
+        "strict": True,
+        "schema": {
+            "type": "object",
+            "properties": {
+                "approved": {"type": "boolean"},
+                "issue_codes": {"type": "array", "items": {"type": "string"}},
+                "rewrite_required": {"type": "boolean"},
+            },
+            "required": ["approved", "issue_codes", "rewrite_required"],
+            "additionalProperties": False,
+        },
+    },
+}
 
 
 def load_settings(state: dict[str, Any]) -> dict[str, Any]:
@@ -68,22 +93,30 @@ def build_prompt(state: dict[str, Any]) -> dict[str, Any]:
         list(state_delta.keys()),
         prompt_metrics["prompt_chars"],
     )
+    transport = judge_transport(state)
     return {
         "system_message": system_message,
         "user_message": user_content,
         "messages": messages,
         "prompt_metrics": prompt_metrics,
+        "provider_transport": transport.value,
+        "provider_json_schema": transport == ProviderTransport.JSON_SCHEMA,
     }
 
 
 async def call_agnes_llm(state: dict[str, Any]) -> dict[str, Any]:
-    return await call_agnes_llm_common(
+    transport = ProviderTransport(str(state.get("provider_transport") or "legacy_tags"))
+    result = await call_agnes_llm_common(
         state,
         agent_name=AGENT_NAME,
         temperature=0.2,
         max_tokens=512,
         include_prompt_metrics=True,
+        response_format=provider_response_format(transport, _JUDGE_RESPONSE_FORMAT),
     )
+    result["provider_transport"] = transport.value
+    result["provider_json_schema"] = transport == ProviderTransport.JSON_SCHEMA
+    return result
 
 
 def save_artifact(state: dict[str, Any]) -> dict[str, Any]:
@@ -98,11 +131,14 @@ def save_artifact(state: dict[str, Any]) -> dict[str, Any]:
     if llm_error:
         # LLM error: reject by default to prevent bad state updates.
         approved = False
-        corrected_delta: dict[str, Any] = {}
         judgment_note = "LLM 调用失败，拒绝状态更新"
         score = 0
     else:
-        approved, corrected_delta, judgment_note, score = _parse_judge_output(text)
+        approved, _corrected_delta, judgment_note, score = _parse_judge_output(text)
+
+    decision = JudgeDecisionV1.from_payload(
+        {"approved": approved, "issue_codes": [], "rewrite_required": not approved}
+    )
 
     out_path = store.write_output(AGENT_NAME, run_id, text)
     store.write_input_snapshot(
@@ -121,18 +157,21 @@ def save_artifact(state: dict[str, Any]) -> dict[str, Any]:
     audit_path = store.write_audit(AGENT_NAME, run_id, audit)
     store.append_global_log({
         "event": "judge_run_finished", "run_id": run_id,
-        "ok": not llm_error, "approved": approved, "score": score,
+            "ok": not llm_error, "approved": decision.approved, "score": score,
     })
 
     return {
-        "approved": approved,
-        "corrected_delta": corrected_delta,
+        "approved": decision.approved,
+        "corrected_delta": {},
+        "issue_codes": list(decision.issue_codes),
+        "rewrite_required": decision.rewrite_required,
         "judgment_note": judgment_note,
         "review_score": score,
         "prompt_metrics": state.get("prompt_metrics") or {},
         "output_path": str(out_path),
         "audit_path": str(audit_path),
         "finished_at": audit["finished_at"],
+        "provider_transport": str(state.get("provider_transport") or "legacy_tags"),
     }
 
 

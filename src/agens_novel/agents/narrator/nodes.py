@@ -13,7 +13,6 @@ from __future__ import annotations
 
 import json
 import logging
-import os
 import re
 from collections.abc import Callable
 from typing import Any
@@ -21,11 +20,15 @@ from typing import Any
 from ... import paths
 from ...artifacts import store
 from ...engine.choices import clean_visible_text
+from ...engine.history import render_history_entry
 from ...llm.client import LLMError, call_llm, call_llm_stream
+from ...llm.provider_adapter import ProviderTransport, narrator_transport, response_format
+from ...llm.runtime_context import runtime_api_key
 from ...llm.types import Message
 from ...utils.timing import utcnow_iso
 from ..common import load_agent_settings, normalize_choices
 from ..common import prompt_metrics as _prompt_metrics
+from ..contracts import NarratorEnvelopeV1
 
 log = logging.getLogger(__name__)
 
@@ -37,7 +40,6 @@ _RECENT_HISTORY_MESSAGES = 6
 # without it, the compression branch never fires and all 20 stored entries are
 # sent verbatim, which correlates with rising repair rates at high history counts.
 _HISTORY_PROMPT_SOFT_CAP = _RECENT_HISTORY_MESSAGES + 1
-_NARRATOR_SCHEMA_ENV = "AGENS_NARRATOR_RESPONSE_SCHEMA"
 _NO_ASCII_LETTERS_PATTERN = r"^[^A-Za-z]*$"
 _NARRATOR_RESPONSE_FORMAT: dict[str, Any] = {
     "type": "json_schema",
@@ -48,7 +50,6 @@ _NARRATOR_RESPONSE_FORMAT: dict[str, Any] = {
             "type": "object",
             "properties": {
                 "narrative": {"type": "string", "pattern": _NO_ASCII_LETTERS_PATTERN},
-                "state_update_json": {"type": "string"},
                 "choices": {
                     "type": "array",
                     "items": {
@@ -60,7 +61,7 @@ _NARRATOR_RESPONSE_FORMAT: dict[str, Any] = {
                     "maxItems": 4,
                 },
             },
-            "required": ["narrative", "state_update_json", "choices"],
+            "required": ["narrative", "choices"],
             "additionalProperties": False,
         },
     },
@@ -72,7 +73,9 @@ def load_settings(state: dict[str, Any]) -> dict[str, Any]:
 
 
 def build_prompt(state: dict[str, Any]) -> dict[str, Any]:
-    provider_json_schema = _should_use_narrator_schema(state)
+    transport = narrator_transport(state)
+    provider_json_schema = transport == ProviderTransport.JSON_SCHEMA
+    provider_json_object = transport == ProviderTransport.JSON_OBJECT
     prompt_name = "narrator_schema" if provider_json_schema else "narrator"
     system_path = paths.system_prompt_path(prompt_name)
     if not system_path.exists():
@@ -91,11 +94,10 @@ def build_prompt(state: dict[str, Any]) -> dict[str, Any]:
     if provider_json_schema:
         prompt_history = _schema_safe_history(prompt_history)
 
-    if provider_json_schema:
+    if provider_json_schema or provider_json_object:
         output_contract = (
-            "provider 会强制返回 narrative、state_update_json、choices 三个字段；"
+            "必须返回 narrative 和 choices 两个字段；"
             "narrative 必须是 80-140 个中文字符的第三人称编年史，"
-            "state_update_json 必须是可解析为 JSON 对象的字符串，"
             "choices 必须恰好四项、非空且互不重复，并依次对应稳妥、机遇、风险、气运。"
             "narrative 和 choices 只能使用中文，不得含任何英文字母、英文缩写或拉丁字母。"
             "发现英文时必须在输出前改写为中文或省略该句。"
@@ -103,10 +105,9 @@ def build_prompt(state: dict[str, Any]) -> dict[str, Any]:
         )
     else:
         output_contract = (
-            "响应必须以 80-140 个中文字符的第三人称编年史正文开头，第一个字符不得是 <、{、[；随后依次输出 "
-            "<state_update>{}</state_update> 和恰好四项的 "
+            "响应必须以 80-140 个中文字符的第三人称编年史正文开头，第一个字符不得是 <、{、[；随后输出恰好四项的 "
             "<choices>[\"...\", \"...\", \"...\", \"...\"]</choices>；"
-            "两个标签都不得省略。叙事正文和四个选项只能使用中文，"
+            "choices 标签不得省略。叙事正文和四个选项只能使用中文，"
             "不得含任何英文字母、英文缩写或拉丁字母；发现英文时必须改写为中文或省略。"
         )
     user_content = (
@@ -119,7 +120,7 @@ def build_prompt(state: dict[str, Any]) -> dict[str, Any]:
     for entry in prompt_history:
         messages.append(Message(
             role=entry.get("role", "user"),
-            content=entry.get("content", ""),
+            content=render_history_entry(entry),
         ))
     messages.append(Message(role="user", content=user_content))
 
@@ -142,6 +143,8 @@ def build_prompt(state: dict[str, Any]) -> dict[str, Any]:
         "messages": messages,
         "prompt_metrics": prompt_metrics,
         "provider_json_schema": provider_json_schema,
+        "provider_json_object": provider_json_object,
+        "provider_transport": transport.value,
     }
 
 
@@ -171,7 +174,7 @@ async def call_agnes_llm(state: dict[str, Any]) -> dict[str, Any]:
         stream_callback = _get_stream_cb()
 
     try:
-        resp, output_text, provider_json_schema, provider_json_envelope_ok = (
+        resp, output_text, transport, provider_json_envelope_ok = (
             await _primary_narrator_call(state, messages, stream_callback)
         )
         output_text, repaired_output, repair_elapsed_ms, repair_usage = (
@@ -186,7 +189,9 @@ async def call_agnes_llm(state: dict[str, Any]) -> dict[str, Any]:
             "repair_elapsed_ms": repair_elapsed_ms,
             "repair_usage": repair_usage,
             "prompt_metrics": state.get("prompt_metrics") or {},
-            "provider_json_schema": provider_json_schema,
+            "provider_json_schema": transport == ProviderTransport.JSON_SCHEMA,
+            "provider_json_object": transport == ProviderTransport.JSON_OBJECT,
+            "provider_transport": transport.value,
             "provider_json_envelope_ok": provider_json_envelope_ok,
         }
     except LLMError as e:
@@ -198,25 +203,25 @@ async def _primary_narrator_call(
     state: dict[str, Any],
     messages: list[Message],
     stream_callback: Callable[[str], None] | None,
-) -> tuple[dict[str, Any], str, bool, bool]:
-    provider_json_schema = bool(state.get("provider_json_schema"))
-    if provider_json_schema:
+) -> tuple[dict[str, Any], str, ProviderTransport, bool]:
+    transport = narrator_transport(state)
+    if transport != ProviderTransport.LEGACY_TAGS:
         resp = await call_llm(
             messages,
             model=state.get("model"),
             base_url=state.get("base_url"),
-            api_key=state.get("api_key"),
+            api_key=runtime_api_key(),
             temperature=0.0,
             max_tokens=1536,
             stream=False,
-            response_format=_NARRATOR_RESPONSE_FORMAT,
+            response_format=response_format(transport, _NARRATOR_RESPONSE_FORMAT),
         )
     elif stream_callback is not None:
         resp = await call_llm_stream(
             messages,
             model=state.get("model"),
             base_url=state.get("base_url"),
-            api_key=state.get("api_key"),
+            api_key=runtime_api_key(),
             temperature=0.0,
             max_tokens=1536,
             on_chunk=stream_callback,
@@ -226,16 +231,16 @@ async def _primary_narrator_call(
             messages,
             model=state.get("model"),
             base_url=state.get("base_url"),
-            api_key=state.get("api_key"),
+            api_key=runtime_api_key(),
             temperature=0.0,
             max_tokens=1536,
             stream=False,
         )
     output_text = str(resp.get("text") or "")
-    if not provider_json_schema:
-        return dict(resp), output_text, False, False
+    if transport == ProviderTransport.LEGACY_TAGS:
+        return dict(resp), output_text, transport, False
     unwrapped = _unwrap_narrator_envelope(output_text)
-    return dict(resp), unwrapped or output_text, True, unwrapped is not None
+    return dict(resp), unwrapped or output_text, transport, unwrapped is not None
 
 
 async def _maybe_repair_narrator_output(
@@ -245,8 +250,7 @@ async def _maybe_repair_narrator_output(
     if not state.get("repair_incomplete_output"):
         return output_text, False, 0, {}
     narrative, state_delta, choices = _parse_narrator_output(output_text)
-    recoverable_content = bool(narrative) or _has_recoverable_state_delta(state_delta)
-    if not recoverable_content or (state_delta is not None and narrative and choices):
+    if not str(output_text or "").strip() or (narrative and len(choices) == 4):
         return output_text, False, 0, {}
     repaired_text, repair_result = await _repair_incomplete_output(
         state, output_text, narrative, state_delta or {}
@@ -255,14 +259,14 @@ async def _maybe_repair_narrator_output(
     repair_usage = dict(repair_result.get("usage") or {})
     if not repaired_text:
         return output_text, False, repair_elapsed_ms, repair_usage
-    repaired_narrative, repaired_delta, repaired_choices = _parse_narrator_output(repaired_text)
-    if repaired_narrative and repaired_delta is not None and len(repaired_choices) == 4:
+    repaired_narrative, _repaired_delta, repaired_choices = _parse_narrator_output(repaired_text)
+    if repaired_narrative and len(repaired_choices) == 4:
         return repaired_text, True, repair_elapsed_ms, repair_usage
     return output_text, False, repair_elapsed_ms, repair_usage
 
 
 def save_artifact(state: dict[str, Any]) -> dict[str, Any]:
-    """Parse narrative + <state_update> from the LLM output and persist."""
+    """Parse a transport-neutral Narrator envelope and persist safe evidence."""
     run_id = state.get("run_id") or store.new_run_id()
     text = state.get("output_text", "")
     llm_error = state.get("llm_error", "")
@@ -273,6 +277,10 @@ def save_artifact(state: dict[str, Any]) -> dict[str, Any]:
         choices: list[str] = []
     else:
         narrative, state_delta, choices = _parse_narrator_output(text)
+    envelope = NarratorEnvelopeV1.from_values(narrative, choices)
+    if envelope is not None:
+        narrative = envelope.narrative
+        choices = list(envelope.choices)
     contract_diagnostics = _contract_diagnostics(text, narrative, state_delta, choices)
 
     out_path = store.write_output(AGENT_NAME, run_id, text)
@@ -292,6 +300,8 @@ def save_artifact(state: dict[str, Any]) -> dict[str, Any]:
         "repair_elapsed_ms": int(state.get("repair_elapsed_ms") or 0),
         "contract_diagnostics": contract_diagnostics,
         "provider_json_schema": bool(state.get("provider_json_schema")),
+        "provider_json_object": bool(state.get("provider_json_object")),
+        "provider_transport": str(state.get("provider_transport") or "legacy_tags"),
         "provider_json_envelope_ok": bool(state.get("provider_json_envelope_ok")),
     }
     audit_path = store.write_audit(AGENT_NAME, run_id, audit)
@@ -310,6 +320,8 @@ def save_artifact(state: dict[str, Any]) -> dict[str, Any]:
         "prompt_metrics": state.get("prompt_metrics") or {},
         "contract_diagnostics": contract_diagnostics,
         "provider_json_schema": bool(state.get("provider_json_schema")),
+        "provider_json_object": bool(state.get("provider_json_object")),
+        "provider_transport": str(state.get("provider_transport") or "legacy_tags"),
         "provider_json_envelope_ok": bool(state.get("provider_json_envelope_ok")),
         "output_path": str(out_path),
         "audit_path": str(audit_path),
@@ -382,43 +394,23 @@ def _parse_narrator_output(text: str) -> tuple[str, dict | None, list[str]]:
     return clean_visible_text(narrative, allow_structured=False), state_delta, choices
 
 
-def _should_use_narrator_schema(state: dict[str, Any]) -> bool:
-    configured = os.environ.get(_NARRATOR_SCHEMA_ENV, "auto").strip().lower()
-    if configured in {"1", "true", "yes", "on"}:
-        return True
-    if configured in {"0", "false", "no", "off"}:
-        return False
-    model = str(state.get("model") or os.environ.get("AGNES_MODEL") or "").strip().lower()
-    return model.startswith("agnes-")
-
-
 def _unwrap_narrator_envelope(text: str) -> str | None:
     try:
         payload = json.loads(str(text or ""))
     except (json.JSONDecodeError, TypeError, ValueError):
         return None
-    required = {"narrative", "state_update_json", "choices"}
+    required = {"narrative", "choices"}
     if not isinstance(payload, dict) or set(payload) != required:
         return None
     narrative = payload.get("narrative")
-    state_update_json = payload.get("state_update_json")
     choices = payload.get("choices")
     if not isinstance(narrative, str) or not narrative.strip():
-        return None
-    if not isinstance(state_update_json, str):
-        return None
-    try:
-        state_update = json.loads(state_update_json)
-    except (json.JSONDecodeError, TypeError, ValueError):
-        return None
-    if not isinstance(state_update, dict):
         return None
     normalized_choices = normalize_choices(choices)
     if len(normalized_choices) != 4:
         return None
     return (
         f"{narrative.strip()}\n"
-        f"<state_update>{json.dumps(state_update, ensure_ascii=False)}</state_update>\n"
         f"<choices>{json.dumps(normalized_choices, ensure_ascii=False)}</choices>"
     )
 
@@ -428,7 +420,7 @@ def _schema_safe_history(history: list[dict[str, Any]]) -> list[dict[str, Any]]:
     cleaned: list[dict[str, Any]] = []
     for entry in history:
         role = str(entry.get("role") or "user")
-        content = str(entry.get("content") or "").strip()
+        content = render_history_entry(entry)
         if role == "assistant":
             narrative, _delta, _choices = _parse_narrator_output(content)
             content = narrative or clean_visible_text(content, allow_structured=False)

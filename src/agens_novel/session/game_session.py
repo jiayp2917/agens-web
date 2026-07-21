@@ -7,7 +7,6 @@ world state, and turn history.  Supports serialization for save/load.
 from __future__ import annotations
 
 import hashlib
-import json
 import logging
 from dataclasses import dataclass, field
 from typing import Any
@@ -60,6 +59,8 @@ class GameSession:
     save_file: str = ""
     turn_count: int = 0
     realm_turn_count: int = 0
+    run_seed: str = ""
+    rule_rng_counter: int = 0
     game_started: bool = False
     game_over: bool = False
 
@@ -211,7 +212,7 @@ class GameSession:
         *,
         local_story: dict[str, Any] | None = None,
     ) -> None:
-        """Append one turn to turn_history and feed chat_history (with compact).
+        """Append one turn and project semantic context into chat history.
 
         All turn-recording sites (ordinary, local-story, local-story fallback,
         breakthrough) route through this so local-story turns also enter the
@@ -230,14 +231,19 @@ class GameSession:
         self.turn_history.append(entry)
         self._remember_narrative(narrative)
         self.chat_history.append({"role": "user", "content": input_text})
-        # Keep an accepted three-part response in model history so later turns
-        # imitate the contract instead of treating visible prose as the whole
-        # assistant response. Current state JSON remains authoritative.
-        history_choices = json.dumps(self.last_choices[:4], ensure_ascii=False)
-        assistant_content = (
-            f"{narrative}\n<state_update>{{}}</state_update>\n<choices>{history_choices}</choices>"
+        from ..engine.history import accepted_turn_context
+
+        self.chat_history.append(
+            {
+                "role": "assistant",
+                "content": str(narrative or "").strip(),
+                "accepted_turn_context": accepted_turn_context(
+                    self,
+                    state_delta,
+                    self.last_choices,
+                ),
+            }
         )
-        self.chat_history.append({"role": "assistant", "content": assistant_content})
         if len(self.chat_history) > 20:
             from ..engine.history import compact_chat_history
 
@@ -263,6 +269,10 @@ class GameSession:
         return {
             "turn_count": self.turn_count,
             "realm_turn_count": self.realm_turn_count,
+            "rule_rng": {
+                "run_seed": self.run_seed,
+                "counter": self.rule_rng_counter,
+            },
             "game_started": self.game_started,
             "game_over": self.game_over,
             "character": {
@@ -325,6 +335,15 @@ class GameSession:
             if isinstance(realm_turn_count, int) and not isinstance(realm_turn_count, bool)
             else 0
         )
+        rule_rng = data.get("rule_rng", {})
+        if isinstance(rule_rng, dict):
+            session.run_seed = str(rule_rng.get("run_seed") or "").strip()
+            raw_counter = rule_rng.get("counter", 0)
+            session.rule_rng_counter = (
+                max(0, raw_counter)
+                if isinstance(raw_counter, int) and not isinstance(raw_counter, bool)
+                else 0
+            )
         session.game_started = data.get("game_started", False)
         session.game_over = data.get("game_over", False)
 

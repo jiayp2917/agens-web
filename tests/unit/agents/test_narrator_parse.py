@@ -9,30 +9,27 @@ from agens_novel.agents.narrator.nodes import (
     _NARRATOR_RESPONSE_FORMAT,
     _contract_diagnostics,
     _parse_narrator_output,
-    _should_use_narrator_schema,
     _unwrap_narrator_envelope,
     build_prompt,
 )
 from agens_novel.engine.model_result import ModelResultKind, classify_narrator_result
+from agens_novel.llm.provider_adapter import ProviderTransport, narrator_transport
 
 
 class TestNarratorParse:
-    def test_narrator_schema_auto_enables_only_for_agens_models(self, monkeypatch) -> None:
-        monkeypatch.delenv("AGENS_NARRATOR_RESPONSE_SCHEMA", raising=False)
+    def test_narrator_transport_keeps_provider_wire_formats_separate(self, monkeypatch) -> None:
+        monkeypatch.delenv("AGENS_DEEPSEEK_NARRATOR_TRANSPORT", raising=False)
 
-        assert _should_use_narrator_schema({"model": "agnes-2.0-flash"}) is True
-        assert _should_use_narrator_schema({"model": "deepseek-chat"}) is False
+        assert narrator_transport({"provider": "Agens", "model": "agnes-2.0-flash"}) == ProviderTransport.JSON_SCHEMA
+        assert narrator_transport({"provider": "DeepSeek", "model": "deepseek-v4-flash"}) == ProviderTransport.LEGACY_TAGS
 
-        monkeypatch.setenv("AGENS_NARRATOR_RESPONSE_SCHEMA", "1")
-        assert _should_use_narrator_schema({"model": "deepseek-chat"}) is True
-        monkeypatch.setenv("AGENS_NARRATOR_RESPONSE_SCHEMA", "0")
-        assert _should_use_narrator_schema({"model": "agnes-2.0-flash"}) is False
+        monkeypatch.setenv("AGENS_DEEPSEEK_NARRATOR_TRANSPORT", "json_object")
+        assert narrator_transport({"provider": "DeepSeek", "model": "deepseek-v4-flash"}) == ProviderTransport.JSON_OBJECT
 
     def test_unwrap_narrator_envelope_requires_exact_output_field(self) -> None:
         wrapped = json.dumps(
             {
                 "narrative": "山门新榜已经贴出。",
-                "state_update_json": "{}",
                 "choices": ["闭关", "拜访", "历练", "随缘"],
             },
             ensure_ascii=False,
@@ -40,7 +37,7 @@ class TestNarratorParse:
 
         output = _unwrap_narrator_envelope(wrapped)
         assert output is not None
-        assert "<state_update>{}</state_update>" in output
+        assert "<state_update>" not in output
         assert "<choices>" in output
         assert _unwrap_narrator_envelope('{"narrative":"ok","extra":1}') is None
         assert _unwrap_narrator_envelope("not json") is None
@@ -70,8 +67,8 @@ class TestNarratorParse:
         assert metrics["prompt_chars"] > metrics["game_state_chars"]
         assert "闭关修炼" not in metrics.values()
         assert "<本回合输出契约>" in result["user_message"]
-        assert "<state_update>{}</state_update>" in result["user_message"]
-        assert "两个标签都不得省略" in result["user_message"]
+        assert "<state_update>{}</state_update>" not in result["user_message"]
+        assert "choices 标签不得省略" in result["user_message"]
         assert "第一个字符不得是 <、{、[" in result["user_message"]
         assert "不得含任何英文字母" in result["user_message"]
 
@@ -92,7 +89,7 @@ class TestNarratorParse:
         )
 
         assert result["provider_json_schema"] is True
-        assert "narrative、state_update_json、choices" in result["user_message"]
+        assert "narrative 和 choices" in result["user_message"]
         assert "非空且互不重复" in result["user_message"]
         assert "不得含任何英文字母" in result["user_message"]
         assert "<state_update>{}</state_update>" not in result["user_message"]
@@ -315,7 +312,7 @@ class TestNarratorParse:
         assert delta["world"]["current_scene"] == "山门榜前"
         assert choices == ["整理旧录", "询问执事", "揭榜试炼", "随缘抽签"]
 
-    def test_malformed_state_update_is_incomplete_even_with_choices(self) -> None:
+    def test_malformed_legacy_state_update_is_diagnostic_only_with_valid_choices(self) -> None:
         text = (
             "你在山门前停步。\n"
             "<state_update>{bad json}</state_update>\n"
@@ -331,7 +328,7 @@ class TestNarratorParse:
         assert narrative == "你在山门前停步。"
         assert delta is None
         assert choices == ["吐纳", "询问", "历练", "随缘"]
-        assert status.kind == ModelResultKind.INCOMPLETE_OUTPUT
+        assert status.kind == ModelResultKind.OK
 
     def test_contract_diagnostics_report_shape_without_text(self) -> None:
         text = (
@@ -482,7 +479,6 @@ class TestNarratorParse:
                 "text": json.dumps(
                     {
                         "narrative": output.split("\n", 1)[0],
-                        "state_update_json": '{"character":{},"world":{},"meta":{}}',
                         "choices": ["闭关温养", "拜访同门", "探查山径", "随缘听风"],
                     },
                     ensure_ascii=False,
@@ -516,15 +512,15 @@ class TestNarratorParse:
         assert result["provider_json_envelope_ok"] is True
         assert result["repaired_output"] is False
         assert narrative.startswith("山门执事")
-        assert delta == {"character": {}, "world": {}, "meta": {}}
+        assert delta is None
         assert len(choices) == 4
 
-    def test_system_prompt_requires_unambiguous_three_part_contract(self) -> None:
+    def test_system_prompt_requires_unambiguous_narrative_and_choices_contract(self) -> None:
         from agens_novel import paths
 
         prompt = paths.system_prompt_path("narrator").read_text(encoding="utf-8")
 
-        assert "<state_update>{}</state_update>" in prompt
+        assert "<state_update>{}</state_update>" not in prompt
         assert '<choices>["行动一", "行动二", "行动三", "行动四"]</choices>' in prompt
         assert "不要输出 `[\"...\"]`" not in prompt
 

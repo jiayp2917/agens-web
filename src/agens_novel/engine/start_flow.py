@@ -21,6 +21,7 @@ from ..game.constants import (
     compute_starting_lifespan,
     normalize_attribute_value,
 )
+from ..rule_rng import new_run_seed
 from ..session.game_session import GameSession
 from .choices import complete_choices, dedupe_strings
 from .model_result import (
@@ -352,6 +353,8 @@ def apply_world_builder_generated_session(
     }
     if generated_profile:
         session.world_profile = generated_profile
+    session.rule_rng_counter = 0
+    session.run_seed = new_run_seed()
     ensure_story_binding(session)
 
     session.game_started = True
@@ -370,6 +373,8 @@ def apply_profile_session(session: GameSession, profile: dict[str, Any]) -> None
     session.game_started = True
     session.game_over = False
     session.turn_count = 0
+    session.rule_rng_counter = 0
+    session.run_seed = new_run_seed()
     session.char_name = str(profile.get("char_name") or "无名")
     session.realm = "练气"
     session.realm_stage = 1

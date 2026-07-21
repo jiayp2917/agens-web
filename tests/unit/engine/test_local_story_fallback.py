@@ -184,7 +184,6 @@ def test_local_story_can_reach_first_major_breakthrough(monkeypatch, tmp_path) -
     from agens_novel import paths
 
     monkeypatch.setattr(paths, "SAVE_DIR", tmp_path)
-    monkeypatch.setattr("agens_novel.game.realm.random.random", lambda: 0.0)
     monkeypatch.setenv("AGENS_START_MODEL_OPENING", "1")
     monkeypatch.setenv("AGNES_API_KEY", "sk-test-1234567890")
     engine = GameEngine()
@@ -196,6 +195,14 @@ def test_local_story_can_reach_first_major_breakthrough(monkeypatch, tmp_path) -
         engine.start_from_profile({"char_name": "许满"})
     engine._enter_local_story("unit-test", emit_narrative=False)
     engine.game_session.realm_stage = 9
+    monkeypatch.setattr(
+        engine.realm_system,
+        "attempt_breakthrough",
+        lambda _session: {
+            "character": {"realm": "筑基", "realm_stage": 1, "lifespan": 200},
+            "meta": {"breakthrough_result": "success", "new_realm": "筑基"},
+        },
+    )
 
     engine.handle_action(engine.game_session.last_choices[3])
     engine.handle_action("谨慎采摘灵草，炼成简易筑基药引")

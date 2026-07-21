@@ -299,7 +299,8 @@ def test_breakthrough_model_delta_cannot_inject_authoritative_character_state() 
     assert engine.game_session.relationships == []
     assert engine.game_session.techniques == []
     assert engine.game_session.breakthrough_flags == ["foundation_aid"]
-    assert "天象为此番破境留下记载。" in engine.game_session.lore_facts
+    assert "天象为此番破境留下记载。" not in engine.game_session.lore_facts
+    assert engine.game_session.turn_history[-1]["delta"]["meta"]["model_state_update_ignored"]
 
 
 def test_steady_turn_recovers_breakthrough_blocker_but_preserves_other_injury() -> None:

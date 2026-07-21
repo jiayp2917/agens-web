@@ -10,14 +10,9 @@ from typing import TYPE_CHECKING, Any
 if TYPE_CHECKING:
     from .game_engine import GameEngine
 
+from ..agents.contracts import JudgeDecisionV1
 from ..game.constants import format_realm_name
-from .action_delta_policy import (
-    apply_breakthrough_flag_rule,
-    enforce_event_delta_policy,
-    is_pure_cultivation,
-    merge_rule_delta,
-    validate_narrative_delta_consistency,
-)
+from .action_delta_policy import merge_rule_delta, validate_narrative_delta_consistency
 from .choices import clean_visible_text, fallback_choices, normalize_choices
 from .model_result import (
     ModelResultKind,
@@ -26,7 +21,7 @@ from .model_result import (
     is_retryable_model_request_failure,
 )
 from .render import format_status_bar
-from .turn_rules import settle_turn
+from .turn_rules import settle_turn, settle_turn_outcome
 
 log = logging.getLogger(__name__)
 
@@ -100,6 +95,7 @@ class TurnFlow:
                 "node_id": session.local_story_node_id,
             },
         )
+        self._advance_rule_rng_counter()
         engine.emit("on_status_bar", format_status_bar(session))
 
         engine.check_game_over()
@@ -113,12 +109,9 @@ class TurnFlow:
 
         engine.emit("on_loading", "天道运转中...")
 
-        rule_delta = settle_turn(text, session)
-        turn_summary = (
-            rule_delta.get("meta", {}).get("turn_summary", "")
-            if isinstance(rule_delta.get("meta"), dict)
-            else ""
-        )
+        outcome = settle_turn_outcome(text, session)
+        rule_delta = outcome.state_delta
+        turn_summary = outcome.turn_summary
 
         narrator_result = self._run_narrator(text, turn_summary)
         if narrator_result is None:
@@ -151,9 +144,9 @@ class TurnFlow:
 
         narrative = narrator_result.get("narrative", "")
         raw_state_delta = narrator_result.get("state_delta", {})
-        attempted_world_reset = engine.action_delta_resets_world(raw_state_delta)
         malformed_state_delta = raw_state_delta is None or not isinstance(raw_state_delta, dict)
         state_delta = raw_state_delta if isinstance(raw_state_delta, dict) else {}
+        model_state_update_present = bool(state_delta)
         choices = narrator_result.get("choices", [])
         if narrator_status.kind == ModelResultKind.INCOMPLETE_OUTPUT:
             if _has_visible_contract_violation(narrator_result):
@@ -169,17 +162,15 @@ class TurnFlow:
                 rule_delta,
                 narrator_status.reason,
             )
-        if attempted_world_reset:
-            narrative = self._narrative_from_rule_delta(rule_delta)
-        state_delta = engine.sanitize_action_delta(state_delta)
-        state_delta = enforce_event_delta_policy(state_delta, rule_delta)
         judge_result = self._run_judge_if_needed(text, narrative, state_delta, rule_delta)
-        if judge_result is None and session.game_over:
-            return
-        if isinstance(judge_result, dict):
+        if judge_result:
             narrative, state_delta = self._apply_judge_result(narrative, state_delta, judge_result)
-
-        applied = self._validate_and_apply_delta(text, narrative, state_delta, rule_delta)
+        applied = self._validate_and_apply_delta(
+            text,
+            narrative,
+            rule_delta,
+            model_state_update_present=model_state_update_present,
+        )
         if applied is None:
             return
         narrative, applied_delta = applied
@@ -376,44 +367,29 @@ class TurnFlow:
         state_delta: dict[str, Any],
         judge_result: dict[str, Any],
     ) -> tuple[str, dict[str, Any]]:
-        if judge_result.get("approved") is False:
-            corrected = judge_result.get("corrected_delta", {})
-            if corrected:
-                state_delta = corrected
-            else:
-                note = judge_result.get("judgment_note", "")
-                log.info("Judge rejected (no corrected delta): %s", note)
-                narrative = ""
-                state_delta = {"character": {}, "world": {}, "meta": {}}
-            note = judge_result.get("judgment_note", "")
-            if note:
-                log.info("Judge corrected: %s", note)
+        decision = JudgeDecisionV1.from_payload(judge_result)
+        if not decision.approved:
+            log.info("Judge rejected narrator prose: %s", judge_result.get("judgment_note", ""))
+            narrative = ""
         return clean_visible_text(narrative, allow_structured=False), state_delta
 
     def _validate_and_apply_delta(
         self,
         text: str,
         narrative: str,
-        state_delta: dict[str, Any],
         rule_delta: dict[str, Any],
+        *,
+        model_state_update_present: bool,
     ) -> tuple[str, dict[str, Any]] | None:
+        """Apply only the already-computed rule outcome to session state.
+
+        Narrator state updates remain parsed as legacy transport diagnostics, but
+        cannot grant rewards, mutate relationships, or alter any other
+        authority field. Provider retries therefore reuse one rule outcome.
+        """
         engine = self.engine
         session = engine.game_session
-        state_delta = engine.sanitize_action_delta(state_delta)
-        state_delta = enforce_event_delta_policy(state_delta, rule_delta)
-
-        is_cultivation = is_pure_cultivation(text)
-        state_delta = apply_breakthrough_flag_rule(
-            text, state_delta, is_cultivation=is_cultivation, session=session
-        )
-
-        char_delta = state_delta.get("character")
-        if isinstance(char_delta, dict) and "combat" in char_delta:
-            char_delta = dict(char_delta)
-            char_delta.pop("combat", None)
-            state_delta = {**state_delta, "character": char_delta}
-
-        state_delta = merge_rule_delta(state_delta, rule_delta)
+        state_delta = self._rule_only_delta(rule_delta, model_state_update_present)
         if _has_unapproved_time_span(narrative, state_delta):
             log.info("narrative exact time span conflicted with rule settlement; using rule chronicle")
             narrative = ""
@@ -427,7 +403,7 @@ class TurnFlow:
             session.last_choices = engine._filter_unavailable_breakthrough_choices(
                 fallback_choices(session)
             )
-            state_delta = merge_rule_delta({"character": {}, "world": {}, "meta": {}}, rule_delta)
+            state_delta = self._rule_only_delta(rule_delta, model_state_update_present)
 
         session.apply_delta(state_delta)
         stage_delta = self._try_emit_stage_advance()
@@ -447,6 +423,20 @@ class TurnFlow:
             narrative = self._narrative_from_rule_delta(state_delta)
 
         return narrative, state_delta
+
+    @staticmethod
+    def _rule_only_delta(
+        rule_delta: dict[str, Any], model_state_update_present: bool
+    ) -> dict[str, Any]:
+        """Copy the authoritative delta without accepting model mutations."""
+        state_delta = {
+            "character": dict(rule_delta.get("character") or {}),
+            "world": dict(rule_delta.get("world") or {}),
+            "meta": dict(rule_delta.get("meta") or {}),
+        }
+        if model_state_update_present:
+            state_delta["meta"]["model_state_update_ignored"] = True
+        return state_delta
 
     def _record_and_emit_turn(
         self,
@@ -478,11 +468,25 @@ class TurnFlow:
             )
             narrative = _generic_distinct_chronicle(state_delta, session)
         session.record_turn(text, narrative, state_delta)
+        self._advance_rule_rng_counter()
 
         if narrative:
             engine.emit("on_narrative", narrative, session.turn_count)
 
         engine.emit("on_status_bar", format_status_bar(session))
+
+    def _advance_rule_rng_counter(self) -> None:
+        """Advance only after the turn record has been created.
+
+        WebGameService restores the whole runner snapshot if its transaction
+        fails, so an uncommitted mutation cannot retain this increment.
+        """
+        session = self.engine.game_session
+        if not str(getattr(session, "run_seed", "") or "").strip():
+            return
+        raw_counter = getattr(session, "rule_rng_counter", 0)
+        counter = raw_counter if isinstance(raw_counter, int) and not isinstance(raw_counter, bool) else 0
+        session.rule_rng_counter = max(0, counter) + 1
 
     def _try_emit_stage_advance(self) -> dict[str, Any] | None:
         engine = self.engine

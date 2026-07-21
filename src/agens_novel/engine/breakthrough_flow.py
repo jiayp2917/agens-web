@@ -9,6 +9,7 @@ from typing import TYPE_CHECKING, Any
 if TYPE_CHECKING:
     from .game_engine import GameEngine
 
+from ..agents.contracts import JudgeDecisionV1
 from ..game.constants import format_realm_name
 from .model_result import ModelResultKind, classify_judge_result, classify_narrator_result
 from .render import format_status_bar
@@ -85,32 +86,24 @@ class BreakthroughFlow:
         action_text = self._breakthrough_action_text(breakthrough_delta)
         result = self._run_breakthrough_narrator(action_text)
         narrative = ""
-        state_delta: dict[str, Any] = breakthrough_delta
+        state_delta: dict[str, Any] = self._rule_breakthrough_delta(breakthrough_delta)
         choices: Any = []
         if result is None:
-            state_delta = breakthrough_delta
+            pass
         elif result.get("llm_error"):
             log.info(
                 "breakthrough narrator unavailable after rule settlement: %s",
                 result.get("llm_error"),
             )
-            state_delta = breakthrough_delta
         else:
             narrative = str(result.get("narrative") or "")
             raw_delta = result.get("state_delta", {})
-            state_delta = raw_delta if isinstance(raw_delta, dict) else {}
+            if isinstance(raw_delta, dict) and raw_delta:
+                state_delta["meta"]["model_state_update_ignored"] = True
             choices = result.get("choices")
-            state_delta = self._merge_breakthrough_delta(state_delta, breakthrough_delta, bt_result)
 
-        judged_delta = self._judge_breakthrough_delta(action_text, narrative, state_delta)
-        if judged_delta is None:
-            return
-        state_delta = judged_delta
-        state_delta = self._merge_breakthrough_delta(
-            state_delta,
-            breakthrough_delta,
-            bt_result,
-        )
+        if not self._judge_breakthrough_narrative(action_text, narrative, state_delta):
+            narrative = ""
 
         session.turn_count += 1
         session.realm_turn_count += 1
@@ -194,22 +187,14 @@ class BreakthroughFlow:
         )
         return result
 
-    def _merge_breakthrough_delta(
-        self,
-        state_delta: dict[str, Any],
-        breakthrough_delta: dict[str, Any],
-        bt_result: str,
-    ) -> dict[str, Any]:
-        if bt_result not in {"success", "failure"}:
-            return state_delta
-        sanitized = self.engine.sanitize_action_delta(state_delta)
-        world = sanitized.get("world") if isinstance(sanitized, dict) else None
-        merged: dict[str, Any] = {}
-        if isinstance(world, dict) and world:
-            merged["world"] = world
-        merged["character"] = dict(breakthrough_delta.get("character") or {})
-        merged["meta"] = dict(breakthrough_delta.get("meta") or {})
-        return merged
+    @staticmethod
+    def _rule_breakthrough_delta(breakthrough_delta: dict[str, Any]) -> dict[str, Any]:
+        """Copy the RealmSystem result without accepting model state updates."""
+        return {
+            "character": dict(breakthrough_delta.get("character") or {}),
+            "world": dict(breakthrough_delta.get("world") or {}),
+            "meta": dict(breakthrough_delta.get("meta") or {}),
+        }
 
     def _breakthrough_action_text(self, breakthrough_delta: dict[str, Any]) -> str:
         session = self.engine.game_session
@@ -329,17 +314,18 @@ class BreakthroughFlow:
     ) -> None:
         session = self.engine.game_session
         session.record_turn(action_text, narrative, state_delta)
+        if str(getattr(session, "run_seed", "") or "").strip():
+            raw_counter = getattr(session, "rule_rng_counter", 0)
+            counter = raw_counter if isinstance(raw_counter, int) and not isinstance(raw_counter, bool) else 0
+            session.rule_rng_counter = max(0, counter) + 1
 
-    def _judge_breakthrough_delta(
+    def _judge_breakthrough_narrative(
         self,
         action_text: str,
         narrative: str,
         state_delta: dict[str, Any],
-    ) -> dict[str, Any] | None:
+    ) -> bool:
         engine = self.engine
-        if not state_delta:
-            return state_delta
-
         try:
             judge_result = engine.run_agent(
                 "judge",
@@ -356,16 +342,7 @@ class BreakthroughFlow:
                 reason=judge_status.reason,
                 result=judge_result,
             )
-            if judge_result.get("llm_error"):
-                reason = f"突破审判失败: {judge_result['llm_error']}"
-                if not engine.confirm_local_fallback("breakthrough_judge_error", reason):
-                    engine.end_model_failure_run(reason)
-                    return None
-                judge_result = {"approved": False, "corrected_delta": {}}
-            if judge_result.get("approved") is False:
-                corrected = judge_result.get("corrected_delta", {})
-                if corrected and not _conflicts_with_breakthrough_result(corrected, state_delta):
-                    state_delta = corrected
+            return JudgeDecisionV1.from_payload(judge_result).approved
         except Exception:
             log.exception("breakthrough judge error")
             reason = "突破审判失败（详见日志）"
@@ -378,11 +355,7 @@ class BreakthroughFlow:
                 reason=judge_status.reason,
                 result=failed_result,
             )
-            if not engine.confirm_local_fallback("breakthrough_judge_exception", reason):
-                engine.end_model_failure_run(reason)
-                return None
-
-        return state_delta
+            return False
 
     def _emit_breakthrough_result(
         self,
@@ -410,42 +383,6 @@ class BreakthroughFlow:
             engine.emit("on_narrative", narrative or "突破失败...修为受损。", session.turn_count)
         else:
             engine.emit("on_narrative", narrative, session.turn_count)
-
-
-def _conflicts_with_breakthrough_result(
-    corrected: dict[str, Any], original: dict[str, Any]
-) -> bool:
-    original_meta_value = original.get("meta")
-    corrected_meta_value = corrected.get("meta")
-    original_meta: dict[str, Any] = (
-        original_meta_value if isinstance(original_meta_value, dict) else {}
-    )
-    corrected_meta: dict[str, Any] = (
-        corrected_meta_value if isinstance(corrected_meta_value, dict) else {}
-    )
-    original_result = original_meta.get("breakthrough_result")
-    if not original_result:
-        return False
-    if corrected_meta.get("breakthrough_result") != original_result:
-        return True
-
-    original_character_value = original.get("character")
-    corrected_character_value = corrected.get("character")
-    original_character: dict[str, Any] = (
-        original_character_value if isinstance(original_character_value, dict) else {}
-    )
-    corrected_character: dict[str, Any] = (
-        corrected_character_value if isinstance(corrected_character_value, dict) else {}
-    )
-    for key in ("realm", "realm_stage", "lifespan"):
-        if key in corrected_character and corrected_character.get(key) != original_character.get(
-            key
-        ):
-            return True
-    for key in ("finale", "game_over", "game_over_reason", "new_realm"):
-        if key in corrected_meta and corrected_meta.get(key) != original_meta.get(key):
-            return True
-    return False
 
 
 def _claims_conflicting_realm_stage(text: str, session: Any) -> bool:

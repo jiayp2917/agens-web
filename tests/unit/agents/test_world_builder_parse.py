@@ -45,6 +45,42 @@ def test_world_builder_schema_call_passes_provider_format(monkeypatch) -> None:
     assert result["output_text"] == "{}"
 
 
+def test_world_builder_deepseek_json_object_uses_adapter(monkeypatch) -> None:
+    monkeypatch.setenv("AGENS_DEEPSEEK_WORLD_OPENING_TRANSPORT", "json_object")
+    prompt = nodes.build_prompt(
+        {
+            "model": "deepseek-v4-flash",
+            "generation_type": "profile_opening",
+            "user_input": "角色名：许满。",
+        }
+    )
+    calls = []
+
+    async def fake_call(_state, **kwargs):
+        calls.append(kwargs)
+        return {"output_text": "{}", "llm_error": "", "elapsed_ms": 1, "usage": {}}
+
+    monkeypatch.setattr(nodes, "call_agnes_llm_common", fake_call)
+    asyncio.run(nodes.call_agnes_llm({**prompt, "api_key_set": True}))
+
+    assert prompt["provider_transport"] == "json_object"
+    assert calls[0]["response_format"] == {"type": "json_object"}
+
+
+def test_world_builder_deepseek_defaults_to_legacy_tag_adapter(monkeypatch) -> None:
+    monkeypatch.delenv("AGENS_DEEPSEEK_WORLD_OPENING_TRANSPORT", raising=False)
+    result = nodes.build_prompt(
+        {
+            "model": "deepseek-v4-flash",
+            "generation_type": "profile_opening",
+            "user_input": "角色名：许满。",
+        }
+    )
+
+    assert result["provider_transport"] == "legacy_tags"
+    assert "<world_data>" in result["system_message"]
+
+
 def test_world_builder_schema_output_is_parsed_without_tags() -> None:
     payload = {
         "character": {

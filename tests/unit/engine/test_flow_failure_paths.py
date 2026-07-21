@@ -130,7 +130,7 @@ def test_turn_flow_judge_llm_error_rejects_delta_without_player_fallback(monkeyp
     assert not any(item.get("name") == "越权秘宝" for item in engine.game_session.inventory)
 
 
-def test_breakthrough_flow_judge_exception_can_end_run(monkeypatch) -> None:
+def test_breakthrough_flow_judge_exception_keeps_rule_settlement(monkeypatch) -> None:
     monkeypatch.setenv("AGNES_API_KEY", "sk-test-1234567890")
     engine = GameEngine()
     engine.game_session.game_started = True
@@ -161,9 +161,10 @@ def test_breakthrough_flow_judge_exception_can_end_run(monkeypatch) -> None:
         with patch("agens_novel.game.realm.random.random", return_value=0.001):
             engine.attempt_breakthrough()
 
-    assert decisions and decisions[0][0] == "breakthrough_judge_exception"
-    assert engine.game_session.game_over is True
-    assert game_overs == ["模型不可用导致本局结束。"]
+    assert decisions == []
+    assert engine.game_session.game_over is False
+    assert game_overs == []
+    assert engine.game_session.realm == "筑基"
 
 
 def test_turn_flow_disables_narrator_repair_for_ordinary_turns(monkeypatch) -> None:

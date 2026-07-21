@@ -20,6 +20,7 @@ from agens_novel.engine.model_fallback_policy import (
     MODEL_CONTRACT_UNAVAILABLE_NOTICE,
     public_model_failure_notice,
 )
+from agens_novel.engine.rule_contracts import ChoiceIntentV1, RuleTurnOutcomeV1
 from agens_novel.engine.turn_flow import (
     _generic_distinct_chronicle,
     _has_unapproved_time_span,
@@ -32,6 +33,14 @@ from agens_novel.engine.turn_flow import (
 )
 from agens_novel.engine.turn_rules import classify_choice, settle_turn
 from agens_novel.session.game_session import GameSession
+
+
+def _rule_outcome(rule_delta: dict) -> RuleTurnOutcomeV1:
+    meta = rule_delta.get("meta") if isinstance(rule_delta, dict) else {}
+    category = str(meta.get("choice_category") or "稳妥") if isinstance(meta, dict) else "稳妥"
+    slot = {"稳妥": "A", "机遇": "B", "风险": "C", "气运": "D"}.get(category, "A")
+    summary = str(meta.get("turn_summary") or "") if isinstance(meta, dict) else ""
+    return RuleTurnOutcomeV1(ChoiceIntentV1(slot, category, ""), rule_delta, summary)
 
 
 def test_fallback_choices_vary_by_play_phase_without_changing_d_semantics() -> None:
@@ -290,7 +299,7 @@ def test_local_story_fallback_turn_applies_authoritative_rule_event(monkeypatch)
             return {"narrative": "", "state_delta": {}, "choices": [], "llm_error": ""}
         return {"approved": True, "corrected_delta": {}, "judgment_note": "", "llm_error": ""}
 
-    with patch("agens_novel.engine.turn_flow.settle_turn", return_value=rule_delta):
+    with patch("agens_novel.engine.turn_flow.settle_turn_outcome", return_value=_rule_outcome(rule_delta)):
         with patch("agens_novel.engine.game_engine.run_turn_sync", side_effect=runner):
             engine.handle_action("A")
 
@@ -339,7 +348,7 @@ def test_duplicate_model_narrative_is_replaced_by_rule_chronicle(monkeypatch) ->
             }
         return {"approved": True, "corrected_delta": {}, "judgment_note": "", "llm_error": ""}
 
-    with patch("agens_novel.engine.turn_flow.settle_turn", return_value=rule_delta):
+    with patch("agens_novel.engine.turn_flow.settle_turn_outcome", return_value=_rule_outcome(rule_delta)):
         with patch("agens_novel.engine.game_engine.run_turn_sync", side_effect=runner):
             engine.handle_action("A")
 
@@ -347,7 +356,7 @@ def test_duplicate_model_narrative_is_replaced_by_rule_chronicle(monkeypatch) ->
     assert "新讲席" in engine.game_session.turn_history[-1]["narrative"]
 
 
-def test_duplicate_narrative_with_visible_delta_is_replaced_without_hiding_delta(
+def test_duplicate_narrative_replacement_does_not_render_model_only_delta(
     monkeypatch,
 ) -> None:
     monkeypatch.setenv("AGNES_API_KEY", "test-model-key")
@@ -389,14 +398,15 @@ def test_duplicate_narrative_with_visible_delta_is_replaced_without_hiding_delta
             }
         return {"approved": True, "corrected_delta": {}, "judgment_note": "", "llm_error": ""}
 
-    with patch("agens_novel.engine.turn_flow.settle_turn", return_value=rule_delta):
+    with patch("agens_novel.engine.turn_flow.settle_turn_outcome", return_value=_rule_outcome(rule_delta)):
         with patch("agens_novel.engine.game_engine.run_turn_sync", side_effect=runner):
             engine.handle_action("A")
 
     last_turn = engine.game_session.turn_history[-1]
     assert last_turn["narrative"] != duplicate
-    assert "旧伤复发" in last_turn["narrative"]
-    assert "旧伤复发" in engine.game_session.status_effects
+    assert "旧伤复发" not in last_turn["narrative"]
+    assert "旧伤复发" not in engine.game_session.status_effects
+    assert last_turn["delta"]["meta"]["model_state_update_ignored"]
 
 
 def test_duplicate_narrative_with_lifespan_delta_is_not_replaced(monkeypatch) -> None:
@@ -436,7 +446,7 @@ def test_duplicate_narrative_with_lifespan_delta_is_not_replaced(monkeypatch) ->
             }
         return {"approved": True, "corrected_delta": {}, "judgment_note": "", "llm_error": ""}
 
-    with patch("agens_novel.engine.turn_flow.settle_turn", return_value=rule_delta):
+    with patch("agens_novel.engine.turn_flow.settle_turn_outcome", return_value=_rule_outcome(rule_delta)):
         with patch("agens_novel.engine.game_engine.run_turn_sync", side_effect=runner):
             engine.handle_action("服下延寿灵露")
 
@@ -481,7 +491,7 @@ def test_duplicate_narrative_with_attribute_delta_is_not_replaced(monkeypatch) -
             }
         return {"approved": True, "corrected_delta": {}, "judgment_note": "", "llm_error": ""}
 
-    with patch("agens_novel.engine.turn_flow.settle_turn", return_value=rule_delta):
+    with patch("agens_novel.engine.turn_flow.settle_turn_outcome", return_value=_rule_outcome(rule_delta)):
         with patch("agens_novel.engine.game_engine.run_turn_sync", side_effect=runner):
             engine.handle_action("参悟经义")
 
@@ -698,7 +708,7 @@ def test_age_variant_duplicate_model_narrative_is_replaced(monkeypatch) -> None:
             }
         return {"approved": True, "corrected_delta": {}, "judgment_note": "", "llm_error": ""}
 
-    with patch("agens_novel.engine.turn_flow.settle_turn", return_value=rule_delta):
+    with patch("agens_novel.engine.turn_flow.settle_turn_outcome", return_value=_rule_outcome(rule_delta)):
         with patch("agens_novel.engine.game_engine.run_turn_sync", side_effect=runner):
             engine.handle_action("B")
 
@@ -753,7 +763,7 @@ def test_calendar_variant_duplicate_model_narrative_is_replaced(monkeypatch) -> 
             }
         return {"approved": True, "corrected_delta": {}, "judgment_note": "", "llm_error": ""}
 
-    with patch("agens_novel.engine.turn_flow.settle_turn", return_value=rule_delta):
+    with patch("agens_novel.engine.turn_flow.settle_turn_outcome", return_value=_rule_outcome(rule_delta)):
         with patch("agens_novel.engine.game_engine.run_turn_sync", side_effect=runner):
             engine.handle_action("D")
 
@@ -805,7 +815,7 @@ def test_high_similarity_duplicate_model_narrative_is_replaced(monkeypatch) -> N
             }
         return {"approved": True, "corrected_delta": {}, "judgment_note": "", "llm_error": ""}
 
-    with patch("agens_novel.engine.turn_flow.settle_turn", return_value=rule_delta):
+    with patch("agens_novel.engine.turn_flow.settle_turn_outcome", return_value=_rule_outcome(rule_delta)):
         with patch("agens_novel.engine.game_engine.run_turn_sync", side_effect=runner):
             engine.handle_action("D")
 
@@ -856,7 +866,7 @@ def test_contained_duplicate_model_narrative_is_replaced(monkeypatch) -> None:
             }
         return {"approved": True, "corrected_delta": {}, "judgment_note": "", "llm_error": ""}
 
-    with patch("agens_novel.engine.turn_flow.settle_turn", return_value=rule_delta):
+    with patch("agens_novel.engine.turn_flow.settle_turn_outcome", return_value=_rule_outcome(rule_delta)):
         with patch("agens_novel.engine.game_engine.run_turn_sync", side_effect=runner):
             engine.handle_action("D")
 
@@ -1371,7 +1381,7 @@ def test_model_only_attribute_claim_is_suppressed_after_sanitization(monkeypatch
         "meta": {"elapsed_years": 1, "choice_category": "机遇"},
     }
 
-    with patch("agens_novel.engine.turn_flow.settle_turn", return_value=rule_delta):
+    with patch("agens_novel.engine.turn_flow.settle_turn_outcome", return_value=_rule_outcome(rule_delta)):
         with patch("agens_novel.engine.game_engine.run_turn_sync", side_effect=runner):
             engine.handle_action("参悟经义")
 
@@ -1406,7 +1416,7 @@ def test_rule_owned_attribute_claim_can_remain_visible(monkeypatch) -> None:
         "meta": {"elapsed_years": 1, "choice_category": "机遇"},
     }
 
-    with patch("agens_novel.engine.turn_flow.settle_turn", return_value=rule_delta):
+    with patch("agens_novel.engine.turn_flow.settle_turn_outcome", return_value=_rule_outcome(rule_delta)):
         with patch("agens_novel.engine.game_engine.run_turn_sync", side_effect=runner):
             engine.handle_action("参悟经义")
 
