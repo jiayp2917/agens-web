@@ -9,6 +9,8 @@ from __future__ import annotations
 import uuid
 from typing import Any
 
+from agens_novel.game.fate_content import catalog_rows
+
 from .database_common import decode_json_fields
 
 # ── catalog_talents ──────────────────────────────────────────────────────────
@@ -459,6 +461,12 @@ SEED_STORY_SEEDS: list[dict[str, Any]] = [
 
 # ── Seeding helpers ──────────────────────────────────────────────────────────
 
+# v3 fate content is the single source for its catalog projections.  Existing
+# seed rows remain untouched so old database rows and saved character names stay valid.
+SEED_TALENTS.extend(catalog_rows("talent"))
+SEED_FAMILY_BACKGROUNDS.extend(catalog_rows("family"))
+SEED_SPIRIT_ROOTS.extend(catalog_rows("root"))
+
 def seed_catalogs(db: Any) -> int:
     """Insert seed data into catalog tables if they're empty. Returns count of inserted rows."""
     count = 0
@@ -471,13 +479,19 @@ def seed_catalogs(db: Any) -> int:
 
 
 def _seed_table(db: Any, table: str, rows: list[dict[str, Any]]) -> int:
-    """Insert rows if table is empty. Returns number inserted."""
-    existing = db.list_catalog(table)
-    if existing:
-        return 0
+    """Append missing catalog rows without replacing existing player-visible data."""
+    existing_names = {
+        str(row.get("name") or "").strip()
+        for row in db.list_catalog(table)
+        if isinstance(row, dict)
+    }
+    inserted = 0
     for row in rows:
+        if str(row.get("name") or "").strip() in existing_names:
+            continue
         db.insert_catalog(table, row)
-    return len(rows)
+        inserted += 1
+    return inserted
 
 
 def catalog_as_json(row: dict[str, Any]) -> dict[str, Any]:

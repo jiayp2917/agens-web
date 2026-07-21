@@ -1,5 +1,20 @@
 # Changelog
 
+## 2026-07-21
+
+### Added - v3 fate-content foundation and v2 content baseline
+
+- Added a versioned fate-content registry for the first v3 batch: 8 talents, 8 family backgrounds and 6 spirit roots. Each entry carries stable identity, fate tags, world affinity, advantage/pressure and early/middle/late narrative material.
+- Character creation constants now recognize the new entries. Catalog seeding appends only missing names, so populated PostgreSQL catalogs are preserved and receive new entries without deleting or rewriting existing rows. The 6 added spirit roots now use the same rule lookup as the catalog.
+- Updated the local visible-playtest gate: deterministic local profile openings are accepted by default, while `AGENS_PLAYTEST_REQUIRE_LIVE_OPENING=1` retains the explicit strict World Builder gate for smoke tests.
+- Ran a headed Chrome v2 content baseline against isolated `agens_web_content_review`: the golden route ascended on turn 87 with 87/87 strict live choices, fallback/repair/recovery/visible forbidden text/exact repeat all zero, continuous persisted turns, and save/load plus refresh passing. It nevertheless found 4 near-duplicate narrative pairs and repeated `steady-teaching-round` context, so v3 content acceptance remains open.
+
+### Verification
+
+- `python -m compileall -q src web/backend tests`
+- `pytest -q tests/unit/game/test_constants.py tests/unit/game/test_database_common.py tests/unit/game/test_fate_content.py` (23 passed)
+- `node --check scripts/local_visible_playtest.cjs`
+
 ## 2026-07-20
 
 ### Content continuity patch and local acceptance

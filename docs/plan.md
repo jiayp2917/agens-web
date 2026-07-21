@@ -31,6 +31,7 @@
 
 ### 未完成
 
+- [ ] 完成 `story_version=3` 命数内容批次：四世界九阶段事件、两条个人因果承诺、motif 长窗口去重与三局真实浏览器内容审查；v3 首批词条注册表和 catalog 追加同步已完成，但新局仍默认 v2。
 - [ ] 将同一 provider/network 下的 choice p50 降到 5 秒以内，并完成 408/429/5xx、超时和取消专项验证。
 - [ ] 恢复本机 Docker CLI，并对当前 clean 候选执行 Compose config 与镜像构建门禁；此前 Docker 相关通过仅是历史服务器或静态资产证据。
 - [ ] 使用当前候选重新执行生产 v1 strict live smoke、旧镜像回滚演练、v2 切换与 v2 strict smoke；生产 Narrator 正文英文 fallback 只在本地修复，不得视为已在生产消除。

@@ -27,6 +27,7 @@ const DOUBLE_CLICK_PROBE = process.env.AGENS_PLAYTEST_DOUBLE_CLICK_PROBE === "1"
 const CONFLICT_PROBE = process.env.AGENS_PLAYTEST_CONFLICT_PROBE === "1";
 const REQUIRE_FINALE = process.env.AGENS_PLAYTEST_REQUIRE_FINALE === "1";
 const REQUIRE_PERSISTED_AUDIT = process.env.AGENS_PLAYTEST_REQUIRE_PERSISTED_AUDIT === "1";
+const REQUIRE_LIVE_OPENING = process.env.AGENS_PLAYTEST_REQUIRE_LIVE_OPENING === "1";
 const VIEWPORT = parseViewport(process.env.AGENS_PLAYTEST_VIEWPORT || "1440x1000");
 
 const FORBIDDEN_VISIBLE_PATTERNS = [
@@ -1062,6 +1063,7 @@ if (require.main === module) {
     double_click_probe: DOUBLE_CLICK_PROBE,
     conflict_probe: CONFLICT_PROBE,
     require_finale: REQUIRE_FINALE,
+    require_live_opening: REQUIRE_LIVE_OPENING,
     viewport: VIEWPORT,
     evidence_context: evidenceContext(),
     base_url: BASE_URL,
@@ -1237,13 +1239,13 @@ if (require.main === module) {
     if (
       !startResponse.ok()
       || summary.start_fallback
-      || !summary.start_model_ok
+      || (REQUIRE_LIVE_OPENING && !summary.start_model_ok)
       || summary.start_choices_count !== 4
       || !summary.start_world_name_set
       || summary.start_chronicle_count < 1
       || !summary.start_initial_situation_set
     ) {
-      issue("P0", "start did not satisfy dynamic live-model opening acceptance", {
+      issue("P0", "start did not satisfy opening acceptance", {
         http_status: summary.start_http_status,
         fallback: summary.start_fallback,
         model_ok: summary.start_model_ok,

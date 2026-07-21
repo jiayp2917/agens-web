@@ -8,6 +8,8 @@ from __future__ import annotations
 
 from typing import Any
 
+from .fate_content import entries_for, spirit_root_rules
+
 # ─────────────────────────────────────────────────────────────────────────────
 # Gameplay / character creation constants
 # ─────────────────────────────────────────────────────────────────────────────
@@ -18,7 +20,7 @@ TALENT_OPTIONS: list[str] = [
     "剑心微明",
     "惊雷骨",
     "天命道胎",
-]
+] + [entry.name for entry in entries_for("talent")]
 
 FAMILY_BACKGROUNDS: list[str] = [
     "农家",
@@ -26,7 +28,7 @@ FAMILY_BACKGROUNDS: list[str] = [
     "小族",
     "宗门旁支",
     "隐世仙族",
-]
+] + [entry.name for entry in entries_for("family")]
 
 DIFFICULTY_OPTIONS: list[str] = ["简单", "普通", "困难"]
 
@@ -242,7 +244,7 @@ SPIRIT_ROOTS: list[dict[str, Any]] = [
     {"name": "冰灵根", "element": "冰", "grade": "天", "cultivation_bonus": 1.5, "breakthrough_bonus": 0.10},
     {"name": "雷灵根", "element": "雷", "grade": "天", "cultivation_bonus": 1.5, "breakthrough_bonus": 0.10},
     {"name": "风灵根", "element": "风", "grade": "天", "cultivation_bonus": 1.5, "breakthrough_bonus": 0.10},
-]
+] + spirit_root_rules()
 
 # Quick lookup by name.
 SPIRIT_ROOT_MAP: dict[str, dict[str, Any]] = {sr["name"]: sr for sr in SPIRIT_ROOTS}

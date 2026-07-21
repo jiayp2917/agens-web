@@ -68,8 +68,8 @@ class TestRealmConstants:
 
 class TestSpiritRootConstants:
     def test_spirit_roots_count_and_lookup(self):
-        assert len(SPIRIT_ROOTS) == 8
-        assert len(SPIRIT_ROOT_MAP) == 8
+        assert len(SPIRIT_ROOTS) == 14
+        assert len(SPIRIT_ROOT_MAP) == 14
         for root in SPIRIT_ROOTS:
             assert root["name"] in SPIRIT_ROOT_MAP
             assert root["grade"] in SPIRIT_ROOT_GRADES

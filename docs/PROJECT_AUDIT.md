@@ -12,10 +12,18 @@
 - Agent：项目内 `SequentialAgentGraph`，不是 LangGraph。
 - 数据：PostgreSQL-only，Alembic head `20260710_0008_runtime_consistency`。
 - 内容：v1 60 回合旧档兼容；v2 九阶段 90 回合，新局默认 v2。
+- 命数内容：2026-07-21 已建立 v3 首批词条注册表（8 天赋、8 家世、6 灵根），并接入角色创建常量与 PostgreSQL catalog 的追加同步；v3 主线、承诺兑现和事件池尚未接入新局。
 - 部署：生产 Redis 共享限流 + 内部 Squid + 应用专用 egress ACL；本地纯单测可使用内存限流。
 - 依赖：Python 使用 `uv.lock`，前端使用 `package-lock.json`。
 
 ## Closed Findings
+
+### Content Baseline And v3 Preparation
+
+- 使用独立本地 PostgreSQL `agens_web_content_review` 执行了一局 headed Chrome v2 黄金路线。规则在第 87 回合飞升；87/87 choice 为 strict live，fallback、repair、contract recovery、可见禁词和持久化精确重复均为 0，存读档和刷新探针通过，`game_turns` 连续。
+- 本次内容诊断的 choice p50/p95/max 为 10.055s/34.258s/70.227s，不作为内容批次的通过门槛。证据位于忽略目录 `output/playwright/content-v2-baseline-90-complete.*`，不包含 prompt、原始模型响应或凭据。
+- 基线仍发现 4 组归一化三元组相似度不低于 0.72；`steady-teaching-round` 在第 26、46、86 回合复用。v3 必须补 motif 长窗口去重、阶段事件和命数承诺兑现后，才能重新宣称完整内容验收通过。
+- 该基线运行时工作树含验收脚本调整与临时本地代理配置，不能替代干净候选或生产验收。
 
 ### P0 SSRF
 
