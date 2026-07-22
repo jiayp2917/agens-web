@@ -38,6 +38,7 @@ from .world_generator import (
     build_world_fallback,
     build_world_prompt,
     is_complete_opening_payload,
+    parse_profile_opening_response,
     parse_world_response,
 )
 
@@ -229,7 +230,7 @@ class StartFlow:
                 engine.game_session,
                 generation_type="profile_opening",
             )
-            if is_retryable_model_request_failure(result):
+            if is_retryable_model_request_failure(result) and _opening_retry_allowed():
                 log.info(
                     "profile opening world_builder request failed with retryable provider error; retrying once"
                 )
@@ -283,8 +284,10 @@ class StartFlow:
         generation_type: str = "profile_opening",
         profile_opening: bool = False,
     ) -> tuple[dict[str, Any], ModelResultStatus, dict[str, Any]]:
-        should_retry = world_status.kind == ModelResultKind.INCOMPLETE_OUTPUT and not result.get(
-            "retried_after_incomplete_output"
+        should_retry = (
+            world_status.kind == ModelResultKind.INCOMPLETE_OUTPUT
+            and not result.get("retried_after_incomplete_output")
+            and _opening_retry_allowed()
         )
         if not should_retry:
             return result, world_status, parsed
@@ -621,8 +624,19 @@ def _classify_opening_result(
     status = classify_world_builder_result(result)
     if status.kind == ModelResultKind.REQUEST_FAILED:
         return status, {}
-    parsed = parse_world_response(result)
     if profile_opening:
+        if (
+            str(result.get("provider_transport") or "legacy_tags") in {"json_schema", "json_object"}
+            and not result.get("provider_json_envelope_ok")
+        ):
+            return (
+                ModelResultStatus(
+                    ModelResultKind.INCOMPLETE_OUTPUT,
+                    "开场推演未按 provider JSON 契约返回完整字段。",
+                ),
+                {},
+            )
+        parsed = parse_profile_opening_response(result)
         envelope = WorldOpeningEnvelopeV1.from_payload(parsed)
         visible = [
             envelope.opening_narrative,
@@ -654,6 +668,7 @@ def _classify_opening_result(
             if value:
                 opening_payload[key] = value
         return ModelResultStatus(ModelResultKind.OK), opening_payload
+    parsed = parse_world_response(result)
     if not is_complete_opening_payload(parsed):
         return (
             ModelResultStatus(
@@ -674,3 +689,14 @@ def _strict_opening_retry_prompt(prompt: str) -> str:
         "discovered_locations、lore_facts；所有可见字符串必须是中文，不得含任何英文单词、英文地点名、"
         "标签、占位选项或单独的 A/B/C/D 字母。choices 必须是四条引用本局地点或势力的完整中文行动句。"
     )
+
+
+def _opening_retry_allowed() -> bool:
+    """Optionally suppress opening retries for a one-request evaluation canary."""
+    raw_limit = os.environ.get("AGENS_EVALUATION_OPENING_MAX_ATTEMPTS", "").strip()
+    if not raw_limit:
+        return True
+    try:
+        return int(raw_limit) > 1
+    except ValueError as exc:
+        raise ValueError("AGENS_EVALUATION_OPENING_MAX_ATTEMPTS must be an integer") from exc

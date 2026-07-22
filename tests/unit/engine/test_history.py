@@ -19,6 +19,7 @@ def test_semantic_history_entry_renders_context_without_state_delta() -> None:
             "world": {"story_update": {"pressure": 0}},
             "meta": {
                 "choice_slot": "A",
+                "choice_category": "稳妥",
                 "event_id": "steady-root-ledger",
                 "turn_summary": "稳妥路线推进了一年。",
             },
@@ -29,6 +30,7 @@ def test_semantic_history_entry_renders_context_without_state_delta() -> None:
 
     assert "其人在外门静修一年。" in rendered
     assert "槽位A" in rendered
+    assert "路线稳妥" in rendered
     assert "steady-root-ledger" in rendered
     assert "<state_update>" not in rendered
     assert "story_update" not in rendered

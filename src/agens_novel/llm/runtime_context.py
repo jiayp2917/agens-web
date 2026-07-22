@@ -59,6 +59,8 @@ class ModelCallObserver(Protocol):
         elapsed_ms: int,
         usage: dict[str, int],
         success: bool,
+        error_code: str = "",
+        response_diagnostics: dict[str, object] | None = None,
     ) -> None: ...
 
 

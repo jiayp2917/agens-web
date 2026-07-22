@@ -126,6 +126,18 @@ def test_profile_opening_schema_accepts_only_the_opening_envelope() -> None:
     assert opening == payload["opening_narrative"]
 
 
+def test_profile_opening_schema_rejects_non_json_provider_response() -> None:
+    """A structured transport response is not accepted unless it is JSON."""
+    parsed, description, opening = _parse_schema_world_output(
+        "provider returned prose instead of a JSON object",
+        profile_opening=True,
+    )
+
+    assert parsed == {}
+    assert description == ""
+    assert opening == ""
+
+
 def test_world_builder_schema_output_is_parsed_without_tags() -> None:
     payload = {
         "character": {

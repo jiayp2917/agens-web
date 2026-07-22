@@ -76,7 +76,8 @@ def build_prompt(state: dict[str, Any]) -> dict[str, Any]:
     transport = narrator_transport(state)
     provider_json_schema = transport == ProviderTransport.JSON_SCHEMA
     provider_json_object = transport == ProviderTransport.JSON_OBJECT
-    prompt_name = "narrator_schema" if provider_json_schema else "narrator"
+    provider_structured = provider_json_schema or provider_json_object
+    prompt_name = "narrator_schema" if provider_structured else "narrator"
     system_path = paths.system_prompt_path(prompt_name)
     if not system_path.exists():
         raise FileNotFoundError(f"System prompt not found: {system_path}")
@@ -91,7 +92,7 @@ def build_prompt(state: dict[str, Any]) -> dict[str, Any]:
     # Build messages: system + compact chat history + current turn.
     history: list[dict] = list(state.get("chat_history") or [])
     prompt_history = _compact_history_for_prompt(history)
-    if provider_json_schema:
+    if provider_structured:
         prompt_history = _schema_safe_history(prompt_history)
 
     if provider_json_schema or provider_json_object:
@@ -193,10 +194,18 @@ async def call_agnes_llm(state: dict[str, Any]) -> dict[str, Any]:
             "provider_json_object": transport == ProviderTransport.JSON_OBJECT,
             "provider_transport": transport.value,
             "provider_json_envelope_ok": provider_json_envelope_ok,
+            "response_diagnostics": dict(resp.get("response_diagnostics") or {}),
         }
     except LLMError as e:
         log.error("[narrator.call_agnes_llm] failed: %s", e)
-        return {"output_text": "", "llm_error": str(e), "elapsed_ms": 0, "usage": {}}
+        return {
+            "output_text": "",
+            "llm_error": str(e),
+            "llm_error_code": str(getattr(e, "error_code", "llm_error") or "llm_error"),
+            "elapsed_ms": int(getattr(e, "elapsed_ms", 0) or 0),
+            "usage": dict(getattr(e, "usage", {}) or {}),
+            "response_diagnostics": dict(getattr(e, "response_diagnostics", {}) or {}),
+        }
 
 
 async def _primary_narrator_call(
@@ -289,6 +298,8 @@ def save_artifact(state: dict[str, Any]) -> dict[str, Any]:
         "started_at": state.get("started_at"), "finished_at": utcnow_iso(),
         "model": state.get("model"), "usage": state.get("usage", {}),
         "elapsed_ms": state.get("elapsed_ms", 0), "llm_error": llm_error,
+        "llm_error_code": state.get("llm_error_code", ""),
+        "response_diagnostics": state.get("response_diagnostics", {}),
         "output_path": str(out_path),
         "narrative_chars": len(narrative),
         "prompt_metrics": state.get("prompt_metrics") or {},
@@ -322,6 +333,8 @@ def save_artifact(state: dict[str, Any]) -> dict[str, Any]:
         "output_path": str(out_path),
         "audit_path": str(audit_path),
         "finished_at": audit["finished_at"],
+        "llm_error_code": str(state.get("llm_error_code") or ""),
+        "response_diagnostics": dict(state.get("response_diagnostics") or {}),
     }
 
 

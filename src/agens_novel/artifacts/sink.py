@@ -14,6 +14,8 @@ import os
 import re
 import subprocess
 import time
+import uuid
+from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any
 
@@ -74,6 +76,31 @@ def ensure_evaluation_sink_ready() -> Path | None:
     if any(root.rglob("input.json")):
         raise ArtifactPolicyError("AGENS_ARTIFACT_ROOT contains forbidden input snapshots")
     return root
+
+
+def create_evaluation_run_root(parent: Path, *, label: str) -> tuple[str, Path]:
+    """Atomically reserve a new external evidence root for one evaluation run."""
+    resolved_parent = parent.expanduser().resolve()
+    project_root = paths.PROJECT_ROOT.resolve()
+    try:
+        resolved_parent.relative_to(project_root)
+    except ValueError:
+        pass
+    else:
+        raise ArtifactPolicyError("evaluation artifact parent must be outside the repository")
+    resolved_parent.mkdir(parents=True, exist_ok=True)
+    _restrict_windows_acl(resolved_parent)
+    safe_label = _safe_name(label)
+    for _ in range(10):
+        run_id = f"{datetime.now(UTC):%Y%m%dT%H%M%S%fZ}-{safe_label}-{uuid.uuid4().hex[:8]}"
+        root = resolved_parent / run_id
+        try:
+            root.mkdir()
+        except FileExistsError:
+            continue
+        _restrict_windows_acl(root)
+        return run_id, root
+    raise ArtifactPolicyError("could not reserve a unique evaluation artifact root")
 
 
 def run_dir(agent_name: str, run_id: str) -> Path:

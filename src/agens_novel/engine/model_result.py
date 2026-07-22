@@ -153,6 +153,7 @@ def result_diagnostics(result: dict[str, Any]) -> dict[str, Any]:
     repair_usage_value = result.get("repair_usage")
     prompt_metrics_value = result.get("prompt_metrics")
     contract_value = result.get("contract_diagnostics")
+    response_value = result.get("response_diagnostics")
     usage: dict[str, Any] = usage_value if isinstance(usage_value, dict) else {}
     repair_usage: dict[str, Any] = (
         repair_usage_value if isinstance(repair_usage_value, dict) else {}
@@ -161,6 +162,7 @@ def result_diagnostics(result: dict[str, Any]) -> dict[str, Any]:
         prompt_metrics_value if isinstance(prompt_metrics_value, dict) else {}
     )
     contract: dict[str, Any] = contract_value if isinstance(contract_value, dict) else {}
+    response: dict[str, Any] = response_value if isinstance(response_value, dict) else {}
     choice_english_indices = _choice_english_indices(contract.get("choice_english_indices"))
     if isinstance(generated, dict):
         raw_choices = generated.get("choices", raw_choices)
@@ -201,6 +203,14 @@ def result_diagnostics(result: dict[str, Any]) -> dict[str, Any]:
         "provider_json_schema": bool(result.get("provider_json_schema")),
         "provider_json_object": bool(result.get("provider_json_object")),
         "provider_json_envelope_ok": bool(result.get("provider_json_envelope_ok")),
+        "llm_error_code": _safe_error_code(result.get("llm_error_code")),
+        "response_finish_reason": _safe_finish_reason(response.get("finish_reason")),
+        "response_content_present": bool(response.get("content_present")),
+        "response_content_length": _int_metric(response.get("content_length")),
+        "response_reasoning_content_present": bool(response.get("reasoning_content_present")),
+        "response_refusal_present": bool(response.get("refusal_present")),
+        "response_choices_present": bool(response.get("choices_present")),
+        "response_message_present": bool(response.get("message_present")),
     }
 
 
@@ -211,6 +221,25 @@ def _int_metric(value: Any) -> int:
         return max(0, int(value or 0))
     except (TypeError, ValueError):
         return 0
+
+
+def _safe_error_code(value: Any) -> str:
+    code = str(value or "")
+    return code if code in {"", "llm_error", "empty_completion", "refusal_completion"} else "other"
+
+
+def _safe_finish_reason(value: Any) -> str:
+    reason = str(value or "missing")
+    return reason if reason in {
+        "stop",
+        "length",
+        "content_filter",
+        "tool_calls",
+        "function_call",
+        "refusal",
+        "missing",
+        "other",
+    } else "other"
 
 
 def _choice_english_indices(value: Any) -> list[int]:

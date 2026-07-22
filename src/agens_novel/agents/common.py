@@ -168,13 +168,21 @@ async def call_agnes_llm_common(
             "llm_error": "",
             "provider_json_schema": bool(response_format),
             "provider_json_envelope_ok": _is_json_object(output_text) if response_format else False,
+            "response_diagnostics": dict(resp.get("response_diagnostics") or {}),
         }
         if include_prompt_metrics:
             result["prompt_metrics"] = state.get("prompt_metrics") or {}
         return result
     except LLMError as e:
         log.error("[%s.call_agnes_llm] failed: %s", agent_name, e)
-        return {"output_text": "", "llm_error": str(e), "elapsed_ms": 0, "usage": {}}
+        return {
+            "output_text": "",
+            "llm_error": str(e),
+            "llm_error_code": str(getattr(e, "error_code", "llm_error") or "llm_error"),
+            "elapsed_ms": int(getattr(e, "elapsed_ms", 0) or 0),
+            "usage": dict(getattr(e, "usage", {}) or {}),
+            "response_diagnostics": dict(getattr(e, "response_diagnostics", {}) or {}),
+        }
 
 
 def _is_json_object(value: str) -> bool:

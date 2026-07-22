@@ -9,6 +9,7 @@ from typing import TYPE_CHECKING, Any
 from .. import paths
 from ..artifacts import sink, store
 from ..utils.timing import utcnow_iso
+from .scenarios import canonical_scenario_hash, canonical_scenario_payload
 
 if TYPE_CHECKING:
     from .model_config import EvaluationModelConfig
@@ -58,7 +59,7 @@ def build_manifest(
         "provider": config.provider,
         "model": config.model,
         "story_version": story_version,
-        "scenarios": [_scenario_metadata(item) for item in scenarios],
+        "scenarios": [_scenario_metadata(item, story_version) for item in scenarios],
     }
 
 
@@ -116,12 +117,25 @@ def _hash_group(relative_paths: tuple[str, ...]) -> str:
     return digest.hexdigest()
 
 
-def _scenario_metadata(scenario: CanonicalScenarioV1) -> dict[str, Any]:
+def _scenario_metadata(
+    scenario: CanonicalScenarioV1,
+    story_version: int | None,
+) -> dict[str, Any]:
+    if story_version is None:
+        return {
+            "key": scenario.key,
+            "world_key": scenario.world_key,
+            "run_seed": scenario.run_seed,
+            "slot_strategy": _slot_strategy(scenario.slots),
+        }
+    authority_input = canonical_scenario_payload(scenario, story_version=story_version)
     return {
         "key": scenario.key,
         "world_key": scenario.world_key,
         "run_seed": scenario.run_seed,
         "slot_strategy": _slot_strategy(scenario.slots),
+        "authority_hash": canonical_scenario_hash(scenario, story_version=story_version),
+        "authority_input": authority_input,
     }
 
 

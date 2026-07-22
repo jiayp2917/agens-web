@@ -95,6 +95,65 @@ class TestNarratorParse:
         assert "<state_update>{}</state_update>" not in result["user_message"]
         assert "<choices>[" not in result["user_message"]
 
+    def test_json_object_prompt_uses_the_structured_contract_and_safe_history(
+        self, tmp_path, monkeypatch
+    ) -> None:
+        monkeypatch.setattr(
+            "agens_novel.paths.system_prompt_path",
+            lambda name: tmp_path / f"{name}.md",
+        )
+        (tmp_path / "narrator.md").write_text("legacy <state_update>", encoding="utf-8")
+        (tmp_path / "narrator_schema.md").write_text("structured json only", encoding="utf-8")
+
+        result = build_prompt(
+            {
+                "user_input": "继续修行",
+                "game_state_json": "{}",
+                "provider": "DeepSeek",
+                "model": "deepseek-v4-flash",
+                "provider_transport": "json_object",
+                "chat_history": [
+                    {
+                        "role": "assistant",
+                        "content": '<state_update>{}</state_update>\n<choices>["甲","乙","丙","丁"]</choices>',
+                    }
+                ],
+            }
+        )
+
+        assert result["provider_json_object"] is True
+        assert result["system_message"] == "structured json only"
+        assert "<state_update>" not in result["user_message"]
+        assert all("<state_update>" not in message["content"] for message in result["messages"])
+
+    def test_json_object_rejects_a_legacy_tag_fixture_without_relaxing_strictness(
+        self, monkeypatch
+    ) -> None:
+        from agens_novel.agents.narrator import nodes
+
+        async def fake_call_llm(*_args, **_kwargs):
+            return {
+                "text": '编年史正文。<choices>["甲","乙","丙","丁"]</choices>',
+                "usage": {},
+                "elapsed_ms": 1,
+            }
+
+        monkeypatch.setattr(nodes, "call_llm", fake_call_llm)
+        result = asyncio.run(
+            nodes.call_agnes_llm(
+                {
+                    "api_key_set": True,
+                    "messages": [{"role": "user", "content": "测试"}],
+                    "provider": "DeepSeek",
+                    "model": "deepseek-v4-flash",
+                    "provider_transport": "json_object",
+                }
+            )
+        )
+
+        assert result["provider_json_envelope_ok"] is False
+        assert result["provider_transport"] == "json_object"
+
     def test_schema_prompt_strips_legacy_tags_from_assistant_history(self, tmp_path, monkeypatch) -> None:
         monkeypatch.setattr(
             "agens_novel.paths.system_prompt_path",

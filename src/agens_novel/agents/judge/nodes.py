@@ -146,6 +146,8 @@ def save_artifact(state: dict[str, Any]) -> dict[str, Any]:
         "started_at": state.get("started_at"), "finished_at": utcnow_iso(),
         "model": state.get("model"), "usage": state.get("usage", {}),
         "elapsed_ms": state.get("elapsed_ms", 0), "llm_error": llm_error,
+        "llm_error_code": state.get("llm_error_code", ""),
+        "response_diagnostics": state.get("response_diagnostics", {}),
         "output_path": str(out_path),
         "approved": approved, "judgment_note": judgment_note, "score": score,
         "prompt_metrics": state.get("prompt_metrics") or {},
@@ -168,6 +170,8 @@ def save_artifact(state: dict[str, Any]) -> dict[str, Any]:
         "audit_path": str(audit_path),
         "finished_at": audit["finished_at"],
         "provider_transport": str(state.get("provider_transport") or "legacy_tags"),
+        "llm_error_code": str(state.get("llm_error_code") or ""),
+        "response_diagnostics": dict(state.get("response_diagnostics") or {}),
     }
 
 

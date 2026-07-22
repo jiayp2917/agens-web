@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+import hashlib
+import json
 from dataclasses import dataclass
 from typing import Any
 
@@ -68,6 +70,53 @@ def canonical_v3_scenarios() -> tuple[CanonicalScenarioV1, ...]:
             slots=tuple("B" if turn % 3 else "D" for turn in range(1, 91)),
         ),
     )
+
+
+def canonical_scenario_payload(
+    scenario: CanonicalScenarioV1,
+    *,
+    story_version: int,
+) -> dict[str, Any]:
+    """Return the full pre-registered authority input for one comparison run."""
+    from ..engine.story_catalog import opening_story_binding
+
+    profile = dict(scenario.profile)
+    fate_hooks = [str(profile.get("talent") or ""), "天命"]
+    binding = opening_story_binding(
+        scenario.world_key,
+        fate_hooks,
+        content_version=story_version,
+        run_seed=scenario.run_seed,
+        character_name=str(profile.get("char_name") or ""),
+    )
+    state = binding.get("story_state")
+    story_state = dict(state) if isinstance(state, dict) else {}
+    commitments = story_state.get("commitments")
+    return {
+        "profile": profile,
+        "world_key": scenario.world_key,
+        "story_key": str(binding.get("story_key") or ""),
+        "story_version": int(binding.get("story_version") or 0),
+        "commitments": commitments if isinstance(commitments, list) else [],
+        "initial_semantic_history": [],
+        "run_seed": scenario.run_seed,
+        "slots": list(scenario.slots),
+    }
+
+
+def canonical_scenario_hash(
+    scenario: CanonicalScenarioV1,
+    *,
+    story_version: int,
+) -> str:
+    """Hash every authority input that must remain fixed across providers."""
+    encoded = json.dumps(
+        canonical_scenario_payload(scenario, story_version=story_version),
+        ensure_ascii=False,
+        sort_keys=True,
+        separators=(",", ":"),
+    )
+    return hashlib.sha256(encoded.encode("utf-8")).hexdigest()
 
 
 def _profile(name: str, difficulty: str, attributes: dict[str, int]) -> dict[str, Any]:

@@ -7,7 +7,7 @@ from unittest.mock import patch
 from agens_novel.artifacts import sink
 from agens_novel.evaluation.ledger import EvaluationLedger
 from agens_novel.evaluation.model_config import EvaluationModelConfig
-from agens_novel.evaluation.playthrough import run_canonical_playthrough
+from agens_novel.evaluation.playthrough import canonical_slots, run_canonical_playthrough
 from agens_novel.evaluation.scenarios import canonical_v3_scenarios
 
 
@@ -43,4 +43,15 @@ def test_playthrough_uses_canonical_binding_and_records_safe_result(tmp_path, mo
     assert result["narrator_event_count"] == 2
     assert result["narrator_final_strict"] == 2
     assert result["local_story_active"] is False
+    assert len(result["accepted_turns"]) == 2
+    assert all(turn["authority"]["matches_expected"] for turn in result["accepted_turns"])
+    assert all(turn["strict"]["final"] for turn in result["accepted_turns"])
+    assert all(len(turn["choices"]) == 4 for turn in result["accepted_turns"])
     assert sink.external_inventory(tmp_path / "evidence")["file_count"] >= 2
+
+
+def test_canonical_slots_extend_only_for_post_arc_coverage() -> None:
+    scenario = canonical_v3_scenarios()[0]
+
+    assert canonical_slots(scenario, max_turns=90) == scenario.slots
+    assert canonical_slots(scenario, max_turns=95) == scenario.slots + ("A",) * 5

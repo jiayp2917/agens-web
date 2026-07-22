@@ -30,6 +30,7 @@ const REQUIRE_FINALE = process.env.AGENS_PLAYTEST_REQUIRE_FINALE === "1";
 const REQUIRE_PERSISTED_AUDIT = process.env.AGENS_PLAYTEST_REQUIRE_PERSISTED_AUDIT === "1";
 const REQUIRE_LIVE_OPENING = process.env.AGENS_PLAYTEST_REQUIRE_LIVE_OPENING === "1";
 const VIEWPORT = parseViewport(process.env.AGENS_PLAYTEST_VIEWPORT || "1440x1000");
+const SLOT_SEQUENCE = parseSlotSequence(process.env.AGENS_PLAYTEST_SLOT_SEQUENCE || "");
 
 const FORBIDDEN_VISIBLE_PATTERNS = [
   ["history_suppression_notice", /此事未入正史/u],
@@ -102,6 +103,54 @@ function parseViewport(raw) {
     throw new Error(`Unsupported AGENS_PLAYTEST_VIEWPORT: ${raw}`);
   }
   return { width, height };
+}
+
+function parseSlotSequence(raw) {
+  const normalized = String(raw || "").replace(/[\s,]/gu, "").toUpperCase();
+  if (!normalized) return "";
+  if (!/^[ABCD]+$/u.test(normalized)) {
+    throw new Error("AGENS_PLAYTEST_SLOT_SEQUENCE must contain only A/B/C/D");
+  }
+  return normalized;
+}
+
+const SENSITIVE_EVIDENCE_KEYS = new Set([
+  "api_key",
+  "apikey",
+  "authorization",
+  "cookie",
+  "password",
+  "secret",
+  "token",
+  "base_url",
+  "prompt",
+  "messages",
+  "user_input",
+  "game_state_json",
+]);
+
+function redactEvidence(value) {
+  if (Array.isArray(value)) return value.map(redactEvidence);
+  if (value && typeof value === "object") {
+    return Object.fromEntries(Object.entries(value).map(([key, item]) => [
+      key,
+      isSensitiveEvidenceKey(key) ? "[redacted]" : redactEvidence(item),
+    ]));
+  }
+  if (typeof value !== "string") return value;
+  return value
+    .replace(/(?:[A-Za-z][A-Za-z0-9_-]*?(?:key|secret|token|cookie|authorization|password))\s*[:=]\s*[^\s,;]+/giu, "[redacted_secret]")
+    .replace(/\bbearer\s+[A-Za-z0-9._~+/=-]{8,}/giu, "[redacted_secret]")
+    .replace(/\b(?:sk|ag|ds|rk)-[A-Za-z0-9_-]{8,}\b/giu, "[redacted_secret]")
+    .replace(/https?:\/\/[^\s\]\["'<>{}]+/giu, "[redacted_url]");
+}
+
+function isSensitiveEvidenceKey(key) {
+  const normalized = String(key || "").trim().toLowerCase().replace(/-/gu, "_");
+  return SENSITIVE_EVIDENCE_KEYS.has(normalized)
+    || normalized.includes("secret")
+    || normalized.includes("password")
+    || (normalized.includes("token") && !normalized.endsWith("_tokens"));
 }
 
 function loadPlaywright() {
@@ -188,6 +237,9 @@ import re
 
 from sqlalchemy import text
 
+from agens_novel.evaluation.playthrough import canonical_authority_trajectory
+from agens_novel.evaluation.scenarios import canonical_v3_scenarios
+
 from web.backend.database import create_database
 
 session_id = os.environ["AGENS_PLAYTEST_SESSION_ID"]
@@ -195,7 +247,7 @@ db = create_database()
 with db.engine.connect() as conn:
     rows = conn.execute(
         text("""
-            SELECT game_turns.turn_no, game_turns.narrative
+            SELECT game_turns.turn_no, game_turns.narrative, game_turns.state_after
             FROM game_turns
             JOIN game_runs ON game_runs.id = game_turns.run_id
             WHERE game_runs.session_id = :session_id
@@ -205,6 +257,28 @@ with db.engine.connect() as conn:
     ).mappings().all()
 
 turns = [int(row["turn_no"]) for row in rows]
+scenario_key = os.environ.get("AGENS_PLAYTEST_CANONICAL_SCENARIO", "").strip()
+expected_hashes = []
+if scenario_key:
+    scenario = next((item for item in canonical_v3_scenarios() if item.key == scenario_key), None)
+    if scenario is None:
+        raise ValueError("playtest canonical scenario is not registered")
+    expected_hashes = [
+        str(item["authority_hash"])
+        for item in canonical_authority_trajectory(
+            scenario,
+            story_version=3,
+            max_turns=len(rows),
+        )
+    ]
+authority_mismatch_count = 0
+if scenario_key:
+    if len(expected_hashes) != len(rows):
+        authority_mismatch_count = abs(len(expected_hashes) - len(rows))
+    for index, row in enumerate(rows[: len(expected_hashes)]):
+        state_after = row["state_after"] if isinstance(row["state_after"], dict) else {}
+        if str(state_after.get("_evaluation_authority_hash") or "") != expected_hashes[index]:
+            authority_mismatch_count += 1
 seen = {}
 duplicates = []
 for row in rows:
@@ -228,6 +302,8 @@ print(json.dumps({
     "turn_count": len(turns),
     "last_turn": turns[-1] if turns else 0,
     "continuous": turns == list(range(1, len(turns) + 1)),
+    "authority_match": authority_mismatch_count == 0 if scenario_key and rows else None,
+    "authority_mismatch_count": authority_mismatch_count,
     "duplicate_narrative_count": len(duplicates),
     "duplicates": duplicates,
 }, ensure_ascii=True))
@@ -250,7 +326,7 @@ print(json.dumps({
 function writeStrictEvidence(rawPath, name) {
   const result = spawnSync(
     pythonExe(),
-    ["scripts/playwright_evidence.py", "--input", rawPath, "--output-dir", "output/playwright", "--name", name],
+    ["scripts/playwright_evidence.py", "--input", rawPath, "--output-dir", OUT_DIR, "--name", name],
     { cwd: ROOT, encoding: "utf8" },
   );
   if (result.status !== 0) {
@@ -400,6 +476,10 @@ function hasBreakthroughIntent(text) {
 function routeIndexForTurn(turn, choices, snapshot) {
   const enabled = choices.filter((choice) => !choice.disabled);
   const fallback = enabled[(turn - 1) % Math.max(1, enabled.length)];
+  const canonicalSlot = SLOT_SEQUENCE[turn - 1];
+  if (canonicalSlot) {
+    return enabled.find((choice) => String(choice.letter || "").toUpperCase() === canonicalSlot) || fallback;
+  }
   const normalized = CHOICE_STRATEGY.replace(/[^a-z0-9_-]/g, "");
   const fixedMatch = normalized.match(/^fixed-?([abcd])$/);
   if (fixedMatch) {
@@ -1041,6 +1121,7 @@ module.exports = {
   hasBreakthroughIntent,
   narrativeRealmClaims,
   normalizedRealmLabel,
+  redactEvidence,
   realmClaimMatchesCurrent,
 };
 
@@ -1067,7 +1148,6 @@ if (require.main === module) {
     require_live_opening: REQUIRE_LIVE_OPENING,
     viewport: VIEWPORT,
     evidence_context: evidenceContext(),
-    base_url: BASE_URL,
     started_at: new Date().toISOString(),
     username_set: true,
     invite_seeded: false,
@@ -1131,7 +1211,7 @@ if (require.main === module) {
   function persistSource() {
     fs.writeFileSync(
       rawPath,
-      JSON.stringify({ summary: { ...summary, issues, requests, console: consoleMessages }, turns }, null, 2) + "\n",
+      JSON.stringify(redactEvidence({ summary: { ...summary, issues, requests, console: consoleMessages }, turns }), null, 2) + "\n",
       "utf8",
     );
   }
@@ -1751,6 +1831,11 @@ if (require.main === module) {
               browser_turn_count: Number(summary.last_turn_count || 0),
             });
           }
+          if (persisted.authority_match === false) {
+            issue("P0", "persisted authority hashes diverged from the registered rule trajectory", {
+              mismatch_count: persisted.authority_mismatch_count,
+            });
+          }
           if (persisted.duplicate_narrative_count > 0) {
             issue("P1", "persisted chronicle text repeated exactly", {
               duplicate_count: persisted.duplicate_narrative_count,
@@ -1763,6 +1848,9 @@ if (require.main === module) {
       }
     }
     updateIssueCounts(summary, issues);
+    if (["passed", "passed_terminal"].includes(summary.result) && summary.p0_issues > 0) {
+      summary.result = "failed_audit";
+    }
     if (CONTENT_AUDIT_FAIL_ON_P1 && ["passed", "passed_terminal"].includes(summary.result) && summary.p1_issues > 0) {
       summary.result = "failed_content";
     }

@@ -14,6 +14,7 @@ from typing import Any
 
 import sqlalchemy.exc
 
+from agens_novel.artifacts.sink import evaluation_mode_enabled
 from agens_novel.engine.choices import choice_with_semantic, clean_choice_text, clean_visible_text
 from agens_novel.engine.death_rewards import (
     apply_legacy_bonuses,
@@ -28,6 +29,8 @@ from agens_novel.engine.model_fallback_policy import SECRET_MARKERS as _SECRET_M
 from agens_novel.engine.render import format_status_bar
 from agens_novel.engine.start_flow import normalize_profile_attributes
 from agens_novel.engine.story_catalog import ensure_story_binding, story_arc_for_binding
+from agens_novel.evaluation.playthrough import authority_state_hash, install_canonical_binding
+from agens_novel.evaluation.scenarios import CanonicalScenarioV1, canonical_v3_scenarios
 from agens_novel.game.constants import (
     ATTRIBUTE_KEYS,
     DIFFICULTY_OPTIONS,
@@ -451,7 +454,8 @@ class WebGameService:
             rollback = self._rollback_state(runner)
             try:
                 self._model_config.apply_runner(runner)
-                normalized = self._normalize_profile(profile)
+                scenario = _evaluation_canonical_scenario()
+                normalized = self._normalize_profile(scenario.profile if scenario else profile)
                 bonuses: list[dict[str, Any]] = []
                 if user_id and not is_guest_user_id(user_id):
                     bonuses = self.db.list_legacy_bonuses(user_id)
@@ -460,6 +464,8 @@ class WebGameService:
                         normalized["_allow_legacy_bonus_attributes"] = True
                 runner.engine.start_from_profile(normalized)
                 session = runner.engine.game_session
+                if scenario is not None:
+                    install_canonical_binding(runner.engine, scenario, story_version=3)
                 response = self._commit_runner(
                     runner,
                     expected_version=expected_version,
@@ -909,6 +915,9 @@ class WebGameService:
             or _calendar_summary(before, session, elapsed_years)
         )
         event_kind = str(meta.get("choice_category") or turn.get("event_kind") or "event")
+        state_after = session.as_game_state()
+        if _evaluation_canonical_scenario() is not None:
+            state_after["_evaluation_authority_hash"] = authority_state_hash(session)
         return {
             "turn_no": session.turn_count,
             "start_age": int(before.get("age") or session.age),
@@ -919,7 +928,7 @@ class WebGameService:
             "choice_taken": choice_taken,
             "choices": list(turn.get("choices") or session.last_choices or []),
             "state_delta": delta,
-            "state_after": session.as_game_state(),
+            "state_after": state_after,
             "calendar_summary": calendar_summary,
             "narrative": str(turn.get("narrative") or ""),
             "event_kind": event_kind,
@@ -1027,6 +1036,19 @@ def _pick(value: str, options: list[str]) -> str:
 
 def is_guest_user_id(user_id: str | None) -> bool:
     return bool(user_id and user_id.startswith(GUEST_USER_PREFIX))
+
+
+def _evaluation_canonical_scenario() -> CanonicalScenarioV1 | None:
+    """Return an explicit fixed scenario only for the isolated evaluator."""
+    if not evaluation_mode_enabled():
+        return None
+    key = os.environ.get("AGENS_EVALUATION_SCENARIO", "").strip()
+    if not key:
+        return None
+    for scenario in canonical_v3_scenarios():
+        if scenario.key == key:
+            return scenario
+    raise ValueError("evaluation scenario is not registered")
 
 
 def _guest_expiry() -> float:

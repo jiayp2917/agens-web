@@ -52,6 +52,21 @@ def test_evaluation_root_rejects_existing_input_snapshots(tmp_path, monkeypatch)
         sink.ensure_evaluation_sink_ready()
 
 
+def test_create_evaluation_run_root_is_unique_and_external(tmp_path, monkeypatch) -> None:
+    project_root = tmp_path / "repo"
+    parent = tmp_path / "evidence"
+    project_root.mkdir()
+    monkeypatch.setattr(paths, "PROJECT_ROOT", project_root)
+    monkeypatch.setattr(sink, "_restrict_windows_acl", lambda _root: None)
+
+    first_id, first = sink.create_evaluation_run_root(parent, label="canary")
+    second_id, second = sink.create_evaluation_run_root(parent, label="canary")
+
+    assert first_id != second_id
+    assert first != second
+    assert first.is_dir() and second.is_dir()
+
+
 def test_evaluation_writes_redacted_response_only_to_external_root(tmp_path, monkeypatch) -> None:
     project_root = tmp_path / "repo"
     external_root = tmp_path / "evidence"

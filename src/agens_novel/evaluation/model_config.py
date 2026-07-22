@@ -8,7 +8,8 @@ from dataclasses import dataclass
 from typing import TYPE_CHECKING, Any
 
 from ..artifacts.sink import ArtifactPolicyError, ensure_evaluation_sink_ready
-from ..llm.runtime_context import RuntimeModelConfig
+from ..llm.runtime_context import ModelCallObserver, RuntimeModelConfig
+from ..settings import Settings
 
 if TYPE_CHECKING:
     from web.backend.service import WebRunner
@@ -18,6 +19,8 @@ _KEY_ENV_BY_PROVIDER = {
     "deepseek": "DEEPSEEK_API_KEY",
 }
 _TRANSPORTS = {"json_schema", "json_object", "legacy_tags"}
+_DEEPSEEK_DEFAULT_MODEL = "deepseek-v4-flash"
+_DEEPSEEK_DEFAULT_BASE_URL = "https://api.deepseek.com/v1"
 
 
 @dataclass(frozen=True)
@@ -35,8 +38,9 @@ class EvaluationModelConfig:
         """Load an evaluation provider without copying its key into config."""
         ensure_evaluation_sink_ready()
         provider = os.environ.get("AGENS_EVALUATION_PROVIDER", "").strip()
-        model = os.environ.get("AGENS_EVALUATION_MODEL", "").strip()
-        base_url = os.environ.get("AGENS_EVALUATION_BASE_URL", "").strip()
+        default_model, default_base_url = _provider_defaults(provider)
+        model = os.environ.get("AGENS_EVALUATION_MODEL", "").strip() or default_model
+        base_url = os.environ.get("AGENS_EVALUATION_BASE_URL", "").strip() or default_base_url
         provider_transport = os.environ.get("AGENS_EVALUATION_TRANSPORT", "").strip().lower()
         key_environment = _KEY_ENV_BY_PROVIDER.get(provider.lower())
         if not provider or not model or not base_url or not key_environment:
@@ -65,17 +69,41 @@ class EvaluationModelConfig:
             provider_transport=self.provider_transport,
         )
 
+    def public_metadata(self) -> dict[str, str | bool]:
+        """Return runner metadata without reading the provider key.
+
+        Evaluation runners need to advertise that a private resolver exists so
+        the normal opening path will invoke it.  Reading the key here would
+        make runner setup another credential boundary, so the resolver is the
+        only code that reads it.
+        """
+        return {
+            "provider": self.provider,
+            "model": self.model,
+            "base_url": self.base_url,
+            "api_key_set": True,
+            "source": "evaluation",
+            "key_error": "",
+            "provider_transport": self.provider_transport,
+        }
+
 
 class EvaluationModelConfigResolver:
     """Inject one read-only evaluation config into a WebGameService runner."""
 
-    def __init__(self, config: EvaluationModelConfig) -> None:
+    def __init__(
+        self,
+        config: EvaluationModelConfig,
+        *,
+        model_call_observer: ModelCallObserver | None = None,
+    ) -> None:
         self._config = config
+        self._model_call_observer = model_call_observer
 
     def apply_runner(self, runner: WebRunner) -> None:
-        runtime = self._config.runtime_config()
-        runner.engine.model_config = runtime.public_metadata()
+        runner.engine.model_config = self._config.public_metadata()
         runner.engine.model_runtime_resolver = self._config.runtime_config
+        runner.engine.model_call_observer = self._model_call_observer
 
     # These members make accidental use through product settings fail closed.
     def build_stored(self, *_args: Any, **_kwargs: Any) -> dict[str, Any]:
@@ -99,3 +127,14 @@ def resolve_evaluation_runtime(
 ) -> RuntimeModelConfig:
     """Small seam for scripts that need one direct agent invocation."""
     return factory().runtime_config()
+
+
+def _provider_defaults(provider: str) -> tuple[str, str]:
+    """Return non-secret defaults for a provider selected by the evaluator."""
+    normalized = provider.strip().lower()
+    if normalized == "agens":
+        settings = Settings()
+        return settings.model, settings.base_url
+    if normalized == "deepseek":
+        return _DEEPSEEK_DEFAULT_MODEL, _DEEPSEEK_DEFAULT_BASE_URL
+    return "", ""

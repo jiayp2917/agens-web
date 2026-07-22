@@ -30,3 +30,4 @@ class LLMResponse(TypedDict, total=False):
     finish_reason: str
     elapsed_ms: int
     raw: dict
+    response_diagnostics: dict[str, object]

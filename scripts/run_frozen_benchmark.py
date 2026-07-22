@@ -4,10 +4,16 @@ from __future__ import annotations
 
 import argparse
 import json
+import os
 from pathlib import Path
 
+from agens_novel.artifacts.sink import ensure_evaluation_sink_ready
 from agens_novel.evaluation.benchmark import build_blind_review_packet, run_frozen_benchmark
-from agens_novel.evaluation.ledger import EvaluationLedger
+from agens_novel.evaluation.ledger import (
+    EvaluationBudget,
+    EvaluationLedger,
+    evaluation_budget_root,
+)
 from agens_novel.evaluation.manifest import write_inventory_manifest, write_manifest
 from agens_novel.evaluation.model_config import EvaluationModelConfig
 from agens_novel.evaluation.scenarios import canonical_v3_scenarios
@@ -17,8 +23,8 @@ def main() -> int:
     parser = argparse.ArgumentParser()
     subcommands = parser.add_subparsers(dest="command", required=True)
     run = subcommands.add_parser("run")
-    run.add_argument("--max-total-calls", type=int, default=800)
-    run.add_argument("--max-narrator-calls", type=int, default=650)
+    run.add_argument("--max-total-calls", type=int, default=_limit("AGENS_EVALUATION_MAX_TOTAL_CALLS", 800))
+    run.add_argument("--max-narrator-calls", type=int, default=_limit("AGENS_EVALUATION_MAX_NARRATOR_CALLS", 650))
     run.add_argument("--max-elapsed-seconds", type=float, default=1800.0)
     blind = subcommands.add_parser("blind")
     blind.add_argument("--first", type=Path, required=True)
@@ -46,6 +52,14 @@ def _run(
         story_version=3,
         scenarios=canonical_v3_scenarios(),
     )
+    root = ensure_evaluation_sink_ready()
+    if root is None:
+        raise RuntimeError("evaluation artifact root is unavailable")
+    budget = EvaluationBudget(
+        evaluation_budget_root(root),
+        max_total_calls=max_total_calls,
+        max_narrator_calls=max_narrator_calls,
+    )
     report, _path = run_frozen_benchmark(
         config,
         ledger=EvaluationLedger(
@@ -54,6 +68,7 @@ def _run(
             max_total_calls=max_total_calls,
             max_narrator_calls=max_narrator_calls,
             max_elapsed_seconds=max_elapsed_seconds,
+            shared_budget=budget,
         ),
     )
     write_inventory_manifest()
@@ -86,6 +101,11 @@ def _read_report(path: Path) -> dict:
     if not isinstance(value, dict):
         raise ValueError("benchmark report must be a JSON object")
     return value
+
+
+def _limit(name: str, default: int) -> int:
+    value = os.environ.get(name, "").strip()
+    return int(value) if value else default
 
 
 if __name__ == "__main__":

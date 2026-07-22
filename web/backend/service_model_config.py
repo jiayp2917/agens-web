@@ -26,6 +26,12 @@ if TYPE_CHECKING:
     from .service import WebRunner
 
 _GUEST_PREFIX = "guest:"
+_SYSTEM_KEY_ENV_BY_PROVIDER = {
+    "agens": "AGNES_API_KEY",
+    "deepseek": "DEEPSEEK_API_KEY",
+}
+_DEEPSEEK_DEFAULT_BASE_URL = "https://api.deepseek.com/v1"
+_DEEPSEEK_DEFAULT_MODEL = "deepseek-v4-flash"
 
 
 class ModelConfigResolver(Protocol):
@@ -100,6 +106,9 @@ class ModelConfigService:
         }
 
     def system(self) -> dict[str, Any]:
+        configured = _system_environment_config()
+        if configured is not None:
+            return configured
         stored = self.db.get_model_config() or {}
         settings = Settings()
         source = "system"
@@ -184,3 +193,39 @@ class ModelConfigService:
         metadata = self.runtime_config(runner.user_id).public_metadata()
         runner.engine.model_config = metadata
         runner.engine.model_runtime_resolver = lambda: self.runtime_config(runner.user_id)
+
+
+def _system_environment_config() -> dict[str, Any] | None:
+    """Resolve the deployment-owned system model without persisting its key."""
+    provider_raw = os.environ.get("AGENS_SYSTEM_MODEL_PROVIDER", "").strip()
+    base_url_raw = os.environ.get("AGENS_SYSTEM_MODEL_BASE_URL", "").strip()
+    model_raw = os.environ.get("AGENS_SYSTEM_MODEL", "").strip()
+    if not any((provider_raw, base_url_raw, model_raw)):
+        return None
+
+    provider_key = provider_raw.lower() or "agens"
+    key_environment = _SYSTEM_KEY_ENV_BY_PROVIDER.get(provider_key)
+    if key_environment is None:
+        raise ValueError("AGENS_SYSTEM_MODEL_PROVIDER is unsupported")
+    settings = Settings()
+    if provider_key == "deepseek":
+        default_base_url, default_model, provider = (
+            _DEEPSEEK_DEFAULT_BASE_URL,
+            _DEEPSEEK_DEFAULT_MODEL,
+            "DeepSeek",
+        )
+    else:
+        default_base_url, default_model, provider = settings.base_url, settings.model, "Agens"
+    base_url = validate_model_base_url(base_url_raw or default_base_url, resolve_dns=False)
+    model = model_raw or default_model
+    api_key = os.environ.get(key_environment, "")
+    return {
+        "provider": provider,
+        "base_url": base_url,
+        "model": model,
+        "api_key_set": bool(api_key),
+        "api_key_masked": mask_api_key(api_key) if api_key else "<unset>",
+        "api_key_encrypted": "",
+        "source": "system",
+        "api_key": api_key,
+    }

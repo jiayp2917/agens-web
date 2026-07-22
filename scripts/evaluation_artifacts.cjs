@@ -22,7 +22,8 @@ function browserArtifactDir(projectRoot, environment = process.env) {
 
   fs.mkdirSync(artifactRoot, { recursive: true });
   restrictWindowsAcl(artifactRoot, environment);
-  return path.join(artifactRoot, "browser");
+  const runLabel = safeRunLabel(environment.AGENS_EVALUATION_RUN_LABEL);
+  return path.join(artifactRoot, "browser", runLabel);
 }
 
 function evaluationModeEnabled(environment) {
@@ -47,6 +48,15 @@ function restrictWindowsAcl(artifactRoot, environment) {
       throw new Error("could not restrict AGENS_ARTIFACT_ROOT ACL");
     }
   }
+}
+
+function safeRunLabel(value) {
+  const normalized = String(value || "").trim();
+  if (!normalized) return "shared";
+  if (!/^[A-Za-z0-9_.-]{1,100}$/u.test(normalized)) {
+    throw new Error("AGENS_EVALUATION_RUN_LABEL is invalid");
+  }
+  return normalized;
 }
 
 module.exports = { browserArtifactDir, evaluationModeEnabled };

@@ -10,7 +10,7 @@ from agens_novel.evaluation.benchmark import (
     frozen_narrator_snapshots,
     run_frozen_benchmark,
 )
-from agens_novel.evaluation.ledger import EvaluationLedger
+from agens_novel.evaluation.ledger import EvaluationBudget, EvaluationLedger
 from agens_novel.evaluation.model_config import EvaluationModelConfig
 
 
@@ -29,6 +29,17 @@ def test_frozen_benchmark_uses_nine_independent_snapshots(tmp_path, monkeypatch)
     config = _config(tmp_path, monkeypatch, "DeepSeek")
 
     def fake_run_agent(self, _agent, _user_input, _session, **_kwargs):
+        ticket = self.model_call_observer.before_request(
+            agent="narrator",
+            transport="json_object",
+            stream=False,
+        )
+        self.model_call_observer.after_request(
+            ticket,
+            elapsed_ms=1,
+            usage={},
+            success=True,
+        )
         return {
             "narrative": "潮声渐远，旧灯照出一段尚未兑现的约定。",
             "choices": ["稳步探查", "结交舟客", "越过暗礁", "借潮试路"],
@@ -41,10 +52,54 @@ def test_frozen_benchmark_uses_nine_independent_snapshots(tmp_path, monkeypatch)
             ledger=EvaluationLedger(provider="DeepSeek", model="deepseek-test"),
         )
 
-    assert len(frozen_narrator_snapshots()) == 9
+    snapshots = frozen_narrator_snapshots()
+    assert len(snapshots) == 9
+    assert [item.turn_count for item in snapshots if item.scenario_key == "low_risk"] == [1, 10, 19]
+    assert all(item.session.story_version == 3 for item in snapshots)
+    assert all(item.authority_hash for item in snapshots)
     assert len(report["results"]) == 9
     assert all(result["strict"] for result in report["results"])
     assert len({result["snapshot_id"] for result in report["results"]}) == 9
+
+
+def test_frozen_benchmark_reserves_the_shared_budget(tmp_path, monkeypatch) -> None:
+    config = _config(tmp_path, monkeypatch, "DeepSeek")
+    budget = EvaluationBudget(
+        tmp_path / "evidence",
+        max_total_calls=20,
+        max_narrator_calls=20,
+    )
+
+    def fake_run_agent(self, _agent, _user_input, _session, **_kwargs):
+        ticket = self.model_call_observer.before_request(
+            agent="narrator",
+            transport="json_object",
+            stream=False,
+        )
+        self.model_call_observer.after_request(
+            ticket,
+            elapsed_ms=1,
+            usage={},
+            success=True,
+        )
+        return {
+            "narrative": "潮声渐远，旧灯照出一段尚未兑现的约定。",
+            "choices": ["稳步探查", "结交船客", "越过暗礁", "借潮试路"],
+            "llm_error": "",
+        }
+
+    with patch("agens_novel.evaluation.benchmark.GameEngine.run_agent", fake_run_agent):
+        run_frozen_benchmark(
+            config,
+            ledger=EvaluationLedger(
+                provider="DeepSeek",
+                model="deepseek-test",
+                shared_budget=budget,
+            ),
+        )
+
+    assert budget.summary()["reserved_total"] == 9
+    assert budget.summary()["reserved_narrator"] == 9
 
 
 def test_blind_packet_hides_provider_and_model_names(tmp_path, monkeypatch) -> None:

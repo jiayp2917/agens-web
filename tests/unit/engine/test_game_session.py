@@ -474,6 +474,7 @@ class TestGameSessionSerialization:
                 "world": {"lore_add": ["外门课业有了新记载。"]},
                 "meta": {
                     "choice_slot": "A",
+                    "choice_category": "稳妥",
                     "event_id": "steady-root-ledger",
                     "story_beat": "外门课业有了新记载。",
                     "turn_summary": "稳妥路线推进了一年。",
@@ -489,6 +490,7 @@ class TestGameSessionSerialization:
         assert context["contract_version"] == "accepted-turn-context-v1"
         assert context["choices"] == s.last_choices
         assert context["choice_slot"] == "A"
+        assert context["choice_category"] == "稳妥"
         assert context["event_id"] == "steady-root-ledger"
         assert context["motif"] == "frontier-record-1"
         assert "character" not in context

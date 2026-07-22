@@ -37,6 +37,28 @@ log = logging.getLogger(__name__)
 class LLMError(Exception):
     """Base class for LLM client errors."""
 
+    error_code = "llm_error"
+    usage: Usage = {}
+    response_diagnostics: dict[str, object] = {}
+
+
+class LLMCompletionError(LLMError):
+    """A 2xx completion that cannot safely be used as model content."""
+
+    def __init__(
+        self,
+        error_code: str,
+        *,
+        usage: Usage,
+        response_diagnostics: dict[str, object],
+        elapsed_ms: int,
+    ) -> None:
+        self.error_code = error_code
+        self.usage = usage
+        self.response_diagnostics = response_diagnostics
+        self.elapsed_ms = max(0, int(elapsed_ms))
+        super().__init__(f"llm_call: {error_code}")
+
 
 class LLMAuthError(LLMError):
     """401/403 from the upstream API."""
@@ -363,13 +385,17 @@ async def _observed_request(
     started = time.monotonic()
     try:
         response = await operation()
-    except BaseException:
+    except BaseException as exc:
         if observer is not None:
             observer.after_request(
                 ticket,
                 elapsed_ms=int((time.monotonic() - started) * 1000),
-                usage={},
+                usage=dict(getattr(exc, "usage", {}) or {}),
                 success=False,
+                error_code=str(getattr(exc, "error_code", "llm_error") or "llm_error"),
+                response_diagnostics=dict(
+                    getattr(exc, "response_diagnostics", {}) or {}
+                ),
             )
         raise
     if observer is not None:
@@ -378,6 +404,7 @@ async def _observed_request(
             elapsed_ms=int((time.monotonic() - started) * 1000),
             usage=dict(response.get("usage") or {}),
             success=True,
+            response_diagnostics=dict(response.get("response_diagnostics") or {}),
         )
     return response
 
@@ -392,24 +419,42 @@ def _response_transport(payload: dict[str, Any]) -> str:
 
 def _handle_non_stream_response(resp: httpx.Response, started: float) -> LLMResponse:
     if resp.status_code == 401 or resp.status_code == 403:
-        raise LLMAuthError(f"HTTP {resp.status_code}: {resp.text[:300]}")
+        raise LLMAuthError(f"HTTP {resp.status_code}: upstream authentication failed")
     if 300 <= resp.status_code < 400:
         raise LLMBadRequest(f"HTTP {resp.status_code}: upstream redirect refused")
     if is_retryable_status(resp.status_code):
         resp.raise_for_status()
     if resp.status_code >= 400:
-        raise LLMBadRequest(f"HTTP {resp.status_code}: {resp.text[:300]}")
+        raise LLMBadRequest(f"HTTP {resp.status_code}: upstream request rejected")
     resp.raise_for_status()
 
     body = resp.json()
     try:
-        first = body["choices"][0]
+        choices = body["choices"]
+        first = choices[0]
     except (KeyError, IndexError, TypeError) as e:
-        raise LLMError(f"Malformed response: missing 'choices[0]': {body!r}") from e
+        raise LLMError("llm_call: malformed_response_missing_choices") from e
 
-    text = first.get("message", {}).get("content") or first.get("text") or ""
+    message = first.get("message") if isinstance(first, dict) else None
+    content = message.get("content") if isinstance(message, dict) else None
+    text_value = first.get("text") if isinstance(first, dict) else None
+    text = content if isinstance(content, str) else text_value if isinstance(text_value, str) else ""
     usage = _normalize_usage(body.get("usage"))
+    diagnostics = _response_diagnostics(
+        choices=choices,
+        first=first,
+        content=content,
+        text_field=text_value,
+    )
     elapsed_ms = int((time.monotonic() - started) * 1000)
+    if not text:
+        error_code = "refusal_completion" if diagnostics["refusal_present"] else "empty_completion"
+        raise LLMCompletionError(
+            error_code,
+            usage=usage,
+            response_diagnostics=diagnostics,
+            elapsed_ms=elapsed_ms,
+        )
 
     return LLMResponse(
         text=text,
@@ -418,7 +463,45 @@ def _handle_non_stream_response(resp: httpx.Response, started: float) -> LLMResp
         finish_reason=first.get("finish_reason", "stop"),
         elapsed_ms=elapsed_ms,
         raw=body,
+        response_diagnostics=diagnostics,
     )
+
+
+def _response_diagnostics(
+    *,
+    choices: Any,
+    first: Any,
+    content: Any,
+    text_field: Any,
+) -> dict[str, object]:
+    """Return response-shape facts without retaining any provider text."""
+    message = first.get("message") if isinstance(first, dict) else None
+    finish_reason = first.get("finish_reason") if isinstance(first, dict) else None
+    normalized_finish_reason = str(finish_reason or "missing").strip().lower()
+    if normalized_finish_reason not in {
+        "stop",
+        "length",
+        "content_filter",
+        "tool_calls",
+        "function_call",
+        "refusal",
+        "missing",
+    }:
+        normalized_finish_reason = "other"
+    refusal = message.get("refusal") if isinstance(message, dict) else None
+    reasoning = message.get("reasoning_content") if isinstance(message, dict) else None
+    resolved_text = content if isinstance(content, str) else text_field if isinstance(text_field, str) else ""
+    return {
+        "finish_reason": normalized_finish_reason,
+        "choices_present": isinstance(choices, list) and bool(choices),
+        "message_present": isinstance(message, dict),
+        "content_present": bool(resolved_text),
+        "content_length": len(resolved_text),
+        "reasoning_content_present": bool(reasoning),
+        "refusal_present": bool(refusal),
+        "content_field_present": content is not None,
+        "text_field_present": text_field is not None,
+    }
 
 
 def _normalize_usage(value: Any) -> Usage:

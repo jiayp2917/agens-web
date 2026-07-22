@@ -347,6 +347,8 @@ def save_artifact(state: dict[str, Any]) -> dict[str, Any]:
         "usage": state.get("usage", {}),
         "elapsed_ms": state.get("elapsed_ms", 0),
         "llm_error": llm_error,
+        "llm_error_code": state.get("llm_error_code", ""),
+        "response_diagnostics": state.get("response_diagnostics", {}),
         "output_path": str(out_path),
         "generation_type": generation_type,
         "provider_transport": provider_transport,
@@ -375,6 +377,8 @@ def save_artifact(state: dict[str, Any]) -> dict[str, Any]:
         "provider_json_schema": bool(state.get("provider_json_schema")),
         "provider_json_object": bool(state.get("provider_json_object")),
         "provider_json_envelope_ok": bool(envelope) if provider_structured else False,
+        "llm_error_code": str(state.get("llm_error_code") or ""),
+        "response_diagnostics": dict(state.get("response_diagnostics") or {}),
     }
 
 

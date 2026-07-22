@@ -1,21 +1,29 @@
-"""Deterministic rules-and-flow validation for the v2 golden route."""
+"""Deterministic rules-and-flow validation for a versioned golden route."""
 
 from __future__ import annotations
 
 import argparse
 import json
 import os
+from dataclasses import replace
 from typing import Any
 
 from agens_novel.engine.choices import fallback_choices
 from agens_novel.engine.game_engine import GameEngine
+from agens_novel.evaluation.playthrough import (
+    canonical_authority_trajectory,
+    canonical_replay_session,
+)
+from agens_novel.evaluation.scenarios import canonical_v3_scenarios
 from agens_novel.game.constants import format_realm_name
 
 
-def run_golden_route(*, seed: str, max_turns: int = 90) -> dict[str, Any]:
+def run_golden_route(*, seed: str, story_version: int = 2, max_turns: int = 90) -> dict[str, Any]:
+    if story_version not in {1, 2, 3}:
+        raise ValueError("story_version must be 1, 2, or 3")
     previous_version = os.environ.get("AGENS_STORY_CONTENT_VERSION")
     previous_seed = os.environ.get("AGENS_VALIDATION_SEED")
-    os.environ["AGENS_STORY_CONTENT_VERSION"] = "2"
+    os.environ["AGENS_STORY_CONTENT_VERSION"] = str(story_version)
     os.environ["AGENS_VALIDATION_SEED"] = seed
     try:
         engine = GameEngine()
@@ -74,6 +82,15 @@ def run_golden_route(*, seed: str, max_turns: int = 90) -> dict[str, Any]:
                 previous_realm = session.realm
 
         session = engine.game_session
+        story_resolution = str(session.story_state.get("arc_resolution") or "")
+        story_status = str(session.story_state.get("status") or "")
+        ascended = bool(session.finale and session.realm == "飞升" and session.turn_count <= max_turns)
+        mainline_resolved = bool(
+            story_version == 3
+            and session.turn_count == max_turns
+            and story_resolution in {"resolved", "failed"}
+            and story_status in {"post_arc", "resolved", "failed"}
+        )
         return {
             "seed": seed,
             "max_turns": max_turns,
@@ -84,9 +101,10 @@ def run_golden_route(*, seed: str, max_turns: int = 90) -> dict[str, Any]:
             "story_version": session.story_version,
             "game_over": session.game_over,
             "finale": session.finale,
-            "ascended_within_limit": bool(
-                session.finale and session.realm == "飞升" and session.turn_count <= max_turns
-            ),
+            "story_resolution": story_resolution,
+            "story_status": story_status,
+            "ascended_within_limit": ascended,
+            "accepted_within_limit": mainline_resolved if story_version == 3 else ascended,
             "checkpoints": checkpoints,
             "breakthrough_attempts": breakthrough_attempts,
         }
@@ -134,14 +152,70 @@ def _restore_env(name: str, value: str | None) -> None:
         os.environ[name] = value
 
 
+def run_v3_scenario(
+    *,
+    scenario_key: str,
+    seed: str | None = None,
+    max_turns: int = 90,
+) -> dict[str, Any]:
+    """Replay one pre-registered v3 route without an LLM or breakthrough shortcuts."""
+    scenario = next((item for item in canonical_v3_scenarios() if item.key == scenario_key), None)
+    if scenario is None:
+        raise ValueError("scenario must be one of the registered v3 scenarios")
+    if seed:
+        scenario = replace(scenario, run_seed=seed)
+    trajectory = canonical_authority_trajectory(scenario, story_version=3, max_turns=max_turns)
+    session = canonical_replay_session(
+        scenario,
+        story_version=3,
+        target_turn=len(trajectory),
+    )
+    resolution = str(session.story_state.get("arc_resolution") or "")
+    status = str(session.story_state.get("status") or "")
+    return {
+        "scenario": scenario.key,
+        "seed": scenario.run_seed,
+        "max_turns": max_turns,
+        "turn_count": session.turn_count,
+        "story_version": session.story_version,
+        "game_over": session.game_over,
+        "finale": session.finale,
+        "story_resolution": resolution,
+        "story_status": status,
+        "trajectory_count": len(trajectory),
+        "accepted_within_limit": bool(
+            session.game_over
+            or (
+                session.turn_count == max_turns
+                and resolution in {"resolved", "failed"}
+                and status == "post_arc"
+            )
+        ),
+    }
+
+
 def main() -> int:
     parser = argparse.ArgumentParser()
-    parser.add_argument("--seed", default="agens-golden-169")
+    parser.add_argument("--seed")
+    parser.add_argument("--story-version", type=int, choices=(1, 2, 3), default=2)
+    parser.add_argument("--scenario", choices=("high_steady", "low_risk", "middle_mixed"))
     parser.add_argument("--max-turns", type=int, default=90)
     args = parser.parse_args()
-    result = run_golden_route(seed=args.seed, max_turns=args.max_turns)
+    result = (
+        run_v3_scenario(
+            scenario_key=args.scenario or "high_steady",
+            seed=args.seed,
+            max_turns=args.max_turns,
+        )
+        if args.story_version == 3
+        else run_golden_route(
+            seed=args.seed or "agens-golden-169",
+            story_version=args.story_version,
+            max_turns=args.max_turns,
+        )
+    )
     print(json.dumps(result, ensure_ascii=False, sort_keys=True))
-    return 0 if result["ascended_within_limit"] else 1
+    return 0 if result["accepted_within_limit"] else 1
 
 
 if __name__ == "__main__":

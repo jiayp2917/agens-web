@@ -13,6 +13,7 @@ class AcceptedTurnContextV1:
     """The non-authoritative continuity facts retained for one accepted turn."""
 
     choice_slot: str
+    choice_category: str
     event_id: str
     motif: str
     rule_consequence_summary: str
@@ -43,6 +44,7 @@ def accepted_turn_context(
     normalized_choices = tuple(str(choice).strip() for choice in choices[:4] if str(choice).strip())
     return AcceptedTurnContextV1(
         choice_slot=str(meta.get("choice_slot") or "").strip(),
+        choice_category=str(meta.get("choice_category") or "").strip(),
         event_id=str(meta.get("event_id") or "").strip(),
         motif=motif,
         rule_consequence_summary=str(meta.get("turn_summary") or "").strip(),
@@ -73,6 +75,7 @@ def render_history_entry(entry: dict[str, Any]) -> str:
     )
     facts = [
         f"槽位{context.choice_slot}" if context.choice_slot else "",
+        f"路线{context.choice_category}" if context.choice_category else "",
         f"事件{context.event_id}" if context.event_id else "",
         f"主题{context.motif}" if context.motif else "",
         f"阶段{context.phase_beat}" if context.phase_beat else "",
@@ -94,6 +97,7 @@ def _accepted_context(value: dict[str, Any]) -> AcceptedTurnContextV1 | None:
     )
     return AcceptedTurnContextV1(
         choice_slot=str(value.get("choice_slot") or "").strip(),
+        choice_category=str(value.get("choice_category") or "").strip(),
         event_id=str(value.get("event_id") or "").strip(),
         motif=str(value.get("motif") or "").strip(),
         rule_consequence_summary=str(value.get("rule_consequence_summary") or "").strip(),

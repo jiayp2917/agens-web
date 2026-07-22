@@ -10,6 +10,7 @@ import pytest
 from agens_novel.llm.client import (
     InvalidEgressProxyUrl,
     LLMBadRequest,
+    LLMCompletionError,
     _build_payload,
     _execute_with_retry,
     _handle_non_stream_response,
@@ -189,6 +190,94 @@ async def test_observed_request_reserves_and_records_safe_metadata() -> None:
     assert calls[1][0] == "after"
     assert calls[1][1] == "ticket"
     assert calls[1][2]["usage"] == {"total_tokens": 3}
+
+
+@pytest.mark.asyncio
+async def test_observed_empty_completion_preserves_only_safe_diagnostics() -> None:
+    calls = []
+
+    class Observer:
+        def before_request(self, **_kwargs):
+            return "ticket"
+
+        def after_request(self, ticket, **kwargs):
+            calls.append((ticket, kwargs))
+
+    response = httpx.Response(
+        200,
+        json={
+            "choices": [
+                {
+                    "message": {"content": None, "reasoning_content": "private reasoning"},
+                    "finish_reason": "length",
+                }
+            ],
+            "usage": {"prompt_tokens": 7, "completion_tokens": 4096, "total_tokens": 4103},
+        },
+        request=httpx.Request("POST", "https://provider.invalid/v1/chat/completions"),
+    )
+
+    async def operation():
+        return _handle_non_stream_response(response, time.monotonic())
+
+    with model_call_observer("world_builder", Observer()):
+        with pytest.raises(LLMCompletionError, match="empty_completion"):
+            await _observed_request(transport="json_schema", stream=False, operation=operation)
+
+    assert calls[0][0] == "ticket"
+    assert calls[0][1]["success"] is False
+    assert calls[0][1]["error_code"] == "empty_completion"
+    assert calls[0][1]["usage"]["completion_tokens"] == 4096
+    assert calls[0][1]["elapsed_ms"] >= 0
+    assert calls[0][1]["response_diagnostics"] == {
+        "finish_reason": "length",
+        "choices_present": True,
+        "message_present": True,
+        "content_present": False,
+        "content_length": 0,
+        "reasoning_content_present": True,
+        "refusal_present": False,
+        "content_field_present": False,
+        "text_field_present": False,
+    }
+
+
+def test_empty_refusal_is_rejected_without_exposing_refusal_text() -> None:
+    response = httpx.Response(
+        200,
+        json={
+            "choices": [
+                {
+                    "message": {"content": None, "refusal": "private refusal"},
+                    "finish_reason": "stop",
+                }
+            ],
+            "usage": {"completion_tokens": 12},
+        },
+        request=httpx.Request("POST", "https://provider.invalid/v1/chat/completions"),
+    )
+
+    with pytest.raises(LLMCompletionError, match="refusal_completion") as error:
+        _handle_non_stream_response(response, time.monotonic())
+
+    assert "private refusal" not in str(error.value)
+    assert error.value.response_diagnostics["refusal_present"] is True
+
+
+def test_non_json_content_is_not_an_envelope() -> None:
+    response = httpx.Response(
+        200,
+        json={
+            "choices": [{"message": {"content": "not json"}, "finish_reason": "stop"}],
+            "usage": {"completion_tokens": 2},
+        },
+        request=httpx.Request("POST", "https://provider.invalid/v1/chat/completions"),
+    )
+
+    parsed = _handle_non_stream_response(response, time.monotonic())
+
+    assert parsed["response_diagnostics"]["content_present"] is True
+    assert parsed["response_diagnostics"]["reasoning_content_present"] is False
 
 
 @pytest.mark.parametrize(

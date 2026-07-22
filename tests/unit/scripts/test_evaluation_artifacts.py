@@ -33,9 +33,32 @@ def test_browser_artifacts_require_an_external_root(tmp_path) -> None:
     assert inside.stdout.strip() == "rejected"
 
 
-def _node(script: str, environment: dict[str, str]) -> subprocess.CompletedProcess[str]:
+def test_browser_playtest_uses_external_evidence_and_redacts_sensitive_values(tmp_path) -> None:
+    script = (ROOT / "scripts" / "local_visible_playtest.cjs").read_text(encoding="utf-8")
+    assert '"output/playwright"' not in script
+
+    output = _node(
+        "const {redactEvidence}=require(process.argv[1]);"
+        "console.log(JSON.stringify(redactEvidence({base_url:'https://provider.invalid/v1',"
+        "api_key:'not-a-real-key',narrative:'safe narrative',nested:{token:'test-token-value'}})));",
+        {**os.environ, "AGENS_ARTIFACT_ROOT": str(tmp_path / "evidence")},
+        helper="./scripts/local_visible_playtest.cjs",
+    )
+    value = json.loads(output.stdout)
+    assert value["base_url"] == "[redacted]"
+    assert value["api_key"] == "[redacted]"
+    assert value["nested"]["token"] == "[redacted]"
+    assert value["narrative"] == "safe narrative"
+
+
+def _node(
+    script: str,
+    environment: dict[str, str],
+    *,
+    helper: str = HELPER,
+) -> subprocess.CompletedProcess[str]:
     return subprocess.run(
-        ["node", "-e", script, HELPER],
+        ["node", "-e", script, helper],
         cwd=ROOT,
         env=environment,
         capture_output=True,

@@ -247,6 +247,12 @@ def parse_world_response(result: dict[str, Any]) -> dict[str, Any]:
     return data
 
 
+def parse_profile_opening_response(result: dict[str, Any]) -> dict[str, Any]:
+    """Return the minimal model-owned opening envelope without world normalization."""
+    data = _world_payload(result)
+    return dict(data) if data else {}
+
+
 def _world_payload(result: dict[str, Any]) -> dict[str, Any]:
     generated = result.get("generated_data")
     if isinstance(generated, dict) and generated:

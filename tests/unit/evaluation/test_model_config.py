@@ -37,13 +37,24 @@ def test_evaluation_resolver_installs_public_metadata_and_private_callback(tmp_p
     _evaluation_env(tmp_path, monkeypatch)
     engine = SimpleNamespace(model_config={}, model_runtime_resolver=None)
     runner = SimpleNamespace(engine=engine)
+    config = EvaluationModelConfig.from_environment()
+    calls: list[bool] = []
+    original_runtime_config = EvaluationModelConfig.runtime_config
 
-    EvaluationModelConfigResolver(EvaluationModelConfig.from_environment()).apply_runner(runner)
+    def runtime_config(self):
+        calls.append(True)
+        return original_runtime_config(self)
+
+    monkeypatch.setattr(EvaluationModelConfig, "runtime_config", runtime_config)
+
+    EvaluationModelConfigResolver(config).apply_runner(runner)
 
     assert engine.model_config["provider"] == "DeepSeek"
     assert "api_key" not in engine.model_config
     assert engine.model_runtime_resolver is not None
+    assert calls == []
     assert engine.model_runtime_resolver().api_key == "test-evaluation-key"
+    assert calls == [True]
 
 
 def test_evaluation_transport_is_explicit_and_never_uses_product_config(tmp_path, monkeypatch) -> None:
@@ -70,3 +81,28 @@ def test_evaluation_config_rejects_unknown_provider(tmp_path, monkeypatch) -> No
 
     with pytest.raises(sink.ArtifactPolicyError, match="provider"):
         EvaluationModelConfig.from_environment()
+
+
+def test_evaluation_config_uses_non_secret_agens_profile_defaults(tmp_path, monkeypatch) -> None:
+    _evaluation_env(tmp_path, monkeypatch)
+    monkeypatch.setenv("AGENS_EVALUATION_PROVIDER", "agens")
+    monkeypatch.delenv("AGENS_EVALUATION_MODEL")
+    monkeypatch.delenv("AGENS_EVALUATION_BASE_URL")
+    monkeypatch.setenv("AGNES_MODEL", "agens-evaluation-model")
+    monkeypatch.setenv("AGNES_BASE_URL", "https://apihub.agnes-ai.com/v1")
+
+    config = EvaluationModelConfig.from_environment()
+
+    assert config.model == "agens-evaluation-model"
+    assert config.base_url == "https://apihub.agnes-ai.com/v1"
+
+
+def test_evaluation_config_uses_locked_deepseek_profile_defaults(tmp_path, monkeypatch) -> None:
+    _evaluation_env(tmp_path, monkeypatch)
+    monkeypatch.delenv("AGENS_EVALUATION_MODEL")
+    monkeypatch.delenv("AGENS_EVALUATION_BASE_URL")
+
+    config = EvaluationModelConfig.from_environment()
+
+    assert config.model == "deepseek-v4-flash"
+    assert config.base_url == "https://api.deepseek.com/v1"

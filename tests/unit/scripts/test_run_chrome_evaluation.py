@@ -1,0 +1,148 @@
+"""Non-network checks for the isolated headed-Chrome orchestrator."""
+
+from __future__ import annotations
+
+import importlib.util
+import json
+from argparse import Namespace
+from pathlib import Path
+from types import SimpleNamespace
+from unittest.mock import patch
+
+import pytest
+
+from agens_novel.evaluation.scenarios import canonical_v3_scenarios
+
+ROOT = Path(__file__).resolve().parents[3]
+_SPEC = importlib.util.spec_from_file_location(
+    "run_chrome_evaluation",
+    ROOT / "scripts" / "run_chrome_evaluation.py",
+)
+assert _SPEC is not None and _SPEC.loader is not None
+runner = importlib.util.module_from_spec(_SPEC)
+_SPEC.loader.exec_module(runner)
+
+
+def _args(provider: str = "agens") -> Namespace:
+    return Namespace(
+        provider=provider,
+        transport="json_schema",
+        scenario="high_steady",
+        database_url="postgresql+psycopg://evaluation@127.0.0.1:55432/agens_web_chrome_eval",
+        port=8100,
+        turns=90,
+        timeout_seconds=1800,
+        save_load_turn=0,
+        refresh_probe=False,
+        double_click_probe=False,
+        conflict_probe=False,
+    )
+
+
+def test_chrome_evaluation_only_accepts_named_local_databases() -> None:
+    runner._validate_database_url(_args().database_url)
+    with pytest.raises(ValueError, match="isolated local"):
+        runner._validate_database_url("postgresql://evaluation@db.internal/agens_web_chrome_eval")
+    with pytest.raises(ValueError, match="database name"):
+        runner._validate_database_url("postgresql://evaluation@127.0.0.1/agens_web_test")
+
+
+def test_browser_process_receives_no_provider_key(monkeypatch, tmp_path) -> None:
+    monkeypatch.setenv("AGNES_API_KEY", "fake-agens-key")
+    monkeypatch.setenv("DEEPSEEK_API_KEY", "fake-deepseek-key")
+    scenario = canonical_v3_scenarios()[0]
+
+    environment = runner._browser_environment(
+        _args(),
+        tmp_path / "evidence",
+        "agens-high-steady-test",
+        scenario,
+    )
+
+    assert "AGNES_API_KEY" not in environment
+    assert "DEEPSEEK_API_KEY" not in environment
+    assert environment["AGENS_PLAYTEST_SLOT_SEQUENCE"] == "A" * 90
+    assert environment["AGENS_PLAYTEST_CANONICAL_SCENARIO"] == scenario.key
+    assert environment["AGENS_PLAYTEST_URL"].endswith(":8100/")
+    assert environment["AGENS_PLAYTEST_SAVE_LOAD_TURN"] == "0"
+    assert environment["AGENS_PLAYTEST_POST_LOAD_TURNS"] == "0"
+    assert environment["AGENS_PLAYTEST_DOUBLE_CLICK_PROBE"] == "0"
+
+
+def test_backend_process_keeps_only_the_selected_provider_key(monkeypatch, tmp_path) -> None:
+    monkeypatch.setenv("AGNES_API_KEY", "fake-agens-key")
+    monkeypatch.setenv("DEEPSEEK_API_KEY", "fake-deepseek-key")
+
+    agens = runner._server_environment(_args("agens"), tmp_path / "evidence", "agens-test")
+    deepseek_args = _args("deepseek")
+    deepseek_args.transport = "json_object"
+    deepseek = runner._server_environment(deepseek_args, tmp_path / "evidence", "deepseek-test")
+
+    assert "AGNES_API_KEY" in agens
+    assert "DEEPSEEK_API_KEY" not in agens
+    assert agens["AGENS_START_MODEL_WORLD"] == "1"
+    assert "DEEPSEEK_API_KEY" in deepseek
+    assert "AGNES_API_KEY" not in deepseek
+
+
+def test_browser_summary_is_decoded_as_utf8_not_the_windows_console_encoding() -> None:
+    payload = runner._final_json(runner._decode_browser_stdout(b'{"summary":{"result":"passed"}}'))
+
+    assert payload["summary"]["result"] == "passed"
+
+
+def test_chrome_acceptance_requires_clean_exact_turn_summary() -> None:
+    result = {
+        "result": "passed",
+        "turns_completed": 20,
+        "p0_issues": 0,
+        "p1_issues": 0,
+        "strict": True,
+        "opening_strict": True,
+        "fallback": 0,
+        "repair": 0,
+        "recovery": 0,
+        "authority_match": True,
+        "exit_code": 0,
+    }
+
+    assert runner._acceptance_passed(result, turns_requested=20)
+    assert not runner._acceptance_passed({**result, "turns_completed": 23}, turns_requested=20)
+    assert not runner._acceptance_passed({**result, "authority_match": False}, turns_requested=20)
+    assert not runner._acceptance_passed({**result, "strict": False}, turns_requested=20)
+    assert not runner._acceptance_passed({**result, "opening_strict": False}, turns_requested=20)
+
+
+def test_strict_summary_uses_per_turn_acceptance() -> None:
+    assert runner._strict_summary({"turns_completed": 2, "accepted_live_turns": 2})
+    assert not runner._strict_summary({"turns_completed": 2, "accepted_live_turns": 1})
+
+
+def test_browser_summary_counts_opening_fallback_as_a_failure() -> None:
+    payload = {
+        "summary": {
+            "result": "failed_or_partial",
+            "turns_completed": 0,
+            "p0_issues": 1,
+            "p1_issues": 0,
+            "accepted_live_turns": 0,
+            "start_fallback": True,
+            "start_model_ok": False,
+            "fallback_count": 0,
+            "repaired_output_count": 0,
+            "contract_recovery_count": 0,
+            "persisted_turn_audit": {"authority_match": None},
+        }
+    }
+    completed = SimpleNamespace(
+        stdout=json.dumps(payload).encode("utf-8"),
+        returncode=1,
+    )
+
+    with patch.object(runner.subprocess, "run", return_value=completed):
+        result = runner._run_browser({}, timeout_seconds=1)
+
+    assert result["fallback"] == 1
+    assert result["opening_strict"] is False
+    assert result["authority_match"] is None
+    assert not runner._acceptance_passed(result, turns_requested=20)
