@@ -615,7 +615,7 @@ def _should_retry_incomplete_narrator_result(result: dict[str, Any]) -> bool:
     status = classify_narrator_result(result)
     if status.kind != ModelResultKind.INCOMPLETE_OUTPUT:
         return False
-    if result.get("provider_json_schema"):
+    if result.get("provider_json_schema") or result.get("provider_json_object"):
         return True
     if _has_nonempty_structured_delta(result.get("state_delta")):
         return False

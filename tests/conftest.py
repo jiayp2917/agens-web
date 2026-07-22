@@ -29,15 +29,21 @@ def _pg_test_url() -> str | None:
     url = os.environ.get("TEST_DATABASE_URL")
     if not url:
         return None
+    from alembic import command
+    from alembic.config import Config
+
     from web.backend.database_postgres import PostgresWebDatabase
 
-    # initialize() runs CREATE TABLE IF NOT EXISTS + seed_catalogs. AUTO_DDL on a
-    # non-production connection is the only path that creates tables.
-    os.environ["AGENS_PG_AUTO_DDL"] = "1"
+    previous_database_url = os.environ.get("DATABASE_URL")
+    os.environ["DATABASE_URL"] = url
     try:
+        command.upgrade(Config(str(Path(__file__).resolve().parents[1] / "alembic.ini")), "head")
         db = PostgresWebDatabase(url)
     finally:
-        os.environ.pop("AGENS_PG_AUTO_DDL", None)
+        if previous_database_url is None:
+            os.environ.pop("DATABASE_URL", None)
+        else:
+            os.environ["DATABASE_URL"] = previous_database_url
     db.engine.dispose()
     return url
 

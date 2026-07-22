@@ -136,6 +136,25 @@ def test_fallback_varies_by_profile_and_contains_opening_payload() -> None:
     assert calm["world"]["lore_facts"]
 
 
+def test_fallback_chronicle_uses_grammatical_family_and_talent_templates() -> None:
+    opening = build_world_fallback(
+        _profile(
+            family_background="魔道遗孤",
+            talent="平平无奇",
+            spirit_root="火灵根",
+        )
+    )
+
+    chronicle = opening["chronicle_0_16"]
+    initial = opening["initial_situation_16"]
+    assert "身世被记作「魔道遗孤」" in chronicle[0]
+    assert "生于魔道遗孤" not in chronicle[0]
+    assert "平平无奇也在" not in chronicle[1]
+    assert "。；" not in chronicle[1]
+    assert "正受" not in initial
+    assert "牵动，其" not in initial
+
+
 def test_parse_world_response_accepts_new_fields_and_strips_internal_keys() -> None:
     parsed = parse_world_response(
         {

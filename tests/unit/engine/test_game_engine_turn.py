@@ -8,6 +8,7 @@ from unittest.mock import patch
 from agens_novel.engine.action_delta_policy import is_pure_cultivation
 from agens_novel.engine.choices import fallback_choices
 from agens_novel.engine.game_engine import GameEngine
+from agens_novel.engine.story_catalog import opening_story_binding
 from agens_novel.engine.world_generator import build_world_fallback
 from agens_novel.session.game_session import GameSession
 
@@ -1422,7 +1423,7 @@ class TestBreakthroughPreparationGate:
         engine.game_session.breakthrough_flags = ["foundation_aid"]
 
         with _patch_turn_runner():
-            with patch("agens_novel.game.realm.random.random", return_value=0.001):
+            with patch("agens_novel.game.realm._breakthrough_roll", return_value=0.001):
                 engine.attempt_breakthrough()
 
         assert engine.game_session.realm == "筑基", (
@@ -1430,6 +1431,37 @@ class TestBreakthroughPreparationGate:
         )
         assert engine.game_session.local_story_active is False
         assert len(engine.game_session.last_choices) == 4
+
+    def test_v3_breakthrough_turn_advances_the_main_story(self, monkeypatch) -> None:
+        monkeypatch.setenv("AGNES_API_KEY", "sk-test-1234567890")
+        engine = GameEngine()
+
+        with _patch_turn_runner():
+            engine.new_game("许满")
+
+        session = engine.game_session
+        binding = opening_story_binding(
+            "forest",
+            ["苦修", "天命"],
+            content_version=3,
+            run_seed="breakthrough-v3",
+            character_name=session.char_name,
+        )
+        session.story_key = binding["story_key"]
+        session.story_version = binding["story_version"]
+        session.story_state = binding["story_state"]
+        session.turn_count = 89
+        session.realm = "练气"
+        session.realm_stage = 9
+        session.breakthrough_flags = ["foundation_aid"]
+
+        with _patch_turn_runner():
+            with patch("agens_novel.game.realm._breakthrough_roll", return_value=0.001):
+                engine.attempt_breakthrough()
+
+        assert session.turn_count == 90
+        assert session.story_state["arc_resolution"] in {"resolved", "failed"}
+        assert session.story_state["status"] == "post_arc"
 
     def test_breakthrough_updates_model_choices(self, monkeypatch) -> None:
         monkeypatch.setenv("AGNES_API_KEY", "sk-test-1234567890")
@@ -1455,7 +1487,7 @@ class TestBreakthroughPreparationGate:
             return {}
 
         with patch("agens_novel.engine.game_engine.run_turn_sync", side_effect=runner):
-            with patch("agens_novel.game.realm.random.random", return_value=0.001):
+            with patch("agens_novel.game.realm._breakthrough_roll", return_value=0.001):
                 engine.attempt_breakthrough()
 
         assert engine.game_session.realm == "筑基"

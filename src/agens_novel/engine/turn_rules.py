@@ -136,7 +136,14 @@ def settle_turn_outcome(
     rng = rule_rng_for_session(session)
 
     realm = session.realm or "练气"
-    elapsed_years = _elapsed_years(realm, category, difficulty, rng)
+    elapsed_years = _elapsed_years(
+        realm,
+        category,
+        difficulty,
+        rng,
+        story_version=int(getattr(session, "story_version", 0) or 0),
+        turn_count=int(getattr(session, "turn_count", 0) or 0),
+    )
     char_delta = _attribute_changes(category, rng)
     char_delta["age"] = f"+{elapsed_years}"
     recovered_effects = _steady_recovery_effects(session, category)
@@ -213,9 +220,37 @@ def settle_turn_outcome(
     return RuleTurnOutcomeV1(intent, state_delta, turn_summary)
 
 
+def breakthrough_story_delta(session: Any) -> dict[str, Any]:
+    """Advance the rule-owned story for a C-slot breakthrough turn."""
+    story = story_turn_delta(session, "风险", {}, int(getattr(session, "age", 0) or 0))
+    if not story:
+        return {"world": {}, "meta": {}}
+    return {
+        "world": _stage_feedback_delta(session, {}, story),
+        "meta": {
+            "story_phase": story.get("story_phase", ""),
+            "story_goal": story.get("story_goal", ""),
+            "story_beat": story.get("story_beat", ""),
+            "story_status": story.get("story_status", ""),
+        },
+    }
+
+
 def _elapsed_years(
-    realm: str, category: str, difficulty: str, rng: RuleRng | None
+    realm: str,
+    category: str,
+    difficulty: str,
+    rng: RuleRng | None,
+    *,
+    story_version: int = 0,
+    turn_count: int = 0,
 ) -> int:
+    if story_version == 3:
+        # The v3 main arc has ninety player decisions. A decision is usually
+        # a scene within a season, not a full year; only each four-turn story
+        # beat advances the visible calendar. Older saves retain their
+        # original calendar cadence.
+        return 1 if max(1, turn_count) % 4 == 0 else 0
     year_min, year_max = _REALM_YEAR_RANGES.get(realm, (1, 3))
     difficulty_multiplier = {"简单": 0.7, "困难": 1.3}.get(difficulty, 1.0)
     base_years = (
@@ -282,10 +317,14 @@ def _risk_death_reason(
         else 0
     )
     risk_route = category == "风险"
-    chance = 0.008 if risk_route else 0.0
+    # C must remain materially more dangerous than A, but low aptitude cannot
+    # make ninety choices a statistical certainty of death before its other
+    # route consequences can matter.
+    chance = 0.004 if risk_route else 0.0
     if difficulty == "困难":
-        chance += 0.012 if risk_route else 0.003
-    chance += max(0, 12 - aptitude) * 0.004
+        chance += 0.006 if risk_route else 0.003
+    aptitude_penalty = 0.001 if risk_route else 0.004
+    chance += max(0, 12 - aptitude) * aptitude_penalty
     lifespan = max(1, int(getattr(session, "lifespan", 100) or 100))
     age_pressure = max(0.0, new_age / lifespan - 0.65)
     chance += age_pressure * (0.02 if risk_route else 0.006)
@@ -310,8 +349,9 @@ def _turn_summary(
     preparation_flags: list[str],
     game_over_reason: str,
 ) -> str:
+    elapsed_label = f"{elapsed_years}年" if elapsed_years else "数月"
     summary = (
-        f"本回合类别：{category}；时间流逝：{elapsed_years}年；"
+        f"本回合类别：{category}；时间流逝：{elapsed_label}；"
         f"角色年龄：{start_age}→{end_age}岁；剩余寿元：{max(0, remaining_lifespan)}年。"
     )
     if recovered_effects:

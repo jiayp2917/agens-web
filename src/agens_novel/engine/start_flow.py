@@ -9,6 +9,7 @@ from typing import TYPE_CHECKING, Any
 if TYPE_CHECKING:
     from .game_engine import GameEngine
 
+from ..agents.contracts import WorldOpeningEnvelopeV1
 from ..game.constants import (
     ATTRIBUTE_KEYS,
     ATTRIBUTE_MAX,
@@ -23,7 +24,7 @@ from ..game.constants import (
 )
 from ..rule_rng import new_run_seed
 from ..session.game_session import GameSession
-from .choices import complete_choices, dedupe_strings
+from .choices import complete_choices, dedupe_strings, has_visible_english
 from .model_result import (
     ModelResultKind,
     ModelResultStatus,
@@ -52,6 +53,29 @@ PROFILE_RANDOM_ATTRIBUTE_MAX = ATTRIBUTE_MAX
 PROFILE_REWARDED_ATTRIBUTE_MAX = ATTRIBUTE_MAX
 _PROFILE_ATTRIBUTE_DEFAULT = PROFILE_ATTRIBUTE_TOTAL // len(ATTRIBUTE_KEYS)
 _ALLOW_LEGACY_BONUS_ATTRIBUTES = "_allow_legacy_bonus_attributes"
+_PROFILE_OPENING_AUTHORITY_FIELDS = (
+    "world_key",
+    "fate_hooks",
+    "fate_profile",
+    "matched_fates",
+    "event_weights",
+    "opening_hook",
+    "long_conflict",
+    "story_key",
+    "story_version",
+    "story_title",
+    "story_opening",
+    "story_state",
+    "world_rules",
+)
+_PROFILE_OPENING_DESCRIPTIVE_FIELDS = (
+    "world_name",
+    "regions",
+    "sects",
+    "current_conflicts",
+    "initial_situation",
+    "world",
+)
 
 
 class StartFlow:
@@ -224,12 +248,13 @@ class StartFlow:
                 fallback, "profile_opening_exception", "开场推演失败（详见日志）。"
             )
 
-        world_status, parsed = _classify_opening_result(result)
+        world_status, parsed = _classify_opening_result(result, profile_opening=True)
         result, world_status, parsed = self._retry_incomplete_opening(
             prompt,
             result,
             world_status,
             parsed,
+            profile_opening=True,
         )
         engine.log_model_result(
             agent="world_builder",
@@ -256,6 +281,7 @@ class StartFlow:
         parsed: dict[str, Any],
         *,
         generation_type: str = "profile_opening",
+        profile_opening: bool = False,
     ) -> tuple[dict[str, Any], ModelResultStatus, dict[str, Any]]:
         should_retry = world_status.kind == ModelResultKind.INCOMPLETE_OUTPUT and not result.get(
             "retried_after_incomplete_output"
@@ -276,7 +302,7 @@ class StartFlow:
         except Exception:
             log.exception("profile opening world_builder incomplete retry failed")
             result = {"generated_data": {}, "llm_error": "开场推演重试失败。"}
-        world_status, parsed = _classify_opening_result(result)
+        world_status, parsed = _classify_opening_result(result, profile_opening=profile_opening)
         return result, world_status, parsed
 
     def _decline_or_continue(
@@ -537,7 +563,7 @@ def merge_opening_payload(fallback: dict[str, Any], parsed: dict[str, Any]) -> d
     for key, value in parsed.items():
         if value:
             merged[key] = value
-    for key in ("story_key", "story_version", "story_title", "story_opening", "story_state"):
+    for key in _PROFILE_OPENING_AUTHORITY_FIELDS:
         if key in fallback:
             merged[key] = fallback[key]
 
@@ -589,11 +615,45 @@ def _engine_has_api_key(engine: Any) -> bool:
 
 def _classify_opening_result(
     result: dict[str, Any],
+    *,
+    profile_opening: bool = False,
 ) -> tuple[ModelResultStatus, dict[str, Any]]:
     status = classify_world_builder_result(result)
     if status.kind == ModelResultKind.REQUEST_FAILED:
         return status, {}
     parsed = parse_world_response(result)
+    if profile_opening:
+        envelope = WorldOpeningEnvelopeV1.from_payload(parsed)
+        visible = [
+            envelope.opening_narrative,
+            envelope.initial_situation_16,
+            *envelope.chronicle_0_16,
+            *envelope.choices,
+        ] if envelope is not None else []
+        if (
+            envelope is None
+            or not 3 <= len(envelope.chronicle_0_16) <= 5
+            or any(len(choice) < 4 for choice in envelope.choices)
+            or any(has_visible_english(text) for text in visible)
+        ):
+            return (
+                ModelResultStatus(
+                    ModelResultKind.INCOMPLETE_OUTPUT,
+                    "开场推演缺少完整编年史、初始局势或四个中文选项。",
+                ),
+                {},
+            )
+        opening_payload = {
+            "opening_narrative": envelope.opening_narrative,
+            "chronicle_0_16": list(envelope.chronicle_0_16),
+            "initial_situation_16": envelope.initial_situation_16,
+            "choices": list(envelope.choices),
+        }
+        for key in _PROFILE_OPENING_DESCRIPTIVE_FIELDS:
+            value = parsed.get(key)
+            if value:
+                opening_payload[key] = value
+        return ModelResultStatus(ModelResultKind.OK), opening_payload
     if not is_complete_opening_payload(parsed):
         return (
             ModelResultStatus(

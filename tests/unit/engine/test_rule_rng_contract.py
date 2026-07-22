@@ -59,6 +59,18 @@ def test_v3_long_form_progress_grants_rule_owned_breakthrough_preparation() -> N
     assert golden_breakthrough_flags(session) == ("foundation_aid",)
 
 
+def test_v3_calendar_advances_on_story_beats_instead_of_every_choice() -> None:
+    session = GameSession(run_seed="v3-calendar", story_version=3, turn_count=1)
+
+    scene_outcome = settle_turn_outcome("A【稳妥】稳住根基", session)
+    session.turn_count = 4
+    beat_outcome = settle_turn_outcome("A【稳妥】稳住根基", session)
+
+    assert scene_outcome.state_delta["character"]["age"] == "+0"
+    assert "时间流逝：数月" in scene_outcome.turn_summary
+    assert beat_outcome.state_delta["character"]["age"] == "+1"
+
+
 def test_seeded_risk_route_can_resolve_a_rule_owned_death(monkeypatch) -> None:
     class AlwaysRiskRuleRng:
         def randint(self, lower: int, _upper: int, _stream: str) -> int:

@@ -367,7 +367,12 @@ def test_v3_routes_apply_distinct_rule_owned_consequences() -> None:
     assert steady["faction_attitudes"][arc.ally_faction] == 1
     assert opportunity["clue_count"] == 1
     assert opportunity["faction_attitudes"][arc.neutral_faction] == 1
-    assert risk["pressure"] == 3
-    assert risk["risk_marks"] == 1
+    assert risk["pressure"] == 2
+    assert risk["risk_marks"] == 0
     assert luck["event_weight_modifiers"]["气运"] == 1
     assert luck["commitment_focus"] == 1
+
+    base.turn_count = 20
+    risk_beat = story_turn_delta(base, "风险", {}, 17)["story_update"]
+    assert risk_beat["pressure"] == 2
+    assert risk_beat["risk_marks"] == 1

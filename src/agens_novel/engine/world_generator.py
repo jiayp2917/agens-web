@@ -109,8 +109,8 @@ def build_world_fallback(profile: dict[str, Any]) -> dict[str, Any]:
     conflict = _difficulty_conflict(difficulty, variant)
     chronicle = _fallback_chronicle(summary, variant)
     initial_situation = (
-        f"十六岁这年，{char_name}抵达{location}。{world_name}正受{conflict}牵动，"
-        f"其{family_background}出身、{spirit_root}与{talent}共同把他推向{_fate_text(fate_tags)}的开局。"
+        f"十六岁这年，{char_name}抵达{location}。{world_name}正因{conflict.rstrip('。')}而起波澜。"
+        f"他的家世、{spirit_root}与{talent}，让这场{_fate_text(fate_tags)}的开局格外无法回避。"
     )
     choices = [
         f"在{location}按规矩登记，先稳住住处与修行名册",
@@ -527,9 +527,23 @@ def _fallback_chronicle(summary: dict[str, Any], variant: dict[str, str]) -> lis
     root = summary["spirit_root"]
     semantics = summary.get("profile_semantics")
     semantic_context = _chronicle_semantics(semantics)
+    family_opening = (
+        f"零至六岁，{name}出身于{family}。"
+        if family in {"农家", "寒门", "小族", "宗门旁支", "隐世仙族"}
+        else f"零至六岁，{name}的身世被记作「{family}」。"
+    )
+    talent_opening = (
+        "他尚未显出惊人异禀，却已学会在寻常日子里辨认最初的灵机。"
+        if talent == "平平无奇"
+        else f"与{talent}相关的征兆，也在一次小小变故中初露端倪。"
+    )
+    talent_context = semantic_context["talent"] if talent != "平平无奇" else ""
+    talent_root_context = "".join(
+        part for part in (talent_context, semantic_context["root"]) if part
+    )
     return [
-        f"零至六岁，{name}生于{family}。{semantic_context['family'] or '家中只留下朴素而克制的早年记载。'}",
-        f"七至十二岁，{root}初显，{talent}也在一次小小变故中露出端倪。{semantic_context['talent_root']}",
+        f"{family_opening}{semantic_context['family'] or '家中只留下朴素而克制的早年记载。'}",
+        f"七至十二岁，{root}初显。{talent_opening}{talent_root_context}",
         f"十三至十五岁，{variant['world_name']}的局势传到家门，{_attribute_readout(attrs)}逐渐决定他的修行短板。",
         f"十六岁，{fate}的线索把{name}带到{variant['location']}，本局修行由此展开。",
     ]
@@ -573,28 +587,30 @@ def _semantic_prompt(value: Any) -> str:
 
 def _chronicle_semantics(value: Any) -> dict[str, str]:
     if not isinstance(value, dict):
-        return {"family": "", "talent_root": ""}
+        return {"family": "", "talent": "", "root": ""}
     family = value.get("family_background")
     talent = value.get("talent")
     root = value.get("spirit_root")
     family_text = ""
     if isinstance(family, dict):
-        description = _short_text(family.get("description"), 48)
+        description = _short_text(family.get("description"), 48).rstrip("。！？；; ")
         risks = family.get("initial_risks")
         risk_text = "、".join(str(item) for item in risks[:2]) if isinstance(risks, list) else ""
         family_text = description
         if risk_text:
-            family_text = f"{family_text} 早年牵连包括{risk_text}。".strip()
-    talent_root_parts: list[str] = []
+            family_text = f"{family_text}。早年牵连包括{risk_text}。".lstrip("。").strip()
+    talent_text = ""
     if isinstance(talent, dict):
-        talent_root_parts.append(_short_text(talent.get("description"), 42))
+        talent_text = _short_text(talent.get("description"), 42).rstrip("。！？；; ")
+    root_text = ""
     if isinstance(root, dict):
-        tendency = _short_text(root.get("cultivation_tendency"), 24)
+        tendency = _short_text(root.get("cultivation_tendency"), 24).rstrip("。！？；; ")
         if tendency:
-            talent_root_parts.append(f"灵根更亲近{tendency}")
+            root_text = f"灵根更亲近{tendency}。"
     return {
         "family": family_text,
-        "talent_root": "；".join(part for part in talent_root_parts if part),
+        "talent": f"{talent_text}。" if talent_text else "",
+        "root": root_text,
     }
 
 

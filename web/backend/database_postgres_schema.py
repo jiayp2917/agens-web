@@ -108,6 +108,8 @@ POSTGRES_SCHEMA_STATEMENTS = (
     CREATE TABLE IF NOT EXISTS catalog_spirit_roots (
         id TEXT PRIMARY KEY,
         name TEXT NOT NULL UNIQUE,
+        rarity TEXT NOT NULL DEFAULT '普通',
+        description TEXT NOT NULL DEFAULT '',
         element TEXT NOT NULL DEFAULT '',
         grade TEXT NOT NULL DEFAULT '地',
         cultivation_bonus DOUBLE PRECISION NOT NULL DEFAULT 1.0,

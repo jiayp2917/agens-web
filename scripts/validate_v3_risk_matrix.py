@@ -12,7 +12,7 @@ from typing import Any
 
 from agens_novel.engine.start_flow import apply_profile_session
 from agens_novel.engine.story_catalog import opening_story_binding
-from agens_novel.engine.turn_rules import settle_turn_outcome
+from agens_novel.engine.turn_rules import breakthrough_story_delta, settle_turn_outcome
 from agens_novel.game.realm import RealmSystem
 from agens_novel.session.game_session import GameSession
 
@@ -148,6 +148,8 @@ def assert_directional_risk(matrix: dict[str, Any]) -> None:
         for kind in ("death", "longevity", "main_failure")
     ):
         raise AssertionError("risk matrix produced no negative outcome")
+    if matrix.get("terminal_counts", {}).get("unresolved", 0):
+        raise AssertionError("risk matrix left v3 paths unresolved at the turn limit")
     for result in matrix.get("directional", []):
         if result["negative_rate_difference"] < 0.10:
             raise AssertionError(f"{result['comparison']} gap is below 10 percentage points")
@@ -171,6 +173,13 @@ def _settle_breakthrough(session: GameSession, realm_system: RealmSystem) -> Non
     delta = realm_system.attempt_breakthrough(session)
     session.turn_count += 1
     session.realm_turn_count += 1
+    progress = breakthrough_story_delta(session)
+    world = delta.setdefault("world", {})
+    if isinstance(world, dict):
+        world.update(progress["world"])
+    meta = delta.setdefault("meta", {})
+    if isinstance(meta, dict):
+        meta.update(progress["meta"])
     session.apply_delta(delta)
     _advance_rng_counter(session)
 

@@ -107,6 +107,16 @@ def _make_session(**overrides):
     return session
 
 
+class _FixedRuleRng:
+    """Deterministic rule source for tests that exercise a rule branch."""
+
+    def __init__(self, value: float):
+        self.value = value
+
+    def random(self, _stream: str) -> float:
+        return self.value
+
+
 class TestCanAttemptBreakthrough:
     """Test breakthrough eligibility logic."""
 
@@ -285,8 +295,7 @@ class TestStageAdvancePacing:
             attributes={"comprehension": 8, "root_bone": 8},
         )
 
-        with patch("agens_novel.game.realm.random.random", return_value=0.39):
-            delta = rs.try_advance_stage(session)
+        delta = rs.try_advance_stage(session, rule_rng=_FixedRuleRng(0.39))
 
         assert delta is not None
         assert delta["character"]["realm_stage"] == 2
@@ -301,8 +310,7 @@ class TestStageAdvancePacing:
             attributes={"comprehension": 80, "root_bone": 80},
         )
 
-        with patch("agens_novel.game.realm.random.random", return_value=0.39):
-            delta = rs.try_advance_stage(session)
+        delta = rs.try_advance_stage(session, rule_rng=_FixedRuleRng(0.39))
 
         assert delta is not None
         assert delta["character"]["realm_stage"] == 2
@@ -320,14 +328,8 @@ class TestAttemptBreakthrough:
     def test_success_returns_correct_delta(self):
         rs = RealmSystem()
         session = _make_session(realm="练气", realm_stage=9)
-        # Force success
-        import agens_novel.game.realm as realm_mod
-        original_random = realm_mod.random.random
-        realm_mod.random.random = lambda: 0.0  # always succeed
-        try:
+        with patch("agens_novel.game.realm._breakthrough_roll", return_value=0.0):
             result = rs.attempt_breakthrough(session)
-        finally:
-            realm_mod.random.random = original_random
 
         assert result["meta"]["breakthrough_result"] == "success"
         assert result["meta"]["new_realm"] == "筑基"
@@ -337,14 +339,8 @@ class TestAttemptBreakthrough:
     def test_failure_returns_correct_delta(self):
         rs = RealmSystem()
         session = _make_session(realm="练气", realm_stage=9)
-        # Force failure
-        import agens_novel.game.realm as realm_mod
-        original_random = realm_mod.random.random
-        realm_mod.random.random = lambda: 0.99  # always fail
-        try:
+        with patch("agens_novel.game.realm._breakthrough_roll", return_value=0.99):
             result = rs.attempt_breakthrough(session)
-        finally:
-            realm_mod.random.random = original_random
 
         assert result["meta"]["breakthrough_result"] == "failure"
         assert result["meta"]["status_effect_add"] == "走火入魔"

@@ -26,7 +26,7 @@ pytestmark = [
 
 _ROOT = Path(__file__).resolve().parents[2]
 _PREVIOUS_REVISION = "20260705_0007"
-_HEAD_REVISION = "20260710_0008"
+_HEAD_REVISION = "20260721_0009"
 
 
 @contextmanager
@@ -277,6 +277,38 @@ def test_clean_downgrade_and_reupgrade_round_trip(monkeypatch: pytest.MonkeyPatc
 
         command.upgrade(cfg, "head")
         assert _revision(database_url) == _HEAD_REVISION
+
+
+def test_spirit_root_metadata_upgrade_and_downgrade(monkeypatch: pytest.MonkeyPatch) -> None:
+    with _temporary_database(monkeypatch) as database_url:
+        cfg = _alembic_config()
+        command.upgrade(cfg, "20260710_0008")
+        engine = create_engine(database_url)
+        try:
+            with engine.begin() as conn:
+                conn.execute(
+                    text(
+                        "INSERT INTO catalog_spirit_roots "
+                        "(id, name, element, grade, cultivation_bonus, breakthrough_bonus, cultivation_tendency, event_tags) "
+                        "VALUES ('root-1', '旧灵根', '水', '地', 1, 0, '', '[]'::jsonb)"
+                    )
+                )
+        finally:
+            engine.dispose()
+
+        command.upgrade(cfg, "head")
+        engine = create_engine(database_url)
+        try:
+            with engine.connect() as conn:
+                row = conn.execute(
+                    text("SELECT rarity, description FROM catalog_spirit_roots WHERE id = 'root-1'")
+                ).mappings().one()
+        finally:
+            engine.dispose()
+
+        assert row == {"rarity": "普通", "description": ""}
+        command.downgrade(cfg, "20260710_0008")
+        assert _revision(database_url) == "20260710_0008"
 
 
 @pytest.mark.parametrize("blocking_state", ["guest", "active_run"])

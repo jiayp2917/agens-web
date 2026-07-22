@@ -17,8 +17,17 @@ def test_small_v3_matrix_covers_all_groups_without_model_calls() -> None:
     assert result["story_version"] == 3
     assert len(result["groups"]) == 48
     assert sum(result["terminal_counts"].values()) == 96
+    assert result["terminal_counts"].get("unresolved", 0) == 0
     assert {item["comparison"] for item in result["directional"]} == {
         "higher_difficulty_than_normal",
         "risk_route_c_than_steady_a",
         "low_aptitude_than_high",
     }
+
+
+def test_v3_risk_route_is_not_a_fixed_loss() -> None:
+    result = run_matrix(seeds_per_group=20)
+
+    risk_groups = [group for group in result["groups"] if group["case"].endswith("|C")]
+
+    assert all(0.0 < group["negative_rate"] < 1.0 for group in risk_groups)

@@ -7,6 +7,7 @@ import os
 from dataclasses import dataclass, replace
 from typing import Any
 
+from ..rule_rng import rule_rng_for_session
 from .world_catalog import world_key_for_name
 
 STORY_RESOLUTION_TURN = 60
@@ -576,6 +577,10 @@ def story_turn_delta(
     route_counts[category] = route_counts.get(category, 0) + 1
     due = turn % 4 == 0
     pressure_change = _pressure_change(category) if due else 0
+    if arc.version == 3 and category == "风险":
+        # Risk still changes faction standing and creates exposure marks, but
+        # cannot turn every ninety-turn C route into a fixed pressure failure.
+        pressure_change = 0
     v3_effect = _v3_route_effect(state, phase, category, turn) if arc.version == 3 else {}
     pressure_change += int(v3_effect.get("pressure_delta") or 0)
     pressure = max(0, int(state.get("pressure") or 0) + pressure_change)
@@ -671,7 +676,10 @@ def _v3_route_effect(
     if category == "机遇":
         return {"dimensions": dimensions, "clue_delta": 1}
     if category == "风险":
-        return {"dimensions": dimensions, "pressure_delta": 1, "risk_mark_delta": 1}
+        return {
+            "dimensions": dimensions,
+            "risk_mark_delta": 1 if turn % 4 == 0 else 0,
+        }
     if category == "气运":
         return {
             "dimensions": dimensions,
@@ -778,6 +786,27 @@ def _v3_resolution_context(state: dict[str, Any], effect: dict[str, Any]) -> dic
             int(state.get("risk_marks") or 0) + int(effect.get("risk_mark_delta") or 0),
         ),
     }
+
+
+def _v3_risk_arc_failed(session: Any, resolution: dict[str, int]) -> bool:
+    """Resolve accumulated C-route exposure once at the v3 arc conclusion."""
+    marks = max(0, int(resolution.get("risk_marks") or 0))
+    if not marks:
+        return False
+    rng = rule_rng_for_session(session)
+    if rng is None:
+        return False
+    attributes = getattr(session, "attributes", {})
+    aptitude = (
+        sum(int(attributes.get(key) or 0) for key in ("root_bone", "comprehension", "luck"))
+        if isinstance(attributes, dict)
+        else 0
+    )
+    chance = 0.05 + marks * 0.012
+    if getattr(session, "difficulty", "普通") == "困难":
+        chance += 0.08
+    chance += max(0, 12 - aptitude) * 0.01
+    return rng.random("v3_arc_risk") < min(0.65, chance)
 
 
 def _advance_v3_commitments(
@@ -905,7 +934,7 @@ def _story_outcome(
     if pressure >= 8:
         return ("failed" if arc.version == 3 else "resolved"), arc.failure_branch, arc.failure_branch
     if arc.version == 3:
-        if int(v3_resolution.get("risk_marks") or 0) >= 12:
+        if _v3_risk_arc_failed(session, v3_resolution):
             return "failed", arc.failure_branch, arc.failure_branch
         if _dominant_route(route_counts) == "机遇" and int(
             v3_resolution.get("clue_count") or 0

@@ -13,6 +13,7 @@ from ..agents.contracts import JudgeDecisionV1
 from ..game.constants import format_realm_name
 from .model_result import ModelResultKind, classify_judge_result, classify_narrator_result
 from .render import format_status_bar
+from .turn_rules import breakthrough_story_delta
 
 log = logging.getLogger(__name__)
 _BREAKTHROUGH_FAILURE_WORDS = (
@@ -65,17 +66,7 @@ class BreakthroughFlow:
         engine = self.engine
         session = engine.game_session
 
-        if not session.game_started:
-            engine.emit("on_info", "尚未开始游戏。")
-            return
-
-        if session.game_over:
-            engine.emit("on_info", "游戏已结束。")
-            return
-
-        can, reason = engine.realm_system.can_attempt_breakthrough(session)
-        if not can:
-            engine.emit("on_info", reason)
+        if not self._can_start_breakthrough():
             return
 
         engine.emit("on_loading", "突破中...")
@@ -84,52 +75,20 @@ class BreakthroughFlow:
         breakthrough_delta = engine.realm_system.attempt_breakthrough(session)
         bt_result = breakthrough_delta.get("meta", {}).get("breakthrough_result", "")
         action_text = self._breakthrough_action_text(breakthrough_delta)
-        result = self._run_breakthrough_narrator(action_text)
-        narrative = ""
         state_delta: dict[str, Any] = self._rule_breakthrough_delta(breakthrough_delta)
-        choices: Any = []
-        if result is None:
-            pass
-        elif result.get("llm_error"):
-            log.info(
-                "breakthrough narrator unavailable after rule settlement: %s",
-                result.get("llm_error"),
-            )
-        else:
-            narrative = str(result.get("narrative") or "")
-            raw_delta = result.get("state_delta", {})
-            if isinstance(raw_delta, dict) and raw_delta:
-                state_delta["meta"]["model_state_update_ignored"] = True
-            choices = result.get("choices")
+        narrative, choices = self._breakthrough_narrator_parts(action_text, state_delta)
 
         if not self._judge_breakthrough_narrative(action_text, narrative, state_delta):
             narrative = ""
 
-        session.turn_count += 1
-        session.realm_turn_count += 1
-        self._ensure_breakthrough_meta(state_delta, bt_result)
-        session.apply_delta(state_delta)
-        narrative = self._coerce_breakthrough_narrative(
-            narrative,
+        narrative = self._apply_breakthrough_result(
+            state_delta,
             bt_result,
-            previous_realm_label=previous_realm_label,
-        )
-        narrative = self._dedupe_breakthrough_narrative(
             narrative,
-            bt_result,
-            previous_realm_label=previous_realm_label,
+            previous_realm_label,
         )
         is_finale = session.finale
-        if session.game_over:
-            session.last_choices = []
-        else:
-            engine.set_choices(
-                choices,
-                source="breakthrough_narrator",
-                fallback_notice=False,
-                require_choice=False,
-                reason="突破叙事未返回可用选项。",
-            )
+        self._set_breakthrough_choices(choices)
         self._record_breakthrough_turn(action_text, narrative, state_delta)
         self._emit_breakthrough_result(bt_result, narrative, is_finale)
 
@@ -140,6 +99,75 @@ class BreakthroughFlow:
 
         if engine.check_game_over():
             return
+
+    def _can_start_breakthrough(self) -> bool:
+        session = self.engine.game_session
+        if not session.game_started:
+            self.engine.emit("on_info", "尚未开始游戏。")
+            return False
+        if session.game_over:
+            self.engine.emit("on_info", "游戏已结束。")
+            return False
+        can, reason = self.engine.realm_system.can_attempt_breakthrough(session)
+        if not can:
+            self.engine.emit("on_info", reason)
+            return False
+        return True
+
+    def _breakthrough_narrator_parts(
+        self,
+        action_text: str,
+        state_delta: dict[str, Any],
+    ) -> tuple[str, Any]:
+        result = self._run_breakthrough_narrator(action_text)
+        if result is None:
+            return "", []
+        if result.get("llm_error"):
+            log.info(
+                "breakthrough narrator unavailable after rule settlement: %s",
+                result.get("llm_error"),
+            )
+            return "", []
+        raw_delta = result.get("state_delta", {})
+        if isinstance(raw_delta, dict) and raw_delta:
+            state_delta["meta"]["model_state_update_ignored"] = True
+        return str(result.get("narrative") or ""), result.get("choices")
+
+    def _apply_breakthrough_result(
+        self,
+        state_delta: dict[str, Any],
+        bt_result: str,
+        narrative: str,
+        previous_realm_label: str,
+    ) -> str:
+        session = self.engine.game_session
+        session.turn_count += 1
+        session.realm_turn_count += 1
+        self._ensure_breakthrough_meta(state_delta, bt_result)
+        session.apply_delta(state_delta)
+        narrative = self._coerce_breakthrough_narrative(
+            narrative,
+            bt_result,
+            previous_realm_label=previous_realm_label,
+        )
+        return self._dedupe_breakthrough_narrative(
+            narrative,
+            bt_result,
+            previous_realm_label=previous_realm_label,
+        )
+
+    def _set_breakthrough_choices(self, choices: Any) -> None:
+        session = self.engine.game_session
+        if session.game_over:
+            session.last_choices = []
+            return
+        self.engine.set_choices(
+            choices,
+            source="breakthrough_narrator",
+            fallback_notice=False,
+            require_choice=False,
+            reason="突破叙事未返回可用选项。",
+        )
 
     def _run_breakthrough_narrator(self, action_text: str) -> dict[str, Any] | None:
         engine = self.engine
@@ -297,6 +325,7 @@ class BreakthroughFlow:
             state_delta["meta"] = meta
         meta.setdefault("elapsed_years", 0)
         meta.setdefault("choice_category", "breakthrough")
+        self._attach_story_progress(state_delta)
         if bt_result:
             meta.setdefault("breakthrough_result", bt_result)
         if bt_result == "success":
@@ -305,6 +334,24 @@ class BreakthroughFlow:
             meta.setdefault("calendar_summary", "破境失败，本回合以反噬结果结算。")
         else:
             meta.setdefault("calendar_summary", "完成一次破境判定。")
+
+    def _attach_story_progress(self, state_delta: dict[str, Any]) -> None:
+        progress = breakthrough_story_delta(self.engine.game_session)
+        world = state_delta.setdefault("world", {})
+        if not isinstance(world, dict):
+            world = {}
+            state_delta["world"] = world
+        for key, value in progress["world"].items():
+            if key == "lore_add" and isinstance(value, list):
+                existing = world.get(key)
+                world[key] = list(
+                    dict.fromkeys([*(existing if isinstance(existing, list) else []), *value])
+                )
+            else:
+                world[key] = value
+        meta = state_delta.setdefault("meta", {})
+        if isinstance(meta, dict):
+            meta.update(progress["meta"])
 
     def _record_breakthrough_turn(
         self,
