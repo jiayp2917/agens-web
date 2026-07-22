@@ -6,7 +6,11 @@ from types import SimpleNamespace
 
 import pytest
 
-from agens_novel.evaluation.playthrough import authority_state_hash
+from agens_novel.evaluation.playthrough import (
+    authority_state_hash,
+    canonical_authority_trajectory,
+    canonical_replay_session,
+)
 from agens_novel.evaluation.scenarios import canonical_v3_scenarios
 from web.backend.service import WebGameService, WebRunner, _evaluation_canonical_scenario
 
@@ -113,6 +117,52 @@ def test_persisted_turn_hash_is_evaluation_only(monkeypatch) -> None:
     assert evaluated["state_after"]["_evaluation_authority_hash"] == authority_state_hash(
         runner.engine.game_session
     )
+
+
+@pytest.mark.parametrize(
+    ("payload", "expected"),
+    [
+        ({"choice_index": 0}, "选择稳妥路线，先核验线索。"),
+        ({"choice": "A"}, "选择稳妥路线，先核验线索。"),
+        ({"choice": "1"}, "选择稳妥路线，先核验线索。"),
+    ],
+)
+def test_evaluation_choice_uses_canonical_action_not_model_display_text(
+    monkeypatch, payload: dict[str, object], expected: str
+) -> None:
+    scenario = canonical_v3_scenarios()[0]
+    monkeypatch.setenv("AGENS_EVALUATION_MODE", "1")
+    monkeypatch.setenv("AGENS_EVALUATION_SCENARIO", scenario.key)
+    runner = WebRunner(session_id="evaluation-choice", user_id="evaluation-user")
+    runner.engine.game_session = canonical_replay_session(scenario, story_version=3, target_turn=0)
+    runner.engine.game_session.last_choices = [
+        "模型生成的显示选项一",
+        "模型生成的显示选项二",
+        "模型生成的显示选项三",
+        "模型生成的显示选项四",
+    ]
+
+    assert _service()._choice_text(runner, payload) == expected
+
+
+def test_evaluation_choice_produces_canonical_first_turn_hash(monkeypatch) -> None:
+    scenario = canonical_v3_scenarios()[0]
+    monkeypatch.setenv("AGENS_EVALUATION_MODE", "1")
+    monkeypatch.setenv("AGENS_EVALUATION_SCENARIO", scenario.key)
+    runner = WebRunner(session_id="evaluation-hash", user_id="evaluation-user")
+    runner.engine.game_session = canonical_replay_session(scenario, story_version=3, target_turn=0)
+    runner.engine.game_session.last_choices = ["显示 A", "显示 B", "显示 C", "显示 D"]
+    runner.engine.run_agent = lambda *_args, **_kwargs: {
+        "narrative": "规则动作已按槽位结算。",
+        "choices": ["甲", "乙", "丙", "丁"],
+        "state_delta": {},
+        "llm_error": "",
+    }
+
+    runner.engine.handle_action(_service()._choice_text(runner, {"choice_index": 0}))
+
+    expected = canonical_authority_trajectory(scenario, story_version=3, max_turns=1)[0]
+    assert authority_state_hash(runner.engine.game_session) == expected["authority_hash"]
 
 
 def test_authority_hash_excludes_live_opening_display_fields() -> None:

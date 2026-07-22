@@ -75,7 +75,7 @@ def run_canonical_playthrough(
         event_index = len(events)
         call_index = ledger.call_count
         started = time.monotonic()
-        engine.handle_action(_canonical_action(slot))
+        engine.handle_action(canonical_action_for_slot(slot))
         if engine.game_session.turn_count <= before_turn:
             notices.append("turn_did_not_advance")
             break
@@ -162,7 +162,7 @@ def canonical_authority_trajectory(
         if engine.game_session.game_over:
             break
         before_turn = engine.game_session.turn_count
-        engine.handle_action(_canonical_action(slot))
+        engine.handle_action(canonical_action_for_slot(slot))
         if engine.game_session.turn_count <= before_turn:
             raise RuntimeError("canonical rule replay did not advance")
         trajectory.append(
@@ -189,7 +189,7 @@ def canonical_replay_session(
     for slot in canonical_slots(scenario, max_turns=max(0, target_turn)):
         if engine.game_session.game_over:
             break
-        engine.handle_action(_canonical_action(slot))
+        engine.handle_action(canonical_action_for_slot(slot))
     return GameSession.from_save_dict(engine.game_session.to_save_dict())
 
 
@@ -366,13 +366,18 @@ def _current_motif(session: GameSession) -> str:
     return str(motifs[-1] or "") if isinstance(motifs, list) and motifs else ""
 
 
-def _canonical_action(slot: str) -> str:
-    return {
+def canonical_action_for_slot(slot: str) -> str:
+    """Return the fixed rule action used by a registered evaluation slot."""
+    actions = {
         "A": "选择稳妥路线，先核验线索。",
         "B": "选择机遇路线，向同行者探问。",
         "C": "选择风险路线，踏入未知险地。",
         "D": "选择气运路线，借势试路。",
-    }[slot]
+    }
+    try:
+        return actions[slot]
+    except KeyError as exc:
+        raise ValueError(f"evaluation slot is not registered: {slot}") from exc
 
 
 class _RuleReplayEngine(GameEngine):

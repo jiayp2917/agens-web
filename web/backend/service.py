@@ -29,7 +29,11 @@ from agens_novel.engine.model_fallback_policy import SECRET_MARKERS as _SECRET_M
 from agens_novel.engine.render import format_status_bar
 from agens_novel.engine.start_flow import normalize_profile_attributes
 from agens_novel.engine.story_catalog import ensure_story_binding, story_arc_for_binding
-from agens_novel.evaluation.playthrough import authority_state_hash, install_canonical_authority
+from agens_novel.evaluation.playthrough import (
+    authority_state_hash,
+    canonical_action_for_slot,
+    install_canonical_authority,
+)
 from agens_novel.evaluation.scenarios import CanonicalScenarioV1, canonical_v3_scenarios
 from agens_novel.game.constants import (
     ATTRIBUTE_KEYS,
@@ -994,21 +998,28 @@ class WebGameService:
 
     def _choice_text(self, runner: WebRunner, payload: dict[str, Any]) -> str:
         choices = list(runner.engine.game_session.last_choices or [])
-        if "choice_index" in payload and payload["choice_index"] is not None:
-            index = int(payload["choice_index"])
+        canonical_scenario = _evaluation_canonical_scenario()
+
+        def choice_for_index(index: int) -> str:
             if index < 0 or index >= len(choices):
                 raise ValueError("选项序号无效。")
+            if canonical_scenario is not None:
+                return canonical_action_for_slot(("A", "B", "C", "D")[index])
             return choice_with_semantic(index, choices[index])
+
+        if "choice_index" in payload and payload["choice_index"] is not None:
+            index = int(payload["choice_index"])
+            return choice_for_index(index)
 
         raw = str(payload.get("choice") or "").strip()
         letter_map = {"A": 0, "B": 1, "C": 2, "D": 3}
         if raw.upper() in letter_map and letter_map[raw.upper()] < len(choices):
             index = letter_map[raw.upper()]
-            return choice_with_semantic(index, choices[index])
+            return choice_for_index(index)
         if raw in {"1", "2", "3", "4"}:
             index = int(raw) - 1
             if index < len(choices):
-                return choice_with_semantic(index, choices[index])
+                return choice_for_index(index)
         if raw:
             raise ValueError("请选择 A/B/C/D。")
         raise ValueError("请选择 A/B/C/D。")
