@@ -29,7 +29,7 @@ from agens_novel.engine.model_fallback_policy import SECRET_MARKERS as _SECRET_M
 from agens_novel.engine.render import format_status_bar
 from agens_novel.engine.start_flow import normalize_profile_attributes
 from agens_novel.engine.story_catalog import ensure_story_binding, story_arc_for_binding
-from agens_novel.evaluation.playthrough import authority_state_hash, install_canonical_binding
+from agens_novel.evaluation.playthrough import authority_state_hash, install_canonical_authority
 from agens_novel.evaluation.scenarios import CanonicalScenarioV1, canonical_v3_scenarios
 from agens_novel.game.constants import (
     ATTRIBUTE_KEYS,
@@ -465,7 +465,7 @@ class WebGameService:
                 runner.engine.start_from_profile(normalized)
                 session = runner.engine.game_session
                 if scenario is not None:
-                    install_canonical_binding(runner.engine, scenario, story_version=3)
+                    install_canonical_authority(runner.engine, scenario, story_version=3)
                 response = self._commit_runner(
                     runner,
                     expected_version=expected_version,

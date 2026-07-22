@@ -47,6 +47,19 @@ def test_chrome_evaluation_only_accepts_named_local_databases() -> None:
         runner._validate_database_url("postgresql://evaluation@127.0.0.1/agens_web_test")
 
 
+def test_chrome_evaluation_reserves_a_unique_artifact_root(tmp_path, monkeypatch) -> None:
+    from agens_novel.artifacts import sink
+
+    monkeypatch.setattr(sink, "_restrict_windows_acl", lambda _root: None)
+
+    first_id, first = runner._prepare_artifact_root(tmp_path / "evidence", label="agens-smoke")
+    second_id, second = runner._prepare_artifact_root(tmp_path / "evidence", label="agens-smoke")
+
+    assert first_id != second_id
+    assert first != second
+    assert first.is_dir() and second.is_dir()
+
+
 def test_browser_process_receives_no_provider_key(monkeypatch, tmp_path) -> None:
     monkeypatch.setenv("AGNES_API_KEY", "fake-agens-key")
     monkeypatch.setenv("DEEPSEEK_API_KEY", "fake-deepseek-key")

@@ -5,9 +5,16 @@ from __future__ import annotations
 from unittest.mock import patch
 
 from agens_novel.artifacts import sink
+from agens_novel.engine.game_engine import GameEngine
 from agens_novel.evaluation.ledger import EvaluationLedger
 from agens_novel.evaluation.model_config import EvaluationModelConfig
-from agens_novel.evaluation.playthrough import canonical_slots, run_canonical_playthrough
+from agens_novel.evaluation.playthrough import (
+    authority_state_hash,
+    canonical_replay_session,
+    canonical_slots,
+    install_canonical_authority,
+    run_canonical_playthrough,
+)
 from agens_novel.evaluation.scenarios import canonical_v3_scenarios
 
 
@@ -55,3 +62,18 @@ def test_canonical_slots_extend_only_for_post_arc_coverage() -> None:
 
     assert canonical_slots(scenario, max_turns=90) == scenario.slots
     assert canonical_slots(scenario, max_turns=95) == scenario.slots + ("A",) * 5
+
+
+def test_live_opening_cannot_alter_canonical_authority_but_keeps_four_display_choices() -> None:
+    scenario = canonical_v3_scenarios()[0]
+    engine = GameEngine()
+    engine.start_from_profile(scenario.profile)
+    engine.game_session.attributes["luck"] = 0
+    engine.game_session.world_profile = {"world_key": "provider-controlled"}
+    engine.game_session.last_choices = ["one", "two", "three", "four"]
+
+    install_canonical_authority(engine, scenario, story_version=3)
+
+    expected = canonical_replay_session(scenario, story_version=3, target_turn=0)
+    assert authority_state_hash(engine.game_session) == authority_state_hash(expected)
+    assert engine.game_session.last_choices == ["one", "two", "three", "four"]

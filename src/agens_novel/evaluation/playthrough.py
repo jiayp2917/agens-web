@@ -193,6 +193,23 @@ def canonical_replay_session(
     return GameSession.from_save_dict(engine.game_session.to_save_dict())
 
 
+def install_canonical_authority(
+    engine: GameEngine,
+    scenario: CanonicalScenarioV1,
+    *,
+    story_version: int,
+) -> None:
+    """Restore the frozen authority baseline after a live display-only opening."""
+    display_choices = list(engine.game_session.last_choices)
+    engine.game_session = canonical_replay_session(
+        scenario,
+        story_version=story_version,
+        target_turn=0,
+    )
+    if len(display_choices) == 4:
+        engine.game_session.last_choices = display_choices
+
+
 def authority_state_hash(session: GameSession) -> str:
     """Hash only state that deterministic turn rules own across providers."""
     payload = {

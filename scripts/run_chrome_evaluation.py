@@ -26,8 +26,8 @@ def main() -> int:
     args = _arguments()
     scenario = _scenario(args.scenario)
     _validate_database_url(args.database_url)
-    artifact_root = _prepare_artifact_root(args.artifact_root)
     label = f"{args.provider.lower()}-{scenario.key}-{args.name}"
+    run_id, artifact_root = _prepare_artifact_root(args.artifact_parent, label=label)
     server_env = _server_environment(args, artifact_root, label)
     browser_env = _browser_environment(args, artifact_root, label, scenario)
     started = time.monotonic()
@@ -48,6 +48,7 @@ def main() -> int:
     result["scenario"] = scenario.key
     result["turns_requested"] = args.turns
     result["run_label"] = label
+    result["run_id"] = run_id
     path = sink.write_json("chrome_orchestrator", label, "summary.json", result)
     summary = {
         "provider": args.provider,
@@ -76,7 +77,7 @@ def _arguments() -> argparse.Namespace:
     parser.add_argument("--transport", required=True, choices=sorted(_TRANSPORTS))
     parser.add_argument("--scenario", required=True)
     parser.add_argument("--database-url", required=True)
-    parser.add_argument("--artifact-root", required=True, type=Path)
+    parser.add_argument("--artifact-parent", required=True, type=Path)
     parser.add_argument("--port", type=int, default=8100)
     parser.add_argument("--turns", type=int, default=90)
     parser.add_argument("--save-load-turn", type=int, default=0)
@@ -103,13 +104,11 @@ def _scenario(key: str):
     return scenario
 
 
-def _prepare_artifact_root(raw_root: Path) -> Path:
+def _prepare_artifact_root(parent: Path, *, label: str) -> tuple[str, Path]:
+    run_id, root = sink.create_evaluation_run_root(parent, label=label)
     os.environ["AGENS_EVALUATION_MODE"] = "1"
-    os.environ["AGENS_ARTIFACT_ROOT"] = str(raw_root)
-    root = sink.ensure_evaluation_sink_ready()
-    if root is None:
-        raise RuntimeError("evaluation artifact root is unavailable")
-    return root
+    os.environ["AGENS_ARTIFACT_ROOT"] = str(root)
+    return run_id, root
 
 
 def _validate_database_url(raw_url: str) -> None:
@@ -239,7 +238,8 @@ def _run_browser(environment: dict[str, str], *, timeout_seconds: int) -> dict[s
         check=False,
     )
     payload = _final_json(_decode_browser_stdout(result.stdout))
-    summary = payload.get("summary") if isinstance(payload.get("summary"), dict) else {}
+    summary_value = payload.get("summary")
+    summary: dict[str, Any] = summary_value if isinstance(summary_value, dict) else {}
     persisted = summary.get("persisted_turn_audit")
     persisted_audit = persisted if isinstance(persisted, dict) else {}
     start_fallback = bool(summary.get("start_fallback"))
