@@ -141,10 +141,6 @@ def save_artifact(state: dict[str, Any]) -> dict[str, Any]:
     )
 
     out_path = store.write_output(AGENT_NAME, run_id, text)
-    store.write_input_snapshot(
-        AGENT_NAME, run_id,
-        {"model": state.get("model"), "thread_id": state.get("thread_id")},
-    )
     audit = {
         "run_id": run_id, "agent": AGENT_NAME,
         "started_at": state.get("started_at"), "finished_at": utcnow_iso(),

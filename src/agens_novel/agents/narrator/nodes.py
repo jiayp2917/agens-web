@@ -284,10 +284,6 @@ def save_artifact(state: dict[str, Any]) -> dict[str, Any]:
     contract_diagnostics = _contract_diagnostics(text, narrative, state_delta, choices)
 
     out_path = store.write_output(AGENT_NAME, run_id, text)
-    store.write_input_snapshot(
-        AGENT_NAME, run_id,
-        {"user_input": state.get("user_input"), "model": state.get("model")},
-    )
     audit = {
         "run_id": run_id, "agent": AGENT_NAME,
         "started_at": state.get("started_at"), "finished_at": utcnow_iso(),

@@ -20,11 +20,6 @@ def run_dir(agent_name: str, run_id: str) -> Path:
     return sink.run_dir(agent_name, run_id)
 
 
-def write_input_snapshot(agent_name: str, run_id: str, payload: dict[str, Any]) -> Path:
-    """Persist only the redacted evaluation metadata snapshot."""
-    return sink.write_json(agent_name, run_id, "input.json", payload)
-
-
 def write_output(agent_name: str, run_id: str, text: str) -> Path:
     """Persist a redacted response copy only in evaluation mode."""
     return sink.write_text(agent_name, run_id, "response.md", text)

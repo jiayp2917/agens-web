@@ -24,6 +24,8 @@ _ARTIFACT_ROOT_ENV = "AGENS_ARTIFACT_ROOT"
 _SECRET_KEY_RE = re.compile(
     r"(?i)(?:[a-z][a-z0-9_-]*?(?:key|secret|token|cookie|authorization|password))\s*[:=]\s*[^\s,;]+"
 )
+_BEARER_RE = re.compile(r"(?i)\bbearer\s+[A-Za-z0-9._~+/=-]{8,}")
+_PREFIXED_TOKEN_RE = re.compile(r"\b(?:sk|ag|ds|rk)-[A-Za-z0-9_-]{8,}", re.IGNORECASE)
 _URL_RE = re.compile(r"https?://[^\s\]\[\"'<>{}]+", re.IGNORECASE)
 _SENSITIVE_KEYS = {
     "api_key",
@@ -69,6 +71,8 @@ def ensure_evaluation_sink_ready() -> Path | None:
         raise ArtifactPolicyError("AGENS_ARTIFACT_ROOT must be outside the repository")
     root.mkdir(parents=True, exist_ok=True)
     _restrict_windows_acl(root)
+    if any(root.rglob("input.json")):
+        raise ArtifactPolicyError("AGENS_ARTIFACT_ROOT contains forbidden input snapshots")
     return root
 
 
@@ -115,6 +119,8 @@ def append_jsonl(name: str, payload: dict[str, Any]) -> Path:
 def redact_text(value: Any) -> str:
     text = str(value or "")
     text = _SECRET_KEY_RE.sub("[redacted_secret]", text)
+    text = _BEARER_RE.sub("[redacted_secret]", text)
+    text = _PREFIXED_TOKEN_RE.sub("[redacted_secret]", text)
     return _URL_RE.sub("[redacted_url]", text)
 
 
@@ -194,7 +200,10 @@ def sensitive_marker_counts(root: Path | None = None) -> dict[str, int]:
         if not path.is_file():
             continue
         text = path.read_text(encoding="utf-8", errors="replace")
-        counts["secret_like"] += len(_SECRET_KEY_RE.findall(text))
+        counts["secret_like"] += sum(
+            len(pattern.findall(text))
+            for pattern in (_SECRET_KEY_RE, _BEARER_RE, _PREFIXED_TOKEN_RE)
+        )
         counts["url_like"] += len(_URL_RE.findall(text))
     return counts
 
@@ -205,7 +214,9 @@ def _safe_name(value: str) -> str:
 
 def _is_sensitive_key(key: str) -> bool:
     lowered = key.strip().lower().replace("-", "_")
-    return lowered in _SENSITIVE_KEYS or any(marker in lowered for marker in ("secret", "token", "password"))
+    if lowered in _SENSITIVE_KEYS or any(marker in lowered for marker in ("secret", "password")):
+        return True
+    return "token" in lowered and not lowered.endswith("_tokens")
 
 
 def _restrict_windows_acl(root: Path) -> None:

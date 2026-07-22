@@ -15,7 +15,12 @@ from typing import Any
 
 from agens_novel.settings import Settings
 
-from ..llm.runtime_context import RuntimeModelConfig, model_runtime
+from ..llm.runtime_context import (
+    ModelCallObserver,
+    RuntimeModelConfig,
+    model_call_observer,
+    model_runtime,
+)
 from ..session.game_session import GameSession
 
 log = logging.getLogger(__name__)
@@ -81,6 +86,7 @@ def run_turn_sync(
 
     # Extract stream_callback before building the data-only agent state.
     stream_callback: Callable[[str], None] | None = kwargs.pop("stream_callback", None)
+    call_observer: ModelCallObserver | None = kwargs.pop("model_call_observer", None)
 
     model = str(kwargs.pop("model", None) or os.environ.get("AGNES_MODEL", Settings().model))
     base_url = str(
@@ -123,6 +129,6 @@ def run_turn_sync(
     # Stream callback for narrator — passed via closure, NOT in state dict.
     # Putting it in state causes msgpack serialization failure at checkpoint.
     state.update(kwargs)
-    with model_runtime(runtime):
+    with model_runtime(runtime), model_call_observer(agent_name, call_observer):
         return _run_agent_graph(agent_name, state, stream_callback=stream_callback)
 
