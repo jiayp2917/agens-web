@@ -94,8 +94,9 @@ React/Vite
 | `model_fallback_policy.py` | 失败决策、脱敏玩家提示 |
 | `turn_rules.py` | A/B/C/D 类别、时间、属性、寿元、事件、长期剧情和终局规则 |
 | `event_catalog.py` | 数据驱动编年史事件、阶段目标、选项提示和允许 delta 类型 |
-| `story_catalog.py` | 四套世界的版本化主线：v1 60 回合兼容、v2 九阶段 90 回合、承诺、关系和结局 |
-| `action_delta_policy.py` | 模型 delta 清洗、叙事/落账一致性、规则字段覆盖 |
+| `story_catalog.py` | 四套世界的版本化主线：v1 60 回合兼容、v2 九阶段 90 回合、v3 承诺、路线后果和 post-arc |
+| `rule_contracts.py` | `ChoiceIntentV1` 与 `RuleTurnOutcomeV1` 的规则权威边界 |
+| `action_delta_policy.py` | 兼容模型 delta 的诊断清洗、叙事/落账一致性守卫 |
 | `game_session.py` | 权威状态、delta 分区应用、存档序列化 |
 
 Judge 的 `approved` 只接受 JSON 布尔值。突破结果、age、lifespan、game_over、finale 和 `story_update` 等规则字段不接受模型覆盖。Session/存档保存 `story_key`、`story_version` 和可变 `story_state`，不会复制不可变剧情定义，也不会静默升级旧存档。
@@ -103,10 +104,13 @@ Judge 的 `approved` 只接受 JSON 布尔值。突破结果、age、lifespan、
 ## 6. Agent 与模型客户端
 
 三个 Agent 使用 `SequentialAgentGraph` 顺序执行 load settings、build prompt、call LLM、save artifact。
+普通回合的权威顺序是 `ChoiceIntentV1 -> RuleTurnOutcomeV1 -> NarratorEnvelopeV1 -> persistence`；
+Agent 不拥有状态结算权。
 
 - World Builder：本局世界、0-16 岁编年史、16 岁局势和初始 A/B/C/D。
-- Narrator：短编年史、事件允许范围内的候选 delta 和下一回合选项。Agens 模型使用 provider `json_schema` 返回 `narrative`、`state_update_json`、四项 `choices`，应用层再确定性渲染为兼容标签；其他模型保留原标签契约。
-- Judge：只审核高风险或连续性敏感的非规则变化。
+- Narrator：短编年史和下一回合四项选项。内部统一为 `NarratorEnvelopeV1(narrative, choices)`；Agens 可用 JSON Schema，DeepSeek 可用已探测的 JSON object 或兼容标签。旧 `state_update` 可被 parser 读取作诊断，但不会进入规则或持久化权威状态。
+- World Builder：内部为 `WorldOpeningEnvelopeV1`；它只提供开场表现，世界/剧情绑定仍由规则目录校验。
+- Judge：内部为 `JudgeDecisionV1`；只审核高风险或连续性敏感的非规则表现，不能改变规则结果。
 
 `llm/client.py` 使用 `httpx.AsyncClient`：
 
@@ -117,8 +121,9 @@ Judge 的 `approved` 只接受 JSON 布尔值。突破结果、age、lifespan、
 - asyncio 取消自然传播
 - 保存配置和请求前共用 `llm/url_security.py` SSRF 校验
 
-Narrator 请求成功但契约不完整时，TurnFlow 可用规则 delta 和本地主线选项维持游戏，但该路径记录为 `contract_recovery`，与 provider fallback 分开，不能计入严格 live 验收。
-兼容 parser 可以读取裸 JSON 或行式选项，但严格分类额外要求原始 `<state_update>` 与 `<choices>` 标签存在；模型历史保存已接受的三段响应骨架，减少后续回合退化成纯正文或纯标签。
+Narrator 请求成功但正文或四项选项不完整时，TurnFlow 可用规则结果和本地主线选项维持游戏，但该路径记录为 `contract_recovery`，与 provider fallback 分开，不能计入严格 live 验收。兼容 parser 可以读取裸 JSON 或行式选项；严格分类要求归一化后的 envelope 完整、四槽唯一、无可见英文或结构残留，而不强迫所有 provider 使用相同 wire format。模型历史投影为 `AcceptedTurnContextV1`，只保存已接受正文、选项和规则后果摘要。
+
+本地对照位于 `src/agens_novel/evaluation/`：每个 provider 在独立进程使用只读 resolver；能力 probe 选择传输格式，ledger 在 HTTP 调用前执行调用数/费用上限，外部 ArtifactSink 写脱敏 manifest、响应副本和 inventory。冻结九快照 benchmark 不采用任一模型的历史；盲审包随机左右且不包含 provider/model 名称。该子系统在生产模式被拒绝启动。
 
 ## 7. 模型配置
 
@@ -146,6 +151,8 @@ Key 由 `MODEL_CONFIG_SECRET` 派生的 Fernet 密钥加密。响应只返回 ma
 - `game_turns.run_id` 外键与 request 唯一约束；
 - session mutation 幂等表；
 - 奖励、成就、遗泽业务唯一约束。
+
+`20260721_0009_spirit_root_metadata` 为灵根 catalog 增加 `rarity` 与 `description`，供现有角色创建界面展示；不改变用户会话或游戏规则数据。
 
 读旧档通过 session mutation 事务回退当前 active run：删除存档回合之后的 `game_turns`，同步 run 摘要，再写 snapshot 和幂等结果。已完成终局拒绝原地回退，避免奖励与历史不一致。
 

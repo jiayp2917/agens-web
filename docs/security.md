@@ -9,6 +9,7 @@
 5. 模型输出是非可信输入；规则字段由规则引擎拥有。
 6. 用户可控模型 URL 必须经过 SSRF 防护。
 7. 生产 schema 只由 Alembic 修改，应用副本不自动迁移或建表。
+8. 本地模型评估不能复用产品日志或仓库内 artifact 路径，且生产必须拒绝评估模式。
 
 ## Required Production Env
 
@@ -112,6 +113,16 @@ Remove-Item Env:AGNES_API_KEY
 ```
 
 正式用户配置应通过登录后的模型设置 API 保存为数据库密文。
+
+## Local Model Evaluation Boundary
+
+- 仅本地评估进程可设置 `AGENS_EVALUATION_MODE=1`；`AGENS_ENV=prod|production` 下 FastAPI 会拒绝启动。
+- 必须配置位于仓库外的 `AGENS_ARTIFACT_ROOT`。启动时限制为当前 Windows 用户和 SYSTEM；ACL 无法收紧时 fail closed。
+- 正常产品运行不写 `runtime/artifacts` 的模型输入/输出。评估运行也禁止双写到该目录或 `output/playwright`。
+- ArtifactSink 最终写入前脱敏，禁止保存 prompt、Key、Cookie、Authorization、真实 Base URL、真实玩家数据或未脱敏浏览器网络内容。
+- 只允许保存脱敏响应副本、manifest/hash、provider/model、transport、调用次数、延迟、token、retry、strict、fallback 和费用估算。价格未知时明确记录 unknown。
+- 评估目录默认保留 30 天；`cleanup_expired()` 先 dry-run，只有显式确认才删除。敏感扫描只报告类别和计数，不回显匹配文本。
+- `AGENS_EVALUATION_TRANSPORT` 仅影响当前评估子进程；能力 probe 的推荐结果不得写回产品环境、数据库或用户模型配置。
 
 ## Verification
 

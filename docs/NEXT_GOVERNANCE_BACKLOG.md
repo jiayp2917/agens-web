@@ -4,35 +4,27 @@
 
 ## P0
 
-当前复核未发现新的 P0。`f302d37` 内容补丁与本地代码/浏览器验收已通过；生产仍未完成 strict choice、回滚、v2 与 ACL 持久化验收，不得按已发布版本对外宣称完成。
+本轮仅重新验证本地工作树，未连接、修改或复核生产环境。当前本地复核未发现新的 P0；本地通过不构成生产发布结论。
 
 ## P1 Local Acceptance
 
-1. **Docker 当前候选门禁**
-   - 本机当前没有可用 Docker CLI，尚未对 `f302d37` 执行 Compose config 或镜像构建。恢复 Docker CLI 后先补此门禁；未通过前不生成生产候选包、不部署，也不重试生产 choice。
+1. **双模型正式对照仍未完成**
+   - 独立本地 probe：Agens 7/7 strict，选择 `json_schema`；DeepSeek 6/7 strict，`json_schema` 不支持，选择 `json_object`。两者都已归一到同一内部 envelope、白名单和 strict 统计，未强迫使用相同 wire format。
+   - Agens v2 20 回合 smoke 为 20/20 strict，fallback、repair、retry 均为 0。DeepSeek 同一 smoke 在首回合后出现 fallback，仅 1/20 strict，已停止该 provider 的真实调用，不能进入 v3 正式局。
+   - Agens v3 三局批处理未在评估时限内产生汇总，已停止且不计通过。未完成 DeepSeek 修复、Agens v3 完整局、冻结九快照盲审前，不得报告模型优劣、能力百分比或内容质量排名。
 
-2. **模型延迟与异常响应**
-   - 当前 fingerprint `ac14d076` + `agens_web_test` headed Chrome 矩阵 164/164 choice 严格 live；choice p50=9495ms、p95=18025ms、max=44636ms。目标 p50≤5s/p95≤15s **未达**。
-   - Narrator 仍主导单回合延迟；当前矩阵 Judge 12 次，延迟长尾仍需 provider/模型侧或并发化处理，不能只靠本地编排优化。
-   - 408/429/5xx、整体时限、取消传播专项已由 `tests/unit/llm/test_llm_error_paths.py`（49 项）锁定；偶发严格契约重试已在矩阵观察到（fixed-c 2 次 incomplete retry 恢复）。
-   - 本批已为 World Builder 增加 provider JSON schema，并补回 `new_game.character` 完整契约；最新矩阵开场严格 live 通过，后续仍需监控 provider 截断。
-   - 不输出 Key、模型地址真值、账号、Cookie、邀请码、原始 prompt 或原始响应。
+2. **路线内容差异与失败风险验收**
+   - v3 九阶段世界事件、两条命数承诺、最近五项 motif 去重、路线后果和 `post_arc` 已实现；默认仍为 `story_version=2`，旧存档按精确版本继续解析。
+   - 规则级 200 种子矩阵（9,600 条）方向门槛通过：高风险相对普通负面结果 `+24.625pp`（95% CI `+22.208pp` 至 `+26.875pp`）、C 相对 A `+44.688pp`（`+43.021pp` 至 `+46.438pp`）、低资质相对高资质 `+16.438pp`（`+13.625pp` 至 `+19.250pp`）。结果为飞升 398、死亡 3226、主线失败 1289、主线成功 4687、未收束 0。
+   - 这证明规则方向和收束能力，不证明真实玩家体验或模型内容质量。后续从自然种子中选取飞升、死亡/寿终和主线失败分支，在内置 Chrome 逐项验收；模型不得决定死亡或终局。
+   - 无 Key 本地开场模板已修复“牵动，其”等病句，最新 Chrome fallback 局从 16 岁推进到 17 岁且寿元同步变化。该切片不替代 v3 长局、移动端长文本和真实模型内容验收。
 
-3. **路线内容差异**
-   - 90 回合 v2 与黄金路线已实现；2026-07-21 基线在 87 回合飞升局中仍发现 4 组近似叙事，其中 `steady-teaching-round` 跨第 26/46/86 回合复用。
-   - v3 首批 8 天赋、8 家世、6 灵根已进入注册表、角色创建常量和 catalog 追加同步；尚未改变默认 `story_version=2`，不影响旧存档。
-   - 后续依次完成：v3 九阶段世界事件、两条命数承诺的早/中/晚兑现、motif 最近 5 项去重与近似重复门槛、四世界 x A/B/C/D 规则矩阵，再执行三局 headed Chrome 完整游玩与一次 90+20 回归。
+3. **性能与异常响应**
+   - 408/429/5xx、整体时限和取消传播已有回归测试。`choice p50 <= 5s` 仍是观察指标，不是本批阻塞门槛；下一次通过严格 live smoke 收集同一 provider/network 的新基线，不能使用历史 fingerprint 的延迟数字代替。
 
 ## P1 Production Follow-up
 
-生产隔离、备份、Stage 1、Redis/Squid 和基础 health 曾完成；2026-07-20 重启后 ACL 与 bridge filtering 未恢复。当前待办：
-
-1. 先恢复 Docker CLI 并完成当前 `f302d37` 的 Compose config 与镜像构建门禁；未通过前不部署、不重试 production choice。
-2. 生成候选包、重新备份并以 v1 执行 strict start + choice、存读档、幂等和 409 smoke；失败则按既有 v1 恢复路径停止，不回退 schema。
-3. 在 v1 通过且尚无业务 v2 存档时演练旧镜像回滚，重新部署最终镜像后切换 v2 并完成 v2 strict smoke。
-4. 安装 `f4c7333` 的持久化资产，先做 service restart，再做受控主机重启；复核 Redis/Squid/application health、`br_netfilter`、bridge filtering 与 `DOCKER-USER` 首位 ACL。禁止在活跃 Docker 主机卸载 `br_netfilter`。
-
-生产 strict live 必须同时满足 Narrator `ok`、无 provider fallback、无 gameplay recovery、契约完整和回合连续；HTTP 200 单独不算通过。
+本批不执行任何服务器、生产数据库、Docker 或部署操作。需要单独授权并重新取证的工作包括：Compose/image 门禁、strict start/choice、备份恢复与回滚演练、v2 切换、Redis/Squid/egress ACL 和重启后的持久化复验。届时 HTTP 200 不能替代 Narrator `ok`、契约完整、无 provider fallback、无 gameplay recovery 和回合连续性。
 
 ## P2 Maintainability
 

@@ -6,7 +6,7 @@ Web-only 文字修仙模拟器。当前主线由 React/Vite、FastAPI、PostgreS
 ## Current Status
 
 - 游戏模式 v5 Alpha：A/B/C/D 固定为 A 稳妥、B 机遇、C 风险、D 气运，无自由文本主入口，无 HP/MP 常驻 UI。
-- PostgreSQL-only；Alembic 是 schema authority。当前 head 为 `20260710_0008_runtime_consistency`。
+- PostgreSQL-only；Alembic 是 schema authority。当前 head 为 `20260721_0009_spirit_root_metadata`。
 - 注册用户可保存个人模型配置；无个人配置时使用系统 Agens 默认；访客不可配置模型。
 - 模型 Key 只以应用层密文写入 PostgreSQL，API、日志、存档、session snapshot 和前端包都不得出现原文。
 - 自定义模型地址只允许 HTTPS 官方域名或 `AGENS_MODEL_BASE_URL_ALLOWLIST` 中的主机；请求前会解析全部 A/AAAA，任何非公网地址均拒绝。
@@ -14,15 +14,15 @@ Web-only 文字修仙模拟器。当前主线由 React/Vite、FastAPI、PostgreS
 - start/choice/action/save/load/end 都要求 `request_id` 与 `expected_version`，后端通过会话锁、CAS 和幂等结果防止双击、重试和并发覆盖。
 - 回合日志、session snapshot、活跃/终局 run、奖励和遗泽消费使用同一数据库事务；失败恢复内存 runner。
 - fallback 会自动切换本地故事，玩家直接使用下方 A/B/C/D；fallback 不能算 live-model 成功。
-- 四套世界包保留 60 回合 `story_version=1` 旧档兼容；新局默认使用九阶段 90 回合 `story_version=2`，黄金路线可在第 90 回合前飞升，其他路线允许失败、死亡或较低境界收束。
+- 四套世界包保留 60 回合 `story_version=1` 旧档兼容；新局默认使用九阶段 90 回合 `story_version=2`。`story_version=3` 已实现九阶段事件、两条命数承诺、最近五项 motif 去重、路线后果与 90 回合后的 `post_arc`，但尚未完成真实模型和浏览器完整局验收，默认版本不变。
 - 普通回合由事件表声明模型可承接的 delta 类型；Web `choice_index` 与引擎 A/B/C/D 输入共用同一语义包装。
 - Narrator 缺任一契约段时会记录 `contract_recovery`；即使规则侧能继续结算，也不能计作 live-model 成功。
 - FastAPI 路由已拆为 auth/catalog/session/settings；`GameEngine` 仍是玩法门面，开局、普通回合、突破和 fallback 分别由 flow/policy 模块承担。
 - 前端关键面板使用 SVG 九宫双线内收角与同轮廓背景蒙版；工具按钮、寿元条、细滚动条和 A/B/C/D 六态已按当前素材规范统一，移动端保留同一视觉语言。
-- `f302d37` 已完成内容连续性修复、全量本地代码门禁，以及 90 回合黄金路线和 20 回合混合 headed Chrome 验收；当前本机没有 Docker CLI，因此该提交的 Compose config 与镜像构建尚未执行。
-- 服务器曾完成 Docker/Compose、Redis、Squid、egress ACL 隔离、备份和 v1 Stage 1；但首个生产 choice 因 Narrator 正文英文残留进入 fallback。2026-07-20 的重启后只读复核还确认 ACL、bridge filtering 与持久化服务均未恢复。当前应用健康，但不具备发布验收或持续出站隔离结论。
+- 2026-07-22 当前工作树已通过本地静态、PostgreSQL Web、非真实模型 pytest、前端测试、生产构建和高危依赖审计；双模型结果和未完成项见审计与 backlog。
+- 本轮不检查、修改或声明生产环境状态。生产发布仍需要在独立范围内重新执行部署、数据库、网络隔离和严格 live-model 验收。
 当前本地门禁、strict live 证据、性能数据和残余风险统一见
-[docs/PROJECT_AUDIT.md](docs/PROJECT_AUDIT.md)。本地通过不等于生产通过，生产状态必须以服务器侧脱敏复验为准。
+[docs/PROJECT_AUDIT.md](docs/PROJECT_AUDIT.md)。本地通过不等于生产通过。
 
 ## Local PostgreSQL
 
@@ -110,6 +110,25 @@ Narrator `ok`、`fallback=false`、`fallback_prompt.active=false`、`contract_re
 - `AGENS_MODEL_BASE_URL_ALLOWLIST`：自定义 OpenAI-compatible HTTPS 主机白名单，逗号分隔；官方域名无需重复配置。
 - `AGNES_TOTAL_TIMEOUT_SECONDS`：单次模型调用整体时限。
 - 不得把用户 Key 写入 `os.environ`，也不得通过命令行参数传入真实 Key。
+
+## Local Model Evaluation
+
+两模型对照只允许在本机、独立进程和仓库外证据目录中运行。评估模式要求
+`AGENS_EVALUATION_MODE=1` 与 `AGENS_ARTIFACT_ROOT`，后者必须在仓库外且仅当前用户可访问；
+生产模式会拒绝启动评估模式。证据只包含脱敏响应副本、版本/哈希、调用次数、延迟、token、
+strict/fallback 状态和费用估算，不保存 prompt、Key、Cookie、Authorization、真实 Base URL 或玩家数据。
+
+先运行 `scripts/probe_model_provider.py`。Agens 可使用 JSON Schema；DeepSeek 仅在 probe 确认后，
+才可在对应评估子进程设置 `AGENS_EVALUATION_TRANSPORT=json_object`，否则保持兼容标签传输。两种
+wire format 最终都归一到相同的版本化内部契约和规则校验。正式对照前还必须通过 20 回合 smoke；
+冻结九快照基准通过 `scripts/run_frozen_benchmark.py` 在两个独立模型进程中生成结果，再匿名生成盲审包。
+这些命令会产生真实模型调用，默认 pytest 门禁不执行。
+
+截至 2026-07-22，本地 probe 中 Agens 为 `json_schema`，其 20 回合 smoke 为 20/20 strict；
+DeepSeek 使用 `json_object`，但 smoke 在首回合后出现 fallback，仅 1/20 strict，已按止损规则停止。
+Agens v3 三局批处理未在评估时限内产生汇总，同样不计通过。因此当前没有可报告的双模型优劣、百分比
+或内容质量结论；可复核的本地结果与后续门禁见 `docs/PROJECT_AUDIT.md` 和
+`docs/NEXT_GOVERNANCE_BACKLOG.md`。
 
 ## Deployment Shape
 

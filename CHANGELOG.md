@@ -1,6 +1,31 @@
 # Changelog
 
+## 2026-07-22
+
+### Changed - local provider evaluation closure
+
+- Agens and DeepSeek now use provider adapters that normalize to the same internal contract rather than sharing a forced wire format. The local capability probe selected `json_schema` for Agens and `json_object` for DeepSeek.
+- Corrected the deterministic fallback opening composition and made breakthrough turns advance the v3 story state. The no-LLM 200-seed matrix now terminates every run without hard-coded deaths.
+- Removed stale local counts and unverified deployment wording from the current audit/backlog. Those documents now distinguish completed local evidence, provider stop conditions and work that needs a separate production scope.
+
+### Verification
+
+- `compileall`, Ruff, Ruff C901 and mypy passed.
+- PostgreSQL Web suite: 95 passed. Full non-`llm_real` pytest: 863 passed. Vitest: 13 passed. Production build and `npm audit --audit-level=high` passed.
+- Agens probe: 7/7 strict; v2 smoke: 20/20 strict with zero fallback/repair/retry. DeepSeek probe: 6/7 strict; its v2 smoke reached only 1/20 strict and entered fallback, so paid calls stopped. The interrupted Agens v3 batch is not counted as a successful complete-flow result.
+- The v3 no-LLM 9,600-run matrix passed all directional gates and produced no unresolved runs. Its result is a rule-risk result, not a model quality or player-experience claim.
+
 ## 2026-07-21
+
+### Added - local provider-neutral evaluation and v3 closure groundwork
+
+- Added provider-neutral `NarratorEnvelopeV1`、`WorldOpeningEnvelopeV1` and `JudgeDecisionV1` evaluation paths. Agens may retain JSON Schema; DeepSeek is probed for JSON object support and otherwise uses the compatible tag adapter. All providers are normalized through the same strict validation; wire format is not treated as a gameplay rule.
+- Added a read-only evaluation model resolver, per-call credential context, provider probe, call/token/cost ledger, external redacted ArtifactSink manifest/inventory, 30-day cleanup dry-run, and frozen nine-snapshot anonymous blind-review tooling. Product startup now rejects `AGENS_EVALUATION_MODE` in production.
+- Added v3 rule-risk matrix validation. The 200-seed local no-LLM run passed the direction gates, while its deterministic C-only negative result is retained as a balance concern rather than claimed as a player-quality result.
+
+### Removed - obsolete playable gap guard
+
+- Removed `tests/unit/engine/test_playable_gap_locks.py`. The old 20-turn roadmap guard duplicated covered regression behavior and encoded stale breakthrough assumptions that predated the persisted `RuleRng` boundary. Current targeted engine and full-suite tests cover the executable rule contract directly.
 
 ### Added - v3 fate-content foundation and v2 content baseline
 

@@ -98,12 +98,13 @@ POST /api/sessions/{id}/choice
   request_id + expected_version + choice/choice_index
   -> 会话锁 + 幂等查询 + 版本检查
   -> TurnFlow.handle_action()
-  -> turn_rules.settle_turn() 计算时间、年龄、属性、寿元、事件和终局
+  -> ChoiceIntentV1 -> turn_rules.settle_turn() -> RuleTurnOutcomeV1
+     计算时间、年龄、属性、寿元、事件和终局
   -> story_catalog 推进精确版本绑定的长期主线
-  -> Narrator 生成短叙事、候选 delta 与四个选项；Agens 主调用使用 provider json_schema，应用层渲染兼容标签
-  -> event_catalog.allowed_delta_types 过滤模型可承接状态
-  -> 必要时 Judge 审核非规则字段
-  -> 规则 delta 覆盖 age/lifespan/终局等权威字段
+  -> NarratorEnvelopeV1 生成短叙事与四个选项；Agens 可用 JSON Schema，其他 provider
+     由 adapter 使用 JSON object 或兼容标签传输
+  -> 可选 parsed state_update 只保留诊断，不进入权威状态
+  -> 必要时 Judge 只给诊断裁定，不修改规则结果
   -> GameSession.apply_delta()
   -> 记录 turn_history
   -> 同一事务写 game_turns、session snapshot、终局 bundle 和幂等结果
@@ -129,7 +130,7 @@ POST /api/sessions/{id}/choice
 4. 玩家直接点击下方 A/B/C/D。
 5. 本地故事同样调用 `settle_turn()`，推进年龄、寿元、阶段反馈和突破准备。
 
-Narrator 请求成功但缺少叙事、`state_update` 或四个 choices 时，普通回合可以用规则叙事、规则 delta 和本地主线选项继续，但必须记录 `incomplete_output` / `contract_recovery`。这种恢复不激活 provider fallback banner，也不算严格 live-model 成功。
+Narrator 请求成功但缺少叙事或四个 choices 时，普通回合可以用规则叙事和本地主线选项继续，但必须记录 `incomplete_output` / `contract_recovery`。`state_update` 不再是严格契约字段；即使兼容 parser 读到它，也只作为诊断。这种恢复不激活 provider fallback banner，也不算严格 live-model 成功。
 
 ## 9. 存读档与结束
 
@@ -154,3 +155,15 @@ Narrator 请求成功但缺少叙事、`state_update` 或四个 choices 时，�
 `tests\web` 会 truncate `TEST_DATABASE_URL` 指向的表。真实 Chrome 验收必须使用另一数据库，且不要与 pytest 并发运行。fallback 或 contract recovery 都不能算 live-model 成功，本地成功也不能替代生产验收。
 
 迁移测试在同一 PostgreSQL 实例创建独立临时数据库，覆盖已有库升级、孤儿/重复数据回滚、downgrade/re-upgrade 和阻塞条件。备份恢复通过 `scripts/verify_pg_backup_restore.py` 使用另两座临时库执行，结束时无条件删除数据库和 dump 文件。
+
+## 12. 本地模型评估
+
+评估进程用只读 `EvaluationModelConfigResolver` 替代产品模型解析器。Key 仅在一次 Agent
+调用的私有运行时上下文读取，不能进入 session、Agent 可序列化 state、数据库、日志或证据。
+`AGENS_EVALUATION_MODE=1` 时，`AGENS_ARTIFACT_ROOT` 必须位于仓库外；默认
+`runtime/artifacts` 被禁用，所有持久化值在最终边界再次脱敏。启动/结束分别写入不含 prompt、
+Key、Cookie、Authorization 或真实 Base URL 的 manifest 和 inventory hash。
+
+能力 probe、20 回合 smoke、完整局和 Chrome 分别使用串行进程与独立 PostgreSQL 库。评估模式在
+`AGENS_ENV=prod|production` 下会被 FastAPI 启动检查拒绝。真实 provider 结果必须标为
+`llm_real`，不得被 fallback、repair 或 contract recovery 冒充严格成功。

@@ -18,7 +18,7 @@
 - [x] Web-only 主边界稳定：React/Vite、FastAPI、PostgreSQL 和 `GameEngine` 职责明确。
 - [x] A/B/C/D 固定语义、规则权威结算、Narrator 严格契约和 fallback/recovery 分层已经建立。
 - [x] 境界、寿元、伤势、属性、关键道具、功法、称号、关系和终局具备结构化落账与叙事一致性守卫。
-- [x] 四套世界包、命数画像、事件目录和版本化主线已经接入；Session/存档保存精确内容版本与可变进度。
+- [x] 四套世界包、命数画像、事件目录和版本化主线已经接入；v3 九阶段、命数承诺、motif 去重、路线后果与 post-arc 已实现，Session/存档保存精确内容版本与可变进度。
 - [x] 用户、访客、会话、存档、回合、终局奖励和遗泽具备 PostgreSQL 事务、CAS 与幂等边界。
 - [x] 模型地址已具备应用层协议、主机、DNS/IP、重定向和环境代理防护；Key 加密并保持脱敏边界。
 - [x] 当前数据库迁移链、异常数据 fail-closed、空库升级、备份与恢复已完成本地验证。
@@ -31,7 +31,8 @@
 
 ### 未完成
 
-- [ ] 完成 `story_version=3` 命数内容批次：四世界九阶段事件、两条个人因果承诺、motif 长窗口去重与三局真实浏览器内容审查；v3 首批词条注册表和 catalog 追加同步已完成，但新局仍默认 v2。
+- [ ] 完成 `story_version=3` 的真实模型、三局完整流程和独立浏览器内容验收；实现已保留默认 v2 与 v1/v2 精确存档兼容，但 v3 不得在验收前成为默认版本。
+- [ ] 完成 Agens 与 DeepSeek 的六局 v3 对照和匿名九快照盲审；能力 probe 已完成，Agens 20 回合 smoke 通过，DeepSeek 在第一回合 fallback 后按止损规则停止，评估只能使用仓库外脱敏证据目录。
 - [ ] 将同一 provider/network 下的 choice p50 降到 5 秒以内，并完成 408/429/5xx、超时和取消专项验证。
 - [ ] 恢复本机 Docker CLI，并对当前 clean 候选执行 Compose config 与镜像构建门禁；此前 Docker 相关通过仅是历史服务器或静态资产证据。
 - [ ] 使用当前候选重新执行生产 v1 strict live smoke、旧镜像回滚演练、v2 切换与 v2 strict smoke；生产 Narrator 正文英文 fallback 只在本地修复，不得视为已在生产消除。
@@ -76,11 +77,12 @@
 
 ### 2.4 模型与 fallback
 
-- Narrator 必须返回完整叙事、状态对象和四项固定语义选项；具体传输格式由 provider 能力和兼容层决定。
-- 缺少任一语义段、结构残留、英文状态词或无效选项均属于契约失败。
+- Narrator 必须返回完整叙事和四项固定语义选项；权威状态只来自 `ChoiceIntentV1 -> RuleTurnOutcomeV1`。具体传输格式由 provider adapter 决定。
+- 缺少正文或选项、结构残留、英文状态词或无效选项均属于契约失败；兼容 `state_update` 只作诊断。
 - gameplay recovery 与 provider fallback 分开记录；两者都不能冒充严格 live-model 成功。
 - repair 不作为普通回合常态路径；必要重试、repair 和 Judge 必须脱敏记录。
 - 不记录原始 prompt、原始响应、凭据或用户隐私。
+- 本地模型评估使用独立进程、外部 ArtifactSink、manifest/hash inventory、调用与费用上限；生产模式必须拒绝评估启动。
 
 ### 2.5 UI 与交互
 

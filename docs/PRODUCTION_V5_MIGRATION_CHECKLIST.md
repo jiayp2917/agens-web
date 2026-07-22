@@ -4,7 +4,7 @@ This checklist gates future `agens-web` production actions. The 2026-07-10 local
 
 ## Current Branch Target
 
-- Intended Alembic target: `20260710_0008_runtime_consistency`.
+- Intended Alembic target: `20260721_0009_spirit_root_metadata`.
 - New runtime requirements: `MODEL_CONFIG_SECRET`, model URL allowlist policy, total model timeout, guest TTL, mutation request IDs and session versions.
 - Compose uses a one-shot migration service; application replicas no longer run Alembic at startup.
 - Historical production results are recorded in `CHANGELOG.md`; they do not accept this branch.

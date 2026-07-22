@@ -5,15 +5,17 @@
 ## 当前事实
 
 - 游戏模式 v5 Alpha，A/B/C/D 固定语义，无自由文本主入口，无 HP/MP。
-- PostgreSQL-only，Alembic head `20260710_0008_runtime_consistency`。
+- PostgreSQL-only，Alembic head `20260721_0009_spirit_root_metadata`。
 - 用户个人模型配置 + 系统默认兜底，Key 加密存储且不回显。
 - 模型 Base URL 使用 HTTPS 官方域名/服务器 allowlist，并在请求前做公网 DNS 校验。
 - 访客 session 写入 PostgreSQL，默认 24 小时；登录/注册后删除访客局。
 - mutation API 强制 request ID + version，使用锁、CAS、幂等记录和事务提交。
 - Agent 编排是项目内 `SequentialAgentGraph`，不是 LangGraph。
 - fallback 自动切换本地故事，但不能算 live-model 成功。
-- 四套世界包保留 60 回合 v1 旧档兼容；新局默认绑定九阶段 90 回合 v2，黄金路线可在 90 回合内飞升。
+- 四套世界包保留 60 回合 v1 旧档兼容；新局默认绑定九阶段 90 回合 v2。v3 的九阶段、承诺、路线后果和 post-arc 已在本地实现，但尚未完成真实模型与浏览器完整局验收，默认版本不变。
 - gameplay recovery 与 provider fallback 分开记录；Narrator 契约不完整不能计作 live-model 成功。
+- Narrator 内部契约是正文加四选项；选择意图和规则结果才是权威状态，兼容 state update 仅作诊断。
+- 本地双模型评估使用仓库外、脱敏的 `AGENS_ARTIFACT_ROOT`；生产拒绝 `AGENS_EVALUATION_MODE`。
 - 生产形态包含内部 Redis 共享限流、Squid 受控出站代理和专用 egress ACL；本地纯单测仍可使用内存限流。
 - 2026-07-14 服务器隔离与生产 Stage 1 曾验证上述形态，但 strict choice 因 Narrator 正文英文残留触发 fallback 而停止；2026-07-20 重启后只读复核确认 ACL、bridge filtering 和持久化服务均未恢复。当前运行健康不等于发布验收通过，v2、回滚演练、当前候选的 strict smoke 与 ACL 持久化均待完成。
 - 当前本地验证结果、精确计数和 strict live 证据只在 `PROJECT_AUDIT.md` 维护。
