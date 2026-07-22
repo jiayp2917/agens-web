@@ -4,9 +4,10 @@
 const fs = require("fs");
 const path = require("path");
 const { spawnSync } = require("child_process");
+const { browserArtifactDir } = require("./evaluation_artifacts.cjs");
 
 const ROOT = path.resolve(__dirname, "..");
-const OUT_DIR = path.join(ROOT, "output", "playwright");
+const OUT_DIR = browserArtifactDir(ROOT);
 const STAMP = process.env.AGENS_CONTENT_AUDIT_NAME || `local-content-audit-${stamp()}`;
 
 function stamp() {

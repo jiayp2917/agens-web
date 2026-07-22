@@ -18,6 +18,7 @@ from typing import Any
 from agens_novel.settings import Settings
 
 from ..game.realm import RealmSystem, breakthrough_blocking_effects
+from ..llm.runtime_context import RuntimeModelConfig
 from ..session.game_session import GameSession
 from .breakthrough_flow import BreakthroughFlow
 from .choices import (
@@ -158,6 +159,8 @@ class GameEngine:
         self.on_model_result: Callback | None = None
         self.on_model_failure_choice: Callable[[str, str], str] | None = None
         self.model_config: dict[str, Any] = {}
+        self.model_runtime_resolver: Callable[[], RuntimeModelConfig] | None = None
+        self.model_call_observer: Any = None
         self._fallback_policy = ModelFallbackPolicy(
             lambda: self.on_model_failure_choice,
             _safe_log_reason,
@@ -183,6 +186,18 @@ class GameEngine:
     def run_agent(self, agent_name: str, user_input: str, session: GameSession, **kwargs: Any) -> dict[str, Any]:
         """Call the agent runner through the GameEngine module patch seam."""
         model_config = self.model_config if isinstance(self.model_config, dict) else {}
+        runtime = self.model_runtime_resolver() if self.model_runtime_resolver else None
+        if self.model_call_observer is not None:
+            kwargs.setdefault("model_call_observer", self.model_call_observer)
+        if runtime is not None:
+            kwargs.setdefault("provider", runtime.provider)
+            kwargs.setdefault("model", runtime.model)
+            kwargs.setdefault("base_url", runtime.base_url)
+            kwargs.setdefault("api_key", runtime.api_key)
+            kwargs.setdefault("api_key_set", runtime.api_key_set)
+            kwargs.setdefault("source", runtime.source)
+            kwargs.setdefault("key_error", runtime.key_error)
+            kwargs.setdefault("provider_transport", runtime.provider_transport)
         for key in (
             "provider",
             "model",
@@ -191,8 +206,9 @@ class GameEngine:
             "api_key_set",
             "source",
             "key_error",
+            "provider_transport",
         ):
-            if key in model_config:
+            if runtime is None and key in model_config:
                 kwargs.setdefault(key, model_config.get(key))
         return run_turn_sync(agent_name, user_input, session, **kwargs)
 

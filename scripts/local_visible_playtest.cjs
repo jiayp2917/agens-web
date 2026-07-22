@@ -5,9 +5,10 @@ const fs = require("fs");
 const path = require("path");
 const crypto = require("crypto");
 const { spawnSync } = require("child_process");
+const { browserArtifactDir } = require("./evaluation_artifacts.cjs");
 
 const ROOT = path.resolve(__dirname, "..");
-const OUT_DIR = path.join(ROOT, "output", "playwright");
+const OUT_DIR = browserArtifactDir(ROOT);
 const BASE_URL = process.env.AGENS_PLAYTEST_URL || "http://127.0.0.1:5173/static/";
 const API_BASE_URL = process.env.AGENS_PLAYTEST_API_BASE || "";
 const TARGET_TURNS = Number(process.env.AGENS_PLAYTEST_TURNS || "20");

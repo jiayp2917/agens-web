@@ -15,7 +15,7 @@ from alembic.config import Config
 from sqlalchemy import create_engine, text
 from sqlalchemy.engine import URL, make_url
 
-EXPECTED_REVISION = "20260710_0008"
+EXPECTED_REVISION = "20260721_0009"
 EXPECTED_TABLES = 18
 ROOT = Path(__file__).resolve().parents[1]
 
