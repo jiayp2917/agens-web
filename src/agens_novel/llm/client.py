@@ -26,6 +26,7 @@ import httpx
 from agens_novel.settings import Settings
 
 from .retry import RetryExhausted, is_retryable_status, with_retry
+from .runtime_context import current_model_call_observer
 from .sse import extract_delta_text
 from .types import LLMResponse, Message, Usage
 from .url_security import UnsafeModelBaseUrl, validate_model_base_url_for_request
@@ -281,9 +282,11 @@ async def _call_non_stream(
     started: float,
 ) -> LLMResponse:
     async def _do() -> LLMResponse:
-        async with httpx.AsyncClient(**_http_client_options(timeout_seconds)) as client:
-            resp = await client.post(url, headers=headers, json=payload)
-            return _handle_non_stream_response(resp, started)
+        return await _observed_request(
+            transport=_response_transport(payload),
+            stream=False,
+            operation=lambda: _non_stream_attempt(url, headers, payload, timeout_seconds, started),
+        )
 
     return await _execute_with_retry(
         _do,
@@ -304,14 +307,13 @@ async def _call_stream(
     on_chunk: Callable[[str], None] | None = None,
 ) -> LLMResponse:
     async def _do() -> LLMResponse:
-        async with httpx.AsyncClient(**_http_client_options(timeout_seconds)) as client:
-            async with client.stream("POST", url, headers=headers, json=payload) as resp:
-                return await _handle_stream_response(
-                    resp,
-                    payload["model"],
-                    started,
-                    on_chunk,
-                )
+        return await _observed_request(
+            transport=_response_transport(payload),
+            stream=True,
+            operation=lambda: _stream_attempt(
+                url, headers, payload, timeout_seconds, started, on_chunk
+            ),
+        )
 
     return await _execute_with_retry(
         _do,
@@ -319,6 +321,73 @@ async def _call_stream(
         total_timeout_seconds=total_timeout_seconds,
         label="llm_stream",
     )
+
+
+async def _non_stream_attempt(
+    url: str,
+    headers: dict[str, str],
+    payload: dict[str, Any],
+    timeout_seconds: float,
+    started: float,
+) -> LLMResponse:
+    async with httpx.AsyncClient(**_http_client_options(timeout_seconds)) as client:
+        response = await client.post(url, headers=headers, json=payload)
+        return _handle_non_stream_response(response, started)
+
+
+async def _stream_attempt(
+    url: str,
+    headers: dict[str, str],
+    payload: dict[str, Any],
+    timeout_seconds: float,
+    started: float,
+    on_chunk: Callable[[str], None] | None,
+) -> LLMResponse:
+    async with httpx.AsyncClient(**_http_client_options(timeout_seconds)) as client:
+        async with client.stream("POST", url, headers=headers, json=payload) as response:
+            return await _handle_stream_response(response, payload["model"], started, on_chunk)
+
+
+async def _observed_request(
+    *,
+    transport: str,
+    stream: bool,
+    operation: Callable[[], Any],
+) -> LLMResponse:
+    context = current_model_call_observer()
+    ticket: Any = None
+    observer = None
+    if context is not None:
+        agent, observer = context
+        ticket = observer.before_request(agent=agent, transport=transport, stream=stream)
+    started = time.monotonic()
+    try:
+        response = await operation()
+    except BaseException:
+        if observer is not None:
+            observer.after_request(
+                ticket,
+                elapsed_ms=int((time.monotonic() - started) * 1000),
+                usage={},
+                success=False,
+            )
+        raise
+    if observer is not None:
+        observer.after_request(
+            ticket,
+            elapsed_ms=int((time.monotonic() - started) * 1000),
+            usage=dict(response.get("usage") or {}),
+            success=True,
+        )
+    return response
+
+
+def _response_transport(payload: dict[str, Any]) -> str:
+    format_value = payload.get("response_format")
+    if not isinstance(format_value, dict):
+        return "legacy_tags"
+    kind = str(format_value.get("type") or "").strip()
+    return kind if kind in {"json_schema", "json_object"} else "legacy_tags"
 
 
 def _handle_non_stream_response(resp: httpx.Response, started: float) -> LLMResponse:

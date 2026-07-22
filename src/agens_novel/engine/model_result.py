@@ -197,7 +197,9 @@ def result_diagnostics(result: dict[str, Any]) -> dict[str, Any]:
         "contract_english_residue": bool(contract.get("english_residue")),
         "contract_narrative_english_residue": bool(contract.get("narrative_english_residue")),
         "contract_choice_english_indices": choice_english_indices,
+        "provider_transport": str(result.get("provider_transport") or "legacy_tags"),
         "provider_json_schema": bool(result.get("provider_json_schema")),
+        "provider_json_object": bool(result.get("provider_json_object")),
         "provider_json_envelope_ok": bool(result.get("provider_json_envelope_ok")),
     }
 

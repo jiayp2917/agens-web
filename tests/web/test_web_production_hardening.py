@@ -22,6 +22,14 @@ def _set_production_runtime_services(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setattr("web.backend.app.create_rate_limiter", InMemoryRateLimiter)
 
 
+def test_production_rejects_evaluation_mode(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setenv("AGENS_ENV", "production")
+    monkeypatch.setenv("AGENS_EVALUATION_MODE", "1")
+
+    with pytest.raises(RuntimeError, match="AGENS_EVALUATION_MODE"):
+        create_app()
+
+
 def test_production_rejects_default_session_secret(tmp_path: Path, monkeypatch) -> None:
     # Production mode is driven by AGENS_ENV (not DATABASE_BACKEND) since the
     # Option C consolidation made PostgreSQL the only backend.

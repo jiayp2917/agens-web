@@ -208,6 +208,40 @@ _WORLD_BUILDER_RESPONSE_FORMAT: dict[str, Any] = {
     },
 }
 
+_PROFILE_OPENING_RESPONSE_FORMAT: dict[str, Any] = {
+    "type": "json_schema",
+    "json_schema": {
+        "name": "profile_opening",
+        "strict": True,
+        "schema": {
+            "type": "object",
+            "properties": {
+                "chronicle_0_16": {
+                    "type": "array",
+                    "minItems": 3,
+                    "maxItems": 5,
+                    "items": {"type": "string", "minLength": 1},
+                },
+                "initial_situation_16": {"type": "string", "minLength": 1},
+                "opening_narrative": {"type": "string", "minLength": 1},
+                "choices": {
+                    "type": "array",
+                    "minItems": 4,
+                    "maxItems": 4,
+                    "items": {"type": "string", "minLength": 4},
+                },
+            },
+            "required": [
+                "chronicle_0_16",
+                "initial_situation_16",
+                "opening_narrative",
+                "choices",
+            ],
+            "additionalProperties": False,
+        },
+    },
+}
+
 
 def load_settings(state: dict[str, Any]) -> dict[str, Any]:
     return load_agent_settings(AGENT_NAME, state)
@@ -219,7 +253,12 @@ def build_prompt(state: dict[str, Any]) -> dict[str, Any]:
         ProviderTransport.JSON_SCHEMA,
         ProviderTransport.JSON_OBJECT,
     }
-    prompt_name = "world_builder_schema" if provider_structured else "world_builder"
+    generation_type = state.get("generation_type", "new_game")
+    prompt_name = (
+        "world_opening_schema"
+        if provider_structured and generation_type == "profile_opening"
+        else "world_builder_schema" if provider_structured else "world_builder"
+    )
     system_path = paths.system_prompt_path(prompt_name)
     if not system_path.exists():
         raise FileNotFoundError(f"System prompt not found: {system_path}")
@@ -229,7 +268,6 @@ def build_prompt(state: dict[str, Any]) -> dict[str, Any]:
     if not user_input:
         raise ValueError("user_input is required.")
 
-    generation_type = state.get("generation_type", "new_game")
     game_state_json = state.get("game_state_json", "")
 
     parts = [f"<生成类型>{generation_type}</生成类型>"]
@@ -257,12 +295,17 @@ def build_prompt(state: dict[str, Any]) -> dict[str, Any]:
 
 async def call_agnes_llm(state: dict[str, Any]) -> dict[str, Any]:
     transport = _world_transport(state)
+    response_schema = (
+        _PROFILE_OPENING_RESPONSE_FORMAT
+        if state.get("generation_type") == "profile_opening"
+        else _WORLD_BUILDER_RESPONSE_FORMAT
+    )
     result = await call_agnes_llm_common(
         state,
         agent_name=AGENT_NAME,
         temperature=0.6,
         max_tokens=4096,
-        response_format=provider_response_format(transport, _WORLD_BUILDER_RESPONSE_FORMAT),
+        response_format=provider_response_format(transport, response_schema),
     )
     result["provider_transport"] = transport.value
     result["provider_json_schema"] = transport == ProviderTransport.JSON_SCHEMA
@@ -274,31 +317,27 @@ def save_artifact(state: dict[str, Any]) -> dict[str, Any]:
     run_id = state.get("run_id") or store.new_run_id()
     text = state.get("output_text", "")
     llm_error = state.get("llm_error", "")
+    generation_type = str(state.get("generation_type") or "new_game")
+    provider_transport = str(state.get("provider_transport") or "legacy_tags")
+    provider_structured = provider_transport in {"json_schema", "json_object"} or bool(
+        state.get("provider_json_schema")
+    )
 
     if llm_error:
         generated_data: dict[str, Any] = {}
         world_description = ""
         opening_narrative = ""
     else:
-        transport = str(state.get("provider_transport") or "")
-        provider_structured = transport in {"json_schema", "json_object"} or bool(
-            state.get("provider_json_schema")
-        )
         if provider_structured:
-            generated_data, world_description, opening_narrative = _parse_schema_world_output(text)
+            generated_data, world_description, opening_narrative = _parse_schema_world_output(
+                text,
+                profile_opening=generation_type == "profile_opening",
+            )
         else:
             generated_data, world_description, opening_narrative = _parse_world_output(text)
 
+    envelope = WorldOpeningEnvelopeV1.from_payload(generated_data)
     out_path = store.write_output(AGENT_NAME, run_id, text)
-    store.write_input_snapshot(
-        AGENT_NAME,
-        run_id,
-        {
-            "user_input": state.get("user_input"),
-            "generation_type": state.get("generation_type"),
-            "model": state.get("model"),
-        },
-    )
     audit = {
         "run_id": run_id,
         "agent": AGENT_NAME,
@@ -309,7 +348,11 @@ def save_artifact(state: dict[str, Any]) -> dict[str, Any]:
         "elapsed_ms": state.get("elapsed_ms", 0),
         "llm_error": llm_error,
         "output_path": str(out_path),
-        "generation_type": state.get("generation_type", "new_game"),
+        "generation_type": generation_type,
+        "provider_transport": provider_transport,
+        "provider_json_schema": bool(state.get("provider_json_schema")),
+        "provider_json_object": bool(state.get("provider_json_object")),
+        "provider_json_envelope_ok": bool(envelope) if provider_structured else False,
     }
     audit_path = store.write_audit(AGENT_NAME, run_id, audit)
     store.append_global_log(
@@ -321,11 +364,6 @@ def save_artifact(state: dict[str, Any]) -> dict[str, Any]:
         }
     )
 
-    provider_structured = str(state.get("provider_transport") or "") in {
-        "json_schema",
-        "json_object",
-    } or bool(state.get("provider_json_schema"))
-    envelope = WorldOpeningEnvelopeV1.from_payload(generated_data)
     return {
         "generated_data": generated_data,
         "world_description": world_description,
@@ -333,8 +371,9 @@ def save_artifact(state: dict[str, Any]) -> dict[str, Any]:
         "output_path": str(out_path),
         "audit_path": str(audit_path),
         "finished_at": audit["finished_at"],
-        "provider_transport": str(state.get("provider_transport") or "legacy_tags"),
+        "provider_transport": provider_transport,
         "provider_json_schema": bool(state.get("provider_json_schema")),
+        "provider_json_object": bool(state.get("provider_json_object")),
         "provider_json_envelope_ok": bool(envelope) if provider_structured else False,
     }
 
@@ -366,7 +405,11 @@ def _world_transport(state: dict[str, Any]) -> ProviderTransport:
     return ProviderTransport.LEGACY_TAGS
 
 
-def _parse_schema_world_output(text: str) -> tuple[dict, str, str]:
+def _parse_schema_world_output(
+    text: str,
+    *,
+    profile_opening: bool = False,
+) -> tuple[dict, str, str]:
     try:
         data = json.loads(str(text or ""))
     except (json.JSONDecodeError, TypeError, ValueError):
@@ -375,6 +418,17 @@ def _parse_schema_world_output(text: str) -> tuple[dict, str, str]:
         return {}, "", ""
     generated_data = _sanitize_world_data(data)
     generated_data["choices"] = normalize_choices(generated_data.get("choices"))
+    envelope = WorldOpeningEnvelopeV1.from_payload(generated_data)
+    if profile_opening:
+        if envelope is None or not 3 <= len(envelope.chronicle_0_16) <= 5:
+            return {}, "", ""
+        opening_data = {
+            "opening_narrative": envelope.opening_narrative,
+            "chronicle_0_16": list(envelope.chronicle_0_16),
+            "initial_situation_16": envelope.initial_situation_16,
+            "choices": list(envelope.choices),
+        }
+        return opening_data, "", envelope.opening_narrative
     if not is_complete_opening_payload(generated_data):
         return {}, "", ""
     return generated_data, "", str(generated_data.get("opening_narrative") or "")

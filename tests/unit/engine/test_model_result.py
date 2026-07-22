@@ -191,7 +191,9 @@ def test_result_diagnostics_are_non_secret_shape_facts() -> None:
         "contract_english_residue": False,
         "contract_narrative_english_residue": False,
         "contract_choice_english_indices": [],
+        "provider_transport": "legacy_tags",
         "provider_json_schema": False,
+        "provider_json_object": False,
         "provider_json_envelope_ok": False,
     }
 

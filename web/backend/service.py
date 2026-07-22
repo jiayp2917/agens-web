@@ -42,7 +42,7 @@ from .database import WebDatabaseProtocol
 from .database_postgres import PostgresWebDatabase
 from .service_death_rewards import DeathRewardsService
 from .service_errors import SessionVersionConflict
-from .service_model_config import ModelConfigService
+from .service_model_config import ModelConfigResolver, ModelConfigService
 from .service_summaries import build_death_summary
 
 _PROFILE_SEMANTIC_FIELDS = (
@@ -369,11 +369,16 @@ def _public_event_text(text: str) -> str:
 class WebGameService:
     """Application service for users, sessions, saves, and settings."""
 
-    def __init__(self, db: WebDatabaseProtocol | None = None) -> None:
+    def __init__(
+        self,
+        db: WebDatabaseProtocol | None = None,
+        *,
+        model_config_resolver: ModelConfigResolver | None = None,
+    ) -> None:
         self.db = db or PostgresWebDatabase()
         self.runners: dict[str, WebRunner] = {}
         self._runner_last_used: dict[str, float] = {}
-        self._model_config = ModelConfigService(self.db)
+        self._model_config: ModelConfigResolver = model_config_resolver or ModelConfigService(self.db)
         self._death_rewards = DeathRewardsService(self.db)
         self._session_locks: dict[str, threading.RLock] = {}
         self._session_locks_guard = threading.Lock()

@@ -6,7 +6,7 @@ import asyncio
 import json
 
 from agens_novel.agents.world_builder import nodes
-from agens_novel.agents.world_builder.nodes import _parse_world_output
+from agens_novel.agents.world_builder.nodes import _parse_schema_world_output, _parse_world_output
 
 
 def test_world_builder_schema_prompt_is_used_for_agnes_model() -> None:
@@ -45,6 +45,28 @@ def test_world_builder_schema_call_passes_provider_format(monkeypatch) -> None:
     assert result["output_text"] == "{}"
 
 
+def test_profile_opening_schema_call_uses_opening_response_format(monkeypatch) -> None:
+    calls = []
+
+    async def fake_call(state, **kwargs):
+        calls.append(kwargs)
+        return {"output_text": "{}", "llm_error": "", "elapsed_ms": 1, "usage": {}}
+
+    monkeypatch.setattr(nodes, "call_agnes_llm_common", fake_call)
+    asyncio.run(
+        nodes.call_agnes_llm(
+            {
+                "api_key_set": True,
+                "provider_transport": "json_schema",
+                "generation_type": "profile_opening",
+                "messages": [{"role": "user", "content": "开局"}],
+            }
+        )
+    )
+
+    assert calls[0]["response_format"]["json_schema"]["name"] == "profile_opening"
+
+
 def test_world_builder_deepseek_json_object_uses_adapter(monkeypatch) -> None:
     monkeypatch.setenv("AGENS_DEEPSEEK_WORLD_OPENING_TRANSPORT", "json_object")
     prompt = nodes.build_prompt(
@@ -79,6 +101,29 @@ def test_world_builder_deepseek_defaults_to_legacy_tag_adapter(monkeypatch) -> N
 
     assert result["provider_transport"] == "legacy_tags"
     assert "<world_data>" in result["system_message"]
+
+
+def test_profile_opening_schema_accepts_only_the_opening_envelope() -> None:
+    payload = {
+        "chronicle_0_16": ["幼年听潮。", "少时识得灵机。", "十六岁抵达渡口。"],
+        "initial_situation_16": "十六岁的渡口试炼即将开始。",
+        "opening_narrative": "潮声渐紧，许满在十六岁来到渡口，旧日因果也随之浮现。",
+        "choices": ["留在渡口核对试炼名册", "拜访舟客打听旧事", "夜探暗礁承担风险", "循着天命潮声而行"],
+        "world": {"must_not": "be_applied"},
+    }
+
+    parsed, _description, opening = _parse_schema_world_output(
+        json.dumps(payload, ensure_ascii=False),
+        profile_opening=True,
+    )
+
+    assert parsed == {
+        "chronicle_0_16": payload["chronicle_0_16"],
+        "initial_situation_16": payload["initial_situation_16"],
+        "opening_narrative": payload["opening_narrative"],
+        "choices": payload["choices"],
+    }
+    assert opening == payload["opening_narrative"]
 
 
 def test_world_builder_schema_output_is_parsed_without_tags() -> None:

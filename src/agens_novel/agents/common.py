@@ -49,6 +49,11 @@ def load_agent_settings(agent_name: str, state: dict[str, Any] | None = None) ->
         or os.environ.get("AGNES_MODEL")
         or Settings().model
     )
+    provider = str(state.get("provider") or (runtime.provider if runtime is not None else ""))
+    provider_transport = str(
+        state.get("provider_transport")
+        or (runtime.provider_transport if runtime is not None else "")
+    )
     api_key = runtime_api_key() or str(state.get("api_key") or os.environ.get("AGNES_API_KEY") or "")
     if "api_key_set" in state:
         api_key_set = bool(state.get("api_key_set")) and bool(api_key)
@@ -59,9 +64,11 @@ def load_agent_settings(agent_name: str, state: dict[str, Any] | None = None) ->
         "[%s.load_settings] run_id=%s model=%s key_set=%s", agent_name, run_id, model, api_key_set
     )
     return {
+        "provider": provider,
         "model": model,
         "base_url": base_url,
         "api_key_set": api_key_set,
+        "provider_transport": provider_transport,
         "run_id": run_id,
         "started_at": utcnow_iso(),
     }

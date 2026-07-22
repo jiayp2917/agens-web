@@ -8,8 +8,9 @@ split shape: a small service object taking the db explicitly.
 from __future__ import annotations
 
 import os
-from typing import TYPE_CHECKING, Any
+from typing import TYPE_CHECKING, Any, Protocol
 
+from agens_novel.llm.runtime_context import RuntimeModelConfig
 from agens_novel.llm.url_security import validate_model_base_url
 from agens_novel.settings import Settings
 
@@ -25,6 +26,27 @@ if TYPE_CHECKING:
     from .service import WebRunner
 
 _GUEST_PREFIX = "guest:"
+
+
+class ModelConfigResolver(Protocol):
+    """Attach a private runtime config resolver to one Web game runner."""
+
+    def build_stored(
+        self,
+        payload: dict[str, Any],
+        *,
+        existing: dict[str, Any] | None = None,
+    ) -> dict[str, Any]: ...
+
+    def public_settings(self, config: dict[str, Any]) -> dict[str, Any]: ...
+
+    def system(self) -> dict[str, Any]: ...
+
+    def effective(self, user_id: str | None) -> dict[str, Any]: ...
+
+    def runtime(self, user_id: str | None) -> dict[str, Any]: ...
+
+    def apply_runner(self, runner: WebRunner) -> None: ...
 
 
 class ModelConfigService:
@@ -144,5 +166,21 @@ class ModelConfigService:
             "key_error": key_error,
         }
 
+    def runtime_config(self, user_id: str | None) -> RuntimeModelConfig:
+        """Resolve one private config immediately before an Agent call."""
+        runtime = self.runtime(user_id)
+        return RuntimeModelConfig(
+            provider=str(runtime["provider"]),
+            model=str(runtime["model"]),
+            base_url=str(runtime["base_url"]),
+            api_key=str(runtime["api_key"]),
+            source=str(runtime["source"]),
+            key_error=str(runtime["key_error"]),
+        )
+
     def apply_runner(self, runner: WebRunner) -> None:
-        runner.engine.model_config = self.runtime(runner.user_id)
+        # The runner retains only safe metadata. The resolver decrypts a key
+        # only for the single call that installs the private ContextVar.
+        metadata = self.runtime_config(runner.user_id).public_metadata()
+        runner.engine.model_config = metadata
+        runner.engine.model_runtime_resolver = lambda: self.runtime_config(runner.user_id)

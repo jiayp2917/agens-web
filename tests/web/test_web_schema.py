@@ -120,6 +120,11 @@ def test_postgres_database_url_smoke(monkeypatch) -> None:
             )
         ).scalar()
     assert "api_key_encrypted" in columns
+    with db.engine.connect() as conn:
+        spirit_root_columns = conn.execute(
+            text("SELECT column_name FROM information_schema.columns WHERE table_name = 'catalog_spirit_roots'")
+        ).scalars().all()
+    assert {"rarity", "description"}.issubset(spirit_root_columns)
     assert table_comment == "用户个人模型配置表。每个注册用户最多一条，加密保存个人 API Key。"
     assert "当前等于 session_id" in run_id_comment
 

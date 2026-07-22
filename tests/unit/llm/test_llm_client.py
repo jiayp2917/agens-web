@@ -14,12 +14,14 @@ from agens_novel.llm.client import (
     _execute_with_retry,
     _handle_non_stream_response,
     _http_client_options,
+    _observed_request,
     _resolve_config,
     _resolve_request_options,
     _resolve_total_timeout,
     mask_key,
     validate_egress_proxy_url,
 )
+from agens_novel.llm.runtime_context import model_call_observer
 from agens_novel.llm.types import LLMResponse
 
 
@@ -158,6 +160,35 @@ def test_http_client_uses_only_explicit_egress_proxy(monkeypatch) -> None:
     assert options["proxy"] == "http://egress-proxy:3128"
     assert options["trust_env"] is False
     assert options["follow_redirects"] is False
+
+
+@pytest.mark.asyncio
+async def test_observed_request_reserves_and_records_safe_metadata() -> None:
+    calls = []
+
+    class Observer:
+        def before_request(self, **kwargs):
+            calls.append(("before", kwargs))
+            return "ticket"
+
+        def after_request(self, ticket, **kwargs):
+            calls.append(("after", ticket, kwargs))
+
+    async def operation():
+        return LLMResponse(text="中文", elapsed_ms=4, usage={"total_tokens": 3})
+
+    with model_call_observer("narrator", Observer()):
+        response = await _observed_request(
+            transport="json_object",
+            stream=False,
+            operation=operation,
+        )
+
+    assert response["text"] == "中文"
+    assert calls[0] == ("before", {"agent": "narrator", "transport": "json_object", "stream": False})
+    assert calls[1][0] == "after"
+    assert calls[1][1] == "ticket"
+    assert calls[1][2]["usage"] == {"total_tokens": 3}
 
 
 @pytest.mark.parametrize(

@@ -12,6 +12,7 @@ from fastapi.responses import FileResponse, JSONResponse
 from fastapi.staticfiles import StaticFiles
 from starlette.middleware.trustedhost import TrustedHostMiddleware
 
+from agens_novel.artifacts.sink import evaluation_mode_enabled
 from agens_novel.llm.client import InvalidEgressProxyUrl, validate_egress_proxy_url
 from agens_novel.logging_setup import setup_logging
 
@@ -37,6 +38,8 @@ _PLACEHOLDER_MARKERS = ("change_me", "changeme", "replace_me", "example.com", "<
 
 
 def validate_runtime_config() -> None:
+    if is_production_mode() and evaluation_mode_enabled():
+        raise RuntimeError("AGENS_EVALUATION_MODE is disabled in production.")
     if not is_production_mode():
         return
     _validate_production_runtime_services()
