@@ -7,7 +7,7 @@
 ```text
 React/Vite
   -> FastAPI routers
-  -> WebGameService / WebRunner
+  -> WebGameService (session/turn/save use cases) / WebRunner
   -> GameEngine facade
   -> StartFlow / TurnFlow / BreakthroughFlow / ModelFallbackPolicy
   -> SequentialAgentGraph (World Builder / Narrator / Judge)
@@ -23,10 +23,10 @@ React/Vite
 | --- | --- | --- |
 | 前端 | `web/frontend-react/src/` | 页面、交互、请求版本、幂等 ID、弹窗与响应式布局 |
 | API | `web/backend/router_*.py` | Pydantic 输入、鉴权、Cookie、限流、异常到 HTTP 映射 |
-| 服务 | `web/backend/service*.py` | runner 生命周期、事务编排、模型配置解析、奖励摘要 |
+| 服务 | `web/backend/service.py`、`service_sessions.py`、`service_turns.py`、`service_saves.py` | runner 生命周期、事务编排、模型配置解析、会话/回合/存读档用例 |
 | 游戏门面 | `src/agens_novel/engine/game_engine.py` | 对外稳定入口和回调协议 |
 | 流程 | `start_flow.py`、`turn_flow.py`、`breakthrough_flow.py` | 按玩家路径组织开局、普通回合和突破 |
-| 规则/状态 | `turn_rules.py`、`realm.py`、`game_session.py` | 权威数值、境界、寿元、delta 应用和存档 |
+| 规则/状态 | `turn_rules.py`、`realm.py`、`spirit_roots.py`、`game_session.py`、`state_delta.py` | 权威数值、境界、寿元、灵根注册、delta 应用和存档 |
 | Agent | `src/agens_novel/agents/` | prompt、模型调用、输出解析和脱敏诊断 |
 | 数据 | `database_postgres.py`、`migrations/` | PostgreSQL 事务、CAS、幂等和 schema |
 
@@ -53,6 +53,11 @@ React/Vite
 | `router_settings.py` | 用户个人模型设置、管理员系统默认设置 |
 
 `app_dependencies.py` 提供 current user/admin、session owner、rate limit 和统一 service exception 映射。
+
+`WebGameService` 保持路由依赖的稳定门面。`service_sessions.py`、`service_turns.py` 和
+`service_saves.py` 分别承接会话生命周期、回合与存读档用例；评估接入只依赖
+`EvaluationHooks` 接口的默认 no-op 实现。具体 resolver、ledger 和评估配置仅由
+`evaluation_app.py` 组装，产品服务不导入 `agens_novel.evaluation`。
 
 ## 4. 会话一致性
 
@@ -94,10 +99,10 @@ React/Vite
 | `model_fallback_policy.py` | 失败决策、脱敏玩家提示 |
 | `turn_rules.py` | A/B/C/D 类别、时间、属性、寿元、事件、长期剧情和终局规则 |
 | `event_catalog.py` | 数据驱动编年史事件、阶段目标、选项提示和允许 delta 类型 |
-| `story_catalog.py` | 四套世界的版本化主线：v1 60 回合兼容、v2 九阶段 90 回合、v3 承诺、路线后果和 post-arc |
+| `story_catalog.py` / `story_catalog_data.py` | 统一查询门面和四套世界的版本化主线数据：v1 60 回合兼容、v2 九阶段 90 回合、v3 承诺、路线后果和 post-arc |
 | `rule_contracts.py` | `ChoiceIntentV1` 与 `RuleTurnOutcomeV1` 的规则权威边界 |
 | `action_delta_policy.py` | 兼容模型 delta 的诊断清洗、叙事/落账一致性守卫 |
-| `game_session.py` | 权威状态、delta 分区应用、存档序列化 |
+| `game_session.py` / `state_delta.py` | 权威状态门面、delta 分区应用、存档序列化 |
 
 Judge 的 `approved` 只接受 JSON 布尔值。突破结果、age、lifespan、game_over、finale 和 `story_update` 等规则字段不接受模型覆盖。Session/存档保存 `story_key`、`story_version` 和可变 `story_state`，不会复制不可变剧情定义，也不会静默升级旧存档。
 
@@ -124,6 +129,8 @@ Agent 不拥有状态结算权。
 Narrator 请求成功但正文或四项选项不完整时，TurnFlow 可用规则结果和本地主线选项维持游戏，但该路径记录为 `contract_recovery`，与 provider fallback 分开，不能计入严格 live 验收。兼容 parser 可以读取裸 JSON 或行式选项；严格分类要求归一化后的 envelope 完整、四槽唯一、无可见英文或结构残留，而不强迫所有 provider 使用相同 wire format。模型历史投影为 `AcceptedTurnContextV1`，只保存已接受正文、选项和规则后果摘要。
 
 本地对照位于 `src/agens_novel/evaluation/`：每个 provider 在独立进程使用只读 resolver；能力 probe 选择传输格式，ledger 在 HTTP 调用前执行调用数/费用上限，外部 ArtifactSink 写脱敏 manifest、响应副本和 inventory。冻结九快照 benchmark 不采用任一模型的历史；盲审包随机左右且不包含 provider/model 名称。该子系统在生产模式被拒绝启动。
+
+本地浏览器验收的 CLI 仍由 `scripts/local_visible_playtest.cjs` 提供。浏览器驱动、持久化回合审计、玩家可见内容审计、报告构造和最终裁决分别位于 `scripts/playtest/`；replay fixture 锁定证据字段和退出码，运行工件仍在仓库外或被 Git 忽略。
 
 ## 7. 模型配置
 

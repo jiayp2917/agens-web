@@ -2,13 +2,14 @@
 
 ## Scope
 
-本文件只记录当前本地工作树在 2026-07-22 的可复核状态。它不复述历史服务器操作、旧 fingerprint
+本文件只记录当前本地工作树在 2026-07-23 的可复核状态。它不复述历史服务器操作、旧 fingerprint
 的性能数字或过期测试计数。本轮没有连接、修改或验证生产环境；本地通过不能构成部署或公开发布结论。
 
 ## Current Architecture
 
 - 前端：React 18、Vite、TypeScript、Vitest/RTL。
 - API：FastAPI，按 auth/catalog/session/settings 路由拆分。
+- 服务：`WebGameService` 保持 API 门面，session 生命周期、回合和存读档由独立 use-case 模块承接；产品路径只依赖默认空评估钩子。
 - 游戏：`GameEngine` 门面，StartFlow、TurnFlow、BreakthroughFlow 和 fallback policy 分工。
 - Agent：项目内 `SequentialAgentGraph`，不是 LangGraph。
 - 数据：PostgreSQL-only；Alembic head 是 `20260721_0009_spirit_root_metadata`。
@@ -37,16 +38,25 @@
 - 评估模式必须使用仓库外 `AGENS_ARTIFACT_ROOT`。ArtifactSink 只写脱敏响应副本、manifest/hash、调用/延迟/token/费用指标，禁止 prompt、Key、Cookie、Authorization、真实 Base URL 和玩家数据；产品路径不双写 `runtime/artifacts` 或 `output/playwright`。
 - `AGENS_ENV=prod|production` 下拒绝评估模式。真实模型测试必须标为 `llm_real`，fallback、repair 和 contract recovery 不能计为 strict 成功。
 
+### Governance Implementation
+
+- `game/spirit_roots.py` 是灵根名称、品级、修炼/突破修正和展示 metadata 的唯一注册表；规则映射与 catalog 初始化从它生成。同步只追加缺失名称和补齐缺失 metadata，不删除或覆盖既有记录。前端在寿元字段合法时直接显示权威值。
+- 评估应用工厂、`EvaluationHooks` 接口和默认 no-op 实现已经隔离评估配置；`web/backend/service.py` 不再导入 `agens_novel.evaluation`。目录结构、字符串工具和测试夹具也已移出跨层依赖点。
+- 浏览器验收已拆为浏览器驱动、持久化回合审计、可见内容审计、报告构造和纯函数裁决；脱敏 replay fixture 锁定通过、失败、fallback、重复和状态冲突的退出码语义，未调用真实模型。
+- 大型回归测试按 Web API 工作流、GameSession 状态/存档历史、开局/普通回合/破境失败路径和 Narrator prompt/解析/repair 分组。`scripts/verify_skill_copies.py` 只报告 `.claude/skills` 副本漂移，不修改开发者工作树。
+- `requirements-dev.txt` 与确认过时的路线文档已删除。`Makefile` 和 `scripts/import_web_data_to_pg.py` 因缺少仓库外依赖确认而保留。
+
 ## Current Local Verification
 
 ### Static, Database And Frontend Gates
 
 - `python -m compileall -q src tests web scripts migrations`：通过。
 - Ruff 常规检查和 `--select C901`：均通过。
-- `mypy src web\\backend`：93 个 source files，0 errors。
-- PostgreSQL `tests\\web -n0`：95 passed，1 warning（第三方 Starlette TestClient 弃用提示）。
-- `pytest -q -m "not llm_real"`：863 passed，16 warnings（同一第三方弃用提示）。
-- Vitest：8 files、13 tests passed；React production build 通过；`npm audit --audit-level=high` 为 0 vulnerabilities。
+- `mypy src web\\backend`：113 个 source files，0 errors。
+- PostgreSQL `tests\\web -n0`：96 passed，1 warning（第三方 Starlette TestClient 弃用提示）。
+- `pytest -q -m "not llm_real"`：914 passed，16 warnings（同一第三方弃用提示）。
+- Vitest：8 files、17 tests passed；React production build 通过；`npm audit --audit-level=high` 为 0 vulnerabilities。
+- `scripts/verify_skill_copies.py`：6 组兼容副本无漂移；`verify_pg_backup_restore.py` 在隔离库完成 base-to-head 恢复，验证 18 张表、业务关系和 Alembic `20260721_0009`。
 
 ### Local Browser Slice
 

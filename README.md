@@ -18,8 +18,10 @@ Web-only 文字修仙模拟器。当前主线由 React/Vite、FastAPI、PostgreS
 - 普通回合由事件表声明模型可承接的 delta 类型；Web `choice_index` 与引擎 A/B/C/D 输入共用同一语义包装。
 - Narrator 缺任一契约段时会记录 `contract_recovery`；即使规则侧能继续结算，也不能计作 live-model 成功。
 - FastAPI 路由已拆为 auth/catalog/session/settings；`GameEngine` 仍是玩法门面，开局、普通回合、突破和 fallback 分别由 flow/policy 模块承担。
+- 灵根规则和网页 catalog 初始化共用 `game/spirit_roots.py` 注册表；同步只追加缺失名称并补齐缺失 metadata，不覆盖已有 PostgreSQL 记录。前端优先显示权威寿元，仅在字段缺失或非法时回退境界默认值。
+- `WebGameService` 保持 API 门面，session、turn、save/load 用例已拆到独立模块；评估能力只通过默认空钩子接入，产品服务不依赖评估实现。
 - 前端关键面板使用 SVG 九宫双线内收角与同轮廓背景蒙版；工具按钮、寿元条、细滚动条和 A/B/C/D 六态已按当前素材规范统一，移动端保留同一视觉语言。
-- 2026-07-22 当前工作树已通过本地静态、PostgreSQL Web、非真实模型 pytest、前端测试、生产构建和高危依赖审计；双模型结果和未完成项见审计与 backlog。
+- 2026-07-23 当前工作树已通过本地静态、PostgreSQL Web（96 项）、非真实模型 pytest（914 项）、前端测试、生产构建、高危依赖审计和测试库备份恢复；双模型结果和未完成项见审计与 backlog。
 - 本轮不检查、修改或声明生产环境状态。生产发布仍需要在独立范围内重新执行部署、数据库、网络隔离和严格 live-model 验收。
 当前本地门禁、strict live 证据、性能数据和残余风险统一见
 [docs/PROJECT_AUDIT.md](docs/PROJECT_AUDIT.md)。本地通过不等于生产通过。
@@ -88,6 +90,7 @@ $env:TEST_DATABASE_URL = "postgresql+psycopg://agens_test@127.0.0.1:55432/agens_
 .\.venv\Scripts\python.exe -m ruff check src web tests scripts migrations
 .\.venv\Scripts\python.exe -m ruff check src web tests scripts migrations --select C901
 .\.venv\Scripts\python.exe -m mypy src web\backend
+.\.venv\Scripts\python.exe scripts\verify_skill_copies.py
 .\.venv\Scripts\python.exe -m pytest -q tests\web -n0
 .\.venv\Scripts\python.exe -m pytest -q -m "not llm_real"
 $env:PG_BIN = "F:\pg\bin"  # pg_dump/pg_restore 不在 PATH 时设置

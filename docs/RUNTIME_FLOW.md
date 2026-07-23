@@ -61,6 +61,7 @@ npm.cmd run dev -- --host 127.0.0.1 --port 5173
 ```text
 POST /api/sessions
   -> WebGameService.create_session()
+  -> service_sessions.create_session()
   -> WebRunner(GameEngine)
   -> PostgreSQL sessions snapshot version=0
 ```
@@ -79,6 +80,11 @@ POST /api/sessions/{id}/start
   -> 同一事务写 session snapshot、active game_run、遗泽消费、幂等结果
   -> version + 1
 ```
+
+`WebGameService` 只保留路由稳定门面、runner 管理与事务协调：开局和会话生命周期委托给
+`service_sessions.py`，A/B/C/D 回合委托给 `service_turns.py`，存读档和结束委托给
+`service_saves.py`。普通产品运行使用默认空 `EvaluationHooks`；评估 resolver、ledger 和
+canonical hook 仅由隔离评估应用工厂注入。
 
 六维属性由后端重新校验：手动单项 2-8、总和 30；随机单项 0-10、总和 30。运行时尺度统一为 0-10，5 为中性值。
 
@@ -155,6 +161,8 @@ Narrator 请求成功但缺少叙事或四个 choices 时，普通回合可以�
 `tests\web` 会 truncate `TEST_DATABASE_URL` 指向的表。真实 Chrome 验收必须使用另一数据库，且不要与 pytest 并发运行。fallback 或 contract recovery 都不能算 live-model 成功，本地成功也不能替代生产验收。
 
 迁移测试在同一 PostgreSQL 实例创建独立临时数据库，覆盖已有库升级、孤儿/重复数据回滚、downgrade/re-upgrade 和阻塞条件。备份恢复通过 `scripts/verify_pg_backup_restore.py` 使用另两座临时库执行，结束时无条件删除数据库和 dump 文件。
+
+浏览器验收命令保持 `scripts/local_visible_playtest.cjs` 兼容；它将浏览器操作、持久化审计、可见内容审计、报告构造和纯函数裁决分离。脱敏 replay fixture 覆盖通过、失败、fallback、重复和状态冲突，不能写入仓库内运行证据。
 
 ## 12. 本地模型评估
 

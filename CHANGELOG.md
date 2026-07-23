@@ -1,5 +1,20 @@
 # Changelog
 
+## 2026-07-23
+
+### Changed - local governance implementation closure
+
+- Completed the audited consistency and maintainability work in independent commits: the spirit-root registry now drives rule modifiers and catalog initialization, the UI prefers authoritative lifespan values, and catalog seeding only appends missing records or metadata.
+- Consolidated evaluation parsing helpers and test fixtures, removed `requirements-dev.txt` and the confirmed stale gameplay roadmap, and added a read-only hash gate for the six `.claude/skills` compatibility copies. `Makefile` and `scripts/import_web_data_to_pg.py` remain pending an owner confirmation of external use.
+- Product services now depend only on `EvaluationHooks`; the isolated evaluation app factory owns the concrete resolver and configuration. Browser acceptance execution, audits, reports and pure decisions are separated behind the compatible CLI and replay fixtures.
+- Finished the single-boundary core splits for versioned story data, opening setup/application, narrator/world-builder prompt and parsing responsibilities, turn narrative policy, session delta application, and Web session/turn/save use cases. Split Web API, GameSession, failure-path and Narrator regression coverage by behavior without changing product interfaces, schema, rule authority or v1/v2/v3 save semantics.
+
+### Verification
+
+- `compileall`, Ruff, C901 and mypy passed; `tests\\web -n0` passed 96 tests and the non-`llm_real` suite passed 914 tests.
+- Vitest passed 8 files / 17 tests; production build and `npm audit --audit-level=high` passed with zero high vulnerabilities.
+- The isolated PostgreSQL backup/restore gate rebuilt Alembic `20260721_0009`, verified 18 tables and the persisted business graph. No real model, production, deployment or push was invoked.
+
 ## 2026-07-22
 
 ### Changed - local provider evaluation closure
