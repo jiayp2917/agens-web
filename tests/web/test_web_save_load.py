@@ -10,7 +10,7 @@ import pytest
 from fastapi.testclient import TestClient
 from sqlalchemy import text
 
-from tests.web.test_web_api import _create_invite, _register, _runner
+from tests.web.api_fixtures import _create_invite, _register, _runner
 from web.backend.app import create_app
 
 pytestmark = pytest.mark.xdist_group("pg_test_db")

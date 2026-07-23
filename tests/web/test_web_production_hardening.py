@@ -8,7 +8,7 @@ from pathlib import Path
 import pytest
 from fastapi.testclient import TestClient
 
-from tests.web.test_web_api import _create_invite
+from tests.web.api_fixtures import _create_invite
 from web.backend.app import create_app
 from web.backend.security import InMemoryRateLimiter
 

@@ -10,7 +10,7 @@ import pytest
 from fastapi.testclient import TestClient
 from sqlalchemy import text
 
-from tests.web.test_web_api import _create_invite, _register, _runner, _world_builder_result
+from tests.web.api_fixtures import _create_invite, _register, _runner, _world_builder_result
 from web.backend.app import create_app
 from web.backend.catalog_seed import seed_catalogs
 

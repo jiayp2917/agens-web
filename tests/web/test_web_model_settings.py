@@ -10,7 +10,7 @@ import pytest
 from fastapi.testclient import TestClient
 from sqlalchemy import text
 
-from tests.web.test_web_api import (
+from tests.web.api_fixtures import (
     _create_invite,
     _login_user,
     _model_payload,
