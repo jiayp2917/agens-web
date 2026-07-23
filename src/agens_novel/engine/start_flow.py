@@ -10,21 +10,6 @@ if TYPE_CHECKING:
     from .game_engine import GameEngine
 
 from ..agents.contracts import WorldOpeningEnvelopeV1
-from ..game.constants import (
-    ATTRIBUTE_KEYS,
-    ATTRIBUTE_MAX,
-    ATTRIBUTE_MIN,
-    ATTRIBUTE_TOTAL,
-    DIFFICULTY_OPTIONS,
-    FAMILY_BACKGROUNDS,
-    SPIRIT_ROOTS,
-    TALENT_OPTIONS,
-    compute_starting_lifespan,
-    normalize_attribute_value,
-)
-from ..rule_rng import new_run_seed
-from ..session.game_session import GameSession
-from ..utils.strings import dedupe_strings
 from .choices import complete_choices, has_visible_english
 from .model_result import (
     ModelResultKind,
@@ -32,9 +17,24 @@ from .model_result import (
     classify_world_builder_result,
     is_retryable_model_request_failure,
 )
-from .profile_opening import profile_default_world, profile_opening
+from .opening_application import (
+    apply_profile_opening_payload,
+    apply_profile_world_profile,
+    apply_world_builder_generated_session,
+    merge_opening_payload,
+)
+from .profile_opening import profile_opening
+from .profile_setup import (
+    PROFILE_ATTRIBUTE_TOTAL,
+    PROFILE_MANUAL_ATTRIBUTE_MAX,
+    PROFILE_MANUAL_ATTRIBUTE_MIN,
+    PROFILE_RANDOM_ATTRIBUTE_MAX,
+    PROFILE_RANDOM_ATTRIBUTE_MIN,
+    PROFILE_REWARDED_ATTRIBUTE_MAX,
+    apply_profile_session,
+    normalize_profile_attributes,
+)
 from .render import format_status_bar
-from .story_catalog import ensure_story_binding
 from .world_generator import (
     build_world_fallback,
     build_world_prompt,
@@ -47,29 +47,6 @@ log = logging.getLogger(__name__)
 
 START_MODEL_WORLD_ENV = "AGENS_START_MODEL_WORLD"
 START_MODEL_OPENING_ENV = "AGENS_START_MODEL_OPENING"
-PROFILE_ATTRIBUTE_TOTAL = ATTRIBUTE_TOTAL
-PROFILE_MANUAL_ATTRIBUTE_MIN = 2
-PROFILE_MANUAL_ATTRIBUTE_MAX = 8
-PROFILE_RANDOM_ATTRIBUTE_MIN = ATTRIBUTE_MIN
-PROFILE_RANDOM_ATTRIBUTE_MAX = ATTRIBUTE_MAX
-PROFILE_REWARDED_ATTRIBUTE_MAX = ATTRIBUTE_MAX
-_PROFILE_ATTRIBUTE_DEFAULT = PROFILE_ATTRIBUTE_TOTAL // len(ATTRIBUTE_KEYS)
-_ALLOW_LEGACY_BONUS_ATTRIBUTES = "_allow_legacy_bonus_attributes"
-_PROFILE_OPENING_AUTHORITY_FIELDS = (
-    "world_key",
-    "fate_hooks",
-    "fate_profile",
-    "matched_fates",
-    "event_weights",
-    "opening_hook",
-    "long_conflict",
-    "story_key",
-    "story_version",
-    "story_title",
-    "story_opening",
-    "story_state",
-    "world_rules",
-)
 _PROFILE_OPENING_DESCRIPTIVE_FIELDS = (
     "world_name",
     "regions",
@@ -77,6 +54,24 @@ _PROFILE_OPENING_DESCRIPTIVE_FIELDS = (
     "current_conflicts",
     "initial_situation",
     "world",
+)
+
+__all__ = (
+    "PROFILE_ATTRIBUTE_TOTAL",
+    "PROFILE_MANUAL_ATTRIBUTE_MIN",
+    "PROFILE_MANUAL_ATTRIBUTE_MAX",
+    "PROFILE_RANDOM_ATTRIBUTE_MIN",
+    "PROFILE_RANDOM_ATTRIBUTE_MAX",
+    "PROFILE_REWARDED_ATTRIBUTE_MAX",
+    "START_MODEL_OPENING_ENV",
+    "START_MODEL_WORLD_ENV",
+    "StartFlow",
+    "apply_profile_opening_payload",
+    "apply_profile_session",
+    "apply_profile_world_profile",
+    "apply_world_builder_generated_session",
+    "merge_opening_payload",
+    "normalize_profile_attributes",
 )
 
 
@@ -325,289 +320,6 @@ class StartFlow:
         engine.emit("on_character_created", engine.game_session)
         engine.emit("on_status_bar", format_status_bar(engine.game_session))
         engine.record_opening_context(opening)
-
-
-def apply_world_builder_generated_session(
-    session: GameSession,
-    generated: dict[str, Any],
-) -> None:
-    """Apply World Builder character/world output to the active session."""
-    char_data = generated.get("character", {})
-    if char_data:
-        session.char_name = char_data.get("name", "无名")
-        session.realm = char_data.get("realm", "练气")
-        session.realm_stage = char_data.get("realm_stage", 1)
-        session.spirit_root = char_data.get("spirit_root", "")
-        session.spirit_root_grade = char_data.get("spirit_root_grade", "")
-        session.age = char_data.get("age", session.age)
-        session.talent = char_data.get("talent", session.talent)
-        session.family_background = char_data.get("family_background", session.family_background)
-        session.difficulty = char_data.get("difficulty", session.difficulty)
-        attrs = char_data.get("attributes")
-        if isinstance(attrs, dict):
-            merged_attrs = dict(session.attributes)
-            for key, value in attrs.items():
-                if key in merged_attrs and isinstance(value, int) and not isinstance(value, bool):
-                    merged_attrs[key] = normalize_attribute_value(value)
-            session.attributes = merged_attrs
-        session.techniques = char_data.get("techniques", [])
-        session.inventory = char_data.get("inventory", [])
-        session.status_effects = char_data.get("status_effects", [])
-        session.lifespan = int(
-            char_data.get("lifespan")
-            or compute_starting_lifespan(
-                session.realm,
-                attributes=session.attributes,
-                talent=session.talent,
-                difficulty=session.difficulty,
-            )
-        )
-        if "equipment_slots" in char_data:
-            session.equipment_slots = char_data["equipment_slots"]
-
-    world_data = generated.get("world", {})
-    if world_data:
-        session.current_scene = world_data.get("current_scene", "")
-        session.location = world_data.get("location", "")
-        session.region = world_data.get("region", "")
-        session.npcs_present = world_data.get("npcs_present", [])
-        session.active_quests = world_data.get("active_quests", [])
-        session.discovered_locations = world_data.get("discovered_locations", [])
-        session.lore_facts = world_data.get("lore_facts", [])
-        session.day_count = world_data.get("day_count", 1)
-
-    generated_profile = {
-        key: value
-        for key, value in generated.items()
-        if key not in {"character", "world", "choices", "opening_narrative"}
-    }
-    if generated_profile:
-        session.world_profile = generated_profile
-    session.rule_rng_counter = 0
-    session.run_seed = new_run_seed()
-    ensure_story_binding(session)
-
-    session.game_started = True
-    session.turn_count = 0
-
-
-def apply_profile_session(session: GameSession, profile: dict[str, Any]) -> None:
-    """Initialize a deterministic session from the character form profile."""
-    attrs = normalize_profile_attributes(
-        profile.get("attributes", {}),
-        random_mode=bool(profile.get("randomize_attributes")),
-        allow_legacy_bonus=bool(profile.get(_ALLOW_LEGACY_BONUS_ATTRIBUTES)),
-    )
-
-    session.reset()
-    session.game_started = True
-    session.game_over = False
-    session.turn_count = 0
-    session.rule_rng_counter = 0
-    session.run_seed = new_run_seed()
-    session.char_name = str(profile.get("char_name") or "无名")
-    session.realm = "练气"
-    session.realm_stage = 1
-    session.age = int(profile.get("age") or 16)
-    session.talent = str(profile.get("talent") or TALENT_OPTIONS[0])
-    session.spirit_root = str(profile.get("spirit_root") or SPIRIT_ROOTS[0]["name"])
-    session.spirit_root_grade = str(profile.get("spirit_root_grade") or "")
-    session.family_background = str(profile.get("family_background") or FAMILY_BACKGROUNDS[0])
-    session.difficulty = str(profile.get("difficulty") or DIFFICULTY_OPTIONS[1])
-    session.attributes = attrs
-    session.lifespan = compute_starting_lifespan(
-        session.realm,
-        attributes=attrs,
-        talent=session.talent,
-        difficulty=session.difficulty,
-        extra_lifespan=int(profile.get("extra_lifespan") or 0),
-    )
-    session.techniques = list(
-        profile.get("techniques") or [{"name": "基础吐纳术", "level": 1, "type": "内功"}]
-    )
-    session.inventory = list(
-        profile.get("inventory") or [{"name": "粗布道袍", "quantity": 1, "type": "防具"}]
-    )
-    legacy_talents = profile.get("legacy_talents")
-    opening_titles = profile.get("opening_titles")
-    session.legacy_talents = dedupe_strings(
-        legacy_talents if isinstance(legacy_talents, list) else []
-    )
-    session.titles = dedupe_strings(opening_titles if isinstance(opening_titles, list) else [])
-    default_scene, default_location, default_region, default_lore = profile_default_world(profile)
-    session.current_scene = str(profile.get("current_scene") or default_scene)
-    session.location = str(profile.get("location") or default_location)
-    session.region = str(profile.get("region") or default_region)
-    session.discovered_locations = [session.location]
-    session.lore_facts = [default_lore]
-
-
-def normalize_profile_attributes(
-    incoming_attrs: Any,
-    *,
-    random_mode: bool = False,
-    allow_legacy_bonus: bool = False,
-) -> dict[str, int]:
-    """Validate and normalize character-creation attributes.
-
-    GAME_MODE_SPEC section 4.1 defines the public profile contract: manual
-    creation uses six attributes, each 2-8, with a fixed total of 30. Random
-    creation is normalized before this function is called and may use 0-10,
-    still totaling 30. Account legacy bonuses are applied after the public
-    input is validated, so service code may opt into a post-bonus total above
-    30 while each attribute remains on the 0-10 gameplay scale.
-    """
-    if not incoming_attrs:
-        return {key: _PROFILE_ATTRIBUTE_DEFAULT for key in ATTRIBUTE_KEYS}
-    if not isinstance(incoming_attrs, dict):
-        raise ValueError("attributes must be an object")
-
-    missing = [key for key in ATTRIBUTE_KEYS if key not in incoming_attrs]
-    unknown = [str(key) for key in incoming_attrs if key not in ATTRIBUTE_KEYS]
-    if missing or unknown:
-        raise ValueError("attributes must contain exactly the six v5 keys")
-
-    attrs: dict[str, int] = {}
-    for key in ATTRIBUTE_KEYS:
-        value = incoming_attrs[key]
-        if not isinstance(value, int) or isinstance(value, bool):
-            raise ValueError("attribute values must be integers")
-        attrs[key] = value
-
-    total = sum(attrs.values())
-    if allow_legacy_bonus:
-        _validate_legacy_attributes(attrs, total)
-        return attrs
-
-    if total != PROFILE_ATTRIBUTE_TOTAL:
-        raise ValueError("manual attributes must sum to 30")
-
-    if random_mode:
-        _validate_attribute_range(
-            attrs, PROFILE_RANDOM_ATTRIBUTE_MIN, PROFILE_RANDOM_ATTRIBUTE_MAX, "random"
-        )
-        return attrs
-
-    _validate_attribute_range(
-        attrs, PROFILE_MANUAL_ATTRIBUTE_MIN, PROFILE_MANUAL_ATTRIBUTE_MAX, "manual"
-    )
-    return attrs
-
-
-def _validate_legacy_attributes(attrs: dict[str, int], total: int) -> None:
-    if total < PROFILE_ATTRIBUTE_TOTAL:
-        raise ValueError("attributes must not drop below the 30 point pool")
-    _validate_attribute_range(
-        attrs, PROFILE_RANDOM_ATTRIBUTE_MIN, PROFILE_REWARDED_ATTRIBUTE_MAX, "legacy-bonus"
-    )
-
-
-def _validate_attribute_range(
-    attrs: dict[str, int], minimum: int, maximum: int, label: str
-) -> None:
-    if not all(minimum <= value <= maximum for value in attrs.values()):
-        raise ValueError(f"{label} attributes must stay between {minimum} and {maximum}")
-
-
-def apply_profile_world_profile(session: GameSession, world_profile: dict[str, Any]) -> None:
-    """Attach generated world-profile fields to a profile-started session."""
-    session.world_profile = world_profile
-    if world_profile.get("world_name"):
-        session.region = world_profile["world_name"]
-    if world_profile.get("initial_situation"):
-        session.lore_facts.insert(0, world_profile["initial_situation"])
-    _apply_story_binding(session, world_profile)
-
-
-def apply_profile_opening_payload(session: GameSession, payload: dict[str, Any]) -> None:
-    """Apply one coherent dynamic-opening payload to an initialized session."""
-    if not isinstance(payload, dict):
-        return
-
-    world_value = payload.get("world")
-    world: dict[str, Any] = world_value if isinstance(world_value, dict) else {}
-    world_profile = {
-        key: value
-        for key, value in payload.items()
-        if key not in {"character", "world", "choices", "opening_narrative"}
-    }
-    if world_profile:
-        session.world_profile = world_profile
-        _apply_story_binding(session, world_profile)
-
-    session.current_scene = str(
-        world.get("current_scene")
-        or payload.get("initial_situation_16")
-        or payload.get("initial_situation")
-        or session.current_scene
-    )
-    session.location = str(world.get("location") or session.location)
-    session.region = str(world.get("region") or payload.get("world_name") or session.region)
-    session.npcs_present = _list_or_existing(world.get("npcs_present"), session.npcs_present)
-    session.active_quests = _list_or_existing(world.get("active_quests"), session.active_quests)
-    session.discovered_locations = _list_or_existing(
-        world.get("discovered_locations"),
-        session.discovered_locations or ([session.location] if session.location else []),
-    )
-    session.day_count = int(world.get("day_count") or session.day_count or 1)
-
-    lore_facts = _list_or_existing(world.get("lore_facts"), session.lore_facts)
-    chronicle_value = payload.get("chronicle_0_16")
-    chronicle_items = chronicle_value if isinstance(chronicle_value, list) else []
-    for item in [payload.get("initial_situation"), *chronicle_items]:
-        text = str(item or "").strip()
-        if text and text not in lore_facts:
-            lore_facts.append(text)
-    session.lore_facts = lore_facts
-
-
-def merge_opening_payload(fallback: dict[str, Any], parsed: dict[str, Any]) -> dict[str, Any]:
-    """Merge model opening output over local fallback without losing required fields."""
-    merged = dict(fallback)
-    for key, value in parsed.items():
-        if value:
-            merged[key] = value
-    for key in _PROFILE_OPENING_AUTHORITY_FIELDS:
-        if key in fallback:
-            merged[key] = fallback[key]
-
-    fallback_world_value = fallback.get("world")
-    parsed_world_value = parsed.get("world")
-    fallback_world: dict[str, Any] = (
-        fallback_world_value if isinstance(fallback_world_value, dict) else {}
-    )
-    parsed_world: dict[str, Any] = (
-        parsed_world_value if isinstance(parsed_world_value, dict) else {}
-    )
-    world = dict(fallback_world)
-    for key, value in parsed_world.items():
-        if value:
-            world[key] = value
-    merged["world"] = world
-
-    if not merged.get("opening_narrative"):
-        chronicle_value = merged.get("chronicle_0_16")
-        chronicle = chronicle_value if isinstance(chronicle_value, list) else []
-        opening = "\n".join(str(item) for item in chronicle if str(item).strip())
-        initial = str(merged.get("initial_situation_16") or merged.get("initial_situation") or "")
-        merged["opening_narrative"] = (opening + "\n\n" + initial).strip()
-    return merged
-
-
-def _apply_story_binding(session: GameSession, world_profile: dict[str, Any]) -> None:
-    story_key = str(world_profile.get("story_key") or "")
-    story_version = world_profile.get("story_version", 0)
-    story_state = world_profile.get("story_state")
-    if story_key and isinstance(story_version, int) and not isinstance(story_version, bool):
-        session.story_key = story_key
-        session.story_version = story_version
-    if isinstance(story_state, dict):
-        session.story_state = dict(story_state)
-    ensure_story_binding(session)
-
-
-def _list_or_existing(value: Any, existing: list[Any]) -> list[Any]:
-    return list(value) if isinstance(value, list) else list(existing or [])
 
 
 def _engine_has_api_key(engine: Any) -> bool:
