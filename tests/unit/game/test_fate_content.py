@@ -36,3 +36,44 @@ def test_seed_table_only_appends_missing_names() -> None:
     rows = [{"name": "已有词条"}, {"name": "新增词条"}]
     assert _seed_table(fake, "catalog_talents", rows) == 1
     assert fake.inserted == [{"name": "新增词条"}]
+
+
+def test_seed_table_only_supplements_empty_spirit_root_metadata() -> None:
+    class FakeCatalog:
+        def __init__(self) -> None:
+            self.rows = [{"name": "阴阳灵根", "element": "", "event_tags": []}]
+            self.supplemented: list[tuple[str, str, dict]] = []
+
+        def list_catalog(self, _table: str) -> list[dict]:
+            return list(self.rows)
+
+        def insert_catalog(self, _table: str, _row: dict) -> None:
+            raise AssertionError("existing catalog rows must not be replaced")
+
+        def supplement_catalog_metadata(self, table: str, name: str, metadata: dict) -> None:
+            self.supplemented.append((table, name, metadata))
+
+    fake = FakeCatalog()
+    row = {
+        "name": "阴阳灵根",
+        "element": "阴阳",
+        "grade": "天",
+        "cultivation_bonus": 1.8,
+        "breakthrough_bonus": 0.12,
+        "event_tags": ["阴阳"],
+    }
+
+    assert _seed_table(fake, "catalog_spirit_roots", [row], supplement_metadata=True) == 0
+    assert fake.supplemented == [
+        (
+            "catalog_spirit_roots",
+            "阴阳灵根",
+            {
+                "element": "阴阳",
+                "grade": "天",
+                "cultivation_bonus": 1.8,
+                "breakthrough_bonus": 0.12,
+                "event_tags": ["阴阳"],
+            },
+        )
+    ]

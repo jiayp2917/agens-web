@@ -27,6 +27,7 @@ from agens_novel.game.constants import (
     TECHNIQUE_TYPES,
     rarity_unlocked_for,
 )
+from agens_novel.game.spirit_roots import SPIRIT_ROOT_REGISTRY, spirit_root_catalog_rows
 
 
 class TestRealmConstants:
@@ -68,13 +69,25 @@ class TestRealmConstants:
 
 class TestSpiritRootConstants:
     def test_spirit_roots_count_and_lookup(self):
-        assert len(SPIRIT_ROOTS) == 14
-        assert len(SPIRIT_ROOT_MAP) == 14
+        assert len(SPIRIT_ROOTS) == 16
+        assert len(SPIRIT_ROOT_MAP) == 16
         for root in SPIRIT_ROOTS:
             assert root["name"] in SPIRIT_ROOT_MAP
             assert root["grade"] in SPIRIT_ROOT_GRADES
             assert root["cultivation_bonus"] > 0
             assert root["breakthrough_bonus"] >= 0
+
+    def test_registry_projects_identical_rule_and_catalog_metadata(self):
+        catalog_by_name = {row["name"]: row for row in spirit_root_catalog_rows()}
+        rules_by_name = {row["name"]: row for row in SPIRIT_ROOTS}
+
+        assert {row["name"] for row in SPIRIT_ROOT_REGISTRY} == set(rules_by_name) == set(catalog_by_name)
+        for root in SPIRIT_ROOT_REGISTRY:
+            name = root["name"]
+            for field in ("grade", "cultivation_bonus", "breakthrough_bonus"):
+                assert rules_by_name[name][field] == root[field] == catalog_by_name[name][field]
+        assert rules_by_name["阴阳灵根"]["breakthrough_bonus"] == 0.12
+        assert rules_by_name["混沌灵根"]["breakthrough_bonus"] == 0.15
 
     def test_spirit_root_grades_are_internal_not_rarity_tiers(self):
         assert SPIRIT_ROOT_GRADES == ["天", "地", "玄", "黄"]

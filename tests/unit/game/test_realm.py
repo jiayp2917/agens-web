@@ -362,12 +362,24 @@ class TestGetSpiritRootModifier:
         assert mod["cultivation_bonus"] == 1.5
         assert mod["breakthrough_bonus"] == 0.10
 
-    def test_all_eight_roots_have_modifiers(self):
+    def test_all_registered_roots_have_modifiers(self):
         rs = RealmSystem()
         for sr in SPIRIT_ROOTS:
             mod = rs.get_spirit_root_modifier(sr["name"])
             assert mod["cultivation_bonus"] == sr["cultivation_bonus"]
             assert mod["breakthrough_bonus"] == sr["breakthrough_bonus"]
+
+    def test_yin_yang_and_chaos_roots_apply_registered_modifiers(self):
+        rs = RealmSystem()
+
+        assert rs.get_spirit_root_modifier("阴阳灵根") == {
+            "cultivation_bonus": 1.8,
+            "breakthrough_bonus": 0.12,
+        }
+        assert rs.get_spirit_root_modifier("混沌灵根") == {
+            "cultivation_bonus": 2.0,
+            "breakthrough_bonus": 0.15,
+        }
 
     def test_unknown_root_returns_default(self):
         rs = RealmSystem()

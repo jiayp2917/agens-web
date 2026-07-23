@@ -8,7 +8,8 @@ from __future__ import annotations
 
 from typing import Any
 
-from .fate_content import entries_for, spirit_root_rules
+from .fate_content import entries_for
+from .spirit_roots import spirit_root_rule_rows
 
 # ─────────────────────────────────────────────────────────────────────────────
 # Gameplay / character creation constants
@@ -230,21 +231,10 @@ REALM_CONFIGS: dict[str, dict[str, Any]] = {
 }
 
 # ─────────────────────────────────────────────────────────────────────────────
-# Spirit roots (8 types)
+# Spirit roots
 # ─────────────────────────────────────────────────────────────────────────────
 
-SPIRIT_ROOTS: list[dict[str, Any]] = [
-    # 五行灵根 (地灵根)
-    {"name": "金灵根", "element": "金", "grade": "地", "cultivation_bonus": 1.2, "breakthrough_bonus": 0.05},
-    {"name": "木灵根", "element": "木", "grade": "地", "cultivation_bonus": 1.2, "breakthrough_bonus": 0.05},
-    {"name": "水灵根", "element": "水", "grade": "地", "cultivation_bonus": 1.2, "breakthrough_bonus": 0.05},
-    {"name": "火灵根", "element": "火", "grade": "地", "cultivation_bonus": 1.2, "breakthrough_bonus": 0.05},
-    {"name": "土灵根", "element": "土", "grade": "地", "cultivation_bonus": 1.2, "breakthrough_bonus": 0.05},
-    # 异灵根 (天灵根)
-    {"name": "冰灵根", "element": "冰", "grade": "天", "cultivation_bonus": 1.5, "breakthrough_bonus": 0.10},
-    {"name": "雷灵根", "element": "雷", "grade": "天", "cultivation_bonus": 1.5, "breakthrough_bonus": 0.10},
-    {"name": "风灵根", "element": "风", "grade": "天", "cultivation_bonus": 1.5, "breakthrough_bonus": 0.10},
-] + spirit_root_rules()
+SPIRIT_ROOTS: list[dict[str, Any]] = spirit_root_rule_rows()
 
 # Quick lookup by name.
 SPIRIT_ROOT_MAP: dict[str, dict[str, Any]] = {sr["name"]: sr for sr in SPIRIT_ROOTS}

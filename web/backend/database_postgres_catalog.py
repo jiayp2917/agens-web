@@ -15,9 +15,23 @@ from sqlalchemy.engine import Engine
 from .database_common import (
     CATALOG_TABLES,
     decode_json_fields,
+    encode_json_fields,
     now_ts,
     prepare_catalog_row,
 )
+
+_SUPPLEMENTABLE_CATALOG_FIELDS = {
+    "catalog_spirit_roots": (
+        "rarity",
+        "description",
+        "element",
+        "grade",
+        "cultivation_bonus",
+        "breakthrough_bonus",
+        "cultivation_tendency",
+        "event_tags",
+    ),
+}
 
 
 class CatalogRepository:
@@ -49,3 +63,46 @@ class CatalogRepository:
                 data,
             )
         return dict(row)
+
+    def supplement_catalog_metadata(
+        self,
+        table: str,
+        name: str,
+        metadata: dict[str, Any],
+    ) -> bool:
+        """Fill only empty catalog metadata without replacing existing values."""
+        allowed = _SUPPLEMENTABLE_CATALOG_FIELDS.get(table, ())
+        requested = {field: metadata[field] for field in allowed if field in metadata}
+        if not requested:
+            return False
+        with self.engine.begin() as conn:
+            existing = conn.execute(
+                text(f"SELECT * FROM {table} WHERE name = :name"),
+                {"name": name},
+            ).mappings().first()
+            if existing is None:
+                return False
+            updates = {
+                field: value
+                for field, value in requested.items()
+                if _catalog_metadata_is_missing(existing.get(field))
+            }
+            if not updates:
+                return False
+            updates = encode_json_fields(updates)
+            assignments = ", ".join(f"{field} = :{field}" for field in updates)
+            conn.execute(
+                text(f"UPDATE {table} SET {assignments} WHERE name = :name"),
+                {**updates, "name": name},
+            )
+        return True
+
+
+def _catalog_metadata_is_missing(value: Any) -> bool:
+    if value is None:
+        return True
+    if isinstance(value, str):
+        return not value.strip()
+    if isinstance(value, (dict, list, tuple, set)):
+        return not value
+    return False

@@ -31,14 +31,16 @@ export function GamePage({
 }) {
   const character = session.character || {};
   const world = session.world || {};
-  const lifespanCap = toPositiveNumber(character.lifespan, realmLifespanCap[String(character.realm || "")] || 100);
-  const lifespanMax = Math.max(realmLifespanCap[String(character.realm || "")] || 100, lifespanCap);
+  const lifespanMax = toPositiveNumber(
+    character.lifespan,
+    realmLifespanCap[String(character.realm || "")] || 100,
+  );
   const remainingLifespan = Math.max(
     0,
     Math.min(
       toPositiveNumber(
         character.remaining_lifespan,
-        Math.max(0, lifespanCap - (Number(character.age) || 0)),
+        Math.max(0, lifespanMax - (Number(character.age) || 0)),
       ),
       lifespanMax,
     ),

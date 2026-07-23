@@ -725,3 +725,11 @@ class PostgresWebDatabase:
 
     def insert_catalog(self, table: str, row: dict[str, Any]) -> dict[str, Any]:
         return self._catalog.insert_catalog(table, row)
+
+    def supplement_catalog_metadata(
+        self,
+        table: str,
+        name: str,
+        metadata: dict[str, Any],
+    ) -> bool:
+        return self._catalog.supplement_catalog_metadata(table, name, metadata)

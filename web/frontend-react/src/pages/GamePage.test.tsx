@@ -69,4 +69,42 @@ describe("GamePage toolbar", () => {
     await userEvent.click(screen.getByLabelText("返回首页"));
     expect(onHome).toHaveBeenCalled();
   });
+
+  it.each([
+    [84, 66],
+    [100, 82],
+    [120, 102],
+  ])("uses the authoritative lifespan cap of %i", (lifespan, remainingLifespan) => {
+    render(
+      <GamePage
+        session={{
+          ...session,
+          character: { ...session.character, lifespan, remaining_lifespan: remainingLifespan },
+        }}
+        busy={false}
+        runTurn={vi.fn().mockResolvedValue(undefined)}
+        openDialog={vi.fn()}
+        onHome={vi.fn()}
+      />,
+    );
+
+    expect(screen.getByRole("meter", { name: "寿元" })).toHaveAttribute("aria-valuemax", String(lifespan));
+  });
+
+  it("falls back to the realm cap only when the authoritative lifespan is invalid", () => {
+    render(
+      <GamePage
+        session={{
+          ...session,
+          character: { ...session.character, lifespan: 0, remaining_lifespan: 82 },
+        }}
+        busy={false}
+        runTurn={vi.fn().mockResolvedValue(undefined)}
+        openDialog={vi.fn()}
+        onHome={vi.fn()}
+      />,
+    );
+
+    expect(screen.getByRole("meter", { name: "寿元" })).toHaveAttribute("aria-valuemax", "100");
+  });
 });

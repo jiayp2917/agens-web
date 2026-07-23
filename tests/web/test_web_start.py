@@ -12,6 +12,7 @@ from sqlalchemy import text
 
 from tests.web.test_web_api import _create_invite, _register, _runner, _world_builder_result
 from web.backend.app import create_app
+from web.backend.catalog_seed import seed_catalogs
 
 pytestmark = pytest.mark.xdist_group("pg_test_db")
 
@@ -71,6 +72,30 @@ def test_start_accepts_seeded_catalog_character_options(tmp_path: Path, monkeypa
     assert started["character"]["spirit_root"] == "混沌灵根"
     assert started["character"]["spirit_root_grade"] == "天"
     assert started["character"]["family_background"] == "隐世仙族"
+
+
+def test_catalog_seed_only_supplements_empty_spirit_root_metadata(monkeypatch) -> None:
+    monkeypatch.setenv("SESSION_COOKIE_SECURE", "0")
+    app = create_app()
+    db = app.state.service.db
+    with db.engine.begin() as conn:
+        conn.execute(
+            text(
+                """
+                UPDATE catalog_spirit_roots
+                SET element = '', grade = '玄', cultivation_tendency = '', event_tags = CAST(:event_tags AS jsonb)
+                WHERE name = :name
+                """
+            ),
+            {"name": "阴阳灵根", "event_tags": "[]"},
+        )
+
+    assert seed_catalogs(db) == 0
+    root = next(row for row in db.list_catalog("catalog_spirit_roots") if row["name"] == "阴阳灵根")
+    assert root["element"] == "阴阳"
+    assert root["cultivation_tendency"] == "太极之道"
+    assert root["event_tags"] == ["阴阳", "轮回", "天道"]
+    assert root["grade"] == "玄"
 
 def test_start_rejects_invalid_manual_attribute_pool(tmp_path: Path, monkeypatch) -> None:
     monkeypatch.setenv("AGNES_API_KEY", "sk-test-web-api")

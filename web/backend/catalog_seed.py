@@ -10,6 +10,7 @@ import uuid
 from typing import Any
 
 from agens_novel.game.fate_content import catalog_rows
+from agens_novel.game.spirit_roots import spirit_root_catalog_rows
 
 from .database_common import decode_json_fields
 
@@ -173,111 +174,7 @@ SEED_FAMILY_BACKGROUNDS: list[dict[str, Any]] = [
 
 # ── catalog_spirit_roots ─────────────────────────────────────────────────────
 
-SEED_SPIRIT_ROOTS: list[dict[str, Any]] = [
-    # 五行灵根 (地灵根)
-    {
-        "id": str(uuid.uuid4()),
-        "name": "金灵根",
-        "element": "金",
-        "grade": "地",
-        "cultivation_bonus": 1.2,
-        "breakthrough_bonus": 0.05,
-        "cultivation_tendency": "杀伐之道",
-        "event_tags": ["剑意", "兵戈", "锋芒"],
-    },
-    {
-        "id": str(uuid.uuid4()),
-        "name": "木灵根",
-        "element": "木",
-        "grade": "地",
-        "cultivation_bonus": 1.2,
-        "breakthrough_bonus": 0.05,
-        "cultivation_tendency": "生生之道",
-        "event_tags": ["灵植", "生机", "丹道"],
-    },
-    {
-        "id": str(uuid.uuid4()),
-        "name": "水灵根",
-        "element": "水",
-        "grade": "地",
-        "cultivation_bonus": 1.2,
-        "breakthrough_bonus": 0.05,
-        "cultivation_tendency": "柔韧之道",
-        "event_tags": ["幻术", "变化", "治愈"],
-    },
-    {
-        "id": str(uuid.uuid4()),
-        "name": "火灵根",
-        "element": "火",
-        "grade": "地",
-        "cultivation_bonus": 1.2,
-        "breakthrough_bonus": 0.05,
-        "cultivation_tendency": "焚天之道",
-        "event_tags": ["丹火", "炼器", "焚灭"],
-    },
-    {
-        "id": str(uuid.uuid4()),
-        "name": "土灵根",
-        "element": "土",
-        "grade": "地",
-        "cultivation_bonus": 1.2,
-        "breakthrough_bonus": 0.05,
-        "cultivation_tendency": "厚德之道",
-        "event_tags": ["防御", "地脉", "稳固"],
-    },
-    # 异灵根 (天灵根)
-    {
-        "id": str(uuid.uuid4()),
-        "name": "冰灵根",
-        "element": "冰",
-        "grade": "天",
-        "cultivation_bonus": 1.5,
-        "breakthrough_bonus": 0.10,
-        "cultivation_tendency": "极寒之道",
-        "event_tags": ["极寒", "封印", "静心"],
-    },
-    {
-        "id": str(uuid.uuid4()),
-        "name": "雷灵根",
-        "element": "雷",
-        "grade": "天",
-        "cultivation_bonus": 1.5,
-        "breakthrough_bonus": 0.10,
-        "cultivation_tendency": "天威之道",
-        "event_tags": ["天劫", "破邪", "极速"],
-    },
-    {
-        "id": str(uuid.uuid4()),
-        "name": "风灵根",
-        "element": "风",
-        "grade": "天",
-        "cultivation_bonus": 1.5,
-        "breakthrough_bonus": 0.10,
-        "cultivation_tendency": "逍遥之道",
-        "event_tags": ["逍遥", "疾行", "无形"],
-    },
-    # 稀有灵根 (天灵根)
-    {
-        "id": str(uuid.uuid4()),
-        "name": "阴阳灵根",
-        "element": "阴阳",
-        "grade": "天",
-        "cultivation_bonus": 1.8,
-        "breakthrough_bonus": 0.12,
-        "cultivation_tendency": "太极之道",
-        "event_tags": ["阴阳", "轮回", "天道"],
-    },
-    {
-        "id": str(uuid.uuid4()),
-        "name": "混沌灵根",
-        "element": "混沌",
-        "grade": "天",
-        "cultivation_bonus": 2.0,
-        "breakthrough_bonus": 0.15,
-        "cultivation_tendency": "混元之道",
-        "event_tags": ["混沌", "起源", "无上"],
-    },
-]
+SEED_SPIRIT_ROOTS: list[dict[str, Any]] = spirit_root_catalog_rows()
 
 
 # ── catalog_difficulties ─────────────────────────────────────────────────────
@@ -472,26 +369,82 @@ def seed_catalogs(db: Any) -> int:
     count = 0
     count += _seed_table(db, "catalog_talents", SEED_TALENTS)
     count += _seed_table(db, "catalog_family_backgrounds", SEED_FAMILY_BACKGROUNDS)
-    count += _seed_table(db, "catalog_spirit_roots", SEED_SPIRIT_ROOTS)
+    count += _seed_table(
+        db,
+        "catalog_spirit_roots",
+        SEED_SPIRIT_ROOTS,
+        supplement_metadata=True,
+    )
     count += _seed_table(db, "catalog_difficulties", SEED_DIFFICULTIES)
     count += _seed_table(db, "catalog_story_seeds", SEED_STORY_SEEDS)
     return count
 
 
-def _seed_table(db: Any, table: str, rows: list[dict[str, Any]]) -> int:
+def _seed_table(
+    db: Any,
+    table: str,
+    rows: list[dict[str, Any]],
+    *,
+    supplement_metadata: bool = False,
+) -> int:
     """Append missing catalog rows without replacing existing player-visible data."""
-    existing_names = {
-        str(row.get("name") or "").strip()
+    existing_by_name = {
+        str(row.get("name") or "").strip(): row
         for row in db.list_catalog(table)
         if isinstance(row, dict)
     }
     inserted = 0
     for row in rows:
-        if str(row.get("name") or "").strip() in existing_names:
+        name = str(row.get("name") or "").strip()
+        existing = existing_by_name.get(name)
+        if existing is not None:
+            if supplement_metadata:
+                _supplement_missing_metadata(db, table, name, existing, row)
             continue
         db.insert_catalog(table, row)
         inserted += 1
     return inserted
+
+
+_SPIRIT_ROOT_METADATA_FIELDS = (
+    "rarity",
+    "description",
+    "element",
+    "grade",
+    "cultivation_bonus",
+    "breakthrough_bonus",
+    "cultivation_tendency",
+    "event_tags",
+)
+
+
+def _supplement_missing_metadata(
+    db: Any,
+    table: str,
+    name: str,
+    existing: dict[str, Any],
+    seed: dict[str, Any],
+) -> None:
+    supplement = getattr(db, "supplement_catalog_metadata", None)
+    if not callable(supplement):
+        return
+    metadata = {
+        field: seed[field]
+        for field in _SPIRIT_ROOT_METADATA_FIELDS
+        if field in seed and _metadata_is_missing(existing.get(field))
+    }
+    if metadata:
+        supplement(table, name, metadata)
+
+
+def _metadata_is_missing(value: Any) -> bool:
+    if value is None:
+        return True
+    if isinstance(value, str):
+        return not value.strip()
+    if isinstance(value, (dict, list, tuple, set)):
+        return not value
+    return False
 
 
 def catalog_as_json(row: dict[str, Any]) -> dict[str, Any]:

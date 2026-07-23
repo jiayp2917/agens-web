@@ -68,6 +68,11 @@ def entry_for_name(name: str) -> FateEntry | None:
 
 def catalog_rows(kind: str) -> list[dict[str, Any]]:
     """Project v3 fate entries into the existing PostgreSQL catalog schema."""
+    if kind == "root":
+        from .spirit_roots import fate_spirit_root_catalog_rows
+
+        return fate_spirit_root_catalog_rows()
+
     rows: list[dict[str, Any]] = []
     for entry in entries_for(kind):
         row: dict[str, Any] = {
@@ -87,27 +92,11 @@ def catalog_rows(kind: str) -> list[dict[str, Any]]:
                 "initial_risks": [entry.pressure],
                 "story_tags": list(entry.tags),
             })
-        elif kind == "root":
-            row.update({
-                "element": entry.element,
-                "grade": entry.grade,
-                "cultivation_bonus": entry.cultivation_bonus,
-                "breakthrough_bonus": entry.breakthrough_bonus,
-                "cultivation_tendency": entry.advantage,
-                "event_tags": list(entry.tags),
-            })
         rows.append(row)
     return rows
 
 
 def spirit_root_rules() -> list[dict[str, Any]]:
-    return [
-        {
-            "name": entry.name,
-            "element": entry.element,
-            "grade": entry.grade,
-            "cultivation_bonus": entry.cultivation_bonus,
-            "breakthrough_bonus": entry.breakthrough_bonus,
-        }
-        for entry in entries_for("root")
-    ]
+    from .spirit_roots import fate_spirit_root_rule_rows
+
+    return fate_spirit_root_rule_rows()
