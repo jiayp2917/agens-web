@@ -36,7 +36,7 @@ from agens_novel.game.constants import (
 )
 from agens_novel.session.game_session import GameSession
 
-from . import service_sessions, service_turns
+from . import service_saves, service_sessions, service_turns
 from .auth import hash_guest_token
 from .database import WebDatabaseProtocol
 from .database_postgres import PostgresWebDatabase
@@ -434,68 +434,12 @@ class WebGameService:
     def save(
         self, session_id: str, payload: dict[str, Any], user_id: str | None = None
     ) -> dict[str, Any]:
-        with self._session_lock(session_id):
-            runner = self._require_non_guest_runner(session_id, user_id, action="存档")
-            request_id, expected_version = self._mutation_context(runner, payload)
-            duplicate = self.db.get_session_mutation(session_id, request_id)
-            if duplicate is not None:
-                return duplicate
-            save_name = str(payload.get("name") or "slot_1")
-            slot = {
-                "name": save_name,
-                "snapshot": runner.snapshot(),
-                "events": list(runner.events),
-            }
-            rollback = self._rollback_state(runner)
-            try:
-                return self._commit_runner(
-                    runner,
-                    expected_version=expected_version,
-                    request_id=request_id,
-                    operation="save",
-                    response={"save": {}, "session": runner.response()},
-                    save_slot=slot,
-                )
-            except Exception:
-                self._restore_rollback(runner, rollback)
-                raise
+        return service_saves.save(self, session_id, payload, user_id)
 
     def load(
         self, session_id: str, payload: dict[str, Any], user_id: str | None = None
     ) -> dict[str, Any]:
-        with self._session_lock(session_id):
-            runner = self._require_non_guest_runner(session_id, user_id, action="读档")
-            request_id, expected_version = self._mutation_context(runner, payload)
-            duplicate = self.db.get_session_mutation(session_id, request_id)
-            if duplicate is not None:
-                return duplicate
-            save_name = str(payload.get("name") or "slot_1")
-            saved = self.db.load_save(runner.user_id, save_name)
-            if saved is None:
-                raise KeyError(f"存档不存在: {save_name}")
-            restored = WebRunner.from_snapshot(
-                session_id=session_id,
-                user_id=runner.user_id,
-                snapshot=saved["snapshot"],
-                events=saved.get("events", []),
-                db=self.db,
-                version=runner.version,
-            )
-            response = self._commit_runner(
-                restored,
-                expected_version=expected_version,
-                request_id=request_id,
-                operation="load",
-                response=restored.response(),
-                title=restored.engine.game_session.char_name or saved["name"],
-                rewind_run={
-                    "turn_count": restored.engine.game_session.turn_count,
-                    "char_name": restored.engine.game_session.char_name,
-                    "realm": restored.engine.game_session.realm,
-                },
-            )
-            self._register_runner(session_id, restored)
-            return response
+        return service_saves.load(self, session_id, payload, user_id)
 
     def end_session(
         self, session_id: str, payload: dict[str, Any], user_id: str | None = None
@@ -503,9 +447,7 @@ class WebGameService:
         return service_sessions.end_session(self, session_id, payload, user_id)
 
     def list_saves(self, user_id: str = "") -> list[dict[str, Any]]:
-        if not user_id:
-            raise PermissionError("读取存档需要登录。")
-        return self.db.list_saves(user_id)
+        return service_saves.list_saves(self, user_id)
 
     # ── Death rewards (P4) ──────────────────────────────────────────────
 
@@ -684,11 +626,7 @@ class WebGameService:
         *,
         action: str,
     ) -> WebRunner:
-        """Resolve a runner and reject guest callers for the given action."""
-        runner = self._runner(session_id, user_id=user_id)
-        if is_guest_user_id(runner.user_id):
-            raise PermissionError(f"访客游玩不提供云端{action}，请先注册或登录。")
-        return runner
+        return service_saves.require_non_guest_runner(self, session_id, user_id, action=action)
 
     def _runner(self, session_id: str, user_id: str | None = None) -> WebRunner:
         if session_id in self.runners:
