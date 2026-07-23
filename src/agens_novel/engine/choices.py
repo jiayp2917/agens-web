@@ -5,9 +5,12 @@ from __future__ import annotations
 import ast
 import json
 import re
-from typing import Any
+from typing import TYPE_CHECKING, Any
 
-from ..session.game_session import GameSession
+from ..utils.strings import dedupe_strings
+
+if TYPE_CHECKING:
+    from ..session.game_session import GameSession
 
 CHOICE_LABELS = ("A", "B", "C", "D")
 CHOICE_SEMANTICS = ("稳妥", "机遇", "风险", "气运")
@@ -175,16 +178,6 @@ def _story_grounded_choices(session: GameSession, location: str) -> list[str]:
         f"【风险】亲赴相关地点验证“{subject}”，承担暴露与受伤风险",
         f"【气运】暂留最后一手，观察“{subject}”是否出现新的命数回响",
     ]
-
-
-def dedupe_strings(values: list[Any]) -> list[str]:
-    """Return unique non-empty strings while preserving order."""
-    out: list[str] = []
-    for value in values:
-        text = value.strip() if isinstance(value, str) else ""
-        if text and text not in out:
-            out.append(text)
-    return out
 
 
 def _choice_text(item: Any) -> str:

@@ -6,40 +6,7 @@ import json
 import time
 from typing import Any
 
-CATALOG_TABLES = (
-    "catalog_talents",
-    "catalog_family_backgrounds",
-    "catalog_spirit_roots",
-    "catalog_difficulties",
-    "catalog_story_seeds",
-)
-
-CATALOG_JSON_FIELDS = (
-    "attribute_mods",
-    "tags",
-    "initial_resources",
-    "initial_risks",
-    "story_tags",
-    "event_tags",
-)
-
-
-def catalog_seed_sources() -> tuple[tuple[str, list[dict[str, Any]]], ...]:
-    from .catalog_seed import (
-        SEED_DIFFICULTIES,
-        SEED_FAMILY_BACKGROUNDS,
-        SEED_SPIRIT_ROOTS,
-        SEED_STORY_SEEDS,
-        SEED_TALENTS,
-    )
-
-    return (
-        ("catalog_talents", SEED_TALENTS),
-        ("catalog_family_backgrounds", SEED_FAMILY_BACKGROUNDS),
-        ("catalog_spirit_roots", SEED_SPIRIT_ROOTS),
-        ("catalog_difficulties", SEED_DIFFICULTIES),
-        ("catalog_story_seeds", SEED_STORY_SEEDS),
-    )
+from .catalog_structure import CATALOG_JSON_FIELDS
 
 
 def now_ts() -> float:

@@ -1,7 +1,7 @@
 from __future__ import annotations
 
+from web.backend.catalog_seed import catalog_seed_sources
 from web.backend.database_common import (
-    catalog_seed_sources,
     decode_json_fields,
     player_progress_summary,
     prepare_catalog_row,

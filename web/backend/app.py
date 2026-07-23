@@ -10,21 +10,9 @@ from urllib.parse import urlparse
 from fastapi import Depends, FastAPI, HTTPException, Request
 from fastapi.responses import FileResponse, JSONResponse
 from fastapi.staticfiles import StaticFiles
-from sqlalchemy.engine import make_url
 from starlette.middleware.trustedhost import TrustedHostMiddleware
 
-from agens_novel.artifacts.sink import ensure_evaluation_sink_ready, evaluation_mode_enabled
-from agens_novel.evaluation.ledger import (
-    EvaluationBudget,
-    EvaluationCallObserver,
-    EvaluationLedger,
-    configured_evaluation_limits,
-    evaluation_budget_root,
-)
-from agens_novel.evaluation.model_config import (
-    EvaluationModelConfig,
-    EvaluationModelConfigResolver,
-)
+from agens_novel.artifacts.sink import evaluation_mode_enabled
 from agens_novel.llm.client import InvalidEgressProxyUrl, validate_egress_proxy_url
 from agens_novel.logging_setup import setup_logging
 
@@ -170,50 +158,13 @@ def create_app() -> FastAPI:
     return app
 
 
-def _create_game_service() -> tuple[WebGameService, EvaluationLedger | None]:
+def _create_game_service() -> tuple[WebGameService, object | None]:
     """Create the product service or an explicitly isolated evaluation service."""
     if evaluation_mode_enabled():
-        _validate_evaluation_database_url()
-    database = create_database()
-    if not evaluation_mode_enabled():
-        return WebGameService(database), None
-    config = EvaluationModelConfig.from_environment()
-    root = ensure_evaluation_sink_ready()
-    if root is None:
-        raise RuntimeError("evaluation artifact root is unavailable")
-    max_total_calls, max_narrator_calls = configured_evaluation_limits()
-    budget = EvaluationBudget(
-        evaluation_budget_root(root),
-        max_total_calls=max_total_calls,
-        max_narrator_calls=max_narrator_calls,
-    )
-    ledger = EvaluationLedger(
-        provider=config.provider,
-        model=config.model,
-        shared_budget=budget,
-    )
-    resolver = EvaluationModelConfigResolver(
-        config,
-        model_call_observer=EvaluationCallObserver(ledger),
-    )
-    return WebGameService(database, model_config_resolver=resolver), ledger
+        from .evaluation_app import create_evaluation_game_service
 
-
-def _validate_evaluation_database_url() -> None:
-    """Reject an evaluation process pointed at a non-local product database."""
-    raw_url = os.environ.get("DATABASE_URL", "").strip()
-    try:
-        url = make_url(raw_url)
-    except Exception as exc:
-        raise RuntimeError("evaluation mode requires an isolated local PostgreSQL database") from exc
-    host = str(url.host or "").lower()
-    database = str(url.database or "").lower()
-    if not url.drivername.startswith("postgresql"):
-        raise RuntimeError("evaluation mode requires an isolated local PostgreSQL database")
-    if host not in {"127.0.0.1", "localhost", "::1"}:
-        raise RuntimeError("evaluation mode requires an isolated local PostgreSQL database")
-    if "eval" not in database and "chrome" not in database:
-        raise RuntimeError("evaluation mode requires an explicitly named evaluation database")
+        return create_evaluation_game_service(create_database)
+    return WebGameService(create_database()), None
 
 
 def _configure_middleware(app: FastAPI, production: bool) -> None:

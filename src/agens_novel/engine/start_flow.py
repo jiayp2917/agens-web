@@ -24,7 +24,8 @@ from ..game.constants import (
 )
 from ..rule_rng import new_run_seed
 from ..session.game_session import GameSession
-from .choices import complete_choices, dedupe_strings, has_visible_english
+from ..utils.strings import dedupe_strings
+from .choices import complete_choices, has_visible_english
 from .model_result import (
     ModelResultKind,
     ModelResultStatus,

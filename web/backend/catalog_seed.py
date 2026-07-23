@@ -12,6 +12,7 @@ from typing import Any
 from agens_novel.game.fate_content import catalog_rows
 from agens_novel.game.spirit_roots import spirit_root_catalog_rows
 
+from .catalog_structure import CATALOG_TABLES
 from .database_common import decode_json_fields
 
 # ── catalog_talents ──────────────────────────────────────────────────────────
@@ -364,19 +365,29 @@ SEED_TALENTS.extend(catalog_rows("talent"))
 SEED_FAMILY_BACKGROUNDS.extend(catalog_rows("family"))
 SEED_SPIRIT_ROOTS.extend(catalog_rows("root"))
 
+
+def catalog_seed_sources() -> tuple[tuple[str, list[dict[str, Any]]], ...]:
+    """Return seed rows in the single catalog-table order."""
+    rows = (
+        SEED_TALENTS,
+        SEED_FAMILY_BACKGROUNDS,
+        SEED_SPIRIT_ROOTS,
+        SEED_DIFFICULTIES,
+        SEED_STORY_SEEDS,
+    )
+    return tuple(zip(CATALOG_TABLES, rows, strict=True))
+
+
 def seed_catalogs(db: Any) -> int:
     """Insert seed data into catalog tables if they're empty. Returns count of inserted rows."""
     count = 0
-    count += _seed_table(db, "catalog_talents", SEED_TALENTS)
-    count += _seed_table(db, "catalog_family_backgrounds", SEED_FAMILY_BACKGROUNDS)
-    count += _seed_table(
-        db,
-        "catalog_spirit_roots",
-        SEED_SPIRIT_ROOTS,
-        supplement_metadata=True,
-    )
-    count += _seed_table(db, "catalog_difficulties", SEED_DIFFICULTIES)
-    count += _seed_table(db, "catalog_story_seeds", SEED_STORY_SEEDS)
+    for table, rows in catalog_seed_sources():
+        count += _seed_table(
+            db,
+            table,
+            rows,
+            supplement_metadata=table == "catalog_spirit_roots",
+        )
     return count
 
 

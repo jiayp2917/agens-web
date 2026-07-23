@@ -12,7 +12,8 @@ from agens_novel.evaluation.playthrough import (
     canonical_replay_session,
 )
 from agens_novel.evaluation.scenarios import canonical_v3_scenarios
-from web.backend.service import WebGameService, WebRunner, _evaluation_canonical_scenario
+from web.backend.evaluation_app import CanonicalEvaluationHooks
+from web.backend.service import WebGameService, WebRunner
 
 
 class _NoopResolver:
@@ -20,13 +21,17 @@ class _NoopResolver:
         return None
 
 
-def _service() -> WebGameService:
+def _service(*, canonical: bool = False) -> WebGameService:
     database = SimpleNamespace(
         get_session_mutation=lambda *_args: None,
         list_legacy_bonuses=lambda _user_id: [],
         list_catalog=lambda _table: [],
     )
-    return WebGameService(database, model_config_resolver=_NoopResolver())
+    return WebGameService(
+        database,
+        model_config_resolver=_NoopResolver(),
+        evaluation_hooks=CanonicalEvaluationHooks() if canonical else None,
+    )
 
 
 def _started_runner() -> WebRunner:
@@ -49,26 +54,25 @@ def _started_runner() -> WebRunner:
     return runner
 
 
-def test_canonical_scenario_is_unavailable_outside_evaluation(monkeypatch) -> None:
-    monkeypatch.delenv("AGENS_EVALUATION_MODE", raising=False)
+def test_product_service_ignores_evaluation_environment_without_hooks(monkeypatch) -> None:
+    monkeypatch.setenv("AGENS_EVALUATION_MODE", "1")
     monkeypatch.setenv("AGENS_EVALUATION_SCENARIO", "high_steady")
 
-    assert _evaluation_canonical_scenario() is None
+    assert _service()._evaluation_hooks.active_scenario() is None
 
 
 def test_canonical_scenario_rejects_unregistered_key(monkeypatch) -> None:
-    monkeypatch.setenv("AGENS_EVALUATION_MODE", "1")
     monkeypatch.setenv("AGENS_EVALUATION_SCENARIO", "not-registered")
 
     with pytest.raises(ValueError, match="not registered"):
-        _evaluation_canonical_scenario()
+        CanonicalEvaluationHooks().active_scenario()
 
 
 def test_start_uses_canonical_profile_seed_and_v3_only_when_selected(monkeypatch) -> None:
     scenario = canonical_v3_scenarios()[0]
     monkeypatch.setenv("AGENS_EVALUATION_MODE", "1")
     monkeypatch.setenv("AGENS_EVALUATION_SCENARIO", scenario.key)
-    service = _service()
+    service = _service(canonical=True)
     runner = WebRunner(session_id="evaluation-start", user_id="evaluation-user")
     service._register_runner(runner.session_id, runner)
 
@@ -110,9 +114,8 @@ def test_persisted_turn_hash_is_evaluation_only(monkeypatch) -> None:
     assert normal is not None
     assert "_evaluation_authority_hash" not in normal["state_after"]
 
-    monkeypatch.setenv("AGENS_EVALUATION_MODE", "1")
     monkeypatch.setenv("AGENS_EVALUATION_SCENARIO", "high_steady")
-    evaluated = service._settled_turn_payload(runner, before, "A")
+    evaluated = _service(canonical=True)._settled_turn_payload(runner, before, "A")
     assert evaluated is not None
     assert evaluated["state_after"]["_evaluation_authority_hash"] == authority_state_hash(
         runner.engine.game_session
@@ -131,7 +134,6 @@ def test_evaluation_choice_uses_canonical_action_not_model_display_text(
     monkeypatch, payload: dict[str, object], expected: str
 ) -> None:
     scenario = canonical_v3_scenarios()[0]
-    monkeypatch.setenv("AGENS_EVALUATION_MODE", "1")
     monkeypatch.setenv("AGENS_EVALUATION_SCENARIO", scenario.key)
     runner = WebRunner(session_id="evaluation-choice", user_id="evaluation-user")
     runner.engine.game_session = canonical_replay_session(scenario, story_version=3, target_turn=0)
@@ -142,12 +144,11 @@ def test_evaluation_choice_uses_canonical_action_not_model_display_text(
         "模型生成的显示选项四",
     ]
 
-    assert _service()._choice_text(runner, payload) == expected
+    assert _service(canonical=True)._choice_text(runner, payload) == expected
 
 
 def test_evaluation_choice_produces_canonical_first_turn_hash(monkeypatch) -> None:
     scenario = canonical_v3_scenarios()[0]
-    monkeypatch.setenv("AGENS_EVALUATION_MODE", "1")
     monkeypatch.setenv("AGENS_EVALUATION_SCENARIO", scenario.key)
     runner = WebRunner(session_id="evaluation-hash", user_id="evaluation-user")
     runner.engine.game_session = canonical_replay_session(scenario, story_version=3, target_turn=0)
@@ -159,7 +160,7 @@ def test_evaluation_choice_produces_canonical_first_turn_hash(monkeypatch) -> No
         "llm_error": "",
     }
 
-    runner.engine.handle_action(_service()._choice_text(runner, {"choice_index": 0}))
+    runner.engine.handle_action(_service(canonical=True)._choice_text(runner, {"choice_index": 0}))
 
     expected = canonical_authority_trajectory(scenario, story_version=3, max_turns=1)[0]
     assert authority_state_hash(runner.engine.game_session) == expected["authority_hash"]

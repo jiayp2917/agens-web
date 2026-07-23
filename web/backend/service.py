@@ -14,7 +14,6 @@ from typing import Any
 
 import sqlalchemy.exc
 
-from agens_novel.artifacts.sink import evaluation_mode_enabled
 from agens_novel.engine.choices import choice_with_semantic, clean_choice_text, clean_visible_text
 from agens_novel.engine.death_rewards import (
     apply_legacy_bonuses,
@@ -29,12 +28,6 @@ from agens_novel.engine.model_fallback_policy import SECRET_MARKERS as _SECRET_M
 from agens_novel.engine.render import format_status_bar
 from agens_novel.engine.start_flow import normalize_profile_attributes
 from agens_novel.engine.story_catalog import ensure_story_binding, story_arc_for_binding
-from agens_novel.evaluation.playthrough import (
-    authority_state_hash,
-    canonical_action_for_slot,
-    install_canonical_authority,
-)
-from agens_novel.evaluation.scenarios import CanonicalScenarioV1, canonical_v3_scenarios
 from agens_novel.game.constants import (
     ATTRIBUTE_KEYS,
     DIFFICULTY_OPTIONS,
@@ -47,6 +40,7 @@ from agens_novel.session.game_session import GameSession
 from .auth import hash_guest_token
 from .database import WebDatabaseProtocol
 from .database_postgres import PostgresWebDatabase
+from .evaluation_hooks import EvaluationHooks, NoopEvaluationHooks
 from .service_death_rewards import DeathRewardsService
 from .service_errors import SessionVersionConflict
 from .service_model_config import ModelConfigResolver, ModelConfigService
@@ -381,11 +375,13 @@ class WebGameService:
         db: WebDatabaseProtocol | None = None,
         *,
         model_config_resolver: ModelConfigResolver | None = None,
+        evaluation_hooks: EvaluationHooks | None = None,
     ) -> None:
         self.db = db or PostgresWebDatabase()
         self.runners: dict[str, WebRunner] = {}
         self._runner_last_used: dict[str, float] = {}
         self._model_config: ModelConfigResolver = model_config_resolver or ModelConfigService(self.db)
+        self._evaluation_hooks: EvaluationHooks = evaluation_hooks or NoopEvaluationHooks()
         self._death_rewards = DeathRewardsService(self.db)
         self._session_locks: dict[str, threading.RLock] = {}
         self._session_locks_guard = threading.Lock()
@@ -458,7 +454,7 @@ class WebGameService:
             rollback = self._rollback_state(runner)
             try:
                 self._model_config.apply_runner(runner)
-                scenario = _evaluation_canonical_scenario()
+                scenario = self._evaluation_hooks.active_scenario()
                 normalized = self._normalize_profile(scenario.profile if scenario else profile)
                 bonuses: list[dict[str, Any]] = []
                 if user_id and not is_guest_user_id(user_id):
@@ -469,7 +465,7 @@ class WebGameService:
                 runner.engine.start_from_profile(normalized)
                 session = runner.engine.game_session
                 if scenario is not None:
-                    install_canonical_authority(runner.engine, scenario, story_version=3)
+                    self._evaluation_hooks.install_authority(runner.engine, scenario)
                 response = self._commit_runner(
                     runner,
                     expected_version=expected_version,
@@ -920,8 +916,10 @@ class WebGameService:
         )
         event_kind = str(meta.get("choice_category") or turn.get("event_kind") or "event")
         state_after = session.as_game_state()
-        if _evaluation_canonical_scenario() is not None:
-            state_after["_evaluation_authority_hash"] = authority_state_hash(session)
+        if self._evaluation_hooks.active_scenario() is not None:
+            authority_hash = self._evaluation_hooks.authority_state_hash(session)
+            if authority_hash:
+                state_after["_evaluation_authority_hash"] = authority_hash
         return {
             "turn_no": session.turn_count,
             "start_age": int(before.get("age") or session.age),
@@ -998,13 +996,13 @@ class WebGameService:
 
     def _choice_text(self, runner: WebRunner, payload: dict[str, Any]) -> str:
         choices = list(runner.engine.game_session.last_choices or [])
-        canonical_scenario = _evaluation_canonical_scenario()
+        canonical_scenario = self._evaluation_hooks.active_scenario()
 
         def choice_for_index(index: int) -> str:
             if index < 0 or index >= len(choices):
                 raise ValueError("选项序号无效。")
             if canonical_scenario is not None:
-                return canonical_action_for_slot(("A", "B", "C", "D")[index])
+                return self._evaluation_hooks.canonical_action_for_slot(("A", "B", "C", "D")[index])
             return choice_with_semantic(index, choices[index])
 
         if "choice_index" in payload and payload["choice_index"] is not None:
@@ -1047,19 +1045,6 @@ def _pick(value: str, options: list[str]) -> str:
 
 def is_guest_user_id(user_id: str | None) -> bool:
     return bool(user_id and user_id.startswith(GUEST_USER_PREFIX))
-
-
-def _evaluation_canonical_scenario() -> CanonicalScenarioV1 | None:
-    """Return an explicit fixed scenario only for the isolated evaluator."""
-    if not evaluation_mode_enabled():
-        return None
-    key = os.environ.get("AGENS_EVALUATION_SCENARIO", "").strip()
-    if not key:
-        return None
-    for scenario in canonical_v3_scenarios():
-        if scenario.key == key:
-            return scenario
-    raise ValueError("evaluation scenario is not registered")
 
 
 def _guest_expiry() -> float:

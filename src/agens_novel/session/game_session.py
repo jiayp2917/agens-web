@@ -20,6 +20,7 @@ from ..game.constants import (
     clamp_attribute_value,
     normalize_attribute_value,
 )
+from ..utils.strings import dedupe_strings
 
 log = logging.getLogger(__name__)
 _RECENT_NARRATIVE_HASH_LIMIT = 120
@@ -369,15 +370,15 @@ class GameSession:
                     merged_attrs[key] = normalize_attribute_value(value)
             session.attributes = merged_attrs
         flags = char.get("breakthrough_flags", [])
-        session.breakthrough_flags = _dedupe_strings(flags) if isinstance(flags, list) else []
+        session.breakthrough_flags = dedupe_strings(flags) if isinstance(flags, list) else []
         session.techniques = char.get("techniques", [])
         session.inventory = char.get("inventory", [])
         legacy_talents = char.get("legacy_talents", [])
         session.legacy_talents = (
-            _dedupe_strings(legacy_talents) if isinstance(legacy_talents, list) else []
+            dedupe_strings(legacy_talents) if isinstance(legacy_talents, list) else []
         )
         titles = char.get("titles", [])
-        session.titles = _dedupe_strings(titles) if isinstance(titles, list) else []
+        session.titles = dedupe_strings(titles) if isinstance(titles, list) else []
         relationships = char.get("relationships", [])
         session.relationships = _normalize_relationships(relationships)
         session.status_effects = char.get("status_effects", [])
@@ -569,7 +570,7 @@ def _apply_titles_and_relationships(session: GameSession, delta: dict[str, Any])
     if "titles" in delta:
         titles = delta["titles"]
         if isinstance(titles, list):
-            session.titles = _dedupe_strings(titles)
+            session.titles = dedupe_strings(titles)
         else:
             log.warning("apply_delta: titles must be list, got %s", type(titles).__name__)
     if "title_add" in delta:
@@ -577,7 +578,7 @@ def _apply_titles_and_relationships(session: GameSession, delta: dict[str, Any])
         if isinstance(additions, str):
             additions = [additions]
         if isinstance(additions, list):
-            session.titles = _dedupe_strings([*session.titles, *additions])
+            session.titles = dedupe_strings([*session.titles, *additions])
         else:
             log.warning("apply_delta: title_add must be list or str")
 
@@ -655,7 +656,7 @@ def _apply_breakthrough_flags(session: GameSession, delta: dict[str, Any]) -> No
     if "breakthrough_flags" in delta:
         flags = delta["breakthrough_flags"]
         if isinstance(flags, list):
-            session.breakthrough_flags = _dedupe_strings(flags)
+            session.breakthrough_flags = dedupe_strings(flags)
         else:
             log.warning(
                 "apply_delta: breakthrough_flags must be list, got %s", type(flags).__name__
@@ -666,7 +667,7 @@ def _apply_breakthrough_flags(session: GameSession, delta: dict[str, Any]) -> No
     if additions is None:
         log.warning("apply_delta: breakthrough_flags_add is None, ignoring")
         return
-    flags_to_add = _dedupe_strings(additions) if isinstance(additions, list) else [additions]
+    flags_to_add = dedupe_strings(additions) if isinstance(additions, list) else [additions]
     if not isinstance(additions, (list, str)):
         log.warning(
             "apply_delta: breakthrough_flags_add must be list or str, got %s",
@@ -786,13 +787,6 @@ def _apply_meta_delta(session: GameSession, meta: dict[str, Any]) -> None:
         session.status_effects.append(effect)
     if meta.get("finale"):
         session.finale = True
-
-
-def _dedupe_strings(values: list[Any]) -> list[str]:
-    """Return unique non-empty strings while preserving order (delegates to shared impl)."""
-    from ..engine.choices import dedupe_strings
-
-    return dedupe_strings(values)
 
 
 def _delta_section(delta: dict[str, Any], key: str) -> dict[str, Any]:

@@ -12,8 +12,8 @@ from typing import Any
 from sqlalchemy import text
 from sqlalchemy.engine import Engine
 
+from .catalog_structure import CATALOG_TABLES
 from .database_common import (
-    CATALOG_TABLES,
     decode_json_fields,
     encode_json_fields,
     now_ts,

@@ -6,7 +6,7 @@ import re
 from typing import Any
 
 from ..session.game_session import GameSession
-from .choices import dedupe_strings
+from ..utils.strings import dedupe_strings
 
 INCONSISTENT_NARRATIVE_NOTICE = (
     "narrative/state mismatch: authoritative state change was missing structured data"
