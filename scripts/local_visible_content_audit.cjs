@@ -73,18 +73,19 @@ function parseChildOutput(stdout) {
   }
 }
 
-fs.mkdirSync(OUT_DIR, { recursive: true });
-const batch = {
-  name: STAMP,
-  started_at: new Date().toISOString(),
-  result: "running",
-  stop_reason: "",
-  p0_issues: 0,
-  p1_issues: 0,
-  runs: [],
-};
+function main() {
+  fs.mkdirSync(OUT_DIR, { recursive: true });
+  const batch = {
+    name: STAMP,
+    started_at: new Date().toISOString(),
+    result: "running",
+    stop_reason: "",
+    p0_issues: 0,
+    p1_issues: 0,
+    runs: [],
+  };
 
-for (const run of buildRuns()) {
+  for (const run of buildRuns()) {
   const runName = `${STAMP}-${run.key}`;
   console.log(`\n=== ${runName} ===`);
   const child = spawnSync(process.execPath, ["scripts/local_visible_playtest.cjs"], {
@@ -139,15 +140,23 @@ for (const run of buildRuns()) {
     batch.stop_reason = `P0 or non-zero exit in ${run.key}`;
     break;
   }
+  }
+
+  if (batch.result === "running") {
+    batch.result = batch.p1_issues > 0 ? "completed_with_p1" : "completed";
+  }
+  batch.completed_at = new Date().toISOString();
+  const summaryPath = path.join(OUT_DIR, `${STAMP}-batch-summary.json`);
+  fs.writeFileSync(summaryPath, JSON.stringify(batch, null, 2) + "\n", "utf8");
+  console.log(`\nBatch summary: ${summaryPath}`);
+  if (batch.result !== "completed") {
+    process.exitCode = 1;
+  }
+  return batch;
 }
 
-if (batch.result === "running") {
-  batch.result = batch.p1_issues > 0 ? "completed_with_p1" : "completed";
-}
-batch.completed_at = new Date().toISOString();
-const summaryPath = path.join(OUT_DIR, `${STAMP}-batch-summary.json`);
-fs.writeFileSync(summaryPath, JSON.stringify(batch, null, 2) + "\n", "utf8");
-console.log(`\nBatch summary: ${summaryPath}`);
-if (batch.result !== "completed") {
-  process.exitCode = 1;
+module.exports = { buildRuns, main, parseChildOutput, selectedRuns };
+
+if (require.main === module) {
+  main();
 }

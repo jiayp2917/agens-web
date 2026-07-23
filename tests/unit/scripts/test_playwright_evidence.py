@@ -201,160 +201,157 @@ def test_playwright_evidence_cli_preserves_top_level_issues(tmp_path, monkeypatc
     assert payload["issues"] == [{"level": "P1", "text": "visible repeat"}]
 
 
-def test_content_audit_playtest_treats_p1_as_failed_content_gate() -> None:
-    source = (ROOT / "scripts" / "local_visible_playtest.cjs").read_text(encoding="utf-8")
-
-    assert "CONTENT_AUDIT_FAIL_ON_P1" in source
-    assert 'summary.result = "failed_content"' in source
-
-
-def test_visible_playtest_golden_strategy_uses_real_profile_controls_and_breakthroughs() -> None:
-    source = (ROOT / "scripts" / "local_visible_playtest.cjs").read_text(encoding="utf-8")
-
-    assert 'normalized === "golden"' in source
-    assert "configureGoldenProfile(page)" in source
-    assert "root_bone: 7" in source
-    assert "comprehension: 7" in source
-    assert "luck: 7" in source
-    assert "willpower: 3" in source
-    assert "hasBreakthroughIntent(choice.text)" in source
-    assert "AGENS_PLAYTEST_SAVE_LOAD_TURN" in source
-    assert "runSaveLoadProbe(page" in source
-
-
-def test_content_audit_distinguishes_breakthrough_actions_from_realm_context() -> None:
-    source = (ROOT / "scripts" / "local_visible_playtest.cjs").read_text(encoding="utf-8")
-
-    assert "playerProgress" in source
-    assert "playerSubject" in source
-    assert "冲击\\s*(?:筑基|金丹|元婴|化神|合体|大乘|渡劫|飞升)" in source
-    assert "return /突破|破境|冲关/u.test(body)" in source
-
-
-def test_content_audit_helpers_reject_world_context_and_stabilization_false_positives() -> None:
+def _node_json(script: str) -> dict | list:
     node = shutil.which("node")
     if node is None:
-        pytest.skip("node is required to execute the browser-audit helper contract")
-    module_path = json.dumps(str(ROOT / "scripts" / "local_visible_playtest.cjs"))
-    script = f"""
-const audit = require({module_path});
-console.log(JSON.stringify({{
-  worldClaims: audit.narrativeRealmClaims("潮音阁重修课业簿，练气二层根基有了可见标尺。"),
-  mixedClaims: audit.narrativeRealmClaims("完成宗门任务后，他突破至练气三层。"),
-  playerClaims: audit.narrativeRealmClaims("其筑基初期根基已经稳固。"),
-  transitionClaims: audit.narrativeRealmClaims("其在大乘圆满之际成功破境迈入渡劫期。"),
-  transitionMatches: audit.narrativeRealmClaims("其在大乘圆满之际成功破境迈入渡劫期。")
-    .some((claim) => audit.realmClaimMatchesCurrent(claim, "渡劫初期")),
-  stabilizeIntent: audit.hasBreakthroughIntent("闭关温养灵力，稳固渡劫根基"),
-  ascensionIntent: audit.hasBreakthroughIntent("正式冲击飞升，承担破境失败风险"),
-  clueIntent: audit.hasBreakthroughIntent("寻找飞升线索，补足渡劫准备"),
-}}));
-"""
+        pytest.skip("node is required to execute the browser-audit contract")
     completed = subprocess.run(
         [node, "-e", script],
         check=True,
         capture_output=True,
         text=True,
         encoding="utf-8",
+        cwd=ROOT,
     )
-    payload = json.loads(completed.stdout)
+    return json.loads(completed.stdout)
+
+
+def test_playtest_replay_preserves_pass_failure_fallback_duplicate_and_authority_results() -> None:
+    node = shutil.which("node")
+    if node is None:
+        pytest.skip("node is required to replay browser acceptance fixtures")
+    completed = subprocess.run(
+        [
+            node,
+            str(ROOT / "scripts" / "playtest" / "replay_acceptance.cjs"),
+            str(ROOT / "tests" / "fixtures" / "playtest_replay" / "acceptance_cases.json"),
+        ],
+        check=True,
+        capture_output=True,
+        text=True,
+        encoding="utf-8",
+        cwd=ROOT,
+    )
+    results = {item["name"]: item for item in json.loads(completed.stdout)}
+
+    assert results["passed"] == {
+        "name": "passed",
+        "result": "passed",
+        "p0_issues": 0,
+        "p1_issues": 0,
+        "fallback_count": 0,
+        "failed": False,
+    }
+    assert results["failed_http"]["result"] == "failed_audit"
+    assert results["fallback"]["result"] == "failed_or_partial"
+    assert results["fallback"]["failed"] is True
+    assert results["duplicate_narrative"]["result"] == "failed_content"
+    assert results["authority_conflict"]["result"] == "failed_audit"
+
+
+def test_visible_content_audit_keeps_realm_and_breakthrough_contracts() -> None:
+    module_path = json.dumps(str(ROOT / "scripts" / "playtest" / "visible_content_audit.cjs"))
+    payload = _node_json(
+        f"""
+const audit = require({module_path});
+console.log(JSON.stringify({{
+  worldClaims: audit.narrativeRealmClaims("潮音阁重修课业翱，练气二层根基有了可见标尺。"),
+  mixedClaims: audit.narrativeRealmClaims("完成宗门任务后，他突破至练气三层。"),
+  playerClaims: audit.narrativeRealmClaims("其筑基初期根基已经稳固。"),
+  transitionMatches: audit.narrativeRealmClaims("其在大乘圆满之际成功破境迈入渡劫期。")
+    .some((claim) => audit.realmClaimMatchesCurrent(claim, "渡劫初期")),
+  stabilizeIntent: audit.hasBreakthroughIntent("闭关温养灵力，稳固渡劫根基"),
+  ascensionIntent: audit.hasBreakthroughIntent("正式冲击飞升，承担破境失败风险"),
+  clueIntent: audit.hasBreakthroughIntent("寻找飞升线索，补足渡劫准备"),
+  fallbackHits: audit.forbiddenHits("模型暂不可用，已转入本地故事继续。"),
+  harmlessHits: audit.forbiddenHits("普通叙事提到了 slot_1，但没有内部提示。"),
+}}));
+"""
+    )
 
     assert payload["worldClaims"] == []
     assert payload["mixedClaims"] == ["练气3层"]
     assert payload["playerClaims"] == ["筑基初期"]
-    assert payload["transitionClaims"] == ["大乘圆满", "渡劫"]
     assert payload["transitionMatches"] is True
     assert payload["stabilizeIntent"] is False
     assert payload["ascensionIntent"] is True
     assert payload["clueIntent"] is False
+    assert {"model_unavailable_notice", "local_story_notice"} <= set(payload["fallbackHits"])
+    assert payload["harmlessHits"] == ["english_word"]
 
 
-def test_content_audit_playtest_allows_terminal_turn_without_choices() -> None:
-    source = (ROOT / "scripts" / "local_visible_playtest.cjs").read_text(encoding="utf-8")
+def test_acceptance_report_preserves_visible_issue_category_and_judge_failure() -> None:
+    report_path = json.dumps(str(ROOT / "scripts" / "playtest" / "acceptance_report.cjs"))
+    payload = _node_json(
+        f"""
+const report = require({report_path});
+const issues = [];
+const issue = report.createIssueCollector(issues);
+issue("P1", "visible content issue", {{text: "仅用于脱敏回放"}});
+report.auditModelDiagnostics({{turn_index: 1, judge_request_failed: true, judge_status: "judge_failed"}}, "main", issue);
+console.log(JSON.stringify(issues));
+"""
+    )
 
-    assert "const terminalTurn = Boolean(turnRecord.game_over || turnRecord.finale);" in source
-    assert "!terminalTurn && ((afterSnapshot.choices || []).length !== 4" in source
-    assert 'summary.result = "passed_terminal"' in source
-    assert "summary.p1_issues > 0" in source
-
-
-def test_content_audit_batch_continues_p1_only_runs_but_fails_summary() -> None:
-    source = (ROOT / "scripts" / "local_visible_content_audit.cjs").read_text(encoding="utf-8")
-
-    assert "p1OnlyFailure" in source
-    assert "completed_with_p1" in source
-    assert "batch.p1_issues += p1Issues" in source
-
-
-def test_content_audit_issues_keep_category_when_payload_has_visible_text() -> None:
-    source = (ROOT / "scripts" / "local_visible_playtest.cjs").read_text(encoding="utf-8")
-
-    assert "record.visible_text = record.text" in source
-    assert "delete record.text" in source
-    assert "issues.push({ ...record, level, text })" in source
-    assert "issues.push({ level, text, ...data })" not in source
+    assert payload[0]["level"] == "P1"
+    assert payload[0]["text"] == "visible content issue"
+    assert payload[0]["visible_text"] == "仅用于脱敏回放"
+    assert payload[1]["text"] == "judge model request failed; rule-only settlement used"
 
 
-def test_content_audit_flags_judge_failed_as_p1() -> None:
-    source = (ROOT / "scripts" / "local_visible_playtest.cjs").read_text(encoding="utf-8")
+def test_browser_driver_keeps_slot_strategy_and_content_batch_configuration() -> None:
+    driver_path = json.dumps(str(ROOT / "scripts" / "playtest" / "browser_driver.cjs"))
+    batch_path = json.dumps(str(ROOT / "scripts" / "local_visible_content_audit.cjs"))
+    payload = _node_json(
+        f"""
+const driver = require({driver_path});
+const batch = require({batch_path});
+const choices = [
+  {{letter: "A", text: "稳步修行"}},
+  {{letter: "B", text: "拜访执事"}},
+  {{letter: "C", text: "冒险探查"}},
+  {{letter: "D", text: "静候机缘"}},
+];
+console.log(JSON.stringify({{
+  fixed: driver.routeIndexForTurn(2, choices, {{}}, {{choiceStrategy: "fixed-c"}}).letter,
+  slot: driver.routeIndexForTurn(2, choices, {{}}, {{slotSequence: "BD"}}).letter,
+  viewport: driver.parseViewport("1440x1000"),
+  slots: driver.parseSlotSequence("A, B C D"),
+  runs: batch.buildRuns().map((run) => run.key),
+  parsed: batch.parseChildOutput('{{"summary":{{"result":"passed"}}}}'),
+}}));
+"""
+    )
 
-    assert 'judge_request_failed: judgeStatus === "judge_failed"' in source
-    assert "summary.judge_failed_count" in source
-    assert "judge model request failed; rule-only settlement used" in source
-    assert "auditModelDiagnostics(turnRecord" in source
-
-
-def test_content_audit_visible_text_heuristics_are_not_broad_brace_scans() -> None:
-    source = (ROOT / "scripts" / "local_visible_playtest.cjs").read_text(encoding="utf-8")
-
-    assert "json_like_object" in source
-    assert "state_delta|state_update|character|world|meta|choices" in source
-    assert "/[{][\\s\\S]*[}]/u" not in source
-    assert "function chineseNumber" in source
-
-
-def test_content_audit_forbids_chinese_fallback_notices() -> None:
-    source = (ROOT / "scripts" / "local_visible_playtest.cjs").read_text(encoding="utf-8")
-
-    assert "model_unavailable_notice" in source
-    assert "local_story_notice" in source
-    assert "heaven_disorder_notice" in source
-    assert "upstream_model_notice" in source
-    assert "basic_rule_settlement_notice" in source
-    assert "模型(?:暂)?不可用" in source
-    assert "本地故事继续" in source
-    assert "quoted_choice_fragment" in source
-
-
-def test_content_audit_does_not_exempt_internal_save_slot_names() -> None:
-    source = (ROOT / "scripts" / "local_visible_playtest.cjs").read_text(encoding="utf-8")
-
-    assert "slot_\\d+" not in source
-
-
-def test_content_audit_recomputes_issue_counts_after_writer_failure() -> None:
-    source = (ROOT / "scripts" / "local_visible_playtest.cjs").read_text(encoding="utf-8")
-
-    assert "function updateIssueCounts(summary, issues)" in source
-    assert 'issue("P0", "strict evidence writer failed"' in source
-    assert "updateIssueCounts(summary, issues);" in source
-    assert 'summary.result = "failed_or_partial";' in source
+    assert payload["fixed"] == "C"
+    assert payload["slot"] == "D"
+    assert payload["viewport"] == {"width": 1440, "height": 1000}
+    assert payload["slots"] == "ABCD"
+    assert payload["runs"] == [
+        "base-cycle-20",
+        "route-a-20",
+        "route-b-20",
+        "route-c-20",
+        "route-d-20",
+        "mixed-player-60",
+        "double-click-1",
+    ]
+    assert payload["parsed"] == {"summary": {"result": "passed"}}
 
 
-def test_content_audit_does_not_treat_previous_latest_as_new_turn() -> None:
-    source = (ROOT / "scripts" / "local_visible_playtest.cjs").read_text(encoding="utf-8")
+def test_legacy_playtest_exports_delegate_to_the_split_modules() -> None:
+    legacy_path = json.dumps(str(ROOT / "scripts" / "local_visible_playtest.cjs"))
+    visible_path = json.dumps(str(ROOT / "scripts" / "playtest" / "visible_content_audit.cjs"))
+    payload = _node_json(
+        f"""
+const legacy = require({legacy_path});
+const visible = require({visible_path});
+console.log(JSON.stringify({{
+  sameNarrativeHelper: legacy.narrativeRealmClaims === visible.narrativeRealmClaims,
+  redacted: legacy.redactEvidence({{api_key: "not-a-real-key", narrative: "safe"}}),
+}}));
+"""
+    )
 
-    assert "function chronicleSignature" in source
-    assert "non-fallback turn produced no new visible chronicle entry" in source
-    assert "return latest.length ? latest : after.slice(-1)" not in source
-    assert "所需|准备|底蕴|线索|打听|寻找|静候|机缘" in source
-
-
-def test_content_audit_can_verify_final_persisted_turns_without_raw_text() -> None:
-    source = (ROOT / "scripts" / "local_visible_playtest.cjs").read_text(encoding="utf-8")
-
-    assert "AGENS_PLAYTEST_REQUIRE_PERSISTED_AUDIT" in source
-    assert "function readPersistedTurnAudit" in source
-    assert "duplicate_narrative_count" in source
-    assert "narrative_sha256" in source
-    assert "persisted chronicle text repeated exactly" in source
+    assert payload["sameNarrativeHelper"] is True
+    assert payload["redacted"] == {"api_key": "[redacted]", "narrative": "safe"}

@@ -1,0 +1,79 @@
+{
+  "cases": [
+    {
+      "name": "passed",
+      "summary": { "result": "passed", "last_turn_count": 2 },
+      "issues": []
+    },
+    {
+      "name": "failed_http",
+      "summary": { "result": "passed", "last_turn_count": 1 },
+      "issues": [{ "level": "P0", "text": "choice did not satisfy live-model acceptance" }]
+    },
+    {
+      "name": "fallback",
+      "summary": { "result": "failed_or_partial", "fallback_count": 1, "last_turn_count": 1 },
+      "issues": []
+    },
+    {
+      "name": "duplicate_narrative",
+      "content_audit_fail_on_p1": true,
+      "summary": { "result": "passed", "last_turn_count": 2 },
+      "visible_turns": [
+        {
+          "turn_record": { "turn_index": 1, "choice": "稳步修行", "fallback": false, "game_over": false, "finale": false, "http_status": 200, "narrator_status": "ok" },
+          "before_snapshot": { "chronicle": [], "status": { "realm": "练气1层" } },
+          "after_snapshot": {
+            "chronicle": [{ "age": "18岁", "text": "山门晨雾散去，验真者在药圃旁整理灵草。", "latest": true }],
+            "latest_chronicle": [{ "age": "18岁", "text": "山门晨雾散去，验真者在药圃旁整理灵草。", "latest": true }],
+            "status": { "realm": "练气1层", "age": "18岁", "lifespan": "18/100" },
+            "choices": [
+              { "letter": "A", "text": "继续整理药圃", "disabled": false },
+              { "letter": "B", "text": "拜访外门执事", "disabled": false },
+              { "letter": "C", "text": "探查荒废洞府", "disabled": false },
+              { "letter": "D", "text": "在石径静候机缘", "disabled": false }
+            ],
+            "world_intel": ["药圃人手紧缺"],
+            "viewport": { "horizontal_overflow": false }
+          }
+        },
+        {
+          "turn_record": { "turn_index": 2, "choice": "继续整理药圃", "fallback": false, "game_over": false, "finale": false, "http_status": 200, "narrator_status": "ok" },
+          "before_snapshot": {
+            "chronicle": [{ "age": "18岁", "text": "山门晨雾散去，验真者在药圃旁整理灵草。", "latest": true }],
+            "status": { "realm": "练气1层" }
+          },
+          "after_snapshot": {
+            "chronicle": [
+              { "age": "18岁", "text": "山门晨雾散去，验真者在药圃旁整理灵草。", "latest": false },
+              { "age": "18岁", "text": "山门晨雾散去，验真者在药圃旁整理灵草。", "latest": true }
+            ],
+            "latest_chronicle": [{ "age": "18岁", "text": "山门晨雾散去，验真者在药圃旁整理灵草。", "latest": true }],
+            "status": { "realm": "练气1层", "age": "18岁", "lifespan": "18/100" },
+            "choices": [
+              { "letter": "A", "text": "继续整理药圃", "disabled": false },
+              { "letter": "B", "text": "拜访外门执事", "disabled": false },
+              { "letter": "C", "text": "探查荒废洞府", "disabled": false },
+              { "letter": "D", "text": "在石径静候机缘", "disabled": false }
+            ],
+            "world_intel": ["药圃人手紧缺"],
+            "viewport": { "horizontal_overflow": false }
+          }
+        }
+      ]
+    },
+    {
+      "name": "authority_conflict",
+      "summary": { "result": "passed", "last_turn_count": 1 },
+      "persisted_turn_audit": {
+        "continuous": true,
+        "turn_count": 1,
+        "last_turn": 1,
+        "authority_match": false,
+        "authority_mismatch_count": 1,
+        "duplicate_narrative_count": 0,
+        "duplicates": []
+      }
+    }
+  ]
+}
