@@ -28,7 +28,9 @@
 
 ## P2 Maintainability
 
-1. 拆 `database_postgres.py`：优先抽 session mutation、catalog 和 rewards repository，保持 `WebDatabaseProtocol` 不变。
-2. 继续按触碰范围拆 `tests/web/test_web_api.py` 的 session/turn 主题，避免无关大改。
-3. 为模型 URL 校验增加可插拔的固定解析/连接层，作为现有应用校验、Squid 和主机 ACL 之外的额外防线。
-4. 扩展前端测试到完整账号流程、长文本和恢复后继续游玩；HTTP 409 单元测试与真实键盘/焦点证据已完成。
+1. 继续按触碰范围拆 `tests/web/test_web_api.py` 的 session/turn 主题，避免无关大改。
+2. 为模型 URL 校验增加可插拔的固定解析/连接层，作为现有应用校验、Squid 和主机 ACL 之外的额外防线。
+3. 扩展前端测试到完整账号流程、长文本和恢复后继续游玩；HTTP 409 单元测试与真实键盘/焦点证据已完成。
+4. 将产品服务与评估基础设施解耦：产品层只依赖默认空实现的评估钩子，评估配置和启动由独立应用工厂组装；同时消除确认存在的运行时依赖环。
+5. 为 `scripts/local_visible_playtest.cjs` 建立脱敏证据回放夹具后，分离浏览器驱动、持久化回合审计、玩家可见内容审计、报告构造和纯函数裁决，保持 CLI、证据字段与退出码兼容。
+6. 按单一边界治理 `story_catalog`、开局、模型提示/传输/解析、普通回合、`GameSession` 与 `WebGameService`；每一步保持 v1/v2/v3 存档、固定种子、单次规则结算、模型重试、事件顺序、幂等和 HTTP 409 语义。

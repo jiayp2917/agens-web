@@ -8,7 +8,8 @@ from unittest.mock import patch
 from agens_novel.engine.choices import fallback_choices, normalize_choices
 from agens_novel.engine.game_engine import GameEngine
 from agens_novel.engine.world_generator import build_world_fallback
-from agens_novel.session.game_session import GameSession
+from tests.unit.engine.fixtures import canned_judge as _canned_judge
+from tests.unit.engine.fixtures import patch_turn_runner as _patch_turn_runner_base
 
 # ═══════════════════════════════════════════════════════════════════════════════
 # Canned helpers
@@ -117,36 +118,13 @@ def _canned_narrator() -> dict[str, Any]:
     }
 
 
-def _canned_judge() -> dict[str, Any]:
-    return {
-        "approved": True,
-        "corrected_delta": {},
-        "judgment_note": "ok",
-        "review_score": 8,
-        "output_path": "",
-        "audit_path": "",
-        "finished_at": "",
-        "llm_error": "",
-    }
-
-
 def _patch_turn_runner(call_log: list | None = None) -> Any:
-    if call_log is None:
-        call_log = []
-
-    def fake_run_turn_sync(
-        agent_name: str, user_input: str, session: GameSession, **kwargs
-    ) -> dict:
-        call_log.append(agent_name)
-        if agent_name == "narrator":
-            return _canned_narrator()
-        if agent_name == "judge":
-            return _canned_judge()
-        if agent_name == "world_builder":
-            return _canned_world_builder()
-        return {}
-
-    return patch("agens_novel.engine.game_engine.run_turn_sync", side_effect=fake_run_turn_sync)
+    return _patch_turn_runner_base(
+        narrator=_canned_narrator,
+        judge=_canned_judge,
+        world_builder=_canned_world_builder,
+        call_log=call_log,
+    )
 
 
 # ═══════════════════════════════════════════════════════════════════════════════

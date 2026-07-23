@@ -6,38 +6,14 @@ from typing import Any
 from unittest.mock import patch
 
 from agens_novel.engine.game_engine import GameEngine
-from agens_novel.engine.world_generator import build_world_fallback
 from agens_novel.session.game_session import GameSession
+from tests.unit.engine.fixtures import canned_judge as _canned_judge
+from tests.unit.engine.fixtures import canned_world_builder as _canned_world_builder
+from tests.unit.engine.fixtures import patch_turn_runner as _patch_turn_runner_base
 
 # ═══════════════════════════════════════════════════════════════════════════════
 # Canned helpers
 # ═══════════════════════════════════════════════════════════════════════════════
-
-
-def _canned_world_builder() -> dict[str, Any]:
-    generated = build_world_fallback(
-        {
-            "char_name": "许满",
-            "spirit_root": "火木双灵根",
-            "spirit_root_grade": "地",
-        }
-    )
-    generated["world"].update(
-        {
-            "current_scene": "晨雾中的青云山外门",
-            "location": "青云山外门",
-            "region": "东荒",
-        }
-    )
-    return {
-        "generated_data": generated,
-        "world_description": "",
-        "opening_narrative": "",
-        "output_path": "",
-        "audit_path": "",
-        "finished_at": "",
-        "llm_error": "",
-    }
 
 
 class _FixedRuleRng:
@@ -48,34 +24,12 @@ class _FixedRuleRng:
         return self.value
 
 
-def _canned_judge() -> dict[str, Any]:
-    return {
-        "approved": True,
-        "corrected_delta": {},
-        "judgment_note": "ok",
-        "review_score": 8,
-        "output_path": "",
-        "audit_path": "",
-        "finished_at": "",
-        "llm_error": "",
-    }
-
-
 def _patch_turn_runner(call_log: list | None = None) -> Any:
-    if call_log is None:
-        call_log = []
-
-    def fake_run_turn_sync(
-        agent_name: str, user_input: str, session: GameSession, **kwargs
-    ) -> dict:
-        call_log.append(agent_name)
-        if agent_name == "judge":
-            return _canned_judge()
-        if agent_name == "world_builder":
-            return _canned_world_builder()
-        return {}
-
-    return patch("agens_novel.engine.game_engine.run_turn_sync", side_effect=fake_run_turn_sync)
+    return _patch_turn_runner_base(
+        judge=_canned_judge,
+        world_builder=_canned_world_builder,
+        call_log=call_log,
+    )
 
 
 # ═══════════════════════════════════════════════════════════════════════════════

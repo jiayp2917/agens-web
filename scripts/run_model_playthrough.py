@@ -4,16 +4,15 @@ from __future__ import annotations
 
 import argparse
 import json
-import os
 from pathlib import Path
 from typing import Any
 
 from agens_novel.artifacts import store
 from agens_novel.artifacts.sink import ensure_evaluation_sink_ready
+from agens_novel.evaluation.cli_utils import environment_limit, load_price_card
 from agens_novel.evaluation.ledger import (
     EvaluationBudget,
     EvaluationLedger,
-    PriceCard,
     evaluation_budget_root,
 )
 from agens_novel.evaluation.manifest import write_inventory_manifest, write_manifest
@@ -27,8 +26,16 @@ def main() -> int:
     parser.add_argument("mode", choices=("smoke-v2", "formal-v3"))
     parser.add_argument("--scenario", choices=("all", "high_steady", "low_risk", "middle_mixed"), default="all")
     parser.add_argument("--price-card", type=Path)
-    parser.add_argument("--max-total-calls", type=int, default=_limit("AGENS_EVALUATION_MAX_TOTAL_CALLS", 800))
-    parser.add_argument("--max-narrator-calls", type=int, default=_limit("AGENS_EVALUATION_MAX_NARRATOR_CALLS", 650))
+    parser.add_argument(
+        "--max-total-calls",
+        type=int,
+        default=environment_limit("AGENS_EVALUATION_MAX_TOTAL_CALLS", 800),
+    )
+    parser.add_argument(
+        "--max-narrator-calls",
+        type=int,
+        default=environment_limit("AGENS_EVALUATION_MAX_NARRATOR_CALLS", 650),
+    )
     parser.add_argument("--max-elapsed-seconds", type=float, default=1800.0)
     parser.add_argument("--hard-cost-limit", type=float)
     parser.add_argument("--reservation-cost", type=float)
@@ -42,7 +49,7 @@ def main() -> int:
         story_version=2 if args.mode == "smoke-v2" else 3,
         scenarios=tuple(scenarios),
     )
-    price_card = _load_price_card(args.price_card)
+    price_card = load_price_card(args.price_card)
     if args.hard_cost_limit is not None and args.reservation_cost is None:
         raise ValueError("--reservation-cost is required with --hard-cost-limit")
     root = ensure_evaluation_sink_ready()
@@ -151,36 +158,6 @@ def _accepted_v3(results: list[dict[str, Any]]) -> bool:
         and (result["game_over"] or result["story_resolution"] in {"resolved", "failed"})
         for result in results
     )
-
-
-def _load_price_card(path: Path | None) -> PriceCard | None:
-    if path is None:
-        return None
-    value: Any = json.loads(path.read_text(encoding="utf-8"))
-    if not isinstance(value, dict):
-        raise ValueError("price card must be a JSON object")
-    return PriceCard(
-        effective_date=str(value.get("effective_date") or ""),
-        currency=str(value.get("currency") or ""),
-        input_per_million=_number_or_none(value.get("input_per_million")),
-        output_per_million=_number_or_none(value.get("output_per_million")),
-        cached_input_per_million=_number_or_none(value.get("cached_input_per_million")),
-    )
-
-
-def _number_or_none(value: Any) -> float | None:
-    if value is None:
-        return None
-    number = float(value)
-    if number < 0:
-        raise ValueError("price card rates must be non-negative")
-    return number
-
-
-def _limit(name: str, default: int) -> int:
-    value = os.environ.get(name, "").strip()
-    return int(value) if value else default
-
 
 if __name__ == "__main__":
     raise SystemExit(main())
