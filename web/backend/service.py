@@ -14,7 +14,7 @@ from typing import Any
 
 import sqlalchemy.exc
 
-from agens_novel.engine.choices import choice_with_semantic, clean_choice_text, clean_visible_text
+from agens_novel.engine.choices import clean_choice_text, clean_visible_text
 from agens_novel.engine.death_rewards import (
     bonuses_to_legacy,
 )
@@ -36,7 +36,7 @@ from agens_novel.game.constants import (
 )
 from agens_novel.session.game_session import GameSession
 
-from . import service_sessions
+from . import service_sessions, service_turns
 from .auth import hash_guest_token
 from .database import WebDatabaseProtocol
 from .database_postgres import PostgresWebDatabase
@@ -413,10 +413,7 @@ class WebGameService:
     def choose(
         self, session_id: str, payload: dict[str, Any], user_id: str | None = None
     ) -> dict[str, Any]:
-        with self._session_lock(session_id):
-            runner = self._runner(session_id, user_id=user_id)
-            action = self._choice_text(runner, payload)
-            return self._advance_turn(runner, action, payload)
+        return service_turns.choose(self, session_id, payload, user_id)
 
     def act(
         self,
@@ -424,9 +421,7 @@ class WebGameService:
         payload: dict[str, Any],
         user_id: str | None = None,
     ) -> dict[str, Any]:
-        with self._session_lock(session_id):
-            runner = self._runner(session_id, user_id=user_id)
-            return self._advance_turn(runner, str(payload.get("action") or ""), payload)
+        return service_turns.act(self, session_id, payload, user_id)
 
     def _advance_turn(
         self,
@@ -434,28 +429,7 @@ class WebGameService:
         action: str,
         payload: dict[str, Any],
     ) -> dict[str, Any]:
-        request_id, expected_version = self._mutation_context(runner, payload)
-        duplicate = self.db.get_session_mutation(runner.session_id, request_id)
-        if duplicate is not None:
-            return duplicate
-        rollback = self._rollback_state(runner)
-        try:
-            self._model_config.apply_runner(runner)
-            before = _turn_start_snapshot(runner.engine.game_session)
-            runner.engine.handle_action(action)
-            turn = self._settled_turn_payload(runner, before, action)
-            return self._commit_runner(
-                runner,
-                expected_version=expected_version,
-                request_id=request_id,
-                operation="turn",
-                response=runner.response(),
-                turn=turn,
-                terminal=self._terminal_bundle(runner),
-            )
-        except Exception:
-            self._restore_rollback(runner, rollback)
-            raise
+        return service_turns.advance_turn(self, runner, action, payload)
 
     def save(
         self, session_id: str, payload: dict[str, Any], user_id: str | None = None
@@ -824,52 +798,7 @@ class WebGameService:
         before: dict[str, Any],
         choice_taken: str,
     ) -> dict[str, Any] | None:
-        """Build the latest settled turn for the atomic persistence unit."""
-        if is_guest_user_id(runner.user_id):
-            return None
-        session = runner.engine.game_session
-        if session.turn_count <= int(before.get("turn_no") or 0):
-            return None
-        if not session.turn_history:
-            return None
-        turn = session.turn_history[-1]
-        if int(turn.get("turn") or 0) != session.turn_count:
-            return None
-
-        delta = turn.get("delta") if isinstance(turn.get("delta"), dict) else {}
-        meta = delta.get("meta") if isinstance(delta, dict) else {}
-        if not isinstance(meta, dict):
-            meta = {}
-        elapsed_years = int(
-            meta.get("elapsed_years") or max(0, session.age - int(before.get("age") or session.age))
-        )
-        calendar_summary = str(
-            meta.get("calendar_summary")
-            or meta.get("turn_summary")
-            or _calendar_summary(before, session, elapsed_years)
-        )
-        event_kind = str(meta.get("choice_category") or turn.get("event_kind") or "event")
-        state_after = session.as_game_state()
-        if self._evaluation_hooks.active_scenario() is not None:
-            authority_hash = self._evaluation_hooks.authority_state_hash(session)
-            if authority_hash:
-                state_after["_evaluation_authority_hash"] = authority_hash
-        return {
-            "turn_no": session.turn_count,
-            "start_age": int(before.get("age") or session.age),
-            "elapsed_years": elapsed_years,
-            "end_age": int(session.age),
-            "lifespan": int(session.lifespan),
-            "remaining_lifespan": session.remaining_lifespan,
-            "choice_taken": choice_taken,
-            "choices": list(turn.get("choices") or session.last_choices or []),
-            "state_delta": delta,
-            "state_after": state_after,
-            "calendar_summary": calendar_summary,
-            "narrative": str(turn.get("narrative") or ""),
-            "event_kind": event_kind,
-            "end_reason": session.error if session.game_over else None,
-        }
+        return service_turns.settled_turn_payload(self, runner, before, choice_taken)
 
     def _normalize_profile(self, profile: dict[str, Any]) -> dict[str, Any]:
         normalized = dict(profile)
@@ -929,32 +858,7 @@ class WebGameService:
             return []
 
     def _choice_text(self, runner: WebRunner, payload: dict[str, Any]) -> str:
-        choices = list(runner.engine.game_session.last_choices or [])
-        canonical_scenario = self._evaluation_hooks.active_scenario()
-
-        def choice_for_index(index: int) -> str:
-            if index < 0 or index >= len(choices):
-                raise ValueError("选项序号无效。")
-            if canonical_scenario is not None:
-                return self._evaluation_hooks.canonical_action_for_slot(("A", "B", "C", "D")[index])
-            return choice_with_semantic(index, choices[index])
-
-        if "choice_index" in payload and payload["choice_index"] is not None:
-            index = int(payload["choice_index"])
-            return choice_for_index(index)
-
-        raw = str(payload.get("choice") or "").strip()
-        letter_map = {"A": 0, "B": 1, "C": 2, "D": 3}
-        if raw.upper() in letter_map and letter_map[raw.upper()] < len(choices):
-            index = letter_map[raw.upper()]
-            return choice_for_index(index)
-        if raw in {"1", "2", "3", "4"}:
-            index = int(raw) - 1
-            if index < len(choices):
-                return choice_for_index(index)
-        if raw:
-            raise ValueError("请选择 A/B/C/D。")
-        raise ValueError("请选择 A/B/C/D。")
+        return service_turns.choice_text(self, runner, payload)
 
 
 def _catalog_names(rows: list[dict[str, Any]]) -> list[str]:
@@ -999,11 +903,7 @@ def _random_attributes() -> dict[str, int]:
 
 
 def _turn_start_snapshot(session: GameSession) -> dict[str, Any]:
-    return {
-        "turn_no": int(session.turn_count or 0),
-        "age": int(session.age or 0),
-        "lifespan": int(session.lifespan or 0),
-    }
+    return service_turns.turn_start_snapshot(session)
 
 
 def _calendar_summary(
@@ -1011,7 +911,4 @@ def _calendar_summary(
     session: GameSession,
     elapsed_years: int,
 ) -> str:
-    start_age = int(before.get("age") or session.age)
-    if elapsed_years > 0:
-        return f"本回合流逝 {elapsed_years} 年，年龄 {start_age}→{session.age}。"
-    return f"本回合完成关键抉择，年龄 {session.age}。"
+    return service_turns.calendar_summary(before, session, elapsed_years)
