@@ -23,7 +23,7 @@ from .app_models import (
     StartRequest,
 )
 from .auth import create_guest_token
-from .service import GUEST_USER_PREFIX
+from .service_session_support import GUEST_USER_PREFIX
 
 router = APIRouter()
 

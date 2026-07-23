@@ -16,7 +16,6 @@ import sqlalchemy.exc
 
 from agens_novel.engine.choices import choice_with_semantic, clean_choice_text, clean_visible_text
 from agens_novel.engine.death_rewards import (
-    apply_legacy_bonuses,
     bonuses_to_legacy,
 )
 from agens_novel.engine.game_engine import GameEngine
@@ -37,6 +36,7 @@ from agens_novel.game.constants import (
 )
 from agens_novel.session.game_session import GameSession
 
+from . import service_sessions
 from .auth import hash_guest_token
 from .database import WebDatabaseProtocol
 from .database_postgres import PostgresWebDatabase
@@ -44,6 +44,8 @@ from .evaluation_hooks import EvaluationHooks, NoopEvaluationHooks
 from .service_death_rewards import DeathRewardsService
 from .service_errors import SessionVersionConflict
 from .service_model_config import ModelConfigResolver, ModelConfigService
+from .service_session_support import guest_expiry as _guest_expiry
+from .service_session_support import is_guest_user_id
 from .service_summaries import build_death_summary
 
 _PROFILE_SEMANTIC_FIELDS = (
@@ -77,9 +79,6 @@ _MODEL_FAILURE_PREFIXES = (
     "突破叙事失败:",
     "突破审判失败:",
 )
-GUEST_USER_PREFIX = "guest:"
-
-
 @dataclass
 class WebRunner:
     """One browser game session with captured engine callbacks."""
@@ -387,7 +386,7 @@ class WebGameService:
         self._session_locks_guard = threading.Lock()
 
     def login(self, username: str = "local") -> dict[str, Any]:
-        return self.db.upsert_user(username)
+        return service_sessions.login(self, username)
 
     def create_session(
         self,
@@ -395,96 +394,21 @@ class WebGameService:
         title: str = "新局",
         guest_token: str = "",
     ) -> dict[str, Any]:
-        if not user_id:
-            raise ValueError("创建持久会话需要登录用户。")
-        session_id = str(uuid.uuid4())
-        runner = WebRunner(
-            session_id=session_id,
-            user_id=user_id,
-            guest_token=guest_token,
-            db=self.db,
-        )
-        self._register_runner(session_id, runner)
-        runner.record("info", text="新会话已创建。")
-        self._persist(runner, title=title)
-        return runner.response()
+        return service_sessions.create_session(self, user_id, title, guest_token)
 
     def authorize_guest_session(self, session_id: str, guest_token: str) -> bool:
-        if not guest_token:
-            return False
-        cached = self.runners.get(session_id)
-        if cached is not None and is_guest_user_id(cached.user_id):
-            return bool(cached.guest_token and cached.guest_token == guest_token)
-        row = self.db.load_guest_session(session_id, hash_guest_token(guest_token))
-        if row is None:
-            return False
-        runner = WebRunner.from_snapshot(
-            session_id=session_id,
-            user_id=f"{GUEST_USER_PREFIX}{session_id}",
-            snapshot=row["snapshot"],
-            events=row.get("events", []),
-            db=self.db,
-            guest_token=guest_token,
-            version=int(row.get("version") or 0),
-        )
-        self._register_runner(session_id, runner)
-        return True
+        return service_sessions.authorize_guest_session(self, session_id, guest_token)
 
     def delete_guest_session(self, guest_token: str) -> int:
-        if not guest_token:
-            return 0
-        token_hash = hash_guest_token(guest_token)
-        for session_id, runner in list(self.runners.items()):
-            if is_guest_user_id(runner.user_id) and runner.guest_token == guest_token:
-                self._drop_runner(session_id)
-        return self.db.delete_guest_session(token_hash)
+        return service_sessions.delete_guest_session(self, guest_token)
 
     def get_session(self, session_id: str, user_id: str | None = None) -> dict[str, Any]:
-        return self._runner(session_id, user_id=user_id).response()
+        return service_sessions.get_session(self, session_id, user_id)
 
     def start_session(
         self, session_id: str, profile: dict[str, Any], user_id: str | None = None
     ) -> dict[str, Any]:
-        with self._session_lock(session_id):
-            runner = self._runner(session_id, user_id=user_id)
-            request_id, expected_version = self._mutation_context(runner, profile)
-            duplicate = self.db.get_session_mutation(session_id, request_id)
-            if duplicate is not None:
-                return duplicate
-            rollback = self._rollback_state(runner)
-            try:
-                self._model_config.apply_runner(runner)
-                scenario = self._evaluation_hooks.active_scenario()
-                normalized = self._normalize_profile(scenario.profile if scenario else profile)
-                bonuses: list[dict[str, Any]] = []
-                if user_id and not is_guest_user_id(user_id):
-                    bonuses = self.db.list_legacy_bonuses(user_id)
-                    if bonuses:
-                        normalized = apply_legacy_bonuses(normalized, bonuses)
-                        normalized["_allow_legacy_bonus_attributes"] = True
-                runner.engine.start_from_profile(normalized)
-                session = runner.engine.game_session
-                if scenario is not None:
-                    self._evaluation_hooks.install_authority(runner.engine, scenario)
-                response = self._commit_runner(
-                    runner,
-                    expected_version=expected_version,
-                    request_id=request_id,
-                    operation="start",
-                    response=runner.response(),
-                    title=session.char_name or "新局",
-                    start_run={
-                        "char_name": session.char_name,
-                        "realm": session.realm,
-                        "turn_count": session.turn_count,
-                    },
-                    consume_legacy_bonuses=bool(bonuses),
-                    terminal=self._terminal_bundle(runner),
-                )
-                return response
-            except Exception:
-                self._restore_rollback(runner, rollback)
-                raise
+        return service_sessions.start_session(self, session_id, profile, user_id)
 
     def choose(
         self, session_id: str, payload: dict[str, Any], user_id: str | None = None
@@ -602,33 +526,7 @@ class WebGameService:
     def end_session(
         self, session_id: str, payload: dict[str, Any], user_id: str | None = None
     ) -> dict[str, Any]:
-        with self._session_lock(session_id):
-            runner = self._runner(session_id, user_id=user_id)
-            request_id, expected_version = self._mutation_context(runner, payload)
-            duplicate = self.db.get_session_mutation(session_id, request_id)
-            if duplicate is not None:
-                return duplicate
-            rollback = self._rollback_state(runner)
-            try:
-                session = runner.engine.game_session
-                session.game_over = True
-                session.finale = False
-                session.error = str(payload.get("reason") or "玩家结束本局。")
-                if runner.engine.on_game_over is not None:
-                    runner.engine.on_game_over(session.error)
-                else:
-                    runner.record("game_over", text=session.error)
-                return self._commit_runner(
-                    runner,
-                    expected_version=expected_version,
-                    request_id=request_id,
-                    operation="end",
-                    response=runner.response(),
-                    terminal=self._terminal_bundle(runner),
-                )
-            except Exception:
-                self._restore_rollback(runner, rollback)
-                raise
+        return service_sessions.end_session(self, session_id, payload, user_id)
 
     def list_saves(self, user_id: str = "") -> list[dict[str, Any]]:
         if not user_id:
@@ -777,12 +675,11 @@ class WebGameService:
         }
 
     def _restore_rollback(self, runner: WebRunner, rollback: dict[str, Any]) -> None:
-        restored = WebRunner.from_snapshot(
+        restored = self._restore_runner(
             session_id=runner.session_id,
             user_id=runner.user_id,
             snapshot=rollback["snapshot"],
             events=rollback["events"],
-            db=self.db,
             guest_token=runner.guest_token,
             version=int(rollback["version"]),
         )
@@ -835,12 +732,11 @@ class WebGameService:
             raise KeyError(f"会话不存在: {session_id}")
         if user_id and row["user_id"] != user_id:
             raise PermissionError("无权访问该会话。")
-        runner = WebRunner.from_snapshot(
+        runner = self._restore_runner(
             session_id=session_id,
             user_id=row["user_id"],
             snapshot=row["snapshot"],
             events=row.get("events", []),
-            db=self.db,
             version=int(row.get("version") or 0),
         )
         self._register_runner(session_id, runner)
@@ -870,6 +766,44 @@ class WebGameService:
     def _drop_runner(self, session_id: str) -> None:
         self.runners.pop(session_id, None)
         self._runner_last_used.pop(session_id, None)
+
+    @staticmethod
+    def _new_session_id() -> str:
+        return str(uuid.uuid4())
+
+    def _new_runner(
+        self,
+        session_id: str,
+        user_id: str,
+        *,
+        guest_token: str = "",
+    ) -> WebRunner:
+        return WebRunner(
+            session_id=session_id,
+            user_id=user_id,
+            guest_token=guest_token,
+            db=self.db,
+        )
+
+    def _restore_runner(
+        self,
+        *,
+        session_id: str,
+        user_id: str,
+        snapshot: dict[str, Any],
+        events: list[dict[str, Any]] | None = None,
+        guest_token: str = "",
+        version: int = 0,
+    ) -> WebRunner:
+        return WebRunner.from_snapshot(
+            session_id=session_id,
+            user_id=user_id,
+            snapshot=snapshot,
+            events=events,
+            db=self.db,
+            guest_token=guest_token,
+            version=version,
+        )
 
     def _persist(self, runner: WebRunner, title: str | None = None) -> None:
         session = runner.engine.game_session
@@ -1041,18 +975,6 @@ def _catalog_semantics(row: dict[str, Any]) -> dict[str, Any]:
 
 def _pick(value: str, options: list[str]) -> str:
     return value if value in options else options[0]
-
-
-def is_guest_user_id(user_id: str | None) -> bool:
-    return bool(user_id and user_id.startswith(GUEST_USER_PREFIX))
-
-
-def _guest_expiry() -> float:
-    try:
-        ttl = int(os.environ.get("AGENS_GUEST_SESSION_TTL_SECONDS", "86400"))
-    except ValueError:
-        ttl = 86400
-    return time.time() + max(300, ttl)
 
 
 def _random_attributes() -> dict[str, int]:
