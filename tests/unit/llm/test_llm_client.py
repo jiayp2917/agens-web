@@ -9,6 +9,7 @@ import pytest
 
 from agens_novel.llm.client import (
     InvalidEgressProxyUrl,
+    LLMAuthError,
     LLMBadRequest,
     LLMCompletionError,
     _build_payload,
@@ -319,8 +320,26 @@ def test_non_retryable_400_remains_bad_request() -> None:
         request=httpx.Request("POST", "https://api.deepseek.com/v1/chat/completions"),
     )
 
-    with pytest.raises(LLMBadRequest):
+    with pytest.raises(LLMBadRequest) as error:
         _handle_non_stream_response(response, time.monotonic())
+
+    assert error.value.error_code == "http_400"
+
+
+@pytest.mark.parametrize(
+    ("status_code", "error_code"),
+    ((401, "http_401"), (403, "http_403")),
+)
+def test_auth_failures_expose_only_stable_error_codes(status_code: int, error_code: str) -> None:
+    response = httpx.Response(
+        status_code,
+        request=httpx.Request("POST", "https://provider.invalid/v1/chat/completions"),
+    )
+
+    with pytest.raises(LLMAuthError) as error:
+        _handle_non_stream_response(response, time.monotonic())
+
+    assert getattr(error.value, "error_code", "") == error_code
 
 
 def test_redirect_response_is_rejected_without_following_location() -> None:

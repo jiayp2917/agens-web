@@ -419,13 +419,22 @@ def _response_transport(payload: dict[str, Any]) -> str:
 
 def _handle_non_stream_response(resp: httpx.Response, started: float) -> LLMResponse:
     if resp.status_code == 401 or resp.status_code == 403:
-        raise LLMAuthError(f"HTTP {resp.status_code}: upstream authentication failed")
+        raise _with_error_code(
+            LLMAuthError(f"HTTP {resp.status_code}: upstream authentication failed"),
+            _http_error_code(resp.status_code),
+        )
     if 300 <= resp.status_code < 400:
-        raise LLMBadRequest(f"HTTP {resp.status_code}: upstream redirect refused")
+        raise _with_error_code(
+            LLMBadRequest(f"HTTP {resp.status_code}: upstream redirect refused"),
+            "http_redirect",
+        )
     if is_retryable_status(resp.status_code):
         resp.raise_for_status()
     if resp.status_code >= 400:
-        raise LLMBadRequest(f"HTTP {resp.status_code}: upstream request rejected")
+        raise _with_error_code(
+            LLMBadRequest(f"HTTP {resp.status_code}: upstream request rejected"),
+            _http_error_code(resp.status_code),
+        )
     resp.raise_for_status()
 
     body = resp.json()
@@ -433,7 +442,10 @@ def _handle_non_stream_response(resp: httpx.Response, started: float) -> LLMResp
         choices = body["choices"]
         first = choices[0]
     except (KeyError, IndexError, TypeError) as e:
-        raise LLMError("llm_call: malformed_response_missing_choices") from e
+        raise _with_error_code(
+            LLMError("llm_call: malformed_response_missing_choices"),
+            "malformed_response",
+        ) from e
 
     message = first.get("message") if isinstance(first, dict) else None
     content = message.get("content") if isinstance(message, dict) else None
@@ -547,14 +559,23 @@ async def _handle_stream_response(
     on_chunk: Callable[[str], None] | None = None,
 ) -> LLMResponse:
     if resp.status_code == 401 or resp.status_code == 403:
-        raise LLMAuthError(f"HTTP {resp.status_code}: {(await _read_response_text(resp))[:300]}")
+        raise _with_error_code(
+            LLMAuthError(f"HTTP {resp.status_code}: {(await _read_response_text(resp))[:300]}"),
+            _http_error_code(resp.status_code),
+        )
     if 300 <= resp.status_code < 400:
-        raise LLMBadRequest(f"HTTP {resp.status_code}: upstream redirect refused")
+        raise _with_error_code(
+            LLMBadRequest(f"HTTP {resp.status_code}: upstream redirect refused"),
+            "http_redirect",
+        )
     if is_retryable_status(resp.status_code):
         await resp.aread()
         resp.raise_for_status()
     if resp.status_code >= 400:
-        raise LLMBadRequest(f"HTTP {resp.status_code}: {(await _read_response_text(resp))[:300]}")
+        raise _with_error_code(
+            LLMBadRequest(f"HTTP {resp.status_code}: {(await _read_response_text(resp))[:300]}"),
+            _http_error_code(resp.status_code),
+        )
     resp.raise_for_status()
 
     state = _StreamState(model_name=default_model)
@@ -591,7 +612,7 @@ async def _safe_request_base_url(base_url: str) -> str:
     try:
         return await validate_model_base_url_for_request(base_url)
     except UnsafeModelBaseUrl as exc:
-        raise LLMBadRequest(str(exc)) from exc
+        raise _with_error_code(LLMBadRequest(str(exc)), "unsafe_base_url") from exc
 
 
 async def _execute_with_retry(
@@ -609,11 +630,30 @@ async def _execute_with_retry(
                 label=label,
             )
     except TimeoutError as exc:
-        raise LLMError(f"{label}: total timeout exceeded") from exc
+        raise _with_error_code(LLMError(f"{label}: total timeout exceeded"), "timeout") from exc
     except RetryExhausted as exc:
-        raise LLMError(f"{label}: upstream transport unavailable") from exc
+        raise _with_error_code(
+            LLMError(f"{label}: upstream transport unavailable"),
+            "transport_unavailable",
+        ) from exc
     except httpx.HTTPStatusError as exc:
-        raise LLMError(f"{label}: upstream HTTP {exc.response.status_code}") from exc
+        raise _with_error_code(
+            LLMError(f"{label}: upstream HTTP {exc.response.status_code}"),
+            _http_error_code(exc.response.status_code),
+        ) from exc
+
+
+def _with_error_code(error: LLMError, code: str) -> LLMError:
+    error.error_code = code
+    return error
+
+
+def _http_error_code(status_code: int) -> str:
+    if status_code in {400, 401, 403, 404, 408, 413, 422, 425, 429}:
+        return f"http_{status_code}"
+    if 500 <= status_code <= 599:
+        return "http_5xx"
+    return "http_other"
 
 
 def _parse_sse_lines(lines: list[str]) -> list[dict[str, Any]]:

@@ -240,3 +240,12 @@ def test_result_diagnostics_include_incomplete_retry_flag_without_text() -> None
     assert diagnostics["retried_after_incomplete_output"] is True
     assert "narrative" not in diagnostics
     assert "api_key" not in diagnostics
+
+
+def test_result_diagnostics_keeps_only_known_request_error_codes() -> None:
+    assert result_diagnostics({"llm_error": "request rejected", "llm_error_code": "http_400"})[
+        "llm_error_code"
+    ] == "http_400"
+    assert result_diagnostics({"llm_error": "request rejected", "llm_error_code": "untrusted"})[
+        "llm_error_code"
+    ] == "other"

@@ -147,26 +147,28 @@ class TestExecuteWithRetryPropagation:
             await asyncio.sleep(5)
             raise AssertionError("unreachable")
 
-        with pytest.raises(LLMError, match="total timeout exceeded"):
+        with pytest.raises(LLMError, match="total timeout exceeded") as error:
             await _execute_with_retry(
                 never_finishes,
                 max_retries=0,
                 total_timeout_seconds=0.01,
                 label="test_call",
             )
+        assert error.value.error_code == "timeout"
 
     @pytest.mark.asyncio
     async def test_transport_error_exhausts_to_unavailable(self) -> None:
         async def transport_fails() -> httpx.Response:
             raise httpx.TransportError("connection reset", request=_request())
 
-        with pytest.raises(LLMError, match="upstream transport unavailable"):
+        with pytest.raises(LLMError, match="upstream transport unavailable") as error:
             await _execute_with_retry(
                 transport_fails,
                 max_retries=0,
                 total_timeout_seconds=5,
                 label="test_call",
             )
+        assert error.value.error_code == "transport_unavailable"
 
     @pytest.mark.asyncio
     @pytest.mark.parametrize("status_code", (429, 500, 503, 520))
@@ -174,13 +176,14 @@ class TestExecuteWithRetryPropagation:
         async def fails_with_status() -> httpx.Response:
             raise _status_error(status_code)
 
-        with pytest.raises(LLMError, match=f"upstream HTTP {status_code}"):
+        with pytest.raises(LLMError, match=f"upstream HTTP {status_code}") as error:
             await _execute_with_retry(
                 fails_with_status,
                 max_retries=0,
                 total_timeout_seconds=5,
                 label="test_call",
             )
+        assert error.value.error_code == (f"http_{status_code}" if status_code == 429 else "http_5xx")
 
     @pytest.mark.asyncio
     async def test_external_cancellation_propagates(self) -> None:

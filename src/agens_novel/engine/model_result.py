@@ -225,7 +225,29 @@ def _int_metric(value: Any) -> int:
 
 def _safe_error_code(value: Any) -> str:
     code = str(value or "")
-    return code if code in {"", "llm_error", "empty_completion", "refusal_completion"} else "other"
+    allowed = {
+        "",
+        "llm_error",
+        "empty_completion",
+        "refusal_completion",
+        "malformed_response",
+        "unsafe_base_url",
+        "timeout",
+        "transport_unavailable",
+        "http_redirect",
+        "http_400",
+        "http_401",
+        "http_403",
+        "http_404",
+        "http_408",
+        "http_413",
+        "http_422",
+        "http_425",
+        "http_429",
+        "http_5xx",
+        "http_other",
+    }
+    return code if code in allowed else "other"
 
 
 def _safe_finish_reason(value: Any) -> str:
