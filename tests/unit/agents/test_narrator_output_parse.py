@@ -2,6 +2,9 @@
 
 from __future__ import annotations
 
+import pytest
+
+from agens_novel.agents.narrator import nodes
 from agens_novel.agents.narrator.nodes import (
     _NARRATOR_RESPONSE_FORMAT,
     _contract_diagnostics,
@@ -281,3 +284,27 @@ class TestNarratorParse:
         assert narrative == "你在山门榜前停步，看到新贴出的药谷告示。"
         assert delta == {"character": {}, "world": {}, "meta": {}}
         assert choices == ["抄录告示", "询问药谷弟子", "直接接下差事", "随缘抽签"]
+
+
+@pytest.mark.asyncio
+async def test_json_narrator_uses_the_provider_neutral_output_budget(monkeypatch) -> None:
+    captured: dict[str, object] = {}
+
+    async def fake_call(_messages, **kwargs):
+        captured.update(kwargs)
+        return {
+            "text": '{"narrative":"山门雾起。","choices":["吐纳","请教","历练","随缘"]}',
+            "usage": {},
+        }
+
+    monkeypatch.setattr(nodes, "call_llm", fake_call)
+
+    _response, _text, transport, envelope_ok = await nodes._primary_narrator_call(
+        {"response_mode": "json_object"},
+        [],
+        None,
+    )
+
+    assert captured["max_tokens"] == 4096
+    assert transport.value == "json_object"
+    assert envelope_ok is True

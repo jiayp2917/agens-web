@@ -46,6 +46,7 @@ log = logging.getLogger(__name__)
 
 AGENT_NAME = "narrator"
 _NO_ASCII_LETTERS_PATTERN = r"^[^A-Za-z]*$"
+_NARRATOR_MAX_TOKENS = 4096
 _NARRATOR_RESPONSE_FORMAT: dict[str, Any] = {
     "type": "json_schema",
     "json_schema": {
@@ -149,7 +150,7 @@ async def _primary_narrator_call(
             base_url=state.get("base_url"),
             api_key=runtime_api_key(),
             temperature=0.0,
-            max_tokens=1536,
+            max_tokens=_NARRATOR_MAX_TOKENS,
             stream=False,
             response_format=response_format(transport, _NARRATOR_RESPONSE_FORMAT),
         )
@@ -160,7 +161,7 @@ async def _primary_narrator_call(
             base_url=state.get("base_url"),
             api_key=runtime_api_key(),
             temperature=0.0,
-            max_tokens=1536,
+            max_tokens=_NARRATOR_MAX_TOKENS,
             on_chunk=stream_callback,
         )
     else:
@@ -170,7 +171,7 @@ async def _primary_narrator_call(
             base_url=state.get("base_url"),
             api_key=runtime_api_key(),
             temperature=0.0,
-            max_tokens=1536,
+            max_tokens=_NARRATOR_MAX_TOKENS,
             stream=False,
         )
     output_text = str(resp.get("text") or "")
