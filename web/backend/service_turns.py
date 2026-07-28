@@ -14,6 +14,7 @@ if TYPE_CHECKING:
 
 
 _CHOICE_SLOTS = ("A", "B", "C", "D")
+_PENDING_MODEL_ACTIONS = {"retry_model", "use_local_story", "end_model_failure"}
 
 
 def choose(
@@ -53,7 +54,18 @@ def advance_turn(
     try:
         service._model_config.apply_runner(runner)
         before = turn_start_snapshot(runner.engine.game_session)
-        runner.engine.handle_action(action)
+        pending_before = runner.engine.pending_model_failure()
+        if pending_before is not None:
+            if action not in _PENDING_MODEL_ACTIONS:
+                raise ValueError("请先处理未完成的模型请求。")
+            runner.engine.resolve_pending_model_failure(action)
+        else:
+            runner.engine.handle_action(action)
+        pending = runner.engine.pending_model_failure()
+        if pending is not None and pending_before is None:
+            runner.engine.replace_pending_model_failure(
+                pending.with_base_version(expected_version)
+            )
         turn = settled_turn_payload(service, runner, before, action)
         return service._commit_runner(
             runner,
@@ -100,11 +112,6 @@ def settled_turn_payload(
         or calendar_summary(before, session, elapsed_years)
     )
     event_kind = str(meta.get("choice_category") or turn.get("event_kind") or "event")
-    state_after = session.as_game_state()
-    if service._evaluation_hooks.active_scenario() is not None:
-        authority_hash = service._evaluation_hooks.authority_state_hash(session)
-        if authority_hash:
-            state_after["_evaluation_authority_hash"] = authority_hash
     return {
         "turn_no": session.turn_count,
         "start_age": int(before.get("age") or session.age),
@@ -115,7 +122,7 @@ def settled_turn_payload(
         "choice_taken": choice_taken,
         "choices": list(turn.get("choices") or session.last_choices or []),
         "state_delta": delta,
-        "state_after": state_after,
+        "state_after": session.as_game_state(),
         "calendar_summary": summary,
         "narrative": str(turn.get("narrative") or ""),
         "event_kind": event_kind,
@@ -129,14 +136,13 @@ def choice_text(
     payload: dict[str, Any],
 ) -> str:
     choices = list(runner.engine.game_session.last_choices or [])
-    canonical_scenario = service._evaluation_hooks.active_scenario()
-
     def choice_for_index(index: int) -> str:
         if index < 0 or index >= len(choices):
             raise ValueError("选项序号无效。")
-        if canonical_scenario is not None:
-            return service._evaluation_hooks.canonical_action_for_slot(_CHOICE_SLOTS[index])
-        return choice_with_semantic(index, choices[index])
+        return service._run_policy.action_for_choice(
+            index,
+            choice_with_semantic(index, choices[index]),
+        )
 
     if "choice_index" in payload and payload["choice_index"] is not None:
         return choice_for_index(int(payload["choice_index"]))

@@ -11,7 +11,7 @@ from contextlib import contextmanager
 from typing import Any
 
 from ..artifacts import sink, store
-from ..engine.choices import has_visible_english
+from ..engine.choices import fallback_choices, has_visible_english
 from ..engine.game_engine import GameEngine
 from ..engine.story_catalog import opening_story_binding
 from ..session.game_session import GameSession
@@ -28,7 +28,6 @@ def run_canonical_playthrough(
     ledger: EvaluationLedger,
     max_turns: int,
     live_opening: bool = False,
-    live_judge: bool = False,
 ) -> dict[str, Any]:
     """Run one fixed-slot evaluation without persisting product state.
 
@@ -63,9 +62,11 @@ def run_canonical_playthrough(
         opening_engine.on_model_result = _model_result_callback(opening_events, scope="opening")
         with _opening_mode(True):
             opening_engine.start_from_profile(scenario.profile)
-    with _opening_mode(False):
-        engine.start_from_profile(scenario.profile)
-    install_canonical_binding(engine, scenario, story_version)
+    engine.game_session = canonical_replay_session(
+        scenario,
+        story_version=story_version,
+        target_turn=0,
+    )
     accepted_turns: list[dict[str, Any]] = []
 
     for index, slot in enumerate(scenario.slots[:max_turns]):
@@ -89,17 +90,6 @@ def run_canonical_playthrough(
                 end_to_end_ms=int((time.monotonic() - started) * 1000),
             )
         )
-
-    judge_status = "not_requested"
-    if live_judge and narratives:
-        result = engine.run_agent(
-            "judge",
-            "评估探测",
-            engine.game_session,
-            narrative=narratives[-1],
-            state_delta={},
-        )
-        judge_status = "ok" if result.get("approved") is True and not result.get("llm_error") else "failed"
 
     session = engine.game_session
     narrator_events = [event for event in events if event["agent"] == "narrator"]
@@ -136,7 +126,9 @@ def run_canonical_playthrough(
         "accepted_turns": accepted_turns,
         "final_narrative": narratives[-1] if narratives else "",
         "final_choices": list(session.last_choices),
-        "judge_status": judge_status,
+        # Retained for existing evidence consumers. Qualification does not
+        # invoke Judge during player-facing or normal narrator flows.
+        "judge_status": "not_requested",
     }
     run_id = f"{scenario.key}-v{story_version}-{store.new_run_id()}"
     store.write_audit("playthrough", run_id, result)
@@ -212,31 +204,56 @@ def install_canonical_authority(
 
 def authority_state_hash(session: GameSession) -> str:
     """Hash only state that deterministic turn rules own across providers."""
+    state_hash = authority_state_hash_from_persisted_state(session.as_game_state())
+    if state_hash is None:
+        raise RuntimeError("authoritative session state is incomplete")
+    return state_hash
+
+
+def authority_state_hash_from_persisted_state(state: dict[str, Any]) -> str | None:
+    """Hash a persisted game-turn state without evaluator-owned product fields."""
+    character = state.get("character")
+    world = state.get("world")
+    rule_state = state.get("rule_state")
+    local_story = state.get("local_story")
+    if not isinstance(character, dict):
+        return None
+    if not isinstance(world, dict):
+        return None
+    if not isinstance(rule_state, dict):
+        return None
+    if not isinstance(local_story, dict):
+        return None
+    story_state = world.get("story_state")
+    if not isinstance(story_state, dict):
+        return None
+    if "run_seed" not in rule_state or "rng_counter" not in rule_state:
+        return None
     payload = {
-        "turn_count": session.turn_count,
-        "realm_turn_count": session.realm_turn_count,
-        "game_started": session.game_started,
-        "game_over": session.game_over,
-        "finale": bool(session.finale),
-        "error": str(session.error or ""),
-        "run_seed": session.run_seed,
-        "rule_rng_counter": session.rule_rng_counter,
-        "local_story_active": bool(session.local_story_active),
+        "turn_count": state.get("turn_count"),
+        "realm_turn_count": state.get("realm_turn_count"),
+        "game_started": state.get("game_started"),
+        "game_over": state.get("game_over"),
+        "finale": bool(state.get("finale")),
+        "error": str(state.get("error") or ""),
+        "run_seed": str(rule_state["run_seed"] or ""),
+        "rule_rng_counter": rule_state["rng_counter"],
+        "local_story_active": bool(local_story.get("active")),
         "character": {
-            "realm": session.realm,
-            "realm_stage": session.realm_stage,
-            "age": session.age,
-            "attributes": session.attributes,
-            "breakthrough_flags": session.breakthrough_flags,
-            "titles": session.titles,
-            "relationships": session.relationships,
-            "status_effects": session.status_effects,
-            "lifespan": session.lifespan,
+            "realm": character.get("realm"),
+            "realm_stage": character.get("realm_stage"),
+            "age": character.get("age"),
+            "attributes": character.get("attributes"),
+            "breakthrough_flags": character.get("breakthrough_flags"),
+            "titles": character.get("titles"),
+            "relationships": character.get("relationships"),
+            "status_effects": character.get("status_effects"),
+            "lifespan": character.get("lifespan"),
         },
         "story": {
-            "key": session.story_key,
-            "version": session.story_version,
-            "state": session.story_state,
+            "key": world.get("story_key"),
+            "version": world.get("story_version"),
+            "state": story_state,
         },
     }
     encoded = json.dumps(payload, ensure_ascii=False, sort_keys=True, separators=(",", ":"))
@@ -378,6 +395,12 @@ def canonical_action_for_slot(slot: str) -> str:
 class _RuleReplayEngine(GameEngine):
     """GameEngine that keeps normal rules but never dispatches a model request."""
 
+    def __init__(self) -> None:
+        super().__init__()
+        # StartFlow still requires the strict opening contract. This replay-only
+        # runner supplies it from the rule-owned opening already bound to session.
+        self.model_config = {"api_key_set": True, "response_mode": "json_object"}
+
     def run_agent(
         self,
         agent_name: str,
@@ -385,6 +408,31 @@ class _RuleReplayEngine(GameEngine):
         session: GameSession,
         **kwargs: Any,
     ) -> dict[str, Any]:
+        if agent_name == "world_builder":
+            profile = session.world_profile if isinstance(session.world_profile, dict) else {}
+            chronicle_value = profile.get("chronicle_0_16")
+            chronicle = (
+                [str(item).strip() for item in chronicle_value if str(item).strip()]
+                if isinstance(chronicle_value, list)
+                else []
+            )
+            initial = str(
+                profile.get("initial_situation_16")
+                or profile.get("initial_situation")
+                or session.current_scene
+            ).strip()
+            opening = "\n".join([*chronicle, initial]).strip()
+            return {
+                "generated_data": {
+                    "opening_narrative": opening,
+                    "chronicle_0_16": chronicle,
+                    "initial_situation_16": initial,
+                    "choices": fallback_choices(session),
+                },
+                "llm_error": "",
+                "response_mode": "json_object",
+                "provider_json_envelope_ok": True,
+            }
         if agent_name == "narrator":
             return {
                 "narrative": "规则回放已结算本回合因果。",

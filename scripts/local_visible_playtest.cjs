@@ -17,6 +17,7 @@ const OUT_DIR = browserArtifactDir(ROOT);
 const BASE_URL = process.env.AGENS_PLAYTEST_URL || "http://127.0.0.1:5173/static/";
 const API_BASE_URL = process.env.AGENS_PLAYTEST_API_BASE || "";
 const TARGET_TURNS = Number(process.env.AGENS_PLAYTEST_TURNS || "20");
+const OPENING_ONLY = process.env.AGENS_PLAYTEST_OPENING_ONLY === "1";
 const REQUEST_TIMEOUT_MS = Number(process.env.AGENS_PLAYTEST_TIMEOUT_MS || "300000");
 const STAMP = process.env.AGENS_PLAYTEST_NAME || `local-visible-20turn-${stamp()}`;
 const CONTENT_AUDIT = process.env.AGENS_PLAYTEST_CONTENT_AUDIT === "1";
@@ -176,6 +177,7 @@ if (require.main === module) {
     evidenceContext: evidenceContext(),
     requestTimeoutMs: REQUEST_TIMEOUT_MS,
   });
+  summary.opening_only = OPENING_ONLY;
   const turns = [];
   const issues = [];
   const requests = [];
@@ -316,6 +318,9 @@ if (require.main === module) {
       await page.screenshot({ path: `${screenshotBase}-start-rejected.png`, fullPage: true });
     }
 
+    if (OPENING_ONLY && summary.result === "running") {
+      summary.result = "passed";
+    } else {
     let firstMainTurn = 1;
     if (summary.result === "running" && CONFLICT_PROBE) {
       const phase = "version_conflict";
@@ -816,6 +821,7 @@ if (require.main === module) {
       summary.result = "failed_or_partial";
     }
 
+    }
     await page.screenshot({ path: `${screenshotBase}-final.png`, fullPage: true });
   } catch (error) {
     summary.result = "failed_script";
@@ -829,7 +835,7 @@ if (require.main === module) {
       });
       summary.result = "failed_terminal";
     }
-    if (REQUIRE_PERSISTED_AUDIT) {
+    if (REQUIRE_PERSISTED_AUDIT && !OPENING_ONLY) {
       if (!playtestSessionId) {
         issue("P0", "persisted turn audit could not identify the playtest session");
       } else {

@@ -11,7 +11,10 @@ import re
 
 from sqlalchemy import text
 
-from agens_novel.evaluation.playthrough import canonical_authority_trajectory
+from agens_novel.evaluation.playthrough import (
+    authority_state_hash_from_persisted_state,
+    canonical_authority_trajectory,
+)
 from agens_novel.evaluation.scenarios import canonical_v3_scenarios
 
 from web.backend.database import create_database
@@ -53,7 +56,7 @@ if scenario_key:
         authority_mismatch_count = abs(len(expected_hashes) - len(rows))
     for index, row in enumerate(rows[: len(expected_hashes)]):
         state_after = row["state_after"] if isinstance(row["state_after"], dict) else {}
-        if str(state_after.get("_evaluation_authority_hash") or "") != expected_hashes[index]:
+        if authority_state_hash_from_persisted_state(state_after) != expected_hashes[index]:
             authority_mismatch_count += 1
 seen = {}
 duplicates = []
@@ -93,7 +96,7 @@ for row in rows:
         "rule_outcome": str(meta.get("turn_summary") or ""),
         "narrative": str(row["narrative"] or ""),
         "choices": [str(choice) for choice in choices[:4] if str(choice).strip()],
-        "authority_hash": str(state_after.get("_evaluation_authority_hash") or ""),
+        "authority_hash": str(authority_state_hash_from_persisted_state(state_after) or ""),
     })
 
 final_state = rows[-1]["state_after"] if rows and isinstance(rows[-1]["state_after"], dict) else {}

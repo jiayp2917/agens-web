@@ -8,22 +8,18 @@ from typing import TYPE_CHECKING, Any
 if TYPE_CHECKING:
     from .game_engine import GameEngine
 
-from ..agents.contracts import JudgeDecisionV1
 from ..game.constants import format_realm_name
 from .action_delta_policy import merge_rule_delta, validate_narrative_delta_consistency
-from .choices import clean_visible_text, fallback_choices, normalize_choices
+from .choices import fallback_choices
 from .model_result import (
     ModelResultKind,
-    classify_judge_result,
     classify_narrator_result,
     is_retryable_model_request_failure,
 )
 from .narrative_policy import (
     _generic_distinct_chronicle,
-    _has_nonempty_structured_delta,
     _has_unapproved_time_span,
     _has_visible_authoritative_delta,
-    _has_visible_contract_violation,
     _is_recent_duplicate_narrative,
     _narrative_conflicts_with_authoritative_realm,
     _narrative_conflicts_with_stage_delta,
@@ -36,6 +32,7 @@ from .narrative_policy import (
 from .narrative_policy import (
     _narrative_keys_overlap as _narrative_keys_overlap,
 )
+from .pending_model_failure import PendingModelFailureV1
 from .render import format_status_bar
 from .turn_rules import settle_turn, settle_turn_outcome
 
@@ -117,9 +114,12 @@ class TurnFlow:
         engine.check_game_over()
 
     def handle_action(self, text: str) -> None:
-        """Process one ordinary player action through rules, narrator and judge."""
+        """Process one ordinary player action through rules and narrator."""
         engine = self.engine
         session = engine.game_session
+        if engine.pending_model_failure() is not None:
+            engine.emit("on_info", "请先处理上一回合未完成的叙事请求。")
+            return
         session.turn_count += 1
         session.realm_turn_count += 1
 
@@ -130,11 +130,6 @@ class TurnFlow:
         turn_summary = outcome.turn_summary
 
         narrator_result = self._run_narrator(text, turn_summary)
-        if narrator_result is None:
-            session.turn_count -= 1
-            session.realm_turn_count = max(0, session.realm_turn_count - 1)
-            engine.emit("on_info", "本回合记录暂未续上，已切换本地故事，请直接选择下方选项继续。")
-            return
 
         narrator_status = classify_narrator_result(narrator_result)
         engine.log_model_result(
@@ -144,132 +139,139 @@ class TurnFlow:
             reason=narrator_status.reason,
             result=narrator_result,
         )
-        if narrator_status.kind == ModelResultKind.REQUEST_FAILED:
-            reason = narrator_status.reason
-            engine.emit("on_error", reason)
-            engine.set_choices(
-                None,
-                source="narrator_error",
-                fallback_notice=True,
-                require_choice=True,
-                reason=reason,
+        if narrator_status.kind != ModelResultKind.OK:
+            self._hold_pending_failure(
+                text,
+                rule_delta,
+                turn_summary,
+                narrator_status,
             )
-            session.turn_count -= 1
-            session.realm_turn_count = max(0, session.realm_turn_count - 1)
             return
 
-        narrative = narrator_result.get("narrative", "")
-        raw_state_delta = narrator_result.get("state_delta", {})
-        malformed_state_delta = raw_state_delta is None or not isinstance(raw_state_delta, dict)
-        state_delta = raw_state_delta if isinstance(raw_state_delta, dict) else {}
-        model_state_update_present = bool(state_delta)
-        choices = narrator_result.get("choices", [])
-        if narrator_status.kind == ModelResultKind.INCOMPLETE_OUTPUT:
-            if _has_visible_contract_violation(narrator_result):
-                narrative = ""
-                state_delta = {}
-                choices = []
-                malformed_state_delta = False
-            narrative, state_delta, choices = self._recover_incomplete_payload(
-                narrative,
-                state_delta,
-                choices,
-                malformed_state_delta,
-                rule_delta,
-                narrator_status.reason,
+        self._apply_accepted_turn(text, narrator_result, rule_delta)
+
+    def retry_pending_model(self, pending: PendingModelFailureV1) -> bool:
+        """Retry one failed Narrator request using its frozen rule outcome."""
+        if pending.stage != "turn":
+            return False
+        engine = self.engine
+        session = engine.game_session
+        frozen = pending.frozen_result
+        rule_delta = frozen.get("state_delta")
+        turn_summary = frozen.get("turn_summary")
+        if not isinstance(rule_delta, dict) or not isinstance(turn_summary, str):
+            raise ValueError("待处理回合缺少冻结规则结果。")
+        engine.replace_pending_model_failure(
+            pending.with_status("retrying", request_no=pending.request_no + 1)
+        )
+        session.turn_count += 1
+        session.realm_turn_count += 1
+        result = self._run_narrator(pending.action, turn_summary)
+        status = classify_narrator_result(result)
+        engine.log_model_result(
+            agent="narrator",
+            source="turn_retry",
+            status=status.kind,
+            reason=status.reason,
+            result=result,
+        )
+        if status.kind != ModelResultKind.OK:
+            self._restore_unsettled_turn()
+            engine.replace_pending_model_failure(
+                pending.with_status("pending", request_no=pending.request_no + 1)
             )
-        judge_result = self._run_judge_if_needed(text, narrative, state_delta, rule_delta)
-        if judge_result:
-            narrative, state_delta = self._apply_judge_result(narrative, state_delta, judge_result)
+            engine.emit("on_info", "重试未完成，规则结果仍已冻结，请重新选择处理方式。")
+            return False
+        self._apply_accepted_turn(pending.action, result, rule_delta)
+        return True
+
+    def resolve_pending_with_local_story(self, pending: PendingModelFailureV1) -> bool:
+        """Apply the frozen rules once and then enter local story by player choice."""
+        if pending.stage != "turn":
+            return False
+        rule_delta = pending.frozen_result.get("state_delta")
+        if not isinstance(rule_delta, dict):
+            raise ValueError("待处理回合缺少冻结规则结果。")
+        engine = self.engine
+        session = engine.game_session
+        session.turn_count += 1
+        session.realm_turn_count += 1
+        applied = self._validate_and_apply_delta(
+            pending.action,
+            self._narrative_from_rule_delta(rule_delta),
+            rule_delta,
+            model_state_update_present=False,
+        )
+        if applied is None:
+            return False
+        narrative, applied_delta = applied
+        meta = applied_delta.setdefault("meta", {})
+        if isinstance(meta, dict):
+            meta["local_story_fallback"] = True
+            meta["fallback_reason"] = pending.error_code
+        engine._enter_local_story("player selected local story", emit_narrative=False)
+        self._record_and_emit_turn(pending.action, narrative, applied_delta)
+        engine.clear_pending_model_failure()
+        return True
+
+    def _hold_pending_failure(
+        self,
+        text: str,
+        rule_delta: dict[str, Any],
+        turn_summary: str,
+        status: Any,
+    ) -> None:
+        self._restore_unsettled_turn()
+        slot = text[:1].upper() if text[:1].upper() in {"A", "B", "C", "D"} else ""
+        self.engine.create_pending_model_failure(
+            stage="turn",
+            action=text,
+            slot=slot,
+            frozen_result={"state_delta": rule_delta, "turn_summary": turn_summary},
+            error_code=_error_code_for_status(status),
+        )
+
+    def _restore_unsettled_turn(self) -> None:
+        session = self.engine.game_session
+        session.turn_count = max(0, session.turn_count - 1)
+        session.realm_turn_count = max(0, session.realm_turn_count - 1)
+
+    def _apply_accepted_turn(
+        self,
+        text: str,
+        narrator_result: dict[str, Any],
+        rule_delta: dict[str, Any],
+    ) -> None:
+        engine = self.engine
+        session = engine.game_session
+        narrative = str(narrator_result.get("narrative") or "")
+        raw_state_delta = narrator_result.get("state_delta")
         applied = self._validate_and_apply_delta(
             text,
             narrative,
             rule_delta,
-            model_state_update_present=model_state_update_present,
+            model_state_update_present=isinstance(raw_state_delta, dict) and bool(raw_state_delta),
         )
         if applied is None:
             return
         narrative, applied_delta = applied
-
-        self._commit_turn_choices(choices, narrator_status, applied_delta)
-
+        choices = narrator_result.get("choices")
+        if engine.set_choices(choices, source="narrator", require_choice=False):
+            raise ValueError("严格 Narrator 输出缺少四个选项。")
         self._record_and_emit_turn(text, narrative, applied_delta)
-
+        engine.clear_pending_model_failure()
         if session.game_over:
             engine.check_game_over()
 
-    def _recover_incomplete_payload(
-        self,
-        narrative: Any,
-        state_delta: dict[str, Any],
-        choices: Any,
-        malformed_state_delta: bool,
-        rule_delta: dict[str, Any],
-        failure_reason: str,
-    ) -> tuple[str, dict[str, Any], Any]:
-        has_narrative = bool(str(narrative or "").strip())
-        normalized_choices = normalize_choices(choices)
-        if (
-            not has_narrative
-            and _has_nonempty_structured_delta(state_delta)
-            and not normalized_choices
-        ):
-            log.info(
-                "narrator returned JSON-only delta; rejecting model delta and settling by rules"
-            )
-            narrative = self._narrative_from_rule_delta(rule_delta)
-            state_delta = self._empty_delta_from_rule(rule_delta)
-            choices = fallback_choices(self.engine.game_session)
-            malformed_state_delta = False
-        elif not has_narrative and normalized_choices:
-            narrative = self._narrative_from_rule_delta(rule_delta)
-            state_delta = self._empty_delta_from_rule(rule_delta)
-            malformed_state_delta = False
-        recovered = self._recover_incomplete_narrator_choices(str(narrative or ""), choices)
-        if recovered:
-            log.info("narrator choices recovered from rule context")
-            if malformed_state_delta:
-                state_delta = self._empty_delta_from_rule(rule_delta)
-            return str(narrative or ""), state_delta, recovered
-        self.engine.emit("on_info", failure_reason)
-        return str(narrative or ""), state_delta, []
-
-    def _commit_turn_choices(
-        self, choices: Any, narrator_status: Any, applied_delta: dict[str, Any]
-    ) -> None:
-        engine = self.engine
-        if engine.game_session.game_over:
-            engine.game_session.last_choices = []
-            return
-        reason = (
-            narrator_status.reason
-            if narrator_status.kind == ModelResultKind.INCOMPLETE_OUTPUT
-            else "叙事模型未返回可用选项。"
-        )
-        if not engine.set_choices(
-            choices,
-            source="narrator",
-            fallback_notice=True,
-            require_choice=True,
-            reason=reason,
-            emit_local_story_narrative=True,
-        ):
-            return
-        meta = applied_delta.setdefault("meta", {})
-        if isinstance(meta, dict):
-            meta["local_story_fallback"] = True
-            meta["fallback_reason"] = narrator_status.reason
-
-    def _run_narrator(self, text: str, turn_summary: str) -> dict[str, Any] | None:
+    def _run_narrator(self, text: str, turn_summary: str) -> dict[str, Any]:
         engine = self.engine
         session = engine.game_session
         narrator_input = text
         if turn_summary:
             narrator_input = f"{text}\n\n[本回合规则结算结果（以此为权威数值）：{turn_summary}]"
 
-        # Ordinary turns avoid a second model call for repair. If the live
-        # narrator gives narrative and usable choices but misses state_update,
-        # TurnFlow can keep the turn moving with the rule-engine delta below.
+        # A failed or incomplete model response is retried once, then frozen for
+        # an explicit player decision. The rule outcome is never recomputed.
         try:
             result = engine.run_agent(
                 "narrator",
@@ -314,80 +316,7 @@ class TurnFlow:
         except Exception:
             log.exception("narrator error")
             reason = "叙述失败（详见日志）"
-            engine.emit("on_error", engine.fallback_notice_for(reason))
-            engine.set_choices(
-                None,
-                source="narrator_exception",
-                fallback_notice=True,
-                require_choice=True,
-                reason=reason,
-            )
-            return None
-
-    def _run_judge_if_needed(
-        self,
-        text: str,
-        narrative: str,
-        state_delta: dict[str, Any],
-        rule_delta: dict[str, Any],
-    ) -> dict[str, Any] | None:
-        engine = self.engine
-        session = engine.game_session
-        if not state_delta or not engine.should_run_judge(text, state_delta, rule_delta):
-            return {}
-
-        engine.emit("on_loading", "天道审判中...")
-        try:
-            judge_result = engine.run_agent(
-                "judge",
-                text,
-                session,
-                narrative=narrative,
-                state_delta=state_delta,
-            )
-            if is_retryable_model_request_failure(judge_result):
-                log.info("judge request failed with retryable provider error; retrying once")
-                retry_result = engine.run_agent(
-                    "judge",
-                    text,
-                    session,
-                    narrative=narrative,
-                    state_delta=state_delta,
-                )
-                if not retry_result.get("llm_error"):
-                    retry_result["retried_after_request_failed"] = True
-                judge_result = retry_result
-        except Exception:
-            log.exception("judge error")
-            reason = "天道审判失败（详见日志）"
-            judge_result = {"approved": False, "corrected_delta": {}, "judgment_note": reason}
-
-        judge_status = classify_judge_result(judge_result)
-        engine.log_model_result(
-            agent="judge",
-            source="turn",
-            status=judge_status.kind,
-            reason=judge_status.reason,
-            result=judge_result,
-        )
-        if judge_status.kind == ModelResultKind.JUDGE_FAILED:
-            reason = judge_status.reason
-            log.info("Judge failed; rejecting model delta and continuing with rule settlement")
-            judge_result = {"approved": False, "corrected_delta": {}, "judgment_note": reason}
-
-        return judge_result
-
-    def _apply_judge_result(
-        self,
-        narrative: str,
-        state_delta: dict[str, Any],
-        judge_result: dict[str, Any],
-    ) -> tuple[str, dict[str, Any]]:
-        decision = JudgeDecisionV1.from_payload(judge_result)
-        if not decision.approved:
-            log.info("Judge rejected narrator prose: %s", judge_result.get("judgment_note", ""))
-            narrative = ""
-        return clean_visible_text(narrative, allow_structured=False), state_delta
+            return {"narrative": "", "choices": [], "state_delta": {}, "llm_error": reason}
 
     def _validate_and_apply_delta(
         self,
@@ -567,29 +496,6 @@ class TurnFlow:
         merged["character"] = character
         return merged
 
-    def _recover_incomplete_narrator_choices(self, narrative: str, choices: Any) -> list[str]:
-        """Use semantic local choices only when the live narrator produced narrative."""
-        if not str(narrative or "").strip():
-            return []
-        session = self.engine.game_session
-        recovered = normalize_choices(choices)
-        if recovered:
-            fallbacks = fallback_choices(session)
-            while len(recovered) < len(fallbacks):
-                recovered.append(fallbacks[len(recovered)])
-            return recovered[: len(fallbacks)]
-        return fallback_choices(session)
-
-    @staticmethod
-    def _empty_delta_from_rule(rule_delta: dict[str, Any]) -> dict[str, Any]:
-        """Supply a model-empty delta while preserving rule-owned turn facts."""
-        meta: dict[str, Any] = {}
-        if isinstance(rule_delta, dict) and isinstance(rule_delta.get("meta"), dict):
-            for key in ("game_over", "game_over_reason", "elapsed_years", "choice_category"):
-                if key in rule_delta["meta"]:
-                    meta[key] = rule_delta["meta"][key]
-        return {"character": {}, "world": {}, "meta": meta}
-
     @staticmethod
     def _narrative_from_rule_delta(rule_delta: dict[str, Any]) -> str:
         return narrative_from_rule_delta(rule_delta)
@@ -601,18 +507,19 @@ def _should_retry_narrator_result(result: dict[str, Any]) -> bool:
 
 
 def _should_retry_incomplete_narrator_result(result: dict[str, Any]) -> bool:
-    """Retry one strict-schema response, or a wholly unusable legacy response."""
+    """Retry one incomplete response before creating a pending failure."""
     if not isinstance(result, dict) or result.get("llm_error"):
         return False
     status = classify_narrator_result(result)
     if status.kind != ModelResultKind.INCOMPLETE_OUTPUT:
         return False
-    if result.get("provider_json_schema") or result.get("provider_json_object"):
-        return True
-    if _has_nonempty_structured_delta(result.get("state_delta")):
-        return False
-    if str(result.get("narrative") or "").strip():
-        return False
-    if normalize_choices(result.get("choices")):
-        return False
     return True
+
+
+def _error_code_for_status(status: Any) -> str:
+    kind = getattr(status, "kind", "")
+    if kind == ModelResultKind.REQUEST_FAILED:
+        return "request_failed"
+    if kind == ModelResultKind.INCOMPLETE_OUTPUT:
+        return "incomplete_output"
+    return "llm_error"

@@ -54,7 +54,7 @@ class TestStageAdvancement:
                 return {
                     "narrative": "修炼大进！",
                     "state_delta": {"character": {"attributes": {"willpower": 1}}},
-                    "choices": ["继续吐纳", "检查瓶颈", "出门历练"],
+                    "choices": ["继续吐纳", "检查瓶颈", "出门历练", "静候天命回响"],
                     "output_path": "",
                     "audit_path": "",
                     "finished_at": "",

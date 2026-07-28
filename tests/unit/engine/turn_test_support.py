@@ -11,7 +11,7 @@ def canned_narrator() -> dict[str, Any]:
     return {
         "narrative": "你静坐吐纳，灵气缓缓涌入。",
         "state_delta": {"character": {"attributes": {"willpower": 1}}},
-        "choices": ["继续吐纳", "请教师兄", "观察灵气流向"],
+        "choices": ["继续吐纳", "请教师兄", "观察灵气流向", "静候天命回响"],
         "output_path": "",
         "audit_path": "",
         "finished_at": "",

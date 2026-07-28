@@ -13,14 +13,13 @@ from agens_novel.engine.local_story import (
 from agens_novel.session.game_session import GameSession
 
 
-def test_profile_model_failure_uses_dynamic_fallback_not_local_story(monkeypatch, tmp_path) -> None:
+def test_profile_model_failure_waits_for_explicit_local_story_choice(monkeypatch, tmp_path) -> None:
     from agens_novel import paths
 
     monkeypatch.setattr(paths, "SAVE_DIR", tmp_path)
     monkeypatch.setenv("AGENS_START_MODEL_OPENING", "1")
     monkeypatch.setenv("AGNES_API_KEY", "sk-test-1234567890")
     engine = GameEngine()
-    engine.on_model_failure_choice = lambda source, reason: "fallback"
     infos: list[str] = []
     narratives: list[str] = []
     engine.on_info = lambda msg: infos.append(msg)
@@ -34,9 +33,14 @@ def test_profile_model_failure_uses_dynamic_fallback_not_local_story(monkeypatch
 
     assert engine.game_session.local_story_active is False
     assert engine.game_session.local_story_id == ""
+    assert engine.game_session.last_choices == []
+    assert engine.pending_model_failure() is not None
+    assert any("请选择重试" in message for message in infos)
+    assert not narratives
+
+    assert engine.resolve_pending_model_failure("use_local_story") is True
+    assert engine.game_session.local_story_active is True
     assert len(engine.game_session.last_choices) == 4
-    assert any("叙事服务响应过久" in msg for msg in infos)
-    assert narratives and "因果残影" not in narratives[0]
 
 
 def test_local_story_choice_advances_node_and_delta(monkeypatch, tmp_path) -> None:

@@ -13,22 +13,27 @@ const session = {
   game_over: false,
   finale: false,
   choices: ["A", "B", "C", "D"],
-  fallback_prompt: { active: true, text: "模型暂不可用，已切换本地故事，请直接选择下方选项继续。" },
+  fallback_prompt: { active: false, text: "模型暂不可用，请选择处理方式。" },
+  pending_model_failure: { failure_id: "f1", stage: "turn", request_no: 1, slot: "A", status: "pending", error_code: "incomplete_output" },
   character: {},
   world: {},
   events: [],
 } satisfies Session;
 
 describe("FallbackBanner", () => {
-  it("does not expose the obsolete no-op continue action", async () => {
+  it("resolves a pending failure through explicit player actions", async () => {
     const runTurn = vi.fn().mockResolvedValue(undefined);
     render(<FallbackBanner session={session} busy={false} runTurn={runTurn} />);
 
-    expect(screen.queryByRole("button", { name: "继续本局" })).not.toBeInTheDocument();
+    await userEvent.click(screen.getByRole("button", { name: "重试" }));
+    expect(runTurn).toHaveBeenCalledWith(
+      "/api/sessions/s1/action",
+      { action: "retry_model" },
+    );
     await userEvent.click(screen.getByRole("button", { name: "结束本局" }));
     expect(runTurn).toHaveBeenCalledWith(
-      "/api/sessions/s1/end",
-      { reason: "玩家结束本局。" },
+      "/api/sessions/s1/action",
+      { action: "end_model_failure" },
     );
   });
 });

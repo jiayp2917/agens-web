@@ -35,7 +35,7 @@ def test_model_failure_events_are_public_safe(tmp_path: Path, monkeypatch) -> No
 
     body = json.dumps(payload, ensure_ascii=False)
     assert "sk-secret" not in body
-    assert "模型暂不可用，已切换本地故事，请直接选择下方选项继续。" in body
+    assert "模型暂不可用，请选择处理方式。" in body
 
 def test_start_accepts_seeded_catalog_character_options(tmp_path: Path, monkeypatch) -> None:
     monkeypatch.setenv("AGNES_API_KEY", "sk-test-web-api")
@@ -204,9 +204,11 @@ def test_start_persists_dynamic_opening_world_profile(tmp_path: Path, monkeypatc
                         "day_count": 1,
                     },
                     "choices": ["稳住渡口差事", "打听灵潮", "夜探沉星礁", "随潮而行"],
-                },
-                "llm_error": "",
-            }
+                    },
+                    "llm_error": "",
+                    "response_mode": "json_object",
+                    "provider_json_envelope_ok": True,
+                }
         return _runner(agent_name)
 
     with patch("agens_novel.engine.game_engine.run_turn_sync", side_effect=dynamic_world_builder):
@@ -249,7 +251,7 @@ def test_start_persists_dynamic_opening_world_profile(tmp_path: Path, monkeypatc
     assert "归墟潮界" in snapshot_text
     assert "chronicle_0_16" in snapshot_text
 
-def test_start_model_failure_reports_fallback_but_uses_dynamic_profile_opening(
+def test_start_model_failure_stays_pending_until_player_selects_local_story(
     tmp_path: Path,
     monkeypatch,
 ) -> None:
@@ -285,11 +287,24 @@ def test_start_model_failure_reports_fallback_but_uses_dynamic_profile_opening(
             },
         ).json()
 
-    assert started["fallback_prompt"]["active"] is True
+    assert started["game_started"] is True
+    assert started["fallback_prompt"]["active"] is False
     assert started["local_story"]["active"] is False
+    assert started["pending_model_failure"]["stage"] == "opening"
     assert started["world"]["world_profile"]["world_name"] == "西陲裂土"
-    assert len(started["choices"]) == 4
+    assert started["choices"] == []
     assert any(event.get("type") == "model_failure" for event in started["events"])
+
+    resolved = client.post(
+        f"/api/sessions/{session_id}/action",
+        json={"action": "use_local_story"},
+    ).json()
+
+    assert resolved["game_started"] is True
+    assert resolved["pending_model_failure"] is None
+    assert resolved["local_story"]["active"] is True
+    assert resolved["world"]["world_profile"]["world_name"] == "西陲裂土"
+    assert len(resolved["choices"]) == 4
 
 def test_incomplete_start_model_output_is_not_live_success(
     tmp_path: Path,
@@ -332,9 +347,11 @@ def test_incomplete_start_model_output_is_not_live_success(
             },
         ).json()
 
-    assert started["fallback_prompt"]["active"] is True
+    assert started["game_started"] is True
+    assert started["fallback_prompt"]["active"] is False
+    assert started["pending_model_failure"]["stage"] == "opening"
     assert started["world"]["world_profile"].get("chronicle_0_16")
-    assert len(started["choices"]) == 4
+    assert started["choices"] == []
     assert not any(
         event.get("type") == "model_result"
         and event.get("agent") == "world_builder"

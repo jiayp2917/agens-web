@@ -27,9 +27,17 @@ def _runner(agent_name: str, *_args, **_kwargs):
                 },
                 "world": {"current_scene": "山门", "location": "山门", "region": "东荒"},
                 "opening_narrative": "十六岁，你来到山门。",
+                "chronicle_0_16": [
+                    "幼时随家人识得山路。",
+                    "十二岁听闻宗门招收弟子。",
+                    "十六岁来到山门求道。",
+                ],
+                "initial_situation_16": "十六岁的许满站在山门前，准备登记入门。",
                 "choices": ["稳住气息", "寻找机缘", "探查险地", "随缘而行"],
             },
             "llm_error": "",
+            "response_mode": "json_object",
+            "provider_json_envelope_ok": True,
         }
     if agent_name == "narrator":
         return {

@@ -4,14 +4,13 @@ from __future__ import annotations
 
 from unittest.mock import patch
 
-from agens_novel.engine.choices import fallback_choices
 from agens_novel.engine.game_engine import GameEngine
 from tests.unit.engine.fixtures import canned_judge as _canned_judge
 from tests.unit.engine.turn_test_support import patch_turn_runner_for_tests as _patch_turn_runner
 
 
 class TestGameEngineHandleAction:
-    def test_action_runs_narrator_and_judge(self, monkeypatch) -> None:
+    def test_action_runs_narrator_without_judge(self, monkeypatch) -> None:
         monkeypatch.setenv("AGNES_API_KEY", "sk-test-1234567890")
         call_log: list[str] = []
         engine = GameEngine()
@@ -38,14 +37,12 @@ class TestGameEngineHandleAction:
                     "finished_at": "",
                     "llm_error": "",
                 }
-            if agent_name == "judge":
-                return _canned_judge()
             return {}
 
         with patch("agens_novel.engine.game_engine.run_turn_sync", side_effect=runner):
             engine.handle_action("C")
 
-        assert call_log == ["narrator", "judge"]
+        assert call_log == ["narrator"]
         assert engine.game_session.turn_count == 1
         assert not hasattr(engine.game_session, "experience")
         assert engine.game_session.age > 16
@@ -69,7 +66,7 @@ class TestGameEngineHandleAction:
                 return {
                     "narrative": "你向接引弟子行礼。",
                     "state_delta": {"character": {"attributes": {"willpower": 1}}},
-                    "choices": ["继续询问", "返回山门", "观察弟子神色"],
+                    "choices": ["继续询问", "返回山门", "观察弟子神色", "顺着天命静候"],
                     "llm_error": "",
                 }
             if agent_name == "judge":
@@ -84,7 +81,7 @@ class TestGameEngineHandleAction:
             "继续询问",
             "返回山门",
             "观察弟子神色",
-            fallback_choices(engine.game_session)[3],
+            "顺着天命静候",
         ]
 
     def test_choice_letter_ignores_missing_slot(self, monkeypatch) -> None:
@@ -141,37 +138,29 @@ class TestGameEngineHandleAction:
             engine.handle_action("修炼")
 
         assert engine.game_session.turn_count == 0
-        assert engine.game_session.local_story_active is True
-        assert len(engine.game_session.last_choices) == 4
-        assert any("本回合记录暂未续上" in msg for msg in infos)
+        assert engine.game_session.local_story_active is False
+        assert len(engine.game_session.last_choices) == 0
+        assert engine.pending_model_failure() is not None
+        assert any("请选择重试" in msg for msg in infos)
 
     def test_narrator_exception_can_end_run_from_ui_choice(self, monkeypatch) -> None:
         monkeypatch.setenv("AGNES_API_KEY", "sk-test-1234567890")
         engine = GameEngine()
         engine.game_session.game_started = True
-        choices: list[tuple[str, str]] = []
-        game_overs: list[str] = []
-        engine.on_model_failure_choice = lambda source, reason: (
-            choices.append((source, reason)) or "end"
-        )
-        engine.on_game_over = lambda reason: game_overs.append(reason)
-
         def fake_runner(agent_name, user_input, session, **kw):
             raise RuntimeError("LLM exploded")
 
         with patch("agens_novel.engine.game_engine.run_turn_sync", side_effect=fake_runner):
             engine.handle_action("修炼")
 
-        assert choices and choices[0][0] == "narrator_exception"
         assert engine.game_session.turn_count == 0
-        assert engine.game_session.game_over is True
-        assert game_overs == ["模型不可用导致本局结束。"]
+        assert engine.game_session.game_over is False
+        assert engine.pending_model_failure() is not None
 
-    def test_narrative_without_choices_recovers_with_semantic_choices(self, monkeypatch) -> None:
+    def test_narrative_without_choices_creates_pending_failure(self, monkeypatch) -> None:
         monkeypatch.setenv("AGNES_API_KEY", "sk-test-1234567890")
         engine = GameEngine()
         engine.game_session.game_started = True
-        engine.on_model_failure_choice = lambda source, reason: "fallback"
         narratives: list[tuple[str, int]] = []
         engine.on_narrative = lambda text, turn: narratives.append((text, turn))
         infos: list[str] = []
@@ -193,26 +182,21 @@ class TestGameEngineHandleAction:
             engine.handle_action("修炼")
 
         assert engine.game_session.game_over is False
-        assert engine.game_session.turn_count == 1
+        assert engine.game_session.turn_count == 0
         assert engine.game_session.local_story_active is False
-        assert len(engine.game_session.last_choices) == 4
-        assert calls == ["narrator"]
-        assert narratives and "晨雾" in narratives[-1][0]
-        assert not any("状态栏为准" in msg for msg in infos)
-        assert engine.game_session.turn_history[-1]["turn"] == 1
-        assert engine.game_session.turn_history[-1]["input"] == "修炼"
-        assert engine.game_session.turn_history[-1]["delta"]["meta"]["elapsed_years"] > 0
-        assert "local_story" not in engine.game_session.turn_history[-1]
-        assert not any("补齐下一步选择" in msg or "因果结算" in msg for msg in infos)
+        assert engine.game_session.last_choices == []
+        assert calls == ["narrator", "narrator"]
+        assert narratives == []
+        assert engine.game_session.turn_history == []
+        assert engine.pending_model_failure() is not None
 
-    def test_narrative_reward_claim_without_delta_is_suppressed_after_choice_recovery(
+    def test_narrative_reward_claim_without_choices_remains_pending(
         self, monkeypatch
     ) -> None:
         monkeypatch.setenv("AGNES_API_KEY", "sk-test-1234567890")
         engine = GameEngine()
         engine.game_session.game_started = True
         engine.game_session.inventory = []
-        engine.on_model_failure_choice = lambda source, reason: "fallback"
         narratives: list[tuple[str, int]] = []
         infos: list[str] = []
         engine.on_narrative = lambda text, turn: narratives.append((text, turn))
@@ -232,18 +216,15 @@ class TestGameEngineHandleAction:
             engine.handle_action("修炼")
 
         assert engine.game_session.game_over is False
-        assert engine.game_session.turn_count == 1
+        assert engine.game_session.turn_count == 0
         assert engine.game_session.local_story_active is False
-        assert len(engine.game_session.last_choices) == 4
+        assert engine.game_session.last_choices == []
         assert engine.game_session.inventory == []
-        assert narratives
-        assert "清灵丹" not in narratives[-1][0]
-        assert engine.game_session.turn_history[-1]["narrative"]
-        assert "清灵丹" not in engine.game_session.turn_history[-1]["narrative"]
-        assert not any("补齐下一步选择" in msg or "因果结算" in msg for msg in infos)
-        assert not any("状态栏为准" in msg or "state_delta" in msg for msg in infos)
+        assert narratives == []
+        assert engine.game_session.turn_history == []
+        assert engine.pending_model_failure() is not None
 
-    def test_empty_model_output_can_continue_with_local_fallback(self, monkeypatch) -> None:
+    def test_empty_model_output_creates_pending_failure(self, monkeypatch) -> None:
         monkeypatch.setenv("AGNES_API_KEY", "sk-test-1234567890")
         engine = GameEngine()
         engine.game_session.game_started = True
@@ -251,7 +232,6 @@ class TestGameEngineHandleAction:
         errors: list[str] = []
         engine.on_info = lambda msg: infos.append(msg)
         engine.on_error = lambda msg: errors.append(msg)
-        engine.on_model_failure_choice = lambda source, reason: "fallback"
 
         def runner(agent_name, user_input, session, **kw):
             if agent_name == "narrator":
@@ -262,10 +242,10 @@ class TestGameEngineHandleAction:
             engine.handle_action("观察山门")
 
         assert errors == []
-        assert any("缺少叙事" in msg or "未返回可用 A/B/C" in msg for msg in infos)
-        assert any("缺少叙事" in msg or "未返回可用 A/B/C" in msg for msg in infos)
-        assert engine.game_session.local_story_active is True
-        assert len(engine.game_session.last_choices) == 4
+        assert any("请选择重试" in msg for msg in infos)
+        assert engine.game_session.local_story_active is False
+        assert engine.game_session.last_choices == []
+        assert engine.pending_model_failure() is not None
 
     def test_unrecoverable_empty_narrator_output_retries_live_once(self, monkeypatch) -> None:
         monkeypatch.setenv("AGNES_API_KEY", "sk-test-1234567890")
@@ -398,7 +378,7 @@ class TestGameEngineHandleAction:
         assert engine.game_session.turn_count == 1
         assert "old records" not in engine.game_session.turn_history[-1]["narrative"]
 
-    def test_schema_narrator_two_english_attempts_fall_back_without_visible_residue(self) -> None:
+    def test_schema_narrator_two_english_attempts_create_pending_failure(self) -> None:
         engine = GameEngine()
         engine.game_session.game_started = True
         engine.game_session.last_choices = ["闭门吐纳", "外出访友", "夜探山径", "随缘静候"]
@@ -427,8 +407,9 @@ class TestGameEngineHandleAction:
             engine.handle_action("A")
 
         assert calls == 2
-        assert engine.game_session.local_story_active is True
-        assert "foreign chronicle" not in engine.game_session.turn_history[-1]["narrative"]
+        assert engine.game_session.local_story_active is False
+        assert engine.game_session.turn_history == []
+        assert engine.pending_model_failure() is not None
 
     def test_turn_rewrites_model_invented_exact_time_span(self) -> None:
         engine = GameEngine()
@@ -452,7 +433,7 @@ class TestGameEngineHandleAction:
         assert "四十二载" not in narrative
         assert "岁月流转" in narrative
 
-    def test_json_only_narrator_delta_settles_by_rules_without_retry_or_local_story(
+    def test_json_only_narrator_delta_creates_pending_failure(
         self, monkeypatch
     ) -> None:
         monkeypatch.setenv("AGNES_API_KEY", "sk-test-1234567890")
@@ -464,7 +445,6 @@ class TestGameEngineHandleAction:
         calls: list[tuple[str, str]] = []
         engine.on_narrative = lambda text, turn: narratives.append((text, turn))
         engine.on_info = lambda msg: infos.append(msg)
-        engine.on_model_failure_choice = lambda source, reason: "fallback"
 
         def runner(agent_name, user_input, session, **kw):
             calls.append((agent_name, user_input))
@@ -491,17 +471,16 @@ class TestGameEngineHandleAction:
             engine.handle_action("B")
 
         narrator_calls = [call for call in calls if call[0] == "narrator"]
-        assert len(narrator_calls) == 1
-        assert engine.game_session.turn_count == 1
+        assert len(narrator_calls) == 2
+        assert engine.game_session.turn_count == 0
         assert engine.game_session.local_story_active is False
-        assert "local_story" not in engine.game_session.turn_history[-1]
+        assert engine.game_session.turn_history == []
         assert engine.game_session.attributes.get("luck") != 9
         assert "轻躁" not in engine.game_session.status_effects
         assert engine.game_session.current_scene != "青岚坊市"
-        assert engine.game_session.turn_history[-1]["narrative"]
         assert len(engine.game_session.last_choices) == 4
-        assert narratives
-        assert not any("天道紊乱" in msg or "因果结算" in msg for msg in infos)
+        assert narratives == []
+        assert engine.pending_model_failure() is not None
 
     def test_malformed_state_update_with_narrative_recovers_as_rule_settled_turn(
         self, monkeypatch
@@ -554,7 +533,7 @@ class TestGameEngineHandleAction:
                 return {
                     "narrative": "你获得一枚清灵丹，又习得云水诀。",
                     "state_delta": {"character": {"attributes": {"willpower": 1}}},
-                    "choices": ["查看丹药", "演练功法", "拜谢师兄"],
+                    "choices": ["查看丹药", "演练功法", "拜谢师兄", "顺着命数静候"],
                     "llm_error": "",
                 }
             if agent_name == "judge":
@@ -601,7 +580,7 @@ class TestGameEngineHandleAction:
                 return {
                     "narrative": "你在山道旁拾得一枚残破木符，只觉其纹路有些古怪。",
                     "state_delta": {"character": {"attributes": {"luck": 1}}},
-                    "choices": ["收好木符继续前行", "询问路过弟子", "绕去后山查看"],
+                    "choices": ["收好木符继续前行", "询问路过弟子", "绕去后山查看", "顺着天命静候"],
                     "llm_error": "",
                 }
             if agent_name == "judge":
@@ -695,7 +674,7 @@ class TestGameEngineHandleAction:
                             "active_quests_add": [{"name": "采药任务", "status": "active"}],
                         },
                     },
-                    "choices": ["去药谷", "修习云水诀", "查看丹药"],
+                    "choices": ["去药谷", "修习云水诀", "查看丹药", "顺着命数静候"],
                     "llm_error": "",
                 }
             if agent_name == "judge":
@@ -753,7 +732,7 @@ class TestGameEngineHandleAction:
                 return {
                     "narrative": "你得了一笔不该存在的秘宝。",
                     "state_delta": {"character": {"gold": "+77"}},
-                    "choices": ["继续吐纳", "请教师兄", "观察灵气流向"],
+                    "choices": ["继续吐纳", "请教师兄", "观察灵气流向", "顺着天命静候"],
                     "output_path": "",
                     "audit_path": "",
                     "finished_at": "",
@@ -815,7 +794,7 @@ class TestGameEngineHandleAction:
         assert "阴风侵体" not in engine.game_session.status_effects
         assert engine.game_session.turn_history[-1]["delta"]["meta"]["model_state_update_ignored"]
 
-    def test_judge_reject_without_correction_suppresses_drift_narrative(self, monkeypatch) -> None:
+    def test_model_world_delta_is_ignored_without_judge(self, monkeypatch) -> None:
         monkeypatch.setenv("AGNES_API_KEY", "sk-test-1234567890")
         engine = GameEngine()
 
@@ -838,15 +817,7 @@ class TestGameEngineHandleAction:
                 return {
                     "narrative": "虚空之中，混沌未开。",
                     "state_delta": {"world": {"current_scene": "混沌虚空"}},
-                    "choices": ["退回山门", "询问执事", "静观其变"],
-                    "llm_error": "",
-                }
-            if agent_name == "judge":
-                return {
-                    "approved": False,
-                    "corrected_delta": {},
-                    "judgment_note": "叙事重开局",
-                    "review_score": 0,
+                    "choices": ["退回山门", "询问执事", "静观其变", "顺着天命静候"],
                     "llm_error": "",
                 }
             return {}
@@ -855,7 +826,7 @@ class TestGameEngineHandleAction:
             engine.handle_action("修炼")
 
         assert narratives
-        assert "混沌未开" not in narratives[-1][0]
+        assert engine.game_session.current_scene != "混沌虚空"
         assert not any("因果结算" in msg or "narrative/state mismatch" in msg for msg in infos)
         assert engine.game_session.current_scene == "晨雾中的青云山外门"
         assert engine.game_session.turn_count == 1
@@ -875,7 +846,7 @@ class TestGameEngineHandleAction:
                 return {
                     "narrative": "你试图强闯内门。",
                     "state_delta": {"character": {"attributes": {"willpower": 1}}},
-                    "choices": ["向执事解释来意", "退回山门等候", "寻找外门任务"],
+                    "choices": ["向执事解释来意", "退回山门等候", "寻找外门任务", "顺着天命静候"],
                     "llm_error": "",
                 }
             if agent_name == "judge":
@@ -895,7 +866,7 @@ class TestGameEngineHandleAction:
             "向执事解释来意",
             "退回山门等候",
             "寻找外门任务",
-            fallback_choices(engine.game_session)[3],
+            "顺着天命静候",
         ]
         assert not any("天道紊乱" in msg for msg in infos)
         assert engine.game_session.current_scene == "晨雾中的青云山外门"
@@ -959,8 +930,8 @@ class TestGameEngineHandleAction:
             }
         )
 
-        assert engine.game_session.chat_history
-        assert "当前状态 JSON 为准" in engine.game_session.chat_history[0]["content"]
+        assert engine.pending_model_failure() is not None
+        assert engine.game_session.chat_history == []
 
     def test_typed_combat_action_is_none_in_game_mode(self, monkeypatch, tmp_path) -> None:
         """Game-mode v5: combat is event-based; there is no typed combat action.

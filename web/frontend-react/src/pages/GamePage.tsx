@@ -136,7 +136,7 @@ export function GamePage({
           <div className="story-log chronicle-log" aria-live="polite">
             {chronicleRecords.map((record) => <ChronicleItem key={record.key} record={record} />)}
           </div>
-          {session.fallback_prompt?.active && <FallbackBanner session={session} busy={busy} runTurn={runTurn} />}
+          {(session.fallback_prompt?.active || session.pending_model_failure) && <FallbackBanner session={session} busy={busy} runTurn={runTurn} />}
           <div className="choice-list">
             {session.choices.map((choice, index) => {
               const semantic = choiceSemantics[index];
@@ -147,7 +147,7 @@ export function GamePage({
                   letter={letter}
                   text={cleanChoiceText(choice)}
                   hint={semantic?.hint}
-                  disabled={busy}
+                  disabled={busy || Boolean(session.pending_model_failure)}
                   onClick={() => runTurn(`/api/sessions/${session.session_id}/choice`, { choice_index: index })}
                 />
               );

@@ -9,9 +9,13 @@ from typing import TYPE_CHECKING, Any
 if TYPE_CHECKING:
     from .game_engine import GameEngine
 
-from ..agents.contracts import JudgeDecisionV1
 from ..game.constants import format_realm_name
-from .model_result import ModelResultKind, classify_judge_result, classify_narrator_result
+from .model_result import (
+    ModelResultKind,
+    classify_narrator_result,
+    is_retryable_model_request_failure,
+)
+from .pending_model_failure import PendingModelFailureV1
 from .render import format_status_bar
 from .turn_rules import breakthrough_story_delta
 
@@ -76,29 +80,113 @@ class BreakthroughFlow:
         bt_result = breakthrough_delta.get("meta", {}).get("breakthrough_result", "")
         action_text = self._breakthrough_action_text(breakthrough_delta)
         state_delta: dict[str, Any] = self._rule_breakthrough_delta(breakthrough_delta)
-        narrative, choices = self._breakthrough_narrator_parts(action_text, state_delta)
+        self._ensure_breakthrough_meta(state_delta, bt_result)
+        result = self._run_breakthrough_narrator(action_text)
+        status = classify_narrator_result(result)
+        if status.kind != ModelResultKind.OK:
+            engine.create_pending_model_failure(
+                stage="breakthrough",
+                action=action_text,
+                slot="breakthrough",
+                frozen_result={
+                    "state_delta": state_delta,
+                    "breakthrough_result": bt_result,
+                    "previous_realm_label": previous_realm_label,
+                },
+                error_code=_error_code_for_status(status),
+            )
+            return
+        self._apply_accepted_breakthrough(
+            action_text,
+            state_delta,
+            bt_result,
+            previous_realm_label,
+            result,
+        )
 
-        if not self._judge_breakthrough_narrative(action_text, narrative, state_delta):
-            narrative = ""
+    def retry_pending_model(self, pending: PendingModelFailureV1) -> bool:
+        """Retry a frozen breakthrough narration without rerolling the result."""
+        if pending.stage != "breakthrough":
+            return False
+        frozen = pending.frozen_result
+        state_delta = frozen.get("state_delta")
+        bt_result = str(frozen.get("breakthrough_result") or "")
+        previous_realm_label = str(frozen.get("previous_realm_label") or "")
+        if not isinstance(state_delta, dict):
+            raise ValueError("待处理突破缺少冻结规则结果。")
+        engine = self.engine
+        engine.replace_pending_model_failure(
+            pending.with_status("retrying", request_no=pending.request_no + 1)
+        )
+        result = self._run_breakthrough_narrator(pending.action)
+        status = classify_narrator_result(result)
+        if status.kind != ModelResultKind.OK:
+            engine.replace_pending_model_failure(
+                pending.with_status("pending", request_no=pending.request_no + 1)
+            )
+            engine.emit("on_info", "重试未完成，突破判定仍已冻结，请重新选择处理方式。")
+            return False
+        self._apply_accepted_breakthrough(
+            pending.action,
+            state_delta,
+            bt_result,
+            previous_realm_label,
+            result,
+        )
+        return True
 
+    def resolve_pending_with_local_story(self, pending: PendingModelFailureV1) -> bool:
+        """Apply the frozen breakthrough once after an explicit local-story choice."""
+        if pending.stage != "breakthrough":
+            return False
+        frozen = pending.frozen_result
+        state_delta = frozen.get("state_delta")
+        bt_result = str(frozen.get("breakthrough_result") or "")
+        previous_realm_label = str(frozen.get("previous_realm_label") or "")
+        if not isinstance(state_delta, dict):
+            raise ValueError("待处理突破缺少冻结规则结果。")
+        self._apply_accepted_breakthrough(
+            pending.action,
+            state_delta,
+            bt_result,
+            previous_realm_label,
+            {"narrative": "", "choices": []},
+            local_story=True,
+        )
+        return True
+
+    def _apply_accepted_breakthrough(
+        self,
+        action_text: str,
+        state_delta: dict[str, Any],
+        bt_result: str,
+        previous_realm_label: str,
+        result: dict[str, Any],
+        *,
+        local_story: bool = False,
+    ) -> None:
+        raw_delta = result.get("state_delta")
+        if isinstance(raw_delta, dict) and raw_delta:
+            state_delta.setdefault("meta", {})["model_state_update_ignored"] = True
         narrative = self._apply_breakthrough_result(
             state_delta,
             bt_result,
-            narrative,
+            str(result.get("narrative") or ""),
             previous_realm_label,
         )
+        session = self.engine.game_session
+        if local_story and not session.game_over:
+            self.engine._enter_local_story("player selected local story", emit_narrative=False)
+            state_delta.setdefault("meta", {})["local_story_fallback"] = True
+        else:
+            self._set_breakthrough_choices(result.get("choices"))
         is_finale = session.finale
-        self._set_breakthrough_choices(choices)
         self._record_breakthrough_turn(action_text, narrative, state_delta)
+        self.engine.clear_pending_model_failure()
         self._emit_breakthrough_result(bt_result, narrative, is_finale)
-
-        engine.emit("on_status_bar", format_status_bar(session))
-
-        if is_finale:
-            return
-
-        if engine.check_game_over():
-            return
+        self.engine.emit("on_status_bar", format_status_bar(session))
+        if not is_finale:
+            self.engine.check_game_over()
 
     def _can_start_breakthrough(self) -> bool:
         session = self.engine.game_session
@@ -113,25 +201,6 @@ class BreakthroughFlow:
             self.engine.emit("on_info", reason)
             return False
         return True
-
-    def _breakthrough_narrator_parts(
-        self,
-        action_text: str,
-        state_delta: dict[str, Any],
-    ) -> tuple[str, Any]:
-        result = self._run_breakthrough_narrator(action_text)
-        if result is None:
-            return "", []
-        if result.get("llm_error"):
-            log.info(
-                "breakthrough narrator unavailable after rule settlement: %s",
-                result.get("llm_error"),
-            )
-            return "", []
-        raw_delta = result.get("state_delta", {})
-        if isinstance(raw_delta, dict) and raw_delta:
-            state_delta["meta"]["model_state_update_ignored"] = True
-        return str(result.get("narrative") or ""), result.get("choices")
 
     def _apply_breakthrough_result(
         self,
@@ -161,15 +230,17 @@ class BreakthroughFlow:
         if session.game_over:
             session.last_choices = []
             return
-        self.engine.set_choices(
+        used_fallback = self.engine.set_choices(
             choices,
             source="breakthrough_narrator",
             fallback_notice=False,
             require_choice=False,
             reason="突破叙事未返回可用选项。",
         )
+        if used_fallback:
+            raise ValueError("严格突破叙事未返回四个可用选项。")
 
-    def _run_breakthrough_narrator(self, action_text: str) -> dict[str, Any] | None:
+    def _run_breakthrough_narrator(self, action_text: str) -> dict[str, Any]:
         engine = self.engine
         try:
             result = engine.run_agent(
@@ -179,6 +250,17 @@ class BreakthroughFlow:
                 stream_callback=engine.stream_callback if engine.on_stream_chunk else None,
                 repair_incomplete_output=False,
             )
+            if is_retryable_model_request_failure(result):
+                retry_result = engine.run_agent(
+                    "narrator",
+                    action_text,
+                    engine.game_session,
+                    stream_callback=engine.stream_callback if engine.on_stream_chunk else None,
+                    repair_incomplete_output=False,
+                )
+                if not retry_result.get("llm_error"):
+                    retry_result["retried_after_request_failed"] = True
+                result = retry_result
             status = classify_narrator_result(result)
             if status.kind == ModelResultKind.INCOMPLETE_OUTPUT:
                 retry_input = (
@@ -366,44 +448,6 @@ class BreakthroughFlow:
             counter = raw_counter if isinstance(raw_counter, int) and not isinstance(raw_counter, bool) else 0
             session.rule_rng_counter = max(0, counter) + 1
 
-    def _judge_breakthrough_narrative(
-        self,
-        action_text: str,
-        narrative: str,
-        state_delta: dict[str, Any],
-    ) -> bool:
-        engine = self.engine
-        try:
-            judge_result = engine.run_agent(
-                "judge",
-                action_text,
-                engine.game_session,
-                narrative=narrative,
-                state_delta=state_delta,
-            )
-            judge_status = classify_judge_result(judge_result)
-            engine.log_model_result(
-                agent="judge",
-                source="breakthrough",
-                status=judge_status.kind,
-                reason=judge_status.reason,
-                result=judge_result,
-            )
-            return JudgeDecisionV1.from_payload(judge_result).approved
-        except Exception:
-            log.exception("breakthrough judge error")
-            reason = "突破审判失败（详见日志）"
-            failed_result = {"llm_error": reason}
-            judge_status = classify_judge_result(failed_result)
-            engine.log_model_result(
-                agent="judge",
-                source="breakthrough",
-                status=judge_status.kind,
-                reason=judge_status.reason,
-                result=failed_result,
-            )
-            return False
-
     def _emit_breakthrough_result(
         self,
         bt_result: str,
@@ -438,6 +482,15 @@ def _claims_conflicting_realm_stage(text: str, session: Any) -> bool:
     expected = format_realm_name(realm, stage)
     claims = _realm_stage_claims(text)
     return any(claim != expected for claim in claims)
+
+
+def _error_code_for_status(status: Any) -> str:
+    kind = getattr(status, "kind", "")
+    if kind == ModelResultKind.REQUEST_FAILED:
+        return "request_failed"
+    if kind == ModelResultKind.INCOMPLETE_OUTPUT:
+        return "incomplete_output"
+    return "llm_error"
 
 
 def _claims_conflicting_breakthrough_transition(

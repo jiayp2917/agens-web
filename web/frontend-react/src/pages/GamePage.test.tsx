@@ -107,4 +107,21 @@ describe("GamePage toolbar", () => {
 
     expect(screen.getByRole("meter", { name: "寿元" })).toHaveAttribute("aria-valuemax", "100");
   });
+
+  it("disables choices while a model failure is awaiting player action", () => {
+    render(
+      <GamePage
+        session={{
+          ...session,
+          pending_model_failure: { failure_id: "f1", stage: "turn", request_no: 1, slot: "A", status: "pending", error_code: "incomplete_output" },
+        }}
+        busy={false}
+        runTurn={vi.fn().mockResolvedValue(undefined)}
+        openDialog={vi.fn()}
+        onHome={vi.fn()}
+      />,
+    );
+
+    expect(screen.getByRole("button", { name: "A：静心修炼" })).toBeDisabled();
+  });
 });

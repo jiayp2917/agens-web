@@ -10,6 +10,7 @@ from agens_novel.session.game_session import GameSession
 from tests.unit.engine.fixtures import canned_judge as _canned_judge
 from tests.unit.engine.fixtures import canned_world_builder as _canned_world_builder
 from tests.unit.engine.fixtures import patch_turn_runner as _patch_turn_runner_base
+from tests.unit.engine.turn_test_support import canned_narrator as _canned_narrator
 
 # ═══════════════════════════════════════════════════════════════════════════════
 # Canned helpers
@@ -27,6 +28,7 @@ class _FixedRuleRng:
 def _patch_turn_runner(call_log: list | None = None) -> Any:
     return _patch_turn_runner_base(
         judge=_canned_judge,
+        narrator=_canned_narrator,
         world_builder=_canned_world_builder,
         call_log=call_log,
     )

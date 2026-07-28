@@ -64,12 +64,12 @@ def test_frozen_benchmark_uses_nine_independent_snapshots(tmp_path, monkeypatch)
     assert report["acceptance"]["accepted"] is True
 
 
-def test_frozen_benchmark_reserves_the_shared_budget(tmp_path, monkeypatch) -> None:
+def test_frozen_benchmark_records_past_legacy_shared_budget_limits(tmp_path, monkeypatch) -> None:
     config = _config(tmp_path, monkeypatch, "DeepSeek")
     budget = EvaluationBudget(
         tmp_path / "evidence",
-        max_total_calls=20,
-        max_narrator_calls=20,
+        max_total_calls=1,
+        max_narrator_calls=1,
     )
 
     def fake_run_agent(self, _agent, _user_input, _session, **_kwargs):

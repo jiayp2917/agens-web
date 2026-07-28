@@ -48,9 +48,17 @@ def _world_builder_result() -> dict:
                 "day_count": 1,
             },
             "opening_narrative": "晨雾漫过青玄宗山门，你踏上第一阶石阶。",
-            "choices": ["拜见执事", "观察山门", "询问路人"],
+            "chronicle_0_16": [
+                "许满幼时随家人采药，记住了山路的险处。",
+                "十二岁时救下受伤散修，得知青玄宗招收弟子。",
+                "十六岁清晨，许满带着行囊来到青玄宗山门。",
+            ],
+            "initial_situation_16": "十六岁的许满站在青玄宗山门前，需先决定入门的第一步。",
+            "choices": ["拜见执事", "观察山门", "询问路人", "【气运】随缘静候"],
         },
         "llm_error": "",
+        "response_mode": "json_object",
+        "provider_json_envelope_ok": True,
     }
 
 def _narrator_result(text: str = "你拜见执事，听完入门规矩后气息更稳。") -> dict:
@@ -60,7 +68,7 @@ def _narrator_result(text: str = "你拜见执事，听完入门规矩后气息�
             "character": {"attributes": {"willpower": 1}},
             "world": {"current_scene": "山门执事堂"},
         },
-        "choices": ["继续请教", "前往住处", "查看木牌"],
+        "choices": ["继续请教", "前往住处", "查看木牌", "随缘观望"],
         "llm_error": "",
     }
 
@@ -75,6 +83,8 @@ def _runner(agent_name: str, *_args, **_kwargs):
     if agent_name == "judge":
         return _judge_result()
     raise AssertionError(agent_name)
+
+
 def _register(client: TestClient, invite: str = "invite-code-123") -> dict:
     return client.post(
         "/api/auth/register",

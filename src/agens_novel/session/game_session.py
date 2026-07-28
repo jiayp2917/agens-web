@@ -109,6 +109,7 @@ class GameSession:
     local_story_active: bool = False
     local_story_id: str = ""
     local_story_node_id: str = ""
+    pending_model_failure: dict[str, Any] = field(default_factory=dict)
 
     # ── Run metadata ──
     model: str = ""
@@ -129,8 +130,15 @@ class GameSession:
         """Convert to a dict compatible with GameState for agent invocation."""
         return {
             "turn_count": self.turn_count,
+            "realm_turn_count": self.realm_turn_count,
             "game_started": self.game_started,
             "game_over": self.game_over,
+            "finale": self.finale,
+            "error": self.error,
+            "rule_state": {
+                "run_seed": self.run_seed,
+                "rng_counter": self.rule_rng_counter,
+            },
             "character": {
                 "name": self.char_name,
                 "realm": self.realm,
@@ -177,6 +185,7 @@ class GameSession:
                 "story_id": self.local_story_id,
                 "node_id": self.local_story_node_id,
             },
+            "pending_model_failure": dict(self.pending_model_failure),
         }
 
     # ─────────────────────────────────────────────────────────────────────────
@@ -312,6 +321,7 @@ class GameSession:
                 "story_id": self.local_story_id,
                 "node_id": self.local_story_node_id,
             },
+            "pending_model_failure": dict(self.pending_model_failure),
             "finale": self.finale,
             "error": self.error,
         }
@@ -420,6 +430,11 @@ class GameSession:
             session.local_story_active = bool(local_story.get("active", False))
             session.local_story_id = str(local_story.get("story_id") or "")
             session.local_story_node_id = str(local_story.get("node_id") or "")
+        pending_failure = data.get("pending_model_failure")
+        from ..engine.pending_model_failure import PendingModelFailureV1
+
+        parsed_pending = PendingModelFailureV1.from_payload(pending_failure)
+        session.pending_model_failure = parsed_pending.to_dict() if parsed_pending else {}
         session.finale = data.get("finale", False)
         session.error = str(data.get("error") or "")
         return session

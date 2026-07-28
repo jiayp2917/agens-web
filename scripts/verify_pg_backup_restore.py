@@ -15,6 +15,8 @@ from alembic.config import Config
 from sqlalchemy import create_engine, text
 from sqlalchemy.engine import URL, make_url
 
+from agens_novel.engine.pending_model_failure import PendingModelFailureV1
+
 EXPECTED_REVISION = "20260721_0009"
 EXPECTED_TABLES = 18
 ROOT = Path(__file__).resolve().parents[1]
@@ -22,6 +24,14 @@ ROOT = Path(__file__).resolve().parents[1]
 
 def _restore_snapshots() -> dict[str, dict[str, object]]:
     """Representative persisted saves for every supported story version."""
+    pending_failure = PendingModelFailureV1.create(
+        stage="turn",
+        action="B",
+        slot="B",
+        frozen_result={"state_delta": {}, "turn_summary": "备份恢复中的冻结回合"},
+        rule_rng_counter=95,
+        error_code="request_failed",
+    ).with_base_version(95)
     base = {
         "turn_count": 1,
         "game_started": True,
@@ -54,16 +64,7 @@ def _restore_snapshots() -> dict[str, dict[str, object]]:
                     "post_arc_turns": 5,
                 },
             },
-            "pending_model_failure": {
-                "failure_id": "restore-pending-model",
-                "stage": "narrator",
-                "request_number": 96,
-                "slot": "B",
-                "rule_outcome_hash": "a" * 64,
-                "rule_rng_counter": 95,
-                "base_version": 95,
-                "status": "pending",
-            },
+            "pending_model_failure": pending_failure.to_dict(),
         },
     }
 
@@ -138,10 +139,14 @@ def _insert_fixture(database_url: URL) -> None:
     engine = create_engine(database_url)
     snapshots = _restore_snapshots()
     v3_snapshot = json.dumps(snapshots["v3"], ensure_ascii=False)
+    pending = snapshots["v3"].get("pending_model_failure")
+    if not isinstance(pending, dict):
+        raise RuntimeError("backup fixture is missing pending model failure")
+    failure_id = str(pending.get("failure_id") or "")
     events = json.dumps(
         [
             {"type": "narrative", "text": "恢复演练"},
-            {"type": "model_failure", "failure_id": "restore-pending-model"},
+            {"type": "model_failure", "failure_id": failure_id},
         ],
         ensure_ascii=False,
     )

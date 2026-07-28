@@ -68,10 +68,10 @@ def _narrator_contract_failure(
     result: dict[str, Any],
     contract: dict[str, Any],
 ) -> ModelResultStatus | None:
-    transport = str(result.get("provider_transport") or "legacy_tags")
-    if transport not in {"json_schema", "json_object", "legacy_tags"}:
+    transport = str(result.get("response_mode") or result.get("provider_transport") or "").strip()
+    if transport and transport not in {"json_schema", "json_object"}:
         return ModelResultStatus(ModelResultKind.INCOMPLETE_OUTPUT, "模型返回了未知传输格式。")
-    if transport in {"json_schema", "json_object"} and not result.get("provider_json_envelope_ok"):
+    if transport and not result.get("provider_json_envelope_ok"):
         return ModelResultStatus(
             ModelResultKind.INCOMPLETE_OUTPUT,
             "模型未按 provider JSON 契约返回完整字段。",
@@ -80,8 +80,6 @@ def _narrator_contract_failure(
         return ModelResultStatus(ModelResultKind.INCOMPLETE_OUTPUT, "模型可见文本仍含结构化残留。")
     if contract.get("english_residue"):
         return ModelResultStatus(ModelResultKind.INCOMPLETE_OUTPUT, "模型可见文本仍含英文残留。")
-    if transport == "legacy_tags" and contract and not contract.get("raw_has_choices_tag"):
-        return ModelResultStatus(ModelResultKind.INCOMPLETE_OUTPUT, "模型输出缺少 choices 标签。")
     return None
 
 

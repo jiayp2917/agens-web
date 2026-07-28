@@ -1,4 +1,4 @@
-"""Non-secret call accounting and hard caps for local provider evaluation."""
+"""Non-secret, record-only accounting for local provider evaluation."""
 
 from __future__ import annotations
 
@@ -17,11 +17,11 @@ from .. import paths
 
 
 class EvaluationBudgetExceeded(RuntimeError):
-    """Raised before a paid provider request would exceed a declared cap."""
+    """Raised when the external evaluation ledger cannot be safely used."""
 
 
 def evaluation_budget_root(artifact_root: Path) -> Path:
-    """Resolve the shared external budget root without mixing it with new evidence."""
+    """Resolve the shared external call-record root without mixing it with evidence."""
     configured = os.environ.get("AGENS_EVALUATION_BUDGET_ROOT", "").strip()
     if not configured:
         return artifact_root.resolve()
@@ -32,88 +32,49 @@ def evaluation_budget_root(artifact_root: Path) -> Path:
         pass
     else:
         raise EvaluationBudgetExceeded("evaluation budget root must be outside the repository")
-    if not (root / "evaluation-budget.json").is_file():
-        raise EvaluationBudgetExceeded("evaluation budget root must contain an existing ledger")
     return root
 
 
 def configured_evaluation_limits() -> tuple[int, int]:
-    """Return declared evaluation limits without reading credentials."""
-    total = _positive_int(os.environ.get("AGENS_EVALUATION_MAX_TOTAL_CALLS"), 800)
-    narrator = _positive_int(os.environ.get("AGENS_EVALUATION_MAX_NARRATOR_CALLS"), 650)
-    if narrator > total:
-        raise EvaluationBudgetExceeded("narrator cap cannot exceed the total provider cap")
-    return total, narrator
+    """Return inert legacy values while callers migrate away from budget caps."""
+    return (0, 0)
 
 
 def evaluation_record_only() -> bool:
-    """Return whether this local evaluation records calls without enforcing caps."""
-    return os.environ.get("AGENS_EVALUATION_RECORD_ONLY", "").strip().lower() in {
-        "1",
-        "true",
-        "yes",
-        "on",
-    }
+    """Local evaluation accounting is always record-only."""
+    return True
 
 
 class EvaluationBudget:
-    """A process-safe, external fact ledger for all calls in one evaluation root.
+    """A process-safe external call record shared by evaluation processes.
 
-    A reservation is persisted before network traffic.  An interrupted process
-    therefore consumes capacity conservatively rather than allowing a later
-    process to reset the limits and exceed the declared evaluation budget.
+    The historical name and constructor parameters remain temporarily for
+    callers outside this change. They are ignored: this object never blocks a
+    dispatch based on call counts, cost, or elapsed time.
     """
 
-    _VERSION = 1
+    _VERSION = 2
 
     def __init__(
         self,
         root: Path,
-        *,
-        max_total_calls: int,
-        max_narrator_calls: int,
-        hard_cost_limit: float | None = None,
+        **_legacy_options: object,
     ) -> None:
         self.root = root.resolve()
         self.path = self.root / "evaluation-budget.json"
         self.lock_path = self.root / "evaluation-budget.lock"
-        self.max_total_calls = max_total_calls
-        self.max_narrator_calls = max_narrator_calls
-        self.hard_cost_limit = hard_cost_limit
         self.root.mkdir(parents=True, exist_ok=True)
         self._initialize()
 
     @classmethod
     def open_existing(cls, root: Path) -> EvaluationBudget:
-        """Open an existing external ledger using its recorded immutable limits."""
-        path = root.resolve() / "evaluation-budget.json"
-        try:
-            value = json.loads(path.read_text(encoding="utf-8"))
-        except (OSError, json.JSONDecodeError) as exc:
-            raise EvaluationBudgetExceeded("evaluation budget state is unreadable") from exc
-        if not isinstance(value, dict):
-            raise EvaluationBudgetExceeded("evaluation budget state is invalid")
-        cls._validate_state(value)
-        return cls(
-            root,
-            max_total_calls=int(value["max_total_calls"]),
-            max_narrator_calls=int(value["max_narrator_calls"]),
-            hard_cost_limit=_optional_float(value.get("hard_cost_limit")),
-        )
+        """Open or create the shared call record without resetting its counts."""
+        return cls(root)
 
     def reserve(self, agent: str, *, estimated_cost: float | None = None) -> str:
-        """Persist one global reservation before the provider request starts."""
+        """Persist one global request record before the provider request starts."""
         with self._locked_state() as state:
-            if int(state["reserved_total"]) >= int(state["max_total_calls"]):
-                raise EvaluationBudgetExceeded("provider request cap reached")
-            if agent == "narrator" and int(state["reserved_narrator"]) >= int(
-                state["max_narrator_calls"]
-            ):
-                raise EvaluationBudgetExceeded("narrator request cap reached")
             cost = _non_negative_cost(estimated_cost)
-            hard_limit = state.get("hard_cost_limit")
-            if hard_limit is not None and float(state["reserved_cost"]) + cost > float(hard_limit):
-                raise EvaluationBudgetExceeded("provider cost cap would be exceeded")
             state["reserved_total"] = int(state["reserved_total"]) + 1
             if agent == "narrator":
                 state["reserved_narrator"] = int(state["reserved_narrator"]) + 1
@@ -124,75 +85,20 @@ class EvaluationBudget:
             return f"global-{sequence:04d}"
 
     def summary(self) -> dict[str, int | float | None]:
-        """Return aggregate capacity facts without request content."""
+        """Return aggregate call facts without request content."""
         with self._locked_state() as state:
-            return {
-                "max_total_calls": int(state["max_total_calls"]),
-                "max_narrator_calls": int(state["max_narrator_calls"]),
-                "hard_cost_limit": _optional_float(state.get("hard_cost_limit")),
-                "reserved_total": int(state["reserved_total"]),
-                "reserved_narrator": int(state["reserved_narrator"]),
-                "reserved_cost": float(state["reserved_cost"]),
-            }
-
-    def upgrade_limits(
-        self,
-        *,
-        max_total_calls: int,
-        max_narrator_calls: int,
-        reason: str,
-    ) -> dict[str, int | float | None]:
-        """Increase a persisted cap without resetting recorded provider usage.
-
-        Evaluation limits are normally immutable. A release owner may explicitly
-        authorize a larger envelope, but the old cap and reason remain in the
-        external ledger so a later process cannot silently rewrite history.
-        """
-        safe_reason = str(reason or "").strip()
-        if not safe_reason or len(safe_reason) > 160:
-            raise ValueError("budget upgrade reason must be a short non-empty identifier")
-        requested_total = int(max_total_calls)
-        requested_narrator = int(max_narrator_calls)
-        with self._locked_state() as state:
-            self._validate_state(state)
-            previous_total = int(state["max_total_calls"])
-            previous_narrator = int(state["max_narrator_calls"])
-            if requested_total < previous_total or requested_narrator < previous_narrator:
-                raise EvaluationBudgetExceeded("evaluation budget limits may only increase")
-            if requested_total < int(state["reserved_total"]) or requested_narrator < int(
-                state["reserved_narrator"]
-            ):
-                raise EvaluationBudgetExceeded("evaluation budget cannot be lower than recorded usage")
-            if requested_total == previous_total and requested_narrator == previous_narrator:
-                return self._summary_from_state(state)
-            state["max_total_calls"] = requested_total
-            state["max_narrator_calls"] = requested_narrator
-            history = state.setdefault("limit_history", [])
-            if not isinstance(history, list):
-                raise EvaluationBudgetExceeded("evaluation budget history is invalid")
-            history.append(
-                {
-                    "previous_total_calls": previous_total,
-                    "previous_narrator_calls": previous_narrator,
-                    "max_total_calls": requested_total,
-                    "max_narrator_calls": requested_narrator,
-                    "reason": safe_reason,
-                }
-            )
-            self._write_state(state)
             return self._summary_from_state(state)
 
     def _initialize(self) -> None:
         with self._locked_state() as state:
             if state:
-                self._validate_limits(state)
+                normalized = self._normalize_state(state)
+                if normalized != state:
+                    self._write_state(normalized)
                 return
             self._write_state(
                 {
                     "version": self._VERSION,
-                    "max_total_calls": self.max_total_calls,
-                    "max_narrator_calls": self.max_narrator_calls,
-                    "hard_cost_limit": self.hard_cost_limit,
                     "reserved_total": 0,
                     "reserved_narrator": 0,
                     "reserved_cost": 0.0,
@@ -200,36 +106,31 @@ class EvaluationBudget:
                 }
             )
 
-    def _validate_limits(self, state: dict[str, Any]) -> None:
-        expected = {
-            "version": self._VERSION,
-            "max_total_calls": self.max_total_calls,
-            "max_narrator_calls": self.max_narrator_calls,
-            "hard_cost_limit": self.hard_cost_limit,
-        }
-        actual = {key: state.get(key) for key in expected}
-        if actual != expected:
-            raise EvaluationBudgetExceeded("evaluation budget configuration does not match its manifest")
-
     @staticmethod
-    def _validate_state(state: dict[str, Any]) -> None:
-        required = {
-            "version",
-            "max_total_calls",
-            "max_narrator_calls",
-            "reserved_total",
-            "reserved_narrator",
-            "reserved_cost",
-        }
+    def _normalize_state(state: dict[str, Any]) -> dict[str, Any]:
+        required = {"reserved_total", "reserved_narrator", "reserved_cost"}
         if not required.issubset(state):
-            raise EvaluationBudgetExceeded("evaluation budget state is invalid")
+            raise EvaluationBudgetExceeded("evaluation call record is invalid")
+        try:
+            total = int(state["reserved_total"])
+            narrator = int(state["reserved_narrator"])
+            cost = float(state["reserved_cost"])
+            sequence = int(state.get("sequence", total))
+        except (TypeError, ValueError) as exc:
+            raise EvaluationBudgetExceeded("evaluation call record is invalid") from exc
+        if min(total, narrator, sequence) < 0 or cost < 0:
+            raise EvaluationBudgetExceeded("evaluation call record is invalid")
+        return {
+            "version": EvaluationBudget._VERSION,
+            "reserved_total": total,
+            "reserved_narrator": narrator,
+            "reserved_cost": cost,
+            "sequence": sequence,
+        }
 
     @staticmethod
     def _summary_from_state(state: dict[str, Any]) -> dict[str, int | float | None]:
         return {
-            "max_total_calls": int(state["max_total_calls"]),
-            "max_narrator_calls": int(state["max_narrator_calls"]),
-            "hard_cost_limit": _optional_float(state.get("hard_cost_limit")),
             "reserved_total": int(state["reserved_total"]),
             "reserved_narrator": int(state["reserved_narrator"]),
             "reserved_cost": float(state["reserved_cost"]),
@@ -257,8 +158,8 @@ class EvaluationBudget:
         except (OSError, json.JSONDecodeError) as exc:
             raise EvaluationBudgetExceeded("evaluation budget state is unreadable") from exc
         if not isinstance(value, dict):
-            raise EvaluationBudgetExceeded("evaluation budget state is invalid")
-        return value
+            raise EvaluationBudgetExceeded("evaluation call record is invalid")
+        return self._normalize_state(value)
 
     def _write_state(self, state: dict[str, Any]) -> None:
         temporary = self.path.with_suffix(".tmp")
@@ -293,28 +194,12 @@ def _unlock_file(handle: Any) -> None:
     fcntl_module.flock(handle.fileno(), fcntl_module.LOCK_UN)
 
 
-def _optional_float(value: Any) -> float | None:
-    return float(value) if isinstance(value, (int, float)) else None
-
-
 def _non_negative_cost(value: float | None) -> float:
     if value is None:
         return 0.0
     numeric = float(value)
     if numeric < 0:
         raise ValueError("estimated cost must be non-negative")
-    return numeric
-
-
-def _positive_int(value: str | None, default: int) -> int:
-    if value is None or not str(value).strip():
-        return default
-    try:
-        numeric = int(str(value))
-    except ValueError as exc:
-        raise EvaluationBudgetExceeded("evaluation budget limit must be an integer") from exc
-    if numeric < 1:
-        raise EvaluationBudgetExceeded("evaluation budget limit must be positive")
     return numeric
 
 
@@ -360,7 +245,7 @@ class EvaluationCall:
 
 
 class EvaluationLedger:
-    """Reserve provider calls before dispatch and report reproducible metrics."""
+    """Record provider calls before dispatch and report reproducible metrics."""
 
     def __init__(
         self,
@@ -368,25 +253,15 @@ class EvaluationLedger:
         provider: str,
         model: str,
         price_card: PriceCard | None = None,
-        max_total_calls: int = 800,
-        max_narrator_calls: int = 650,
-        cost_limit: float | None = None,
-        reservation_cost: float | None = None,
-        max_elapsed_seconds: float | None = None,
         shared_budget: EvaluationBudget | None = None,
-        record_only: bool = False,
         clock: Callable[[], float] = monotonic,
+        **_legacy_options: object,
     ) -> None:
         self.provider = provider
         self.model = model
         self.price_card = price_card
-        self.max_total_calls = max_total_calls
-        self.max_narrator_calls = max_narrator_calls
-        self.cost_limit = cost_limit
-        self.reservation_cost = _non_negative_cost(reservation_cost)
-        self.max_elapsed_seconds = max_elapsed_seconds
         self.shared_budget = shared_budget
-        self.record_only = bool(record_only)
+        self.record_only = True
         self._clock = clock
         self._started_at = clock()
         self._calls: list[EvaluationCall] = []
@@ -394,24 +269,10 @@ class EvaluationLedger:
         self._reserved_narrator = 0
 
     def reserve(self, agent: str) -> str:
-        """Spend a request budget slot before sending traffic to a provider."""
-        if (
-            not self.record_only
-            and self.max_elapsed_seconds is not None
-            and self.elapsed_seconds >= self.max_elapsed_seconds
-        ):
-            raise EvaluationBudgetExceeded("provider evaluation time cap reached")
-        if not self.record_only and self._reserved_total >= self.max_total_calls:
-            raise EvaluationBudgetExceeded("provider request cap reached")
-        if (
-            not self.record_only
-            and agent == "narrator"
-            and self._reserved_narrator >= self.max_narrator_calls
-        ):
-            raise EvaluationBudgetExceeded("narrator request cap reached")
+        """Record a request attempt before sending traffic to a provider."""
         request_id = (
-            self.shared_budget.reserve(agent, estimated_cost=self.reservation_cost)
-            if self.shared_budget is not None and not self.record_only
+            self.shared_budget.reserve(agent)
+            if self.shared_budget is not None
             else f"call-{self._reserved_total + 1:04d}"
         )
         self._reserved_total += 1
@@ -449,7 +310,7 @@ class EvaluationLedger:
         error_code: str = "",
         response_diagnostics: dict[str, object] | None = None,
     ) -> EvaluationCall:
-        """Record a reserved call and fail before later requests exceed cost."""
+        """Record a reserved call without changing dispatch eligibility."""
         normalized_usage = _usage(usage)
         estimate = self.price_card.estimate(normalized_usage) if self.price_card else None
         call = EvaluationCall(
@@ -469,10 +330,6 @@ class EvaluationLedger:
             error_code=str(error_code or ""),
             response_diagnostics=dict(response_diagnostics or {}),
         )
-        if not self.record_only and self.cost_limit is not None and estimate is not None:
-            current_cost = self.total_estimated_cost or 0.0
-            if current_cost + estimate > self.cost_limit:
-                raise EvaluationBudgetExceeded("provider cost cap would be exceeded")
         self._calls.append(call)
         return call
 

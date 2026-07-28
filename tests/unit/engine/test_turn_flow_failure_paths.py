@@ -8,7 +8,7 @@ from agens_novel.engine.game_engine import GameEngine
 from agens_novel.engine.model_fallback_policy import public_model_failure_notice
 
 
-def test_turn_flow_judge_llm_error_rejects_delta_without_player_fallback(monkeypatch) -> None:
+def test_turn_flow_ignores_model_delta_without_judge(monkeypatch) -> None:
     monkeypatch.setenv("AGNES_API_KEY", "sk-test-1234567890")
     engine = GameEngine()
     engine.game_session.game_started = True
@@ -27,11 +27,9 @@ def test_turn_flow_judge_llm_error_rejects_delta_without_player_fallback(monkeyp
                 "state_delta": {
                     "character": {"inventory_add": [{"name": "越权秘宝", "rarity": "橙"}]}
                 },
-                "choices": ["继续吐纳", "请教师兄", "观察灵气流向"],
+                "choices": ["继续吐纳", "请教师兄", "观察灵气流向", "顺应天命静候"],
                 "llm_error": "",
             }
-        if agent_name == "judge":
-            return {"approved": False, "corrected_delta": {}, "llm_error": "HTTP 500"}
         return {}
 
     with patch("agens_novel.engine.game_engine.run_turn_sync", side_effect=runner):
@@ -58,7 +56,7 @@ def test_turn_flow_disables_narrator_repair_for_ordinary_turns(monkeypatch) -> N
             return {
                 "narrative": "晨钟响起，你随弟子前往演武堂。",
                 "state_delta": {"character": {}, "world": {}, "meta": {}},
-                "choices": ["跟随弟子前往演武堂", "向守门弟子道谢", "留意石阶阵纹"],
+                "choices": ["跟随弟子前往演武堂", "向守门弟子道谢", "留意石阶阵纹", "随缘静候钟声"],
                 "llm_error": "",
             }
         return {}
@@ -156,10 +154,11 @@ def test_visible_english_contract_violation_is_not_shown_to_player(monkeypatch) 
     with patch("agens_novel.engine.game_engine.run_turn_sync", side_effect=runner):
         engine.handle_action("A")
 
-    turn = engine.game_session.turn_history[-1]
-    assert "prowess" not in turn["narrative"]
+    assert engine.game_session.turn_history == []
+    assert engine.game_session.turn_count == 0
+    assert engine.game_session.local_story_active is False
+    assert engine.pending_model_failure() is not None
     assert "model gift" not in str(engine.game_session.inventory)
-    assert engine.game_session.local_story_active is True
 
 
 def test_json_only_terminal_delta_is_rejected_before_choices_are_cleared(monkeypatch) -> None:
@@ -185,9 +184,9 @@ def test_json_only_terminal_delta_is_rejected_before_choices_are_cleared(monkeyp
         engine.handle_action("A")
 
     assert engine.game_session.game_over is False
-    assert engine.game_session.turn_count == 1
+    assert engine.game_session.turn_count == 0
     assert len(engine.game_session.last_choices) == 4
-    assert engine.game_session.turn_history[-1]["delta"]["meta"]["elapsed_years"] >= 1
+    assert engine.pending_model_failure() is not None
 
 
 def test_http_404_model_failure_notice_is_actionable_and_secret_safe() -> None:
@@ -209,7 +208,7 @@ def test_model_failure_notice_matrix_is_actionable_and_secret_safe() -> None:
         ("AGNES_API_KEY unavailable", "密钥未配置"),
         (
             "模型已返回叙事，但状态更新格式不完整: https://provider.example/v1 x-api-key sk-secret",
-            "本回合记录暂未续上",
+            "模型暂不可用，请选择处理方式。",
         ),
     ]
 

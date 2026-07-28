@@ -56,6 +56,8 @@ def _canned_world_builder() -> dict[str, Any]:
         "audit_path": "",
         "finished_at": "",
         "llm_error": "",
+        "response_mode": "json_object",
+        "provider_json_envelope_ok": True,
     }
 
 
@@ -103,6 +105,8 @@ def _complete_profile_world_builder() -> dict[str, Any]:
         "audit_path": "",
         "finished_at": "",
         "llm_error": "",
+        "response_mode": "json_object",
+        "provider_json_envelope_ok": True,
     }
 
 
@@ -248,12 +252,13 @@ class TestGameEngineNewGame:
         assert engine.game_session.last_choices[1] == fallback_choices(engine.game_session)[1]
         assert engine.game_session.last_choices[2:] == source[2:]
 
-    def test_empty_model_choices_use_visible_fallback_notice(self, monkeypatch) -> None:
+    def test_empty_model_choices_create_pending_failure(self, monkeypatch) -> None:
         monkeypatch.setenv("AGNES_API_KEY", "sk-test-1234567890")
         engine = GameEngine()
         infos: list[str] = []
         engine.on_info = lambda msg: infos.append(msg)
-        engine.start_from_profile({"char_name": "许满", "choices": ["观察山门"]})
+        with _patch_turn_runner():
+            engine.start_from_profile({"char_name": "许满", "choices": ["观察山门"]})
 
         def runner(agent_name, user_input, session, **kw):
             if agent_name == "narrator":
@@ -269,16 +274,18 @@ class TestGameEngineNewGame:
             engine.handle_action("观察")
 
         assert len(engine.game_session.last_choices) == 4
-        assert any("叙事服务响应过久" in msg for msg in infos)
+        assert engine.pending_model_failure() is not None
+        assert any("请选择重试" in msg for msg in infos)
 
     def test_successful_narrative_without_choices_shows_recovery_notice(self, monkeypatch) -> None:
         monkeypatch.setenv("AGNES_API_KEY", "sk-test-1234567890")
         engine = GameEngine()
         infos: list[str] = []
         engine.on_info = lambda msg: infos.append(msg)
-        engine.start_from_profile(
-            {"char_name": "许满", "opening_narrative": "山门初开。", "choices": ["观察"]}
-        )
+        with _patch_turn_runner():
+            engine.start_from_profile(
+                {"char_name": "许满", "opening_narrative": "山门初开。", "choices": ["观察"]}
+            )
 
         def runner(agent_name, user_input, session, **kw):
             if agent_name == "narrator":
@@ -295,19 +302,18 @@ class TestGameEngineNewGame:
         with patch("agens_novel.engine.game_engine.run_turn_sync", side_effect=runner):
             engine.handle_action("观察")
 
-        assert len(engine.game_session.last_choices) == 4
+        assert engine.pending_model_failure() is not None
         assert not any("补齐下一步选择" in msg or "因果结算" in msg for msg in infos)
         assert engine.game_session.local_story_active is False
 
-    def test_new_game_without_api_key_uses_agent_error(self, monkeypatch) -> None:
-        """World Builder reports a config error when no API key is set."""
+    def test_new_game_without_api_key_creates_pending_failure(self, monkeypatch) -> None:
+        """World Builder configuration errors wait for an explicit decision."""
         monkeypatch.delenv("AGNES_API_KEY", raising=False)
         engine = GameEngine()
-        errors: list[str] = []
-        engine.on_error = lambda msg: errors.append(msg)
         engine.new_game("test")
-        assert len(errors) == 1
-        assert "AGNES_API_KEY" in errors[0]
+        pending = engine.pending_model_failure()
+        assert pending is not None
+        assert pending.stage == "opening"
 
     def test_new_game_empty_concept(self, monkeypatch) -> None:
         monkeypatch.setenv("AGNES_API_KEY", "sk-test-1234567890")
@@ -320,15 +326,15 @@ class TestGameEngineNewGame:
     def test_new_game_llm_error(self, monkeypatch) -> None:
         monkeypatch.setenv("AGNES_API_KEY", "sk-test-1234567890")
         engine = GameEngine()
-        errors: list[str] = []
-        engine.on_error = lambda msg: errors.append(msg)
 
         def fake_runner(agent_name, user_input, session, **kw):
             return {**_canned_world_builder(), "llm_error": "API rate limit"}
 
         with patch("agens_novel.engine.game_engine.run_turn_sync", side_effect=fake_runner):
             engine.new_game("test")
-        assert "API rate limit" in errors[0]
+        pending = engine.pending_model_failure()
+        assert pending is not None
+        assert pending.error_code == "request_failed"
 
     def test_new_game_empty_data(self, monkeypatch) -> None:
         monkeypatch.setenv("AGNES_API_KEY", "sk-test-1234567890")
@@ -341,7 +347,8 @@ class TestGameEngineNewGame:
 
         with patch("agens_novel.engine.game_engine.run_turn_sync", side_effect=fake_runner):
             engine.new_game("test")
-        assert "为空" in infos[0]
+        assert engine.pending_model_failure() is not None
+        assert any("请选择重试" in message for message in infos)
 
 
 class TestGameEngineReset:

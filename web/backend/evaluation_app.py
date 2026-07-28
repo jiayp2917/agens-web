@@ -6,68 +6,73 @@ import os
 from collections.abc import Callable
 from typing import TYPE_CHECKING
 
+from fastapi import FastAPI
 from sqlalchemy.engine import make_url
 
-from agens_novel.artifacts.sink import ensure_evaluation_sink_ready
+from agens_novel.artifacts.sink import ensure_evaluation_sink_ready, evaluation_mode_enabled
 from agens_novel.evaluation.ledger import (
     EvaluationBudget,
     EvaluationCallObserver,
     EvaluationLedger,
-    configured_evaluation_limits,
     evaluation_budget_root,
-    evaluation_record_only,
 )
 from agens_novel.evaluation.model_config import (
     EvaluationModelConfig,
     EvaluationModelConfigResolver,
 )
 from agens_novel.evaluation.playthrough import (
-    authority_state_hash,
     canonical_action_for_slot,
     install_canonical_authority,
 )
 from agens_novel.evaluation.scenarios import CanonicalScenarioV1, canonical_v3_scenarios
 
-from .database import WebDatabaseProtocol
-from .evaluation_hooks import EvaluationHooks, EvaluationScenario
+from .database import WebDatabaseProtocol, create_database
+from .run_policy import SessionRunPolicy
 from .service import WebGameService
 
 if TYPE_CHECKING:
     from agens_novel.engine.game_engine import GameEngine
-    from agens_novel.session.game_session import GameSession
 
 
-class CanonicalEvaluationHooks(EvaluationHooks):
-    """Adapt evaluator-owned canonical scenarios to the product hook contract."""
+class CanonicalSessionRunPolicy(SessionRunPolicy):
+    """Adapt one evaluator-owned scenario to the neutral product policy interface."""
 
     def __init__(self, scenarios: tuple[CanonicalScenarioV1, ...] | None = None) -> None:
         registered = scenarios or canonical_v3_scenarios()
         self._scenarios = {scenario.key: scenario for scenario in registered}
         self._story_version = _evaluation_story_version()
-
-    def active_scenario(self) -> EvaluationScenario | None:
         key = os.environ.get("AGENS_EVALUATION_SCENARIO", "").strip()
         if not key:
-            return None
-        scenario = self._scenarios.get(key)
-        if scenario is None:
-            raise ValueError("evaluation scenario is not registered")
-        return EvaluationScenario(key=scenario.key, profile=dict(scenario.profile))
+            self._scenario: CanonicalScenarioV1 | None = None
+        else:
+            self._scenario = self._scenarios.get(key)
+            if self._scenario is None:
+                raise ValueError("evaluation scenario is not registered")
 
-    def install_authority(self, engine: GameEngine, scenario: EvaluationScenario) -> None:
-        install_canonical_authority(engine, self._canonical(scenario), story_version=self._story_version)
+    def profile_for_start(self, profile: dict[str, object]) -> dict[str, object]:
+        if self._scenario is None:
+            return dict(profile)
+        return dict(self._scenario.profile)
 
-    def canonical_action_for_slot(self, slot: str) -> str:
-        return canonical_action_for_slot(slot)
+    def apply_started_session(self, engine: GameEngine) -> None:
+        if self._scenario is not None:
+            install_canonical_authority(engine, self._scenario, story_version=self._story_version)
 
-    def authority_state_hash(self, session: GameSession) -> str:
-        return authority_state_hash(session)
+    def action_for_choice(self, index: int, semantic_action: str) -> str:
+        if self._scenario is None:
+            return semantic_action
+        return canonical_action_for_slot("ABCD"[index])
 
-    def _canonical(self, scenario: EvaluationScenario) -> CanonicalScenarioV1:
-        canonical = self._scenarios.get(scenario.key)
-        if canonical is None:
-            raise ValueError("evaluation scenario is not registered")
-        return canonical
+
+def create_evaluation_app() -> FastAPI:
+    """Create the local-only FastAPI application used by qualification tools."""
+    if not evaluation_mode_enabled():
+        raise RuntimeError("evaluation application requires AGENS_EVALUATION_MODE")
+    from .app import create_app
+
+    return create_app(
+        service_factory=lambda: create_evaluation_game_service(create_database)
+    )
 
 
 def create_evaluation_game_service(
@@ -80,20 +85,11 @@ def create_evaluation_game_service(
     root = ensure_evaluation_sink_ready()
     if root is None:
         raise RuntimeError("evaluation artifact root is unavailable")
-    record_only = evaluation_record_only()
-    budget = None
-    if not record_only:
-        max_total_calls, max_narrator_calls = configured_evaluation_limits()
-        budget = EvaluationBudget(
-            evaluation_budget_root(root),
-            max_total_calls=max_total_calls,
-            max_narrator_calls=max_narrator_calls,
-        )
+    call_record = EvaluationBudget(evaluation_budget_root(root))
     ledger = EvaluationLedger(
         provider=config.provider,
         model=config.model,
-        shared_budget=budget,
-        record_only=record_only,
+        shared_budget=call_record,
     )
     resolver = EvaluationModelConfigResolver(
         config,
@@ -102,7 +98,7 @@ def create_evaluation_game_service(
     return WebGameService(
         database,
         model_config_resolver=resolver,
-        evaluation_hooks=CanonicalEvaluationHooks(),
+        run_policy=CanonicalSessionRunPolicy(),
     ), ledger
 
 
@@ -119,7 +115,7 @@ def _validate_evaluation_database_url() -> None:
         raise RuntimeError("evaluation mode requires an isolated local PostgreSQL database")
     if host not in {"127.0.0.1", "localhost", "::1"}:
         raise RuntimeError("evaluation mode requires an isolated local PostgreSQL database")
-    if "eval" not in database and "chrome" not in database:
+    if database != "agens_web_local" and "eval" not in database and "chrome" not in database:
         raise RuntimeError("evaluation mode requires an explicitly named evaluation database")
 
 
@@ -128,3 +124,9 @@ def _evaluation_story_version() -> int:
     if raw not in {"1", "2", "3"}:
         raise RuntimeError("evaluation story version must be 1, 2, or 3")
     return int(raw)
+
+
+def __getattr__(name: str):
+    if name == "app":
+        return create_evaluation_app()
+    raise AttributeError(f"module {__name__!r} has no attribute {name!r}")

@@ -14,9 +14,7 @@ UPSTREAM_NOT_FOUND_NOTICE = "叙事服务配置暂未接通，请检查个人设
 UPSTREAM_AUTH_NOTICE = "叙事服务鉴权未通过，请检查个人设置或切回系统默认后重试。"
 UPSTREAM_TIMEOUT_NOTICE = "叙事服务响应过久，请稍后重试或切换更稳定的设置。"
 MODEL_KEY_UNAVAILABLE_NOTICE = "叙事服务密钥未配置或不可用，请检查个人设置或使用系统默认。"
-MODEL_CONTRACT_UNAVAILABLE_NOTICE = (
-    "模型暂不可用，本回合记录暂未续上，已切换本地故事，请直接选择下方选项继续。"
-)
+MODEL_CONTRACT_UNAVAILABLE_NOTICE = "模型暂不可用，请选择处理方式。"
 MODEL_CONTRACT_MARKERS = (
     "模型已返回",
     "模型输出",

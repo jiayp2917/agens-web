@@ -8,7 +8,7 @@ import pytest
 
 from agens_novel.artifacts import sink
 from agens_novel.evaluation.model_config import EvaluationModelConfig, EvaluationModelConfigResolver
-from web.backend import app as app_module
+from web.backend import evaluation_app
 
 
 def _evaluation_env(tmp_path, monkeypatch: pytest.MonkeyPatch) -> None:
@@ -26,15 +26,25 @@ def _evaluation_env(tmp_path, monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setattr(sink, "_restrict_windows_acl", lambda _root: None)
 
 
+def test_product_factory_rejects_evaluation_mode_without_the_isolated_factory(
+    tmp_path, monkeypatch
+) -> None:
+    _evaluation_env(tmp_path, monkeypatch)
+    from web.backend.app import create_app
+
+    with pytest.raises(RuntimeError, match="evaluation mode requires"):
+        create_app()
+
+
 def test_create_app_injects_read_only_evaluation_resolver(tmp_path, monkeypatch) -> None:
     _evaluation_env(tmp_path, monkeypatch)
     monkeypatch.setattr(
-        app_module,
+        evaluation_app,
         "create_database",
         lambda: SimpleNamespace(get_user_model_config=lambda _user_id: {}),
     )
 
-    app = app_module.create_app()
+    app = evaluation_app.create_evaluation_app()
     service = app.state.service
 
     assert isinstance(service._model_config, EvaluationModelConfigResolver)
@@ -45,8 +55,8 @@ def test_create_app_injects_read_only_evaluation_resolver(tmp_path, monkeypatch)
 
 def test_evaluation_app_runner_setup_does_not_read_a_key(tmp_path, monkeypatch) -> None:
     _evaluation_env(tmp_path, monkeypatch)
-    monkeypatch.setattr(app_module, "create_database", lambda: SimpleNamespace())
-    app = app_module.create_app()
+    monkeypatch.setattr(evaluation_app, "create_database", lambda: SimpleNamespace())
+    app = evaluation_app.create_evaluation_app()
     resolver = app.state.service._model_config
     runtime_calls: list[bool] = []
     original_runtime_config = EvaluationModelConfig.runtime_config
@@ -65,25 +75,26 @@ def test_evaluation_app_runner_setup_does_not_read_a_key(tmp_path, monkeypatch) 
     assert runner.engine.model_runtime_resolver is not None
 
 
-def test_evaluation_app_can_record_calls_without_creating_a_budget(tmp_path, monkeypatch) -> None:
+def test_evaluation_app_uses_a_record_only_shared_call_record(tmp_path, monkeypatch) -> None:
     _evaluation_env(tmp_path, monkeypatch)
     monkeypatch.setenv("AGENS_EVALUATION_RECORD_ONLY", "1")
-    monkeypatch.setattr(app_module, "create_database", lambda: SimpleNamespace())
+    monkeypatch.setattr(evaluation_app, "create_database", lambda: SimpleNamespace())
 
-    app = app_module.create_app()
+    app = evaluation_app.create_evaluation_app()
 
     assert app.state.evaluation_ledger.record_only is True
-    assert app.state.evaluation_ledger.shared_budget is None
+    assert app.state.evaluation_ledger.shared_budget is not None
+    assert app.state.evaluation_ledger.shared_budget.summary()["reserved_total"] == 0
 
 
 def test_evaluation_app_pins_the_requested_story_version(tmp_path, monkeypatch) -> None:
     _evaluation_env(tmp_path, monkeypatch)
     monkeypatch.setenv("AGENS_EVALUATION_STORY_VERSION", "2")
-    monkeypatch.setattr(app_module, "create_database", lambda: SimpleNamespace())
+    monkeypatch.setattr(evaluation_app, "create_database", lambda: SimpleNamespace())
 
-    app = app_module.create_app()
+    app = evaluation_app.create_evaluation_app()
 
-    assert app.state.service._evaluation_hooks._story_version == 2
+    assert app.state.service._run_policy._story_version == 2
 
 
 def test_evaluation_app_rejects_a_database_without_an_isolation_name(tmp_path, monkeypatch) -> None:
@@ -94,4 +105,4 @@ def test_evaluation_app_rejects_a_database_without_an_isolation_name(tmp_path, m
     )
 
     with pytest.raises(RuntimeError, match="explicitly named evaluation database"):
-        app_module.create_app()
+        evaluation_app.create_evaluation_app()

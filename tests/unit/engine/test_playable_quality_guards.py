@@ -224,7 +224,7 @@ def test_harmless_chronicle_claim_is_not_suppressed_in_turn_flow(monkeypatch) ->
     assert engine.game_session.turn_history[-1]["narrative"] == narrative
 
 
-def test_json_only_narrator_output_uses_rule_chronicle_without_local_story(monkeypatch) -> None:
+def test_json_only_narrator_output_creates_pending_failure(monkeypatch) -> None:
     monkeypatch.setenv("AGNES_API_KEY", "test-model-key")
     engine = GameEngine()
     engine.game_session.game_started = True
@@ -248,12 +248,12 @@ def test_json_only_narrator_output_uses_rule_chronicle_without_local_story(monke
         engine.handle_action("A")
 
     assert engine.game_session.local_story_active is False
-    assert engine.game_session.turn_count == 1
-    assert engine.game_session.turn_history[-1]["narrative"]
-    assert engine.game_session.last_choices == ["继续稳修", "打听消息", "探查边缘", "随缘行事"]
+    assert engine.game_session.turn_count == 0
+    assert engine.game_session.turn_history == []
+    assert engine.pending_model_failure() is not None
 
 
-def test_local_story_fallback_turn_applies_authoritative_rule_event(monkeypatch) -> None:
+def test_explicit_local_story_resolution_applies_authoritative_rule_event(monkeypatch) -> None:
     monkeypatch.setenv("AGNES_API_KEY", "test-model-key")
     engine = GameEngine()
     engine.game_session.game_started = True
@@ -277,6 +277,7 @@ def test_local_story_fallback_turn_applies_authoritative_rule_event(monkeypatch)
     with patch("agens_novel.engine.turn_flow.settle_turn_outcome", return_value=_rule_outcome(rule_delta)):
         with patch("agens_novel.engine.game_engine.run_turn_sync", side_effect=runner):
             engine.handle_action("A")
+            assert engine.resolve_pending_model_failure("use_local_story") is True
 
     last_turn = engine.game_session.turn_history[-1]
     assert last_turn["delta"]["meta"]["local_story_fallback"] is True

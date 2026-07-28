@@ -3,11 +3,12 @@
 from __future__ import annotations
 
 from pathlib import Path
+from unittest.mock import patch
 
 import pytest
 from fastapi.testclient import TestClient
 
-from tests.web.api_fixtures import _create_invite
+from tests.web.api_fixtures import _create_invite, _runner
 from web.backend.app import create_app
 from web.backend.auth import create_session_token, hash_invite_code
 
@@ -39,7 +40,7 @@ def test_invite_register_and_auth_required(tmp_path: Path, monkeypatch) -> None:
 
 
 def test_guest_can_play_but_cannot_use_cloud_saves(tmp_path: Path, monkeypatch) -> None:
-    monkeypatch.delenv("AGNES_API_KEY", raising=False)
+    monkeypatch.setenv("AGNES_API_KEY", "test-key")
     monkeypatch.setenv("SESSION_COOKIE_SECURE", "0")
     app = create_app()
     client = TestClient(app)
@@ -49,15 +50,19 @@ def test_guest_can_play_but_cannot_use_cloud_saves(tmp_path: Path, monkeypatch) 
     assert created["user_id"].startswith("guest:")
     session_id = created["session_id"]
 
-    started = client.post(f"/api/sessions/{session_id}/start", json={"char_name": "访客"}).json()
+    with patch("agens_novel.engine.game_engine.run_turn_sync", side_effect=_runner):
+        started = client.post(
+            f"/api/sessions/{session_id}/start", json={"char_name": "访客"}
+        ).json()
+        action = client.post(
+            f"/api/sessions/{session_id}/action",
+            json={"action": "继续本局"},
+        )
     assert started["game_started"] is True
     assert started["guest"] is True
     assert started["local_story"]["active"] is False
 
-    assert client.post(
-        f"/api/sessions/{session_id}/action",
-        json={"action": "继续本局"},
-    ).status_code == 200
+    assert action.status_code == 200
     assert client.post(f"/api/sessions/{session_id}/save", json={"name": "slot_1"}).status_code == 401
     assert client.get("/api/saves").status_code == 401
     assert client.get(f"/api/sessions/{session_id}").status_code == 200

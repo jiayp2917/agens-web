@@ -8,11 +8,13 @@ import pytest
 
 from agens_novel.evaluation.playthrough import (
     authority_state_hash,
+    authority_state_hash_from_persisted_state,
     canonical_authority_trajectory,
     canonical_replay_session,
 )
 from agens_novel.evaluation.scenarios import canonical_v3_scenarios
-from web.backend.evaluation_app import CanonicalEvaluationHooks
+from web.backend.evaluation_app import CanonicalSessionRunPolicy
+from web.backend.run_policy import NoopSessionRunPolicy
 from web.backend.service import WebGameService, WebRunner
 
 
@@ -30,7 +32,7 @@ def _service(*, canonical: bool = False) -> WebGameService:
     return WebGameService(
         database,
         model_config_resolver=_NoopResolver(),
-        evaluation_hooks=CanonicalEvaluationHooks() if canonical else None,
+        run_policy=CanonicalSessionRunPolicy() if canonical else None,
     )
 
 
@@ -54,18 +56,18 @@ def _started_runner() -> WebRunner:
     return runner
 
 
-def test_product_service_ignores_evaluation_environment_without_hooks(monkeypatch) -> None:
+def test_product_service_ignores_evaluation_environment_without_policy(monkeypatch) -> None:
     monkeypatch.setenv("AGENS_EVALUATION_MODE", "1")
     monkeypatch.setenv("AGENS_EVALUATION_SCENARIO", "high_steady")
 
-    assert _service()._evaluation_hooks.active_scenario() is None
+    assert isinstance(_service()._run_policy, NoopSessionRunPolicy)
 
 
 def test_canonical_scenario_rejects_unregistered_key(monkeypatch) -> None:
     monkeypatch.setenv("AGENS_EVALUATION_SCENARIO", "not-registered")
 
     with pytest.raises(ValueError, match="not registered"):
-        CanonicalEvaluationHooks().active_scenario()
+        CanonicalSessionRunPolicy()
 
 
 def test_start_uses_canonical_profile_seed_and_v3_only_when_selected(monkeypatch) -> None:
@@ -104,12 +106,11 @@ def test_start_uses_canonical_profile_seed_and_v3_only_when_selected(monkeypatch
     assert session.world_profile["world_key"] == scenario.world_key
 
 
-def test_persisted_turn_hash_is_evaluation_only(monkeypatch) -> None:
+def test_persisted_turn_has_no_evaluation_metadata(monkeypatch) -> None:
     service = _service()
     runner = _started_runner()
     before = {"turn_no": 0, "age": 15}
 
-    monkeypatch.delenv("AGENS_EVALUATION_MODE", raising=False)
     normal = service._settled_turn_payload(runner, before, "A")
     assert normal is not None
     assert "_evaluation_authority_hash" not in normal["state_after"]
@@ -117,9 +118,7 @@ def test_persisted_turn_hash_is_evaluation_only(monkeypatch) -> None:
     monkeypatch.setenv("AGENS_EVALUATION_SCENARIO", "high_steady")
     evaluated = _service(canonical=True)._settled_turn_payload(runner, before, "A")
     assert evaluated is not None
-    assert evaluated["state_after"]["_evaluation_authority_hash"] == authority_state_hash(
-        runner.engine.game_session
-    )
+    assert "_evaluation_authority_hash" not in evaluated["state_after"]
 
 
 @pytest.mark.parametrize(
@@ -179,3 +178,12 @@ def test_authority_hash_excludes_live_opening_display_fields() -> None:
     assert authority_state_hash(session) == original
     session.age += 1
     assert authority_state_hash(session) != original
+
+
+def test_persisted_game_state_hash_matches_authoritative_session() -> None:
+    scenario = canonical_v3_scenarios()[0]
+    session = canonical_replay_session(scenario, story_version=3, target_turn=1)
+
+    assert authority_state_hash_from_persisted_state(session.as_game_state()) == authority_state_hash(
+        session
+    )

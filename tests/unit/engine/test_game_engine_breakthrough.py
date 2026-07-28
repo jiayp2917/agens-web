@@ -5,7 +5,6 @@ from __future__ import annotations
 from unittest.mock import patch
 
 from agens_novel.engine.action_delta_policy import is_pure_cultivation
-from agens_novel.engine.choices import fallback_choices
 from agens_novel.engine.game_engine import GameEngine
 from agens_novel.engine.story_catalog import opening_story_binding
 from tests.unit.engine.fixtures import canned_judge as _canned_judge
@@ -53,7 +52,7 @@ class TestBreakthroughRouting:
             engine.handle_action("尝试突破")
 
         assert any("继续推进" in m for m in infos)
-        assert call_log == ["narrator", "judge"]
+        assert call_log == ["narrator"]
         assert engine.game_session.turn_count == 1
         assert engine.game_session.turn_history[-1]["turn"] == 1
 
@@ -262,7 +261,7 @@ class TestBreakthroughPreparationGate:
                 return {
                     "narrative": "你破开瓶颈。",
                     "state_delta": {},
-                    "choices": ["稳固筑基道台", "拜谢护法长老", "查看新功法"],
+                    "choices": ["稳固筑基道台", "拜谢护法长老", "查看新功法", "静候天命回响"],
                     "llm_error": "",
                 }
             if agent_name == "judge":
@@ -278,10 +277,10 @@ class TestBreakthroughPreparationGate:
             "稳固筑基道台",
             "拜谢护法长老",
             "查看新功法",
-            fallback_choices(engine.game_session)[3],
+            "静候天命回响",
         ]
 
-    def test_breakthrough_narrator_error_keeps_rule_settlement(self, monkeypatch) -> None:
+    def test_breakthrough_narrator_error_freezes_rule_settlement(self, monkeypatch) -> None:
         monkeypatch.setenv("AGNES_API_KEY", "sk-test-1234567890")
         engine = GameEngine()
         infos: list[str] = []
@@ -291,6 +290,7 @@ class TestBreakthroughPreparationGate:
 
         with _patch_turn_runner():
             engine.new_game("许满")
+        narratives.clear()
 
         engine.game_session.realm = "练气"
         engine.game_session.realm_stage = 9
@@ -308,9 +308,13 @@ class TestBreakthroughPreparationGate:
             ):
                 engine.attempt_breakthrough()
 
-        assert engine.game_session.realm == "筑基"
-        assert len(engine.game_session.last_choices) == 4
-        assert any("破境已成" in text for text in narratives)
+        assert engine.game_session.realm == "练气"
+        assert engine.game_session.turn_count == 0
+        pending = engine.pending_model_failure()
+        assert pending is not None
+        assert pending.stage == "breakthrough"
+        assert pending.frozen_result["breakthrough_result"] == "success"
+        assert not narratives
         assert not any("突破概率" in msg or "破境准备" in msg for msg in infos)
 
     def test_breakthrough_emits_model_diagnostics_without_internal_info(self, monkeypatch) -> None:
@@ -344,7 +348,7 @@ class TestBreakthroughPreparationGate:
                 engine.attempt_breakthrough()
 
         assert ("narrator", "breakthrough", "ok") in model_results
-        assert ("judge", "breakthrough", "ok") in model_results
+        assert not any(agent == "judge" for agent, _source, _status in model_results)
         assert not any("突破概率" in msg or "破境准备" in msg for msg in infos)
 
     def test_breakthrough_duplicate_choices_retry_live_once(self) -> None:

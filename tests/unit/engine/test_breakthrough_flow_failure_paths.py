@@ -15,11 +15,7 @@ def test_breakthrough_flow_judge_exception_keeps_rule_settlement(monkeypatch) ->
     engine.game_session.realm_stage = 9
     engine.game_session.breakthrough_flags = ["foundation_aid"]
     engine.game_session.last_choices = ["稳固道心", "请护法", "观察瓶颈", "随缘听天命"]
-    decisions: list[tuple[str, str]] = []
     game_overs: list[str] = []
-    engine.on_model_failure_choice = lambda source, reason: (
-        decisions.append((source, reason)) or "end"
-    )
     engine.on_game_over = lambda reason: game_overs.append(reason)
 
     def runner(agent_name, user_input, session, **kwargs):
@@ -27,7 +23,7 @@ def test_breakthrough_flow_judge_exception_keeps_rule_settlement(monkeypatch) ->
             return {
                 "narrative": "你引动灵气冲击瓶颈。",
                 "state_delta": {"character": {"attributes": {"willpower": 1}}},
-                "choices": ["稳固道台", "拜谢护法", "查看新境界"],
+                "choices": ["稳固道台", "拜谢护法", "查看新境界", "静候天命回响"],
                 "llm_error": "",
             }
         if agent_name == "judge":
@@ -38,7 +34,6 @@ def test_breakthrough_flow_judge_exception_keeps_rule_settlement(monkeypatch) ->
         with patch("agens_novel.game.realm.random.random", return_value=0.001):
             engine.attempt_breakthrough()
 
-    assert decisions == []
     assert engine.game_session.game_over is False
     assert game_overs == []
     assert engine.game_session.realm == "筑基"
@@ -81,7 +76,7 @@ def test_breakthrough_flow_retries_incomplete_output_without_repair(monkeypatch)
     assert all(call.get("repair_incomplete_output") is False for call in captured)
 
 
-def test_breakthrough_narrator_exception_keeps_rule_settlement(monkeypatch) -> None:
+def test_breakthrough_narrator_exception_freezes_rule_settlement(monkeypatch) -> None:
     monkeypatch.setenv("AGNES_API_KEY", "sk-test-1234567890")
     engine = GameEngine()
     engine.game_session.game_started = True
@@ -101,10 +96,12 @@ def test_breakthrough_narrator_exception_keeps_rule_settlement(monkeypatch) -> N
         with patch("agens_novel.game.realm.random.random", return_value=0.001):
             engine.attempt_breakthrough()
 
-    assert engine.game_session.realm == "筑基"
-    assert engine.game_session.turn_count == 1
-    assert len(engine.game_session.last_choices) == 4
-    assert engine.game_session.turn_history[-1]["delta"]["meta"]["breakthrough_result"] == "success"
+    assert engine.game_session.realm == "练气"
+    assert engine.game_session.turn_count == 0
+    pending = engine.pending_model_failure()
+    assert pending is not None
+    assert pending.stage == "breakthrough"
+    assert pending.frozen_result["breakthrough_result"] == "success"
 
 
 def test_failed_breakthrough_judge_cannot_add_realm_progress(monkeypatch) -> None:

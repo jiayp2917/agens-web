@@ -33,6 +33,7 @@ def _args(provider: str = "agens") -> Namespace:
         database_url="postgresql+psycopg://evaluation@127.0.0.1:55432/agens_web_chrome_eval",
         port=8100,
         turns=90,
+        opening_only=False,
         timeout_seconds=1800,
         save_load_turn=0,
         refresh_probe=False,
@@ -91,6 +92,7 @@ def test_browser_process_receives_no_provider_key(monkeypatch, tmp_path) -> None
     assert environment["AGENS_PLAYTEST_SAVE_LOAD_TURN"] == "0"
     assert environment["AGENS_PLAYTEST_POST_LOAD_TURNS"] == "0"
     assert environment["AGENS_PLAYTEST_DOUBLE_CLICK_PROBE"] == "0"
+    assert environment["AGENS_PLAYTEST_OPENING_ONLY"] == "0"
 
 
 def test_server_environment_can_enable_record_only_v2_evaluation(tmp_path) -> None:
@@ -102,6 +104,22 @@ def test_server_environment_can_enable_record_only_v2_evaluation(tmp_path) -> No
 
     assert environment["AGENS_EVALUATION_STORY_VERSION"] == "2"
     assert environment["AGENS_EVALUATION_RECORD_ONLY"] == "1"
+
+
+def test_opening_only_browser_environment_disables_persisted_turn_audit(tmp_path) -> None:
+    args = _args()
+    args.turns = 0
+    args.opening_only = True
+
+    environment = runner._browser_environment(
+        args,
+        tmp_path / "evidence",
+        "agens-opening-test",
+        canonical_v3_scenarios()[0],
+    )
+
+    assert environment["AGENS_PLAYTEST_OPENING_ONLY"] == "1"
+    assert environment["AGENS_PLAYTEST_REQUIRE_PERSISTED_AUDIT"] == "0"
 
 
 def test_backend_process_keeps_only_the_selected_provider_key(monkeypatch, tmp_path) -> None:
@@ -147,6 +165,26 @@ def test_chrome_acceptance_requires_clean_exact_turn_summary() -> None:
     assert not runner._acceptance_passed({**result, "authority_match": False}, turns_requested=20)
     assert not runner._acceptance_passed({**result, "strict": False}, turns_requested=20)
     assert not runner._acceptance_passed({**result, "opening_strict": False}, turns_requested=20)
+
+
+def test_chrome_opening_only_acceptance_requires_zero_clean_strict_opening() -> None:
+    result = {
+        "result": "passed",
+        "turns_completed": 0,
+        "p0_issues": 0,
+        "p1_issues": 0,
+        "opening_strict": True,
+        "fallback": 0,
+        "repair": 0,
+        "recovery": 0,
+        "accepted_turns": [],
+        "exit_code": 0,
+    }
+
+    assert runner._acceptance_passed(result, turns_requested=0, opening_only=True)
+    assert not runner._acceptance_passed({**result, "turns_completed": 1}, turns_requested=0, opening_only=True)
+    assert not runner._acceptance_passed({**result, "p0_issues": 1}, turns_requested=0, opening_only=True)
+    assert not runner._acceptance_passed({**result, "opening_strict": False}, turns_requested=0, opening_only=True)
 
 
 def test_v3_chrome_acceptance_requires_rule_owned_arc_summary() -> None:

@@ -51,6 +51,14 @@ export type Session = {
   error?: string;
   choices: string[];
   fallback_prompt?: { active: boolean; text: string };
+  pending_model_failure?: {
+    failure_id: string;
+    stage: string;
+    request_no: number;
+    slot: string;
+    status: string;
+    error_code: string;
+  } | null;
   character: CharacterState;
   world: WorldState;
   events: SessionEvent[];

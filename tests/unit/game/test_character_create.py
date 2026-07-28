@@ -66,10 +66,10 @@ def test_start_from_profile_initializes_session(tmp_path, monkeypatch):
     assert s.spirit_root == "火灵根"
     assert s.family_background == "寒门"
     assert not hasattr(s, "game_mode")
-    assert len(s.last_choices) == 4
-    assert any(word in s.last_choices[-1] for word in ("气运", "天命", "随缘", "命数"))
+    assert s.last_choices == []
+    assert engine.pending_model_failure() is not None
     assert s.world_profile.get("chronicle_0_16")
-    assert narratives and narratives[0][1] == 0
+    assert narratives == []
 
 
 def test_unknown_profile_seed_is_not_special(tmp_path, monkeypatch):
@@ -113,7 +113,12 @@ def test_start_from_profile_generates_opening_choices_from_model(tmp_path, monke
         generated["world"]["location"] = "青玄宗山门"
         generated["world"]["current_scene"] = "接引台"
         generated["choices"] = ["拜见接引弟子", "观察灵气", "整理行囊", "随缘等候"]
-        return {"generated_data": generated, "llm_error": ""}
+        return {
+            "generated_data": generated,
+            "llm_error": "",
+            "response_mode": "json_object",
+            "provider_json_envelope_ok": True,
+        }
 
     with patch("agens_novel.engine.game_engine.run_turn_sync", side_effect=runner):
         engine.start_from_profile({"char_name": "许满"})
@@ -122,7 +127,7 @@ def test_start_from_profile_generates_opening_choices_from_model(tmp_path, monke
     assert engine.game_session.world_profile["world_name"] == "星河试界"
 
 
-def test_start_from_profile_model_failure_uses_profile_aware_fallback(tmp_path, monkeypatch):
+def test_start_from_profile_model_failure_preserves_profile_aware_binding(tmp_path, monkeypatch):
     from agens_novel import paths
 
     monkeypatch.setattr(paths, "SAVE_DIR", tmp_path)
@@ -152,12 +157,13 @@ def test_start_from_profile_model_failure_uses_profile_aware_fallback(tmp_path, 
         )
 
     assert engine.game_session.local_story_active is False
-    assert len(engine.game_session.last_choices) == 4
+    assert engine.game_session.last_choices == []
+    assert engine.pending_model_failure() is not None
     assert engine.game_session.world_profile["world_name"] == "西陲裂土"
-    assert any("叙事服务响应过久" in msg for msg in infos)
+    assert any("请选择重试" in msg for msg in infos)
 
 
-def test_start_from_profile_model_failure_can_end_run(tmp_path, monkeypatch):
+def test_start_from_profile_model_failure_can_end_run_after_player_action(tmp_path, monkeypatch):
     from agens_novel import paths
 
     monkeypatch.setattr(paths, "SAVE_DIR", tmp_path)
@@ -165,7 +171,6 @@ def test_start_from_profile_model_failure_can_end_run(tmp_path, monkeypatch):
     monkeypatch.setenv("AGNES_API_KEY", "sk-test-1234567890")
     engine = GameEngine()
     game_overs: list[str] = []
-    engine.on_model_failure_choice = lambda source, reason: "end"
     engine.on_game_over = lambda reason: game_overs.append(reason)
 
     def runner(agent_name, user_input, session, **kwargs):
@@ -174,6 +179,9 @@ def test_start_from_profile_model_failure_can_end_run(tmp_path, monkeypatch):
     with patch("agens_novel.engine.game_engine.run_turn_sync", side_effect=runner):
         engine.start_from_profile({"char_name": "许满"})
 
+    assert engine.game_session.game_over is False
+    assert engine.pending_model_failure() is not None
+    assert engine.resolve_pending_model_failure("end_model_failure") is True
     assert engine.game_session.game_over is True
     assert game_overs == ["模型不可用导致本局结束。"]
     assert engine.game_session.last_choices == []
@@ -205,8 +213,9 @@ def test_start_from_profile_model_failure_ignores_profile_choice_override_by_def
 
     assert engine.game_session.local_story_active is False
     assert engine.game_session.last_choices != ["退回山门", "询问执事"]
-    assert len(engine.game_session.last_choices) == 4
-    assert any("叙事服务响应过久" in msg for msg in infos)
+    assert engine.game_session.last_choices == []
+    assert engine.pending_model_failure() is not None
+    assert any("请选择重试" in msg for msg in infos)
 
 
 def test_unknown_profile_seed_is_not_sent_to_world_builder_prompt(tmp_path, monkeypatch):
@@ -221,7 +230,12 @@ def test_unknown_profile_seed_is_not_sent_to_world_builder_prompt(tmp_path, monk
     def runner(agent_name, user_input, session, **kwargs):
         assert agent_name == "world_builder"
         seen_inputs.append(user_input)
-        return {"generated_data": _complete_model_opening(), "llm_error": ""}
+        return {
+            "generated_data": _complete_model_opening(),
+            "llm_error": "",
+            "response_mode": "json_object",
+            "provider_json_envelope_ok": True,
+        }
 
     with patch("agens_novel.engine.game_engine.run_turn_sync", side_effect=runner):
         engine.start_from_profile({"unknown_seed": "星河剑宗", "char_name": "许满"})

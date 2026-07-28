@@ -82,8 +82,7 @@ def test_web_api_minimum_game_flow(tmp_path: Path, monkeypatch) -> None:
         assert "gold" not in chosen["character"]
         assert chosen["character"]["age"] > started["character"]["age"]
         assert chosen["choices"][:3] == ["继续请教", "前往住处", "查看木牌"]
-        assert "气运" in chosen["choices"][3]
-        assert "早开灵草" in chosen["choices"][3]
+        assert chosen["choices"][3] == "随缘观望"
 
         acted = client.post(
             f"/api/sessions/{session_id}/action",
@@ -315,7 +314,7 @@ def test_mismatched_narrative_still_records_contiguous_turns(
         ).scalars().all()
     assert rows == [1, 2]
 
-def test_local_story_fallback_records_turn(
+def test_pending_model_failure_requires_explicit_local_story_before_recording_turn(
     tmp_path: Path,
     monkeypatch,
 ) -> None:
@@ -347,12 +346,32 @@ def test_local_story_fallback_records_turn(
 
     assert chosen.status_code == 200
     body = chosen.json()
+    assert body["turn_count"] == 0
+    assert body["fallback_prompt"]["active"] is False
+    assert body["pending_model_failure"] == {
+        **body["pending_model_failure"],
+        "stage": "turn",
+        "slot": "A",
+        "status": "pending",
+    }
+    assert body["pending_model_failure"]["error_code"]
+    with app.state.service.db.engine.connect() as conn:
+        assert conn.execute(
+            text("SELECT count(*) FROM game_turns WHERE run_id = :run_id"),
+            {"run_id": session_id},
+        ).scalar_one() == 0
+
+    resolved = client.post(
+        f"/api/sessions/{session_id}/action",
+        json={"action": "use_local_story"},
+    )
+
+    assert resolved.status_code == 200
+    body = resolved.json()
     assert body["turn_count"] == 1
+    assert body["pending_model_failure"] is None
+    assert body["local_story"]["active"] is True
     assert body["fallback_prompt"]["active"] is True
-    fallback_text = body["fallback_prompt"]["text"]
-    assert "已切换本地故事" in fallback_text
-    assert "模型暂不可用" in fallback_text
-    assert "状态更新格式不完整" not in fallback_text
     with app.state.service.db.engine.connect() as conn:
         row = conn.execute(
             text(
@@ -370,7 +389,7 @@ def test_local_story_fallback_records_turn(
     assert row["narrative"]
     assert row["state_delta"]["meta"]["local_story_fallback"] is True
 
-def test_incomplete_narrator_choices_recover_without_local_story_fallback(
+def test_retry_pending_model_failure_reuses_frozen_rule_turn(
     tmp_path: Path,
     monkeypatch,
 ) -> None:
@@ -402,15 +421,21 @@ def test_incomplete_narrator_choices_recover_without_local_story_fallback(
 
     assert chosen.status_code == 200
     body = chosen.json()
-    assert body["turn_count"] == 1
+    assert body["turn_count"] == 0
     assert body["fallback_prompt"]["active"] is False
+    assert body["pending_model_failure"]["stage"] == "turn"
+
+    with patch("agens_novel.engine.game_engine.run_turn_sync", side_effect=_runner):
+        retried = client.post(
+            f"/api/sessions/{session_id}/action",
+            json={"action": "retry_model"},
+        )
+
+    assert retried.status_code == 200
+    body = retried.json()
+    assert body["turn_count"] == 1
+    assert body["pending_model_failure"] is None
     assert len(body["choices"]) == 4
-    visible_texts = [
-        str(event.get("text") or "")
-        for event in body["events"]
-        if event.get("type") in {"narrative", "info", "error", "model_failure"}
-    ]
-    assert not any("补齐下一步选择" in text_value or "因果结算" in text_value for text_value in visible_texts)
     with app.state.service.db.engine.connect() as conn:
         row = conn.execute(
             text(

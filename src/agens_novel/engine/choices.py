@@ -14,7 +14,7 @@ if TYPE_CHECKING:
 
 CHOICE_LABELS = ("A", "B", "C", "D")
 CHOICE_SEMANTICS = ("稳妥", "机遇", "风险", "气运")
-CHOICE_FALLBACK_NOTICE = "模型暂不可用，已切换本地故事，请直接选择下方选项继续。"
+CHOICE_FALLBACK_NOTICE = "模型暂不可用，请选择处理方式。"
 # D 语义: "气运" - 随缘/天命，强绑定 luck 属性。UI 固定为第 4 按钮。
 
 _LETTER_PREFIX_RE = re.compile(

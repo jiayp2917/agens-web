@@ -20,7 +20,7 @@ from agens_novel.evaluation.scenarios import canonical_v3_scenarios
 
 ROOT = Path(__file__).resolve().parents[1]
 _PROVIDERS = {"agens", "deepseek"}
-_TRANSPORTS = {"json_schema", "json_object", "legacy_tags"}
+_TRANSPORTS = {"json_schema", "json_object"}
 
 
 def main() -> int:
@@ -63,6 +63,7 @@ def main() -> int:
         turns_requested=args.turns,
         story_version=args.story_version,
         scenario=scenario.key,
+        opening_only=args.opening_only,
     )
     if not accepted and result.get("result") in {"passed", "passed_terminal"}:
         result["result"] = "failed_acceptance"
@@ -123,6 +124,7 @@ def _arguments() -> argparse.Namespace:
     parser.add_argument("--artifact-parent", required=True, type=Path)
     parser.add_argument("--port", type=int, default=8100)
     parser.add_argument("--turns", type=int, default=90)
+    parser.add_argument("--opening-only", action="store_true")
     parser.add_argument("--save-load-turn", type=int, default=0)
     parser.add_argument("--refresh-probe", action="store_true")
     parser.add_argument("--double-click-probe", action="store_true")
@@ -134,7 +136,12 @@ def _arguments() -> argparse.Namespace:
     parser.add_argument("--timeout-seconds", type=int, default=1800)
     parser.add_argument("--startup-timeout-seconds", type=int, default=30)
     args = parser.parse_args()
-    if args.turns < 1 or args.turns > 95:
+    if args.opening_only:
+        if args.turns != 0:
+            parser.error("--opening-only requires --turns 0")
+        if args.save_load_turn or args.refresh_probe or args.double_click_probe or args.conflict_probe:
+            parser.error("--opening-only does not support turn probes")
+    elif args.turns < 1 or args.turns > 95:
         parser.error("--turns must be between 1 and 95")
     if args.save_load_turn < 0 or args.save_load_turn > args.turns:
         parser.error("--save-load-turn must be within the requested turns")
@@ -162,7 +169,7 @@ def _validate_database_url(raw_url: str) -> None:
     database = str(url.database or "").lower()
     if not url.drivername.startswith("postgresql") or host not in {"127.0.0.1", "localhost", "::1"}:
         raise ValueError("Chrome evaluation requires an isolated local PostgreSQL database")
-    if "eval" not in database and "chrome" not in database:
+    if database != "agens_web_local" and "eval" not in database and "chrome" not in database:
         raise ValueError("Chrome evaluation database name must identify evaluation isolation")
 
 
@@ -212,6 +219,7 @@ def _browser_environment(
             "DATABASE_URL": args.database_url,
             "AGENS_PLAYTEST_NAME": label,
             "AGENS_PLAYTEST_TURNS": str(args.turns),
+            "AGENS_PLAYTEST_OPENING_ONLY": "1" if args.opening_only else "0",
             "AGENS_PLAYTEST_TIMEOUT_MS": str(args.timeout_seconds * 1000),
             "AGENS_PLAYTEST_SLOT_SEQUENCE": "".join(
                 canonical_slots(scenario, max_turns=args.turns)
@@ -222,7 +230,7 @@ def _browser_environment(
             "AGENS_PLAYTEST_CONTENT_AUDIT": "1",
             "AGENS_PLAYTEST_FAIL_ON_P1": "1",
             "AGENS_PLAYTEST_POST_LOAD_TURNS": "0",
-            "AGENS_PLAYTEST_REQUIRE_PERSISTED_AUDIT": "1",
+            "AGENS_PLAYTEST_REQUIRE_PERSISTED_AUDIT": "0" if args.opening_only else "1",
             "AGENS_PLAYTEST_REQUIRE_LIVE_OPENING": "1",
             "AGENS_PLAYTEST_SAVE_LOAD_TURN": str(getattr(args, "save_load_turn", 0)),
             "AGENS_PLAYTEST_REFRESH_PROBE": "1" if getattr(args, "refresh_probe", False) else "0",
@@ -242,7 +250,7 @@ def _start_server(environment: dict[str, str], port: int) -> subprocess.Popen[by
         str(ROOT / ".venv" / "Scripts" / "python.exe"),
         "-m",
         "uvicorn",
-        "web.backend.app:app",
+        "web.backend.evaluation_app:app",
         "--host",
         "127.0.0.1",
         "--port",
@@ -333,9 +341,24 @@ def _acceptance_passed(
     turns_requested: int,
     story_version: int = 2,
     scenario: str = "",
+    opening_only: bool = False,
 ) -> bool:
     browser_result = str(result.get("result") or "")
     turns_completed = int(result.get("turns_completed") or 0)
+    if opening_only:
+        return (
+            browser_result == "passed"
+            and turns_requested == 0
+            and turns_completed == 0
+            and bool(result.get("opening_strict"))
+            and int(result.get("p0_issues") or 0) == 0
+            and int(result.get("p1_issues") or 0) == 0
+            and int(result.get("fallback") or 0) == 0
+            and int(result.get("repair") or 0) == 0
+            and int(result.get("recovery") or 0) == 0
+            and not result.get("accepted_turns")
+            and int(result.get("exit_code") or 0) == 0
+        )
     expected_turns = (
         turns_completed == turns_requested
         if browser_result == "passed"

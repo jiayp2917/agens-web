@@ -18,6 +18,7 @@ from fastapi.testclient import TestClient
 from sqlalchemy import create_engine, text
 
 from tests.postgres_fixtures import postgres_test_url as _register_pg_test_url  # noqa: F401
+from tests.web.api_fixtures import _runner
 
 _MUTATION_PATH = re.compile(
     r"^/api/sessions/(?P<session_id>[^/]+)/(?:start|choice|action|save|load|end)$"
@@ -67,6 +68,12 @@ def _mutation_aware_post(self: TestClient, url: Any, *args: Any, **kwargs: Any):
 def _mutation_metadata_client(monkeypatch: pytest.MonkeyPatch) -> None:
     """Keep API tests concise while production mutation fields stay required."""
     monkeypatch.setattr(TestClient, "post", _mutation_aware_post)
+
+
+@pytest.fixture(autouse=True)
+def _offline_model_runner(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Make Web tests incapable of reaching a configured model provider."""
+    monkeypatch.setattr("agens_novel.engine.game_engine.run_turn_sync", _runner)
 
 # All application tables (alembic_version is intentionally excluded).
 _TEST_TABLES = (

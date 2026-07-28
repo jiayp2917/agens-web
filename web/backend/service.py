@@ -19,11 +19,8 @@ from agens_novel.engine.death_rewards import (
     bonuses_to_legacy,
 )
 from agens_novel.engine.game_engine import GameEngine
-from agens_novel.engine.model_fallback_policy import (
-    MODEL_FAILURE_CONTINUE,
-    public_model_failure_notice,
-)
 from agens_novel.engine.model_fallback_policy import SECRET_MARKERS as _SECRET_MARKERS
+from agens_novel.engine.model_fallback_policy import public_model_failure_notice
 from agens_novel.engine.render import format_status_bar
 from agens_novel.engine.start_flow import normalize_profile_attributes
 from agens_novel.engine.story_catalog import ensure_story_binding, story_arc_for_binding
@@ -40,7 +37,7 @@ from . import service_saves, service_sessions, service_turns
 from .auth import hash_guest_token
 from .database import WebDatabaseProtocol
 from .database_postgres import PostgresWebDatabase
-from .evaluation_hooks import EvaluationHooks, NoopEvaluationHooks
+from .run_policy import NoopSessionRunPolicy, SessionRunPolicy
 from .service_death_rewards import DeathRewardsService
 from .service_errors import SessionVersionConflict
 from .service_model_config import ModelConfigResolver, ModelConfigService
@@ -71,7 +68,7 @@ _PROFILE_SEMANTIC_FIELDS = (
 
 log = logging.getLogger(__name__)
 
-PUBLIC_MODEL_FALLBACK_TEXT = "模型暂不可用，已切换本地故事，请直接选择下方选项继续。"
+PUBLIC_MODEL_FALLBACK_TEXT = "模型暂不可用，请选择处理方式。"
 _MODEL_FAILURE_PREFIXES = (
     "世界生成失败:",
     "叙述失败:",
@@ -104,10 +101,11 @@ class WebRunner:
         if os.environ.get("AGENS_WEB_STREAMING") == "1":
             self.engine.on_stream_chunk = lambda text: None
         self.engine.on_model_result = self._record_model_result
+        self.engine.on_model_failure_pending = self._record_pending_model_failure
+        self.engine.on_model_failure_state = self._record_model_failure_state
         self.engine.on_character_created = lambda session: self.record(
             "character_created", state=session.as_game_state()
         )
-        self.engine.on_model_failure_choice = self._choose_model_failure
 
     def _on_game_over(self, text: str) -> None:
         """Record game-over and evaluate rewards (P4).
@@ -128,15 +126,13 @@ class WebRunner:
             final_realm=summary["final_realm"],
         )
 
-    def _choose_model_failure(self, source: str, reason: str) -> str:
-        self.fallback_prompt_text = public_model_failure_notice(reason)
-        self.fallback_prompt_active = True
-        self.record(
-            "model_failure",
-            text=self.fallback_prompt_text,
-            source=source,
-        )
-        return MODEL_FAILURE_CONTINUE
+    def _record_pending_model_failure(self, failure: dict[str, Any]) -> None:
+        self.fallback_prompt_text = PUBLIC_MODEL_FALLBACK_TEXT
+        self.fallback_prompt_active = False
+        self.record("model_failure", text=self.fallback_prompt_text, pending=failure)
+
+    def _record_model_failure_state(self, failure: dict[str, Any]) -> None:
+        self.record("model_failure_state", failure=failure)
 
     def _record_model_result(
         self,
@@ -207,6 +203,7 @@ class WebRunner:
     def response(self) -> dict[str, Any]:
         session = self.engine.game_session
         state = session.as_game_state()
+        pending_model_failure = self.engine.pending_model_failure()
         return {
             "session_id": self.session_id,
             "version": self.version,
@@ -228,6 +225,11 @@ class WebRunner:
                 and (session.local_story_active or self.fallback_prompt_active),
                 "text": self.fallback_prompt_text or PUBLIC_MODEL_FALLBACK_TEXT,
             },
+            "pending_model_failure": (
+                pending_model_failure.public_summary()
+                if pending_model_failure is not None
+                else None
+            ),
             "character": state["character"],
             "world": state["world"],
             "events": self.events[-80:],
@@ -271,13 +273,12 @@ def _sanitize_event_payload(event_type: str, payload: dict[str, Any]) -> dict[st
 
 
 def _fallback_prompt_state_from_events(events: list[dict[str, Any]]) -> tuple[bool, str]:
-    """Rebuild current fallback prompt state from persisted sanitized events."""
+    """Rebuild only an explicit local-story prompt from sanitized events."""
     active = False
     text = PUBLIC_MODEL_FALLBACK_TEXT
     for event in events:
         event_type = event.get("type")
         if event_type == "model_failure":
-            active = True
             candidate = str(event.get("text") or "")
             text = candidate if _is_public_model_notice(candidate) else PUBLIC_MODEL_FALLBACK_TEXT
         elif (
@@ -374,13 +375,13 @@ class WebGameService:
         db: WebDatabaseProtocol | None = None,
         *,
         model_config_resolver: ModelConfigResolver | None = None,
-        evaluation_hooks: EvaluationHooks | None = None,
+        run_policy: SessionRunPolicy | None = None,
     ) -> None:
         self.db = db or PostgresWebDatabase()
         self.runners: dict[str, WebRunner] = {}
         self._runner_last_used: dict[str, float] = {}
         self._model_config: ModelConfigResolver = model_config_resolver or ModelConfigService(self.db)
-        self._evaluation_hooks: EvaluationHooks = evaluation_hooks or NoopEvaluationHooks()
+        self._run_policy: SessionRunPolicy = run_policy or NoopSessionRunPolicy()
         self._death_rewards = DeathRewardsService(self.db)
         self._session_locks: dict[str, threading.RLock] = {}
         self._session_locks_guard = threading.Lock()

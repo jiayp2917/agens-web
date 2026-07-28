@@ -45,14 +45,28 @@ def test_model_failure_prompt_uses_sanitized_public_http_404_notice(
 
     assert chosen.status_code == 200
     body = chosen.json()
-    assert body["fallback_prompt"]["active"] is True
+    assert body["fallback_prompt"]["active"] is False
+    assert body["pending_model_failure"]["stage"] == "turn"
     text_value = body["fallback_prompt"]["text"]
-    assert "叙事服务配置暂未接通" in text_value
-    assert "系统默认" in text_value
+    assert text_value == "模型暂不可用，请选择处理方式。"
     assert "HTTP 404" not in text_value
     assert "Base URL" not in text_value
     assert "sk-" not in text_value
     assert "https://" not in text_value
+    pending = app.state.service.runners[session_id].engine.pending_model_failure()
+    assert pending is not None
+    assert pending.base_version == body["version"] - 1
+
+    with patch("agens_novel.engine.game_engine.run_turn_sync", side_effect=narrator_404):
+        retried = client.post(
+            f"/api/sessions/{session_id}/action",
+            json={"action": "retry_model"},
+        )
+
+    assert retried.status_code == 200
+    retried_pending = app.state.service.runners[session_id].engine.pending_model_failure()
+    assert retried_pending is not None
+    assert retried_pending.base_version == pending.base_version
 
 def test_transient_narrator_404_retries_without_fallback(
     tmp_path: Path,
@@ -144,7 +158,7 @@ def test_model_failure_prompt_and_event_redact_secret_bearing_format_reason(
         for event in body["events"]
         if event.get("type") in {"model_failure", "error", "info"}
     )
-    assert any("本回合记录暂未续上" in text for text in visible_texts)
+    assert any("请选择处理方式" in text for text in visible_texts)
     for text_value in visible_texts:
         assert "sk-" not in text_value
         assert "Authorization" not in text_value
@@ -152,7 +166,7 @@ def test_model_failure_prompt_and_event_redact_secret_bearing_format_reason(
         assert "provider.example" not in text_value
         assert "https://" not in text_value
 
-def test_web_model_failure_exposes_fallback_and_can_end(tmp_path: Path, monkeypatch) -> None:
+def test_web_model_failure_exposes_pending_action_and_can_end(tmp_path: Path, monkeypatch) -> None:
     monkeypatch.delenv("AGNES_API_KEY", raising=False)
     monkeypatch.setenv("AGENS_START_MODEL_OPENING", "1")
     monkeypatch.setenv("SESSION_COOKIE_SECURE", "0")
@@ -166,15 +180,20 @@ def test_web_model_failure_exposes_fallback_and_can_end(tmp_path: Path, monkeypa
 
     assert started["game_over"] is False
     assert started["local_story"]["active"] is False
-    assert started["fallback_prompt"]["active"] is True
+    assert started["fallback_prompt"]["active"] is False
+    assert started["pending_model_failure"]["stage"] == "opening"
     assert any(event.get("type") == "model_failure" for event in started["events"])
+    assert started["game_started"] is True
     assert started["world"]["world_profile"].get("chronicle_0_16")
-    assert started["choices"]
+    assert started["choices"] == []
+    pending = app.state.service.runners[session_id].engine.pending_model_failure()
+    assert pending is not None
+    assert pending.base_version == started["version"] - 1
 
     ended = client.post(
-        f"/api/sessions/{session_id}/end",
-        json={"reason": "玩家结束本局。"},
+        f"/api/sessions/{session_id}/action",
+        json={"action": "end_model_failure"},
     ).json()
     assert ended["game_over"] is True
     assert ended["fallback_prompt"]["active"] is False
-    assert ended["error"] == "玩家结束本局。"
+    assert ended["error"] == "模型不可用导致本局结束。"

@@ -35,6 +35,8 @@ def canned_world_builder() -> dict[str, Any]:
         "audit_path": "",
         "finished_at": "",
         "llm_error": "",
+        "response_mode": "json_object",
+        "provider_json_envelope_ok": True,
     }
 
 

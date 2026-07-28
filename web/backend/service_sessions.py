@@ -87,8 +87,8 @@ def start_session(
         rollback = service._rollback_state(runner)
         try:
             service._model_config.apply_runner(runner)
-            scenario = service._evaluation_hooks.active_scenario()
-            normalized = service._normalize_profile(scenario.profile if scenario else profile)
+            policy_profile = service._run_policy.profile_for_start(profile)
+            normalized = service._normalize_profile(policy_profile)
             bonuses: list[dict[str, Any]] = []
             if user_id and not is_guest_user_id(user_id):
                 bonuses = service.db.list_legacy_bonuses(user_id)
@@ -96,9 +96,13 @@ def start_session(
                     normalized = apply_legacy_bonuses(normalized, bonuses)
                     normalized["_allow_legacy_bonus_attributes"] = True
             runner.engine.start_from_profile(normalized)
+            pending = runner.engine.pending_model_failure()
+            if pending is not None:
+                runner.engine.replace_pending_model_failure(
+                    pending.with_base_version(expected_version)
+                )
             session = runner.engine.game_session
-            if scenario is not None:
-                service._evaluation_hooks.install_authority(runner.engine, scenario)
+            service._run_policy.apply_started_session(runner.engine)
             return service._commit_runner(
                 runner,
                 expected_version=expected_version,

@@ -32,14 +32,12 @@ from .local_story import (
     current_local_story_choices,
     start_local_story,
 )
-from .model_fallback_policy import (
-    SECRET_MARKERS,
-    ModelFallbackPolicy,
-)
+from .model_fallback_policy import SECRET_MARKERS, public_model_failure_notice
 from .model_result import (
     ModelResultKind,
     result_diagnostics,
 )
+from .pending_model_failure import PendingModelFailureV1
 from .start_flow import (
     StartFlow,
 )
@@ -60,70 +58,6 @@ def _safe_log_reason(reason: str, limit: int = 220) -> str:
     if "http://" in lowered or "https://" in lowered:
         return "redacted model configuration error"
     return text[:limit]
-
-
-def _is_sensitive_inventory_item(item: dict[str, Any]) -> bool:
-    """Return True for inventory grants that should receive Judge review."""
-    rarity = str(item.get("rarity") or item.get("grade") or "")
-    if rarity in {"紫", "橙", "红", "上品", "极品", "仙品"}:
-        return True
-    if bool(item.get("key_item") or item.get("quest_item")):
-        return True
-    text = f"{item.get('name') or ''} {item.get('type') or ''} {item.get('tags') or ''}"
-    markers = ("筑基", "金丹", "元婴", "破境", "延寿", "续命", "法宝", "秘籍", "玉简", "传承")
-    return any(marker in text for marker in markers)
-
-
-def _has_sensitive_character_delta(value: Any) -> bool:
-    if not isinstance(value, dict):
-        return False
-    sensitive = {
-        "name",
-        "realm",
-        "realm_stage",
-        "spirit_root",
-        "spirit_root_grade",
-        "talent",
-        "family_background",
-        "difficulty",
-        "inventory",
-        "relationship_add",
-        "relationships",
-        "techniques",
-        "techniques_add",
-        "breakthrough_flags",
-        "breakthrough_flags_add",
-        "lifespan",
-        "status_effects",
-        "status_effects_add",
-        "title_add",
-        "titles",
-    }
-    if any(key in value for key in sensitive):
-        return True
-    additions = value.get("inventory_add")
-    return isinstance(additions, list) and any(
-        isinstance(item, dict) and _is_sensitive_inventory_item(item) for item in additions
-    )
-
-
-def _has_authoritative_world_delta(value: Any, looks_like_reset: Callable[[Any], bool]) -> bool:
-    if not isinstance(value, dict):
-        return False
-    authoritative = {
-        "active_quests",
-        "active_quests_add",
-        "discovered_add",
-        "discovered_locations",
-        "npcs_present",
-        "npcs_present_add",
-    }
-    if any(key in value for key in authoritative):
-        return True
-    return any(
-        key in value and looks_like_reset(value.get(key))
-        for key in ("location", "region", "current_scene")
-    )
 
 
 class GameEngine:
@@ -157,14 +91,11 @@ class GameEngine:
         self.on_stream_chunk: Callback | None = None
         self.on_finale: Callback | None = None
         self.on_model_result: Callback | None = None
-        self.on_model_failure_choice: Callable[[str, str], str] | None = None
+        self.on_model_failure_pending: Callback | None = None
+        self.on_model_failure_state: Callback | None = None
         self.model_config: dict[str, Any] = {}
         self.model_runtime_resolver: Callable[[], RuntimeModelConfig] | None = None
         self.model_call_observer: Any = None
-        self._fallback_policy = ModelFallbackPolicy(
-            lambda: self.on_model_failure_choice,
-            _safe_log_reason,
-        )
         self._start_flow = StartFlow(self)
         self._turn_flow = TurnFlow(self)
         self._breakthrough_flow = BreakthroughFlow(self)
@@ -197,7 +128,9 @@ class GameEngine:
             kwargs.setdefault("api_key_set", runtime.api_key_set)
             kwargs.setdefault("source", runtime.source)
             kwargs.setdefault("key_error", runtime.key_error)
-            kwargs.setdefault("provider_transport", runtime.provider_transport)
+            kwargs.setdefault("response_mode", runtime.response_mode)
+            kwargs.setdefault("stream", runtime.stream)
+            kwargs.setdefault("provider_transport", runtime.response_mode)
         for key in (
             "provider",
             "model",
@@ -206,6 +139,8 @@ class GameEngine:
             "api_key_set",
             "source",
             "key_error",
+            "response_mode",
+            "stream",
             "provider_transport",
         ):
             if runtime is None and key in model_config:
@@ -234,12 +169,8 @@ class GameEngine:
             self.game_session.last_choices = choices
             return False
 
-        if require_choice and not self.confirm_local_fallback(source, reason):
-            self.end_model_failure_run(reason or "模型未返回可用选项。")
-            return False
-
         if require_choice:
-            self._enter_local_story(reason, emit_narrative=emit_local_story_narrative)
+            raise ValueError("模型选项不完整，必须由玩家在待处理失败状态中选择后续动作。")
         else:
             self.game_session.last_choices = fallback_choices(self.game_session)
         log.info(
@@ -269,7 +200,7 @@ class GameEngine:
 
     def fallback_notice_for(self, reason: str = "") -> str:
         """Return a player-visible fallback message without exposing secrets."""
-        return self._fallback_policy.notice_for(reason)
+        return public_model_failure_notice(reason)
 
     def log_model_result(
         self,
@@ -309,9 +240,77 @@ class GameEngine:
             diagnostics,
         )
 
-    def confirm_local_fallback(self, source: str, reason: str = "") -> bool:
-        """Ask the UI whether model failure should continue with local fallback."""
-        return self._fallback_policy.should_continue(source, reason)
+    def pending_model_failure(self) -> PendingModelFailureV1 | None:
+        """Return the validated unresolved model failure, if one exists."""
+        return PendingModelFailureV1.from_payload(self.game_session.pending_model_failure)
+
+    def create_pending_model_failure(
+        self,
+        *,
+        stage: str,
+        action: str,
+        slot: str,
+        frozen_result: dict[str, Any],
+        error_code: str,
+    ) -> PendingModelFailureV1:
+        """Freeze a failed model operation without changing authoritative state."""
+        pending = PendingModelFailureV1.create(
+            stage=stage,
+            action=action,
+            slot=slot,
+            frozen_result=frozen_result,
+            rule_rng_counter=self.game_session.rule_rng_counter,
+            error_code=error_code,
+        )
+        self.game_session.pending_model_failure = pending.to_dict()
+        self.emit("on_model_failure_pending", pending.public_summary())
+        self.emit("on_info", "本回合叙事暂不可用，请选择重试、转入本地故事或结束本局。")
+        return pending
+
+    def replace_pending_model_failure(self, pending: PendingModelFailureV1) -> None:
+        previous = self.pending_model_failure()
+        self.game_session.pending_model_failure = pending.to_dict()
+        if previous is None or previous.status != pending.status:
+            self.emit("on_model_failure_state", pending.public_summary())
+
+    def clear_pending_model_failure(self) -> None:
+        pending = self.pending_model_failure()
+        if pending is not None:
+            self.emit("on_model_failure_state", pending.with_status("resolved").public_summary())
+        self.game_session.pending_model_failure = {}
+
+    def resolve_pending_model_failure(self, action: str) -> bool:
+        """Resolve the one persisted failure through an explicit player action."""
+        pending = self.pending_model_failure()
+        if pending is None or pending.status not in {"pending", "retrying"}:
+            return False
+        if action == "retry_model":
+            return self._retry_pending_model_failure(pending)
+        if action == "use_local_story":
+            return self._resolve_pending_with_local_story(pending)
+        if action == "end_model_failure":
+            self.clear_pending_model_failure()
+            self.end_model_failure_run("player ended pending model failure")
+            return True
+        raise ValueError("模型失败处理动作无效。")
+
+    def _retry_pending_model_failure(self, pending: PendingModelFailureV1) -> bool:
+        if pending.stage == "turn":
+            return self._turn_flow.retry_pending_model(pending)
+        if pending.stage == "breakthrough":
+            return self._breakthrough_flow.retry_pending_model(pending)
+        if pending.stage == "opening":
+            return self._start_flow.retry_pending_model(pending)
+        raise ValueError("待处理模型失败阶段无效。")
+
+    def _resolve_pending_with_local_story(self, pending: PendingModelFailureV1) -> bool:
+        if pending.stage == "turn":
+            return self._turn_flow.resolve_pending_with_local_story(pending)
+        if pending.stage == "breakthrough":
+            return self._breakthrough_flow.resolve_pending_with_local_story(pending)
+        if pending.stage == "opening":
+            return self._start_flow.resolve_pending_with_local_story(pending)
+        raise ValueError("待处理模型失败阶段无效。")
 
     def end_model_failure_run(self, reason: str) -> None:
         """End the current run after the user declines local model fallback."""
@@ -331,14 +330,13 @@ class GameEngine:
         """Create a deterministic game from the character form.
 
         This keeps character creation on the same engine path as every other
-        UI operation. Public Alpha starts from local templates by default so
-        the first screen is not blocked by model latency; model-generated
-        world/opening can be opted into with runtime env switches.
+        UI operation. Rule-owned bindings are established first, then the
+        World Builder supplies only the strict opening presentation.
         """
         self._start_flow.start_from_profile(profile)
 
     def handle_action(self, text: str) -> None:
-        """Process a player action through Narrator + Judge.
+        """Process a player action through the Narrator.
 
         Supports streaming via ``on_stream_chunk``.
         """
@@ -497,27 +495,6 @@ class GameEngine:
                 ),
             }
         ]
-
-    def should_run_judge(
-        self,
-        text: str,
-        state_delta: dict[str, Any],
-        rule_delta: dict[str, Any],
-    ) -> bool:
-        """Reserve model judging for risky or continuity-sensitive outcomes."""
-        if not isinstance(state_delta, dict):
-            return False
-        meta_value = state_delta.get("meta")
-        meta: dict[str, Any] = meta_value if isinstance(meta_value, dict) else {}
-        if meta.get("game_over") or meta.get("finale") or meta.get("breakthrough_result"):
-            return True
-        compact = "".join(text.strip().lower().split())
-        if any(word in compact for word in ("突破", "破境", "渡劫", "飞升")):
-            return True
-
-        if _has_sensitive_character_delta(state_delta.get("character")):
-            return True
-        return _has_authoritative_world_delta(state_delta.get("world"), self._looks_like_world_reset)
 
     def sanitize_action_delta(self, delta: dict[str, Any]) -> dict[str, Any]:
         """Drop ordinary-turn updates that reset character identity or continuity.

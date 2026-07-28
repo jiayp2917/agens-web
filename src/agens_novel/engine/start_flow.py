@@ -23,6 +23,7 @@ from .opening_application import (
     apply_world_builder_generated_session,
     merge_opening_payload,
 )
+from .pending_model_failure import PendingModelFailureV1
 from .profile_opening import profile_opening
 from .profile_setup import (
     PROFILE_ATTRIBUTE_TOTAL,
@@ -102,31 +103,20 @@ class StartFlow:
             )
         except Exception:
             log.exception("world_builder error")
-            reason = "世界生成失败（详见日志）"
-            engine.emit("on_error", reason)
-            if engine.confirm_local_fallback("world_builder_exception", reason):
-                engine.set_choices(None, source="world_builder_exception", fallback_notice=True)
-            else:
-                engine.end_model_failure_run(reason)
-            return
-
-        if result.get("llm_error"):
-            reason = f"世界生成失败: {result['llm_error']}"
-            engine.log_model_result(
-                agent="world_builder",
-                source="new_game_error",
-                status=ModelResultKind.REQUEST_FAILED,
-                reason=reason,
-                result=result,
+            self._hold_world_builder_failure(
+                concept,
+                ModelResultStatus(ModelResultKind.REQUEST_FAILED, "世界生成失败（详见日志）。"),
             )
-            engine.emit("on_error", reason)
-            if engine.confirm_local_fallback("world_builder_error", reason):
-                engine.set_choices(None, source="world_builder_error", fallback_notice=True)
-            else:
-                engine.end_model_failure_run(reason)
             return
 
         world_status, generated = _classify_opening_result(result)
+        result, world_status, generated = self._retry_request_failed_opening(
+            concept,
+            result,
+            world_status,
+            generated,
+            generation_type="new_game",
+        )
         result, world_status, generated = self._retry_incomplete_opening(
             concept,
             result,
@@ -141,82 +131,45 @@ class StartFlow:
             reason=world_status.reason,
             result=result,
         )
-        if world_status.kind == ModelResultKind.INCOMPLETE_OUTPUT or not generated:
-            engine.emit("on_info", "世界数据为空，请重试。")
+        if world_status.kind != ModelResultKind.OK or not generated:
+            self._hold_world_builder_failure(concept, world_status)
             return
-
-        apply_world_builder_generated_session(session, generated)
-
-        opening = generated.get("opening_narrative", result.get("opening_narrative", ""))
-        if not opening:
-            desc = result.get("world_description", "")
-            opening = desc or "世界已生成。"
-
-        if (
-            engine.set_choices(
-                generated.get("choices"),
-                source="world_builder",
-                fallback_notice=True,
-                require_choice=True,
-                reason="世界生成未返回可用选项。",
-            )
-            is False
-            and session.game_over
-        ):
-            return
-        self._emit_opening(opening)
+        self._complete_world_builder_opening(generated, result)
 
     def start_from_profile(self, profile: dict[str, Any]) -> None:
         """Create a deterministic game from the character form."""
         engine = self.engine
         apply_profile_session(engine.game_session, profile)
+        fallback = build_world_fallback(profile)
+        # Bind the rule-owned world and story before a model call. A failed
+        # opening may delay visible prose, but it cannot reroll this binding.
+        apply_profile_opening_payload(engine.game_session, fallback)
 
         engine.emit("on_loading", "开局生成中...")
-        payload = self.generate_opening_payload(profile)
-        if engine.game_session.game_over:
+        payload = self.generate_opening_payload(profile, fallback=fallback)
+        if engine.game_session.game_over or engine.pending_model_failure() is not None:
             return
-        apply_profile_opening_payload(engine.game_session, payload)
+        self._complete_profile_opening(profile, payload)
 
-        debug_choices = (
-            complete_choices(profile.get("choices"), engine.game_session)
-            if profile.get("_allow_choice_override")
-            else []
-        )
-        opening = str(
-            profile.get("opening_narrative")
-            or payload.get("opening_narrative")
-            or profile_opening(engine.game_session)
-        )
-        if (
-            engine.set_choices(
-                debug_choices or payload.get("choices"),
-                source="profile_opening",
-                fallback_notice=True,
-                require_choice=True,
-                reason="开场推演未返回可用选项。",
-            )
-            is False
-            and engine.game_session.game_over
-        ):
-            return
-        self._emit_opening(opening)
-
-    def generate_opening_payload(self, profile: dict[str, Any]) -> dict[str, Any]:
+    def generate_opening_payload(
+        self,
+        profile: dict[str, Any],
+        *,
+        fallback: dict[str, Any] | None = None,
+        pending: PendingModelFailureV1 | None = None,
+    ) -> dict[str, Any]:
         """Generate one coherent profile opening payload, model or fallback."""
         engine = self.engine
-        fallback = build_world_fallback(profile)
-
-        use_model = (
-            os.environ.get(START_MODEL_WORLD_ENV) == "1"
-            or os.environ.get(START_MODEL_OPENING_ENV) == "1"
-        )
-        if not use_model:
-            return fallback
+        fallback = fallback or build_world_fallback(profile)
 
         if not _engine_has_api_key(engine):
-            return self._decline_or_continue(
-                fallback, "profile_opening_missing_key", "AGNES_API_KEY 未设置。"
+            self._hold_profile_opening_failure(
+                profile,
+                fallback,
+                ModelResultStatus(ModelResultKind.REQUEST_FAILED, "开场推演服务未配置。"),
+                pending=pending,
             )
+            return {}
 
         prompt = build_world_prompt(profile)
         try:
@@ -241,9 +194,13 @@ class StartFlow:
                 result = retry_result
         except Exception:
             log.exception("profile opening world_builder error")
-            return self._decline_or_continue(
-                fallback, "profile_opening_exception", "开场推演失败（详见日志）。"
+            self._hold_profile_opening_failure(
+                profile,
+                fallback,
+                ModelResultStatus(ModelResultKind.REQUEST_FAILED, "开场推演失败（详见日志）。"),
+                pending=pending,
             )
+            return {}
 
         world_status, parsed = _classify_opening_result(result, profile_opening=True)
         result, world_status, parsed = self._retry_incomplete_opening(
@@ -261,14 +218,250 @@ class StartFlow:
             result=result,
         )
         if world_status.kind == ModelResultKind.REQUEST_FAILED:
-            reason = world_status.reason.replace("世界生成失败", "开场推演失败", 1)
-            return self._decline_or_continue(fallback, "profile_opening_error", reason)
+            self._hold_profile_opening_failure(profile, fallback, world_status, pending=pending)
+            return {}
 
         if world_status.kind == ModelResultKind.INCOMPLETE_OUTPUT or not parsed:
-            reason = getattr(world_status, "reason", "") or "开场推演数据不可用。"
-            return self._decline_or_continue(fallback, "profile_opening_empty", reason)
+            self._hold_profile_opening_failure(profile, fallback, world_status, pending=pending)
+            return {}
 
         return merge_opening_payload(fallback, parsed)
+
+    def _complete_world_builder_opening(
+        self,
+        generated: dict[str, Any],
+        result: dict[str, Any],
+    ) -> None:
+        session = self.engine.game_session
+        apply_world_builder_generated_session(session, generated)
+        opening = str(generated.get("opening_narrative") or result.get("opening_narrative") or "")
+        if not opening:
+            opening = str(result.get("world_description") or "世界已生成。")
+        used_fallback = self.engine.set_choices(
+            generated.get("choices"),
+            source="world_builder",
+            fallback_notice=False,
+            require_choice=False,
+            reason="世界生成未返回可用选项。",
+        )
+        if used_fallback:
+            raise ValueError("严格世界开局未返回四个可用选项。")
+        self._emit_opening(opening)
+
+    def _hold_world_builder_failure(
+        self,
+        concept: str,
+        status: ModelResultStatus,
+        *,
+        pending: PendingModelFailureV1 | None = None,
+    ) -> None:
+        if pending is not None:
+            self.engine.replace_pending_model_failure(
+                pending.with_status("pending", request_no=pending.request_no + 1)
+            )
+            return
+        self.engine.create_pending_model_failure(
+            stage="opening",
+            action="new_game",
+            slot="opening",
+            frozen_result={"concept": concept},
+            error_code=_error_code_for_status(status),
+        )
+
+    def retry_pending_model(self, pending: PendingModelFailureV1) -> bool:
+        """Retry a frozen profile-opening request without rebinding its world."""
+        if pending.stage != "opening":
+            return False
+        frozen = pending.frozen_result
+        concept = frozen.get("concept")
+        if isinstance(concept, str) and concept:
+            return self._retry_world_builder_opening(pending, concept)
+        profile_value = frozen.get("profile")
+        fallback_value = frozen.get("fallback")
+        if not isinstance(profile_value, dict) or not isinstance(fallback_value, dict):
+            raise ValueError("待处理开局缺少冻结配置。")
+        self.engine.replace_pending_model_failure(
+            pending.with_status("retrying", request_no=pending.request_no + 1)
+        )
+        payload = self.generate_opening_payload(
+            profile_value,
+            fallback=fallback_value,
+            pending=pending,
+        )
+        if not payload:
+            self.engine.emit("on_info", "重试未完成，开局绑定保持不变，请重新选择处理方式。")
+            return False
+        self._complete_profile_opening(profile_value, payload)
+        self.engine.clear_pending_model_failure()
+        return True
+
+    def _retry_world_builder_opening(
+        self,
+        pending: PendingModelFailureV1,
+        concept: str,
+    ) -> bool:
+        engine = self.engine
+        engine.replace_pending_model_failure(
+            pending.with_status("retrying", request_no=pending.request_no + 1)
+        )
+        try:
+            result = engine.run_agent(
+                "world_builder",
+                concept,
+                engine.game_session,
+                generation_type="new_game",
+            )
+        except Exception:
+            log.exception("world_builder retry error")
+            self._hold_world_builder_failure(
+                concept,
+                ModelResultStatus(ModelResultKind.REQUEST_FAILED, "世界生成重试失败。"),
+                pending=pending,
+            )
+            return False
+        status, generated = _classify_opening_result(result)
+        result, status, generated = self._retry_request_failed_opening(
+            concept,
+            result,
+            status,
+            generated,
+            generation_type="new_game",
+        )
+        result, status, generated = self._retry_incomplete_opening(
+            concept,
+            result,
+            status,
+            generated,
+            generation_type="new_game",
+        )
+        engine.log_model_result(
+            agent="world_builder",
+            source="new_game_retry",
+            status=status.kind,
+            reason=status.reason,
+            result=result,
+        )
+        if status.kind != ModelResultKind.OK or not generated:
+            self._hold_world_builder_failure(concept, status, pending=pending)
+            engine.emit("on_info", "重试未完成，开局尚未建立，请重新选择处理方式。")
+            return False
+        self._complete_world_builder_opening(generated, result)
+        engine.clear_pending_model_failure()
+        return True
+
+    def _retry_request_failed_opening(
+        self,
+        prompt: str,
+        result: dict[str, Any],
+        world_status: ModelResultStatus,
+        parsed: dict[str, Any],
+        *,
+        generation_type: str,
+        profile_opening: bool = False,
+    ) -> tuple[dict[str, Any], ModelResultStatus, dict[str, Any]]:
+        if (
+            world_status.kind != ModelResultKind.REQUEST_FAILED
+            or not is_retryable_model_request_failure(result)
+            or not _opening_retry_allowed()
+        ):
+            return result, world_status, parsed
+        try:
+            retry_result = self.engine.run_agent(
+                "world_builder",
+                prompt,
+                self.engine.game_session,
+                generation_type=generation_type,
+            )
+        except Exception:
+            log.exception("world_builder request retry failed")
+            return {
+                "generated_data": {},
+                "llm_error": "开场推演重试失败。",
+            }, ModelResultStatus(ModelResultKind.REQUEST_FAILED, "开场推演重试失败。"), {}
+        if not retry_result.get("llm_error"):
+            retry_result["retried_after_request_failed"] = True
+        retry_status, retry_parsed = _classify_opening_result(
+            retry_result,
+            profile_opening=profile_opening,
+        )
+        return retry_result, retry_status, retry_parsed
+
+    def resolve_pending_with_local_story(self, pending: PendingModelFailureV1) -> bool:
+        """Apply the frozen opening and enter local story after player consent."""
+        if pending.stage != "opening":
+            return False
+        frozen = pending.frozen_result
+        concept = frozen.get("concept")
+        if isinstance(concept, str) and concept:
+            profile = {"char_name": concept}
+            fallback = build_world_fallback(profile)
+            apply_profile_session(self.engine.game_session, profile)
+            apply_profile_opening_payload(self.engine.game_session, fallback)
+            self._complete_profile_opening(profile, fallback, local_story=True)
+            self.engine.clear_pending_model_failure()
+            return True
+        profile_value = frozen.get("profile")
+        fallback_value = frozen.get("fallback")
+        if not isinstance(profile_value, dict) or not isinstance(fallback_value, dict):
+            raise ValueError("待处理开局缺少冻结配置。")
+        self._complete_profile_opening(profile_value, fallback_value, local_story=True)
+        self.engine.clear_pending_model_failure()
+        return True
+
+    def _hold_profile_opening_failure(
+        self,
+        profile: dict[str, Any],
+        fallback: dict[str, Any],
+        status: ModelResultStatus,
+        *,
+        pending: PendingModelFailureV1 | None = None,
+    ) -> None:
+        frozen_result = {"profile": dict(profile), "fallback": dict(fallback)}
+        if pending is not None:
+            self.engine.replace_pending_model_failure(
+                pending.with_status("pending", request_no=pending.request_no + 1)
+            )
+            return
+        self.engine.create_pending_model_failure(
+            stage="opening",
+            action="profile_opening",
+            slot="opening",
+            frozen_result=frozen_result,
+            error_code=_error_code_for_status(status),
+        )
+
+    def _complete_profile_opening(
+        self,
+        profile: dict[str, Any],
+        payload: dict[str, Any],
+        *,
+        local_story: bool = False,
+    ) -> None:
+        engine = self.engine
+        apply_profile_opening_payload(engine.game_session, payload)
+        debug_choices = (
+            complete_choices(profile.get("choices"), engine.game_session)
+            if profile.get("_allow_choice_override")
+            else []
+        )
+        opening = str(
+            profile.get("opening_narrative")
+            or payload.get("opening_narrative")
+            or profile_opening(engine.game_session)
+        )
+        if local_story:
+            engine._enter_local_story("player selected local story", emit_narrative=False)
+        else:
+            used_fallback = engine.set_choices(
+                debug_choices or payload.get("choices"),
+                source="profile_opening",
+                fallback_notice=False,
+                require_choice=False,
+                reason="开场推演未返回可用选项。",
+            )
+            if used_fallback:
+                raise ValueError("严格开场未返回四个可用选项。")
+        self._emit_opening(opening)
 
     def _retry_incomplete_opening(
         self,
@@ -304,16 +497,6 @@ class StartFlow:
         world_status, parsed = _classify_opening_result(result, profile_opening=profile_opening)
         return result, world_status, parsed
 
-    def _decline_or_continue(
-        self, fallback: dict[str, Any], source: str, reason: str
-    ) -> dict[str, Any]:
-        engine = self.engine
-        if engine.confirm_local_fallback(source, reason):
-            engine.emit("on_info", engine.fallback_notice_for(reason))
-            return fallback
-        engine.end_model_failure_run(reason)
-        return {}
-
     def _emit_opening(self, opening: str) -> None:
         engine = self.engine
         engine.emit("on_narrative", opening, 0)
@@ -339,8 +522,9 @@ def _classify_opening_result(
         return status, {}
     if profile_opening:
         if (
-            str(result.get("provider_transport") or "legacy_tags") in {"json_schema", "json_object"}
-            and not result.get("provider_json_envelope_ok")
+            str(result.get("response_mode") or result.get("provider_transport") or "json_object")
+            not in {"json_schema", "json_object"}
+            or result.get("provider_json_envelope_ok") is not True
         ):
             return (
                 ModelResultStatus(
@@ -413,3 +597,11 @@ def _opening_retry_allowed() -> bool:
         return int(raw_limit) > 1
     except ValueError as exc:
         raise ValueError("AGENS_EVALUATION_OPENING_MAX_ATTEMPTS must be an integer") from exc
+
+
+def _error_code_for_status(status: ModelResultStatus) -> str:
+    if status.kind == ModelResultKind.REQUEST_FAILED:
+        return "request_failed"
+    if status.kind == ModelResultKind.INCOMPLETE_OUTPUT:
+        return "incomplete_output"
+    return "llm_error"

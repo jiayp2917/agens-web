@@ -55,7 +55,7 @@ def test_judge_not_triggered_for_plain_risk_word_without_authoritative_delta(mon
     assert calls == ["narrator"]
 
 
-def test_judge_retryable_provider_failure_retries_once(monkeypatch) -> None:
+def test_authoritative_rewards_are_not_taken_from_narrator_without_judge(monkeypatch) -> None:
     monkeypatch.setenv("AGNES_API_KEY", "test-model-key")
     monkeypatch.setattr(
         "agens_novel.engine.turn_rules.select_chronicle_event",
@@ -93,76 +93,15 @@ def test_judge_retryable_provider_failure_retries_once(monkeypatch) -> None:
                 "choices": ["继续温养", "打听丹方", "试探禁地", "随缘行事"],
                 "llm_error": "",
             }
-        if agent_name == "judge" and calls.count("judge") == 1:
-            return {
-                "approved": False,
-                "corrected_delta": {},
-                "judgment_note": "",
-                "llm_error": 'HTTP 404: {"error":{"type":"upstream_error","code":"404"}}',
-            }
-        if agent_name == "judge":
-            return {"approved": True, "corrected_delta": {}, "judgment_note": "", "llm_error": ""}
         return {}
 
     with patch("agens_novel.engine.game_engine.run_turn_sync", side_effect=runner):
         engine.handle_action("习得护身诀")
 
-    assert calls.count("judge") == 2
-    assert ("judge", "ok") in model_statuses
-    assert ("judge", "judge_failed") not in model_statuses
+    assert calls == ["narrator"]
+    assert not any(agent == "judge" for agent, _status in model_statuses)
     assert engine.game_session.turn_count == 1
-
-
-def test_judge_triggers_for_authoritative_world_delta(monkeypatch) -> None:
-    monkeypatch.setenv("AGNES_API_KEY", "test-model-key")
-    engine = GameEngine()
-
-    assert engine.should_run_judge(
-        "拜访同门",
-        {"world": {"npcs_present_add": [{"name": "陈师兄", "relation": "盟友"}]}},
-        {"meta": {"choice_category": "机遇"}},
-    )
-    assert engine.should_run_judge(
-        "接下任务",
-        {"world": {"active_quests_add": [{"name": "采药任务"}]}},
-        {"meta": {"choice_category": "机遇"}},
-    )
-    assert engine.should_run_judge(
-        "深入山径",
-        {"world": {"discovered_add": ["后山药谷"]}},
-        {"meta": {"choice_category": "机遇"}},
-    )
-    assert not engine.should_run_judge(
-        "听闻传说",
-        {"world": {"lore_add": ["坊间只是传闻，并未入册"]}},
-        {"meta": {"choice_category": "机遇"}},
-    )
-
-
-def test_judge_triggers_for_techniques_and_sensitive_inventory_only(monkeypatch) -> None:
-    monkeypatch.setenv("AGNES_API_KEY", "test-model-key")
-    engine = GameEngine()
-
-    assert engine.should_run_judge(
-        "参悟玉简",
-        {"character": {"techniques_add": [{"name": "青木长生诀"}]}},
-        {"meta": {"choice_category": "机遇"}},
-    )
-    assert engine.should_run_judge(
-        "收下筑基丹",
-        {"character": {"inventory_add": [{"name": "筑基丹", "type": "丹药"}]}},
-        {"meta": {"choice_category": "机遇"}},
-    )
-    assert engine.should_run_judge(
-        "收下宗门信物",
-        {"character": {"inventory_add": [{"name": "青岚令", "key_item": True}]}},
-        {"meta": {"choice_category": "机遇"}},
-    )
-    assert not engine.should_run_judge(
-        "收下普通药草",
-        {"character": {"inventory_add": [{"name": "止血草", "type": "草药", "rarity": "白"}]}},
-        {"meta": {"choice_category": "机遇"}},
-    )
+    assert not any(item.get("name") == "护身诀" for item in engine.game_session.techniques)
 
 
 def test_stage_feedback_adds_world_lore_every_four_turns() -> None:

@@ -33,7 +33,7 @@ def test_playthrough_uses_canonical_binding_and_records_safe_result(tmp_path, mo
     def fake_turn(_agent, _input, _session, **_kwargs):
         return {
             "narrative": "潮雾散开，渡口的旧灯仍在。",
-            "choices": ["A 守住渡口", "B 询问舟客", "C 越过暗礁", "D 借潮试路"],
+            "choices": ["守住渡口静待灵潮", "询问舟客来历", "越过暗礁探路", "【气运】借潮试路"],
             "state_delta": {},
             "llm_error": "",
         }
@@ -57,6 +57,37 @@ def test_playthrough_uses_canonical_binding_and_records_safe_result(tmp_path, mo
     assert all(turn["strict"]["final"] for turn in result["accepted_turns"])
     assert all(len(turn["choices"]) == 4 for turn in result["accepted_turns"])
     assert sink.external_inventory(tmp_path / "evidence")["file_count"] >= 2
+
+
+def test_playthrough_never_calls_judge(tmp_path, monkeypatch) -> None:
+    monkeypatch.setenv("AGENS_EVALUATION_MODE", "1")
+    monkeypatch.setenv("AGENS_ARTIFACT_ROOT", str(tmp_path / "evidence"))
+    monkeypatch.setenv("AGENS_EVALUATION_PROVIDER", "DeepSeek")
+    monkeypatch.setenv("AGENS_EVALUATION_MODEL", "deepseek-v4-flash")
+    monkeypatch.setenv("AGENS_EVALUATION_BASE_URL", "https://api.deepseek.example/v1")
+    monkeypatch.setenv("DEEPSEEK_API_KEY", "test-evaluation-key")
+    monkeypatch.setattr(sink, "_restrict_windows_acl", lambda _root: None)
+    config = EvaluationModelConfig.from_environment()
+
+    def fake_turn(agent_name, _input, _session, **_kwargs):
+        assert agent_name == "narrator"
+        return {
+            "narrative": "山雨将至，石阶上的水痕指向旧洞府。",
+            "choices": ["守住洞府静待雨歇", "探问来客来历", "闯入险地追查线索", "【气运】借势试路"],
+            "state_delta": {},
+            "llm_error": "",
+        }
+
+    with patch("agens_novel.engine.game_engine.run_turn_sync", side_effect=fake_turn):
+        result = run_canonical_playthrough(
+            config,
+            canonical_v3_scenarios()[0],
+            story_version=3,
+            ledger=EvaluationLedger(provider="DeepSeek", model="deepseek-v4-flash"),
+            max_turns=1,
+        )
+
+    assert result["judge_status"] == "not_requested"
 
 
 def test_canonical_slots_extend_only_for_post_arc_coverage() -> None:
