@@ -9,6 +9,7 @@ from dataclasses import dataclass
 from typing import TYPE_CHECKING, Any
 
 from ..artifacts import sink, store
+from ..engine.choices import has_visible_english, normalize_choices
 from ..engine.game_engine import GameEngine
 from ..engine.model_result import classify_narrator_result
 from ..session.game_session import GameSession
@@ -68,9 +69,50 @@ def run_frozen_benchmark(
         "results": results,
         "ledger": ledger.summary(),
     }
+    report["acceptance"] = frozen_benchmark_acceptance(report)
     run_id = store.new_run_id()
     path = sink.write_json("benchmark", run_id, "results.json", report)
     return report, path
+
+
+def frozen_benchmark_acceptance(report: dict[str, Any]) -> dict[str, Any]:
+    """Return the strict, content-safe acceptance decision for nine snapshots."""
+    results_value = report.get("results")
+    results = results_value if isinstance(results_value, list) else []
+    expected_ids = {item.snapshot_id for item in frozen_narrator_snapshots()}
+    received_ids = {
+        str(item.get("snapshot_id") or "")
+        for item in results
+        if isinstance(item, dict) and str(item.get("snapshot_id") or "")
+    }
+    issues: list[dict[str, str]] = []
+    if len(results) != 9 or received_ids != expected_ids:
+        issues.append({"level": "P0", "sample": "set", "code": "snapshot_set_incomplete"})
+    for item in results:
+        if not isinstance(item, dict):
+            issues.append({"level": "P0", "sample": "unknown", "code": "invalid_result"})
+            continue
+        sample = str(item.get("snapshot_id") or "unknown")
+        if not bool(item.get("strict")):
+            issues.append({"level": "P0", "sample": sample, "code": "strict_failed"})
+            continue
+        narrative = str(item.get("narrative") or "").strip()
+        choices = normalize_choices(item.get("choices"))
+        if not narrative or len(choices) != 4:
+            issues.append({"level": "P0", "sample": sample, "code": "accepted_output_incomplete"})
+            continue
+        if has_visible_english("\n".join([narrative, *choices])):
+            issues.append({"level": "P1", "sample": sample, "code": "visible_english"})
+    p0 = sum(item["level"] == "P0" for item in issues)
+    p1 = sum(item["level"] == "P1" for item in issues)
+    return {
+        "snapshot_count": len(results),
+        "strict_count": sum(bool(item.get("strict")) for item in results if isinstance(item, dict)),
+        "p0_issues": p0,
+        "p1_issues": p1,
+        "accepted": len(results) == 9 and p0 == 0 and p1 == 0,
+        "issues": issues,
+    }
 
 
 def build_blind_review_packet(
@@ -153,8 +195,6 @@ def _snapshot(
 
 
 def _snapshot_turns(scenario: CanonicalScenarioV1) -> tuple[tuple[str, int], ...]:
-    if scenario.key == "low_risk":
-        return (("opening", 1), ("middle", 10), ("resolution", 19))
     return (("opening", 1), ("middle", 45), ("resolution", 90))
 
 
@@ -175,6 +215,7 @@ def _run_snapshot(
     )
     status = classify_narrator_result(result)
     scenario = next(item for item in canonical_v3_scenarios() if item.key == snapshot.scenario_key)
+    accepted = status.ok
     return {
         "snapshot_id": snapshot.snapshot_id,
         "scenario_key": snapshot.scenario_key,
@@ -182,10 +223,10 @@ def _run_snapshot(
         "turn_count": snapshot.turn_count,
         "scenario_hash": canonical_scenario_hash(scenario, story_version=3),
         "authority_hash": snapshot.authority_hash,
-        "strict": status.ok,
+        "strict": accepted,
         "status": status.label,
-        "narrative": str(result.get("narrative") or ""),
-        "choices": [str(item) for item in result.get("choices") or []],
+        "narrative": str(result.get("narrative") or "") if accepted else "",
+        "choices": [str(item) for item in result.get("choices") or []] if accepted else [],
     }
 
 

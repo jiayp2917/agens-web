@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import importlib.util
 import json
+import os
 from argparse import Namespace
 from pathlib import Path
 from types import SimpleNamespace
@@ -28,6 +29,7 @@ def _args(provider: str = "agens") -> Namespace:
         provider=provider,
         transport="json_schema",
         scenario="high_steady",
+        story_version=3,
         database_url="postgresql+psycopg://evaluation@127.0.0.1:55432/agens_web_chrome_eval",
         port=8100,
         turns=90,
@@ -36,6 +38,9 @@ def _args(provider: str = "agens") -> Namespace:
         refresh_probe=False,
         double_click_probe=False,
         conflict_probe=False,
+        viewport="1440x1000",
+        record_only=False,
+        release_state=None,
     )
 
 
@@ -51,6 +56,8 @@ def test_chrome_evaluation_reserves_a_unique_artifact_root(tmp_path, monkeypatch
     from agens_novel.artifacts import sink
 
     monkeypatch.setattr(sink, "_restrict_windows_acl", lambda _root: None)
+    monkeypatch.delenv("AGENS_EVALUATION_MODE", raising=False)
+    monkeypatch.delenv("AGENS_ARTIFACT_ROOT", raising=False)
 
     first_id, first = runner._prepare_artifact_root(tmp_path / "evidence", label="agens-smoke")
     second_id, second = runner._prepare_artifact_root(tmp_path / "evidence", label="agens-smoke")
@@ -58,6 +65,8 @@ def test_chrome_evaluation_reserves_a_unique_artifact_root(tmp_path, monkeypatch
     assert first_id != second_id
     assert first != second
     assert first.is_dir() and second.is_dir()
+    assert "AGENS_EVALUATION_MODE" not in os.environ
+    assert "AGENS_ARTIFACT_ROOT" not in os.environ
 
 
 def test_browser_process_receives_no_provider_key(monkeypatch, tmp_path) -> None:
@@ -76,10 +85,23 @@ def test_browser_process_receives_no_provider_key(monkeypatch, tmp_path) -> None
     assert "DEEPSEEK_API_KEY" not in environment
     assert environment["AGENS_PLAYTEST_SLOT_SEQUENCE"] == "A" * 90
     assert environment["AGENS_PLAYTEST_CANONICAL_SCENARIO"] == scenario.key
+    assert environment["AGENS_PLAYTEST_STORY_VERSION"] == "3"
+    assert environment["AGENS_PLAYTEST_VIEWPORT"] == "1440x1000"
     assert environment["AGENS_PLAYTEST_URL"].endswith(":8100/")
     assert environment["AGENS_PLAYTEST_SAVE_LOAD_TURN"] == "0"
     assert environment["AGENS_PLAYTEST_POST_LOAD_TURNS"] == "0"
     assert environment["AGENS_PLAYTEST_DOUBLE_CLICK_PROBE"] == "0"
+
+
+def test_server_environment_can_enable_record_only_v2_evaluation(tmp_path) -> None:
+    args = _args()
+    args.story_version = 2
+    args.record_only = True
+
+    environment = runner._server_environment(args, tmp_path / "evidence", "agens-test")
+
+    assert environment["AGENS_EVALUATION_STORY_VERSION"] == "2"
+    assert environment["AGENS_EVALUATION_RECORD_ONLY"] == "1"
 
 
 def test_backend_process_keeps_only_the_selected_provider_key(monkeypatch, tmp_path) -> None:
@@ -116,6 +138,7 @@ def test_chrome_acceptance_requires_clean_exact_turn_summary() -> None:
         "repair": 0,
         "recovery": 0,
         "authority_match": True,
+        "accepted_turns": [{}] * 20,
         "exit_code": 0,
     }
 
@@ -124,6 +147,93 @@ def test_chrome_acceptance_requires_clean_exact_turn_summary() -> None:
     assert not runner._acceptance_passed({**result, "authority_match": False}, turns_requested=20)
     assert not runner._acceptance_passed({**result, "strict": False}, turns_requested=20)
     assert not runner._acceptance_passed({**result, "opening_strict": False}, turns_requested=20)
+
+
+def test_v3_chrome_acceptance_requires_rule_owned_arc_summary() -> None:
+    result = {
+        "result": "passed",
+        "turns_completed": 95,
+        "p0_issues": 0,
+        "p1_issues": 0,
+        "strict": True,
+        "opening_strict": True,
+        "fallback": 0,
+        "repair": 0,
+        "recovery": 0,
+        "authority_match": True,
+        "accepted_turns": [{}] * 95,
+        "exit_code": 0,
+        "story_status": "post_arc",
+        "story_resolution": "resolved",
+        "post_arc_turns": 5,
+        "commitment_count": 2,
+        "commitment_statuses": ["fulfilled", "fulfilled"],
+        "recent_motif_count": 5,
+        "recent_motifs_unique": True,
+        "consequence_count": 30,
+        "route_consequences_have_dimensions": True,
+    }
+
+    assert runner._acceptance_passed(
+        result,
+        turns_requested=95,
+        story_version=3,
+        scenario="middle_mixed",
+    )
+    assert not runner._acceptance_passed(
+        {**result, "story_resolution": "failed"},
+        turns_requested=95,
+        story_version=3,
+        scenario="middle_mixed",
+    )
+
+
+def test_chrome_checkpoint_phase_is_stable_per_provider_scenario_and_version() -> None:
+    assert runner._checkpoint_phase("agens", "high_steady", 3) == "chrome-agens-v3-high_steady"
+
+
+def test_chrome_evidence_joins_only_matching_persisted_and_visible_turns() -> None:
+    evidence = runner._accepted_turn_evidence(
+        [
+            {
+                "turn": 1,
+                "slot": "A",
+                "strict": {"first_pass": True, "final": True},
+                "timing_ms": {"end_to_end": 10, "full_response": 8, "ttft": None},
+            },
+            {"turn": 2},
+        ],
+        [
+            {
+                "turn": 1,
+                "slot": "A",
+                "event_id": "frontier-v3-1-record",
+                "narrative": "已接受正文。",
+                "choices": ["一", "二", "三", "四"],
+                "authority_hash": "hash",
+            }
+        ],
+    )
+
+    assert evidence == [
+        {
+            "turn": 1,
+            "slot": "A",
+            "intent_category": "",
+            "event_id": "frontier-v3-1-record",
+            "motif": "",
+            "rule_outcome": "",
+            "narrative": "已接受正文。",
+            "choices": ["一", "二", "三", "四"],
+            "authority_hash": "hash",
+            "strict": {"first_pass": True, "final": True},
+            "retry": False,
+            "repair": False,
+            "fallback": False,
+            "recovery": False,
+            "timing_ms": {"end_to_end": 10, "full_response": 8, "ttft": None},
+        }
+    ]
 
 
 def test_strict_summary_uses_per_turn_acceptance() -> None:

@@ -58,7 +58,7 @@ def canonical_v3_scenarios() -> tuple[CanonicalScenarioV1, ...]:
         CanonicalScenarioV1(
             key="low_risk",
             world_key="frontier",
-            run_seed="v3-eval-frontier-low-risk-000",
+            run_seed="v3-eval-frontier-low-risk-007",
             profile=_profile("验真赤", "普通", _LOW_ATTRIBUTES),
             slots=("C",) * 90,
         ),

@@ -15,6 +15,7 @@ from agens_novel.evaluation.ledger import (
     EvaluationLedger,
     configured_evaluation_limits,
     evaluation_budget_root,
+    evaluation_record_only,
 )
 from agens_novel.evaluation.model_config import (
     EvaluationModelConfig,
@@ -42,6 +43,7 @@ class CanonicalEvaluationHooks(EvaluationHooks):
     def __init__(self, scenarios: tuple[CanonicalScenarioV1, ...] | None = None) -> None:
         registered = scenarios or canonical_v3_scenarios()
         self._scenarios = {scenario.key: scenario for scenario in registered}
+        self._story_version = _evaluation_story_version()
 
     def active_scenario(self) -> EvaluationScenario | None:
         key = os.environ.get("AGENS_EVALUATION_SCENARIO", "").strip()
@@ -53,7 +55,7 @@ class CanonicalEvaluationHooks(EvaluationHooks):
         return EvaluationScenario(key=scenario.key, profile=dict(scenario.profile))
 
     def install_authority(self, engine: GameEngine, scenario: EvaluationScenario) -> None:
-        install_canonical_authority(engine, self._canonical(scenario), story_version=3)
+        install_canonical_authority(engine, self._canonical(scenario), story_version=self._story_version)
 
     def canonical_action_for_slot(self, slot: str) -> str:
         return canonical_action_for_slot(slot)
@@ -78,16 +80,20 @@ def create_evaluation_game_service(
     root = ensure_evaluation_sink_ready()
     if root is None:
         raise RuntimeError("evaluation artifact root is unavailable")
-    max_total_calls, max_narrator_calls = configured_evaluation_limits()
-    budget = EvaluationBudget(
-        evaluation_budget_root(root),
-        max_total_calls=max_total_calls,
-        max_narrator_calls=max_narrator_calls,
-    )
+    record_only = evaluation_record_only()
+    budget = None
+    if not record_only:
+        max_total_calls, max_narrator_calls = configured_evaluation_limits()
+        budget = EvaluationBudget(
+            evaluation_budget_root(root),
+            max_total_calls=max_total_calls,
+            max_narrator_calls=max_narrator_calls,
+        )
     ledger = EvaluationLedger(
         provider=config.provider,
         model=config.model,
         shared_budget=budget,
+        record_only=record_only,
     )
     resolver = EvaluationModelConfigResolver(
         config,
@@ -115,3 +121,10 @@ def _validate_evaluation_database_url() -> None:
         raise RuntimeError("evaluation mode requires an isolated local PostgreSQL database")
     if "eval" not in database and "chrome" not in database:
         raise RuntimeError("evaluation mode requires an explicitly named evaluation database")
+
+
+def _evaluation_story_version() -> int:
+    raw = os.environ.get("AGENS_EVALUATION_STORY_VERSION", "3").strip()
+    if raw not in {"1", "2", "3"}:
+        raise RuntimeError("evaluation story version must be 1, 2, or 3")
+    return int(raw)

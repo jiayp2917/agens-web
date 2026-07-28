@@ -22,6 +22,7 @@ with db.engine.connect() as conn:
     rows = conn.execute(
         text("""
             SELECT game_turns.turn_no, game_turns.narrative, game_turns.state_after
+                 , game_turns.choices, game_turns.state_delta
             FROM game_turns
             JOIN game_runs ON game_runs.id = game_turns.run_id
             WHERE game_runs.session_id = :session_id
@@ -32,6 +33,7 @@ with db.engine.connect() as conn:
 
 turns = [int(row["turn_no"]) for row in rows]
 scenario_key = os.environ.get("AGENS_PLAYTEST_CANONICAL_SCENARIO", "").strip()
+story_version = int(os.environ.get("AGENS_PLAYTEST_STORY_VERSION", "3") or 3)
 expected_hashes = []
 if scenario_key:
     scenario = next((item for item in canonical_v3_scenarios() if item.key == scenario_key), None)
@@ -41,7 +43,7 @@ if scenario_key:
         str(item["authority_hash"])
         for item in canonical_authority_trajectory(
             scenario,
-            story_version=3,
+            story_version=story_version,
             max_turns=len(rows),
         )
     ]
@@ -71,6 +73,47 @@ for row in rows:
     else:
         seen[digest] = turn_no
 
+accepted_turns = []
+for row in rows:
+    turn_no = int(row["turn_no"])
+    state_delta = row["state_delta"] if isinstance(row["state_delta"], dict) else {}
+    meta = state_delta.get("meta") if isinstance(state_delta.get("meta"), dict) else {}
+    state_after = row["state_after"] if isinstance(row["state_after"], dict) else {}
+    choices = row["choices"] if isinstance(row["choices"], list) else []
+    world_after = state_after.get("world") if isinstance(state_after.get("world"), dict) else {}
+    story_after = world_after.get("story_state") if isinstance(world_after.get("story_state"), dict) else {}
+    turn_motifs = story_after.get("recent_motifs") if isinstance(story_after.get("recent_motifs"), list) else []
+    slot = str(meta.get("choice_slot") or "")
+    accepted_turns.append({
+        "turn": turn_no,
+        "slot": slot if slot in {"A", "B", "C", "D"} else "",
+        "intent_category": str(meta.get("choice_category") or ""),
+        "event_id": str(meta.get("event_id") or ""),
+        "motif": str(turn_motifs[-1] or "") if turn_motifs else "",
+        "rule_outcome": str(meta.get("turn_summary") or ""),
+        "narrative": str(row["narrative"] or ""),
+        "choices": [str(choice) for choice in choices[:4] if str(choice).strip()],
+        "authority_hash": str(state_after.get("_evaluation_authority_hash") or ""),
+    })
+
+final_state = rows[-1]["state_after"] if rows and isinstance(rows[-1]["state_after"], dict) else {}
+world = final_state.get("world") if isinstance(final_state.get("world"), dict) else {}
+story_state = world.get("story_state") if isinstance(world.get("story_state"), dict) else {}
+commitments = story_state.get("commitments") if isinstance(story_state.get("commitments"), list) else []
+motifs = story_state.get("recent_motifs") if isinstance(story_state.get("recent_motifs"), list) else []
+consequences = story_state.get("consequence_log") if isinstance(story_state.get("consequence_log"), list) else []
+safe_statuses = {"pending", "hooked", "pressured", "due", "fulfilled", "failed"}
+commitment_statuses = [
+    status if status in safe_statuses else "unknown"
+    for item in commitments
+    if isinstance(item, dict)
+    for status in [str(item.get("status") or "")]
+]
+route_consequences_have_dimensions = bool(consequences) and all(
+    isinstance(item, dict) and isinstance(item.get("dimensions"), list) and len(item["dimensions"]) >= 2
+    for item in consequences
+)
+
 print(json.dumps({
     "status": "ok",
     "turn_count": len(turns),
@@ -80,6 +123,16 @@ print(json.dumps({
     "authority_mismatch_count": authority_mismatch_count,
     "duplicate_narrative_count": len(duplicates),
     "duplicates": duplicates,
+    "story_status": str(story_state.get("status") or ""),
+    "story_resolution": str(story_state.get("arc_resolution") or ""),
+    "post_arc_turns": max(0, int(story_state.get("post_arc_turns") or 0)),
+    "commitment_count": len(commitment_statuses),
+    "commitment_statuses": commitment_statuses,
+    "recent_motif_count": len(motifs),
+    "recent_motifs_unique": len(motifs) == len(set(str(item) for item in motifs)),
+    "consequence_count": len(consequences),
+    "route_consequences_have_dimensions": route_consequences_have_dimensions,
+    "accepted_turns": accepted_turns,
 }, ensure_ascii=True))
 `;
   const result = spawnSync(pythonExe, ["-c", py], {

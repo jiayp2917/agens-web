@@ -125,12 +125,12 @@ def test_persisted_turn_hash_is_evaluation_only(monkeypatch) -> None:
 @pytest.mark.parametrize(
     ("payload", "expected"),
     [
-        ({"choice_index": 0}, "选择稳妥路线，先核验线索。"),
-        ({"choice": "A"}, "选择稳妥路线，先核验线索。"),
-        ({"choice": "1"}, "选择稳妥路线，先核验线索。"),
+        ({"choice_index": 0}, "A"),
+        ({"choice": "A"}, "A"),
+        ({"choice": "1"}, "A"),
     ],
 )
-def test_evaluation_choice_uses_canonical_action_not_model_display_text(
+def test_evaluation_choice_uses_canonical_slot_not_model_display_text(
     monkeypatch, payload: dict[str, object], expected: str
 ) -> None:
     scenario = canonical_v3_scenarios()[0]

@@ -347,6 +347,21 @@ def test_v3_resolves_into_post_arc_and_preserves_two_seeded_commitments() -> Non
     assert all(entry["dimensions"] for entry in session.story_state["consequence_log"])
 
 
+def test_v3_commitments_all_reach_each_arc_stage_before_resolution() -> None:
+    session = _bound_session("frontier", version=3)
+
+    for turn in range(1, 62):
+        session.turn_count = turn
+        story = story_turn_delta(session, "风险", {}, 16 + turn)
+        session.story_state = story["story_update"]
+        if turn == 30:
+            assert {item["status"] for item in session.story_state["commitments"]} == {"hooked"}
+        if turn == 60:
+            assert {item["status"] for item in session.story_state["commitments"]} == {"pressured"}
+
+    assert {item["status"] for item in session.story_state["commitments"]} == {"due"}
+
+
 def test_v3_routes_apply_distinct_rule_owned_consequences() -> None:
     binding = opening_story_binding("forest", ["苦修"], content_version=3, run_seed="routes")
     base = GameSession(

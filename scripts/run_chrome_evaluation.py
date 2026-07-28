@@ -15,6 +15,7 @@ from sqlalchemy.engine import make_url
 
 from agens_novel.artifacts import sink
 from agens_novel.evaluation.playthrough import canonical_slots
+from agens_novel.evaluation.release_state import ReleaseRunStateV1
 from agens_novel.evaluation.scenarios import canonical_v3_scenarios
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -26,6 +27,23 @@ def main() -> int:
     args = _arguments()
     scenario = _scenario(args.scenario)
     _validate_database_url(args.database_url)
+    checkpoint_phase = _checkpoint_phase(args.provider, scenario.key, args.story_version)
+    release_state = ReleaseRunStateV1.open(args.release_state) if args.release_state else None
+    if release_state is not None and release_state.is_passed(checkpoint_phase):
+        print(
+            json.dumps(
+                {
+                    "provider": args.provider,
+                    "scenario": scenario.key,
+                    "story_version": args.story_version,
+                    "accepted": True,
+                    "skipped": True,
+                },
+                ensure_ascii=True,
+                sort_keys=True,
+            )
+        )
+        return 0
     label = f"{args.provider.lower()}-{scenario.key}-{args.name}"
     run_id, artifact_root = _prepare_artifact_root(args.artifact_parent, label=label)
     server_env = _server_environment(args, artifact_root, label)
@@ -40,19 +58,43 @@ def main() -> int:
     finally:
         _stop_server(server)
 
-    accepted = _acceptance_passed(result, turns_requested=args.turns)
+    accepted = _acceptance_passed(
+        result,
+        turns_requested=args.turns,
+        story_version=args.story_version,
+        scenario=scenario.key,
+    )
     if not accepted and result.get("result") in {"passed", "passed_terminal"}:
         result["result"] = "failed_acceptance"
     result["elapsed_ms"] = int((time.monotonic() - started) * 1000)
     result["provider"] = args.provider
     result["scenario"] = scenario.key
+    result["story_version"] = args.story_version
     result["turns_requested"] = args.turns
     result["run_label"] = label
     result["run_id"] = run_id
     path = sink.write_json("chrome_orchestrator", label, "summary.json", result)
+    if release_state is not None:
+        release_state.checkpoint(
+            checkpoint_phase,
+            status="passed" if accepted else "failed",
+            details={
+                "run_id": run_id,
+                "turns_requested": args.turns,
+                "turns_completed": int(result.get("turns_completed") or 0),
+                "accepted": accepted,
+                "p0_issues": int(result.get("p0_issues") or 0),
+                "p1_issues": int(result.get("p1_issues") or 0),
+                "fallback": int(result.get("fallback") or 0),
+                "repair": int(result.get("repair") or 0),
+                "recovery": int(result.get("recovery") or 0),
+                "authority_match": result.get("authority_match"),
+            },
+        )
     summary = {
         "provider": args.provider,
         "scenario": scenario.key,
+        "story_version": args.story_version,
         "turns_requested": args.turns,
         "result": result["result"],
         "turns_completed": result.get("turns_completed", 0),
@@ -76,6 +118,7 @@ def _arguments() -> argparse.Namespace:
     parser.add_argument("--provider", required=True, choices=sorted(_PROVIDERS))
     parser.add_argument("--transport", required=True, choices=sorted(_TRANSPORTS))
     parser.add_argument("--scenario", required=True)
+    parser.add_argument("--story-version", type=int, choices=(2, 3), default=3)
     parser.add_argument("--database-url", required=True)
     parser.add_argument("--artifact-parent", required=True, type=Path)
     parser.add_argument("--port", type=int, default=8100)
@@ -84,6 +127,9 @@ def _arguments() -> argparse.Namespace:
     parser.add_argument("--refresh-probe", action="store_true")
     parser.add_argument("--double-click-probe", action="store_true")
     parser.add_argument("--conflict-probe", action="store_true")
+    parser.add_argument("--viewport", default="1440x1000")
+    parser.add_argument("--record-only", action="store_true")
+    parser.add_argument("--release-state", type=Path)
     parser.add_argument("--name", default=time.strftime("%Y%m%d-%H%M%S"))
     parser.add_argument("--timeout-seconds", type=int, default=1800)
     parser.add_argument("--startup-timeout-seconds", type=int, default=30)
@@ -94,6 +140,8 @@ def _arguments() -> argparse.Namespace:
         parser.error("--save-load-turn must be within the requested turns")
     if not _safe_label(args.name):
         parser.error("--name must contain only letters, digits, dot, underscore, or dash")
+    if not _valid_viewport(args.viewport):
+        parser.error("--viewport must use WIDTHxHEIGHT")
     return args
 
 
@@ -105,10 +153,7 @@ def _scenario(key: str):
 
 
 def _prepare_artifact_root(parent: Path, *, label: str) -> tuple[str, Path]:
-    run_id, root = sink.create_evaluation_run_root(parent, label=label)
-    os.environ["AGENS_EVALUATION_MODE"] = "1"
-    os.environ["AGENS_ARTIFACT_ROOT"] = str(root)
-    return run_id, root
+    return sink.create_evaluation_run_root(parent, label=label)
 
 
 def _validate_database_url(raw_url: str) -> None:
@@ -130,6 +175,8 @@ def _server_environment(args: argparse.Namespace, artifact_root: Path, label: st
             "AGENS_EVALUATION_PROVIDER": args.provider,
             "AGENS_EVALUATION_TRANSPORT": args.transport,
             "AGENS_EVALUATION_SCENARIO": args.scenario,
+            "AGENS_EVALUATION_STORY_VERSION": str(args.story_version),
+            "AGENS_EVALUATION_RECORD_ONLY": "1" if args.record_only else "0",
             "AGENS_EVALUATION_RUN_LABEL": label,
             "AGENS_START_MODEL_WORLD": "1",
             "AGENS_ENV": "development",
@@ -170,6 +217,8 @@ def _browser_environment(
                 canonical_slots(scenario, max_turns=args.turns)
             ),
             "AGENS_PLAYTEST_CANONICAL_SCENARIO": scenario.key,
+            "AGENS_PLAYTEST_STORY_VERSION": str(args.story_version),
+            "AGENS_PLAYTEST_VIEWPORT": args.viewport,
             "AGENS_PLAYTEST_CONTENT_AUDIT": "1",
             "AGENS_PLAYTEST_FAIL_ON_P1": "1",
             "AGENS_PLAYTEST_POST_LOAD_TURNS": "0",
@@ -254,6 +303,21 @@ def _run_browser(environment: dict[str, str], *, timeout_seconds: int) -> dict[s
         "repair": int(summary.get("repaired_output_count") or 0),
         "recovery": int(summary.get("contract_recovery_count") or 0),
         "authority_match": persisted_audit.get("authority_match"),
+        "story_status": persisted_audit.get("story_status"),
+        "story_resolution": persisted_audit.get("story_resolution"),
+        "post_arc_turns": int(persisted_audit.get("post_arc_turns") or 0),
+        "commitment_count": int(persisted_audit.get("commitment_count") or 0),
+        "commitment_statuses": list(persisted_audit.get("commitment_statuses") or []),
+        "recent_motif_count": int(persisted_audit.get("recent_motif_count") or 0),
+        "recent_motifs_unique": bool(persisted_audit.get("recent_motifs_unique")),
+        "consequence_count": int(persisted_audit.get("consequence_count") or 0),
+        "route_consequences_have_dimensions": bool(
+            persisted_audit.get("route_consequences_have_dimensions")
+        ),
+        "accepted_turns": _accepted_turn_evidence(
+            summary.get("accepted_turns"),
+            persisted_audit.get("accepted_turns"),
+        ),
         "exit_code": int(result.returncode),
     }
 
@@ -263,7 +327,13 @@ def _strict_summary(summary: dict[str, Any]) -> bool:
     return turns_completed > 0 and int(summary.get("accepted_live_turns") or 0) == turns_completed
 
 
-def _acceptance_passed(result: dict[str, Any], *, turns_requested: int) -> bool:
+def _acceptance_passed(
+    result: dict[str, Any],
+    *,
+    turns_requested: int,
+    story_version: int = 2,
+    scenario: str = "",
+) -> bool:
     browser_result = str(result.get("result") or "")
     turns_completed = int(result.get("turns_completed") or 0)
     expected_turns = (
@@ -271,7 +341,7 @@ def _acceptance_passed(result: dict[str, Any], *, turns_requested: int) -> bool:
         if browser_result == "passed"
         else 0 < turns_completed <= turns_requested
     )
-    return (
+    accepted = (
         browser_result in {"passed", "passed_terminal"}
         and expected_turns
         and bool(result.get("strict"))
@@ -282,8 +352,80 @@ def _acceptance_passed(result: dict[str, Any], *, turns_requested: int) -> bool:
         and int(result.get("repair") or 0) == 0
         and int(result.get("recovery") or 0) == 0
         and result.get("authority_match") is True
+        and len(result.get("accepted_turns") or []) == turns_completed
         and int(result.get("exit_code") or 0) == 0
     )
+    if not accepted or story_version != 3:
+        return accepted
+    return _v3_story_acceptance(result, scenario=scenario, turns_requested=turns_requested)
+
+
+def _v3_story_acceptance(result: dict[str, Any], *, scenario: str, turns_requested: int) -> bool:
+    expected_resolution = {
+        "high_steady": "resolved",
+        "low_risk": "failed",
+        "middle_mixed": "resolved",
+    }.get(scenario)
+    commitment_statuses = [str(item) for item in result.get("commitment_statuses") or []]
+    commitments_final = len(commitment_statuses) == 2 and all(
+        item in {"fulfilled", "failed"} for item in commitment_statuses
+    )
+    return bool(
+        expected_resolution
+        and result.get("story_status") == "post_arc"
+        and result.get("story_resolution") == expected_resolution
+        and commitments_final
+        and int(result.get("recent_motif_count") or 0) <= 5
+        and bool(result.get("recent_motifs_unique"))
+        and int(result.get("consequence_count") or 0) > 0
+        and bool(result.get("route_consequences_have_dimensions"))
+        and (turns_requested < 95 or int(result.get("post_arc_turns") or 0) >= 5)
+    )
+
+
+def _accepted_turn_evidence(
+    browser_turns: Any,
+    persisted_turns: Any,
+) -> list[dict[str, Any]]:
+    """Join final visible turns to rule-owned metadata without raw model output."""
+    persisted_items = persisted_turns if isinstance(persisted_turns, list) else []
+    persisted_by_turn = {
+        int(item.get("turn") or 0): item
+        for item in persisted_items
+        if isinstance(item, dict)
+        if int(item.get("turn") or 0) > 0
+    }
+    accepted: list[dict[str, Any]] = []
+    for browser in browser_turns if isinstance(browser_turns, list) else []:
+        if not isinstance(browser, dict):
+            continue
+        turn = int(browser.get("turn") or 0)
+        persisted = persisted_by_turn.get(turn)
+        if turn <= 0 or persisted is None:
+            continue
+        choices = persisted.get("choices")
+        accepted.append(
+            {
+                "turn": turn,
+                "slot": str(persisted.get("slot") or browser.get("slot") or ""),
+                "intent_category": str(persisted.get("intent_category") or ""),
+                "event_id": str(persisted.get("event_id") or ""),
+                "motif": str(persisted.get("motif") or ""),
+                "rule_outcome": str(persisted.get("rule_outcome") or ""),
+                "narrative": str(persisted.get("narrative") or browser.get("narrative") or ""),
+                "choices": [str(item) for item in choices]
+                if isinstance(choices, list)
+                else [str(item) for item in browser.get("choices") or []],
+                "authority_hash": str(persisted.get("authority_hash") or ""),
+                "strict": dict(browser.get("strict") or {}),
+                "retry": bool(browser.get("retry")),
+                "repair": bool(browser.get("repair")),
+                "fallback": bool(browser.get("fallback")),
+                "recovery": bool(browser.get("recovery")),
+                "timing_ms": dict(browser.get("timing_ms") or {}),
+            }
+        )
+    return sorted(accepted, key=lambda item: int(item["turn"]))
 
 
 def _decode_browser_stdout(value: bytes) -> str:
@@ -316,6 +458,18 @@ def _stop_server(server: subprocess.Popen[bytes]) -> None:
 
 def _safe_label(value: str) -> bool:
     return bool(value) and all(character.isalnum() or character in "._-" for character in value)
+
+
+def _valid_viewport(value: str) -> bool:
+    try:
+        width, height = (int(item) for item in str(value).lower().split("x", maxsplit=1))
+    except (TypeError, ValueError):
+        return False
+    return 200 <= width <= 4096 and 200 <= height <= 4096
+
+
+def _checkpoint_phase(provider: str, scenario: str, story_version: int) -> str:
+    return f"chrome-{provider.lower()}-v{story_version}-{scenario}"
 
 
 if __name__ == "__main__":

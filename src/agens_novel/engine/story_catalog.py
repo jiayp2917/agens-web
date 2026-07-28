@@ -331,8 +331,6 @@ def _apply_v3_turn_state(
         previous_state.get("commitments"),
         turn,
         status,
-        category,
-        commitment_focus,
     )
     log_entries = list(previous_state.get("consequence_log") or [])
     dimensions = list(effect.get("dimensions") or ())
@@ -385,25 +383,22 @@ def _advance_v3_commitments(
     value: Any,
     turn: int,
     status: str,
-    category: str,
-    commitment_focus: int,
 ) -> list[dict[str, str]]:
     items = value if isinstance(value, list) else []
     stage = "hooked" if turn <= 30 else "pressured" if turn <= 60 else "due"
     stage_rank = {"pending": 0, "hooked": 1, "pressured": 2, "due": 3}
-    luck_target = commitment_focus % len(items) if items else -1
     out: list[dict[str, str]] = []
-    for index, item in enumerate(items):
+    for item in items:
         if not isinstance(item, dict):
             continue
         copied = {str(key): str(raw) for key, raw in item.items() if isinstance(raw, str)}
         if not copied.get("commitment_id"):
             continue
-        matches_route = copied.get("category") == category
-        if category == "气运" and index == luck_target:
-            matches_route = True
         current = copied.get("status") or "pending"
-        if matches_route and stage_rank.get(stage, 0) > stage_rank.get(current, 0):
+        # Both pre-registered commitments must remain visible across the arc.
+        # Their route category decides the eventual resolution, not whether the
+        # player ever sees the hook, pressure, and due stages.
+        if stage_rank.get(stage, 0) > stage_rank.get(current, 0):
             current = stage
         if status == "resolved":
             current = "fulfilled" if current == "due" else "failed"

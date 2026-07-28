@@ -9,6 +9,7 @@ def test_canonical_v3_scenarios_are_fixed_and_use_valid_30_point_profiles() -> N
     scenarios = canonical_v3_scenarios()
 
     assert [scenario.key for scenario in scenarios] == ["high_steady", "low_risk", "middle_mixed"]
+    assert scenarios[1].run_seed == "v3-eval-frontier-low-risk-007"
     assert all(len(scenario.slots) == 90 for scenario in scenarios)
     assert all(sum(scenario.profile["attributes"].values()) == 30 for scenario in scenarios)
     assert all(set(scenario.slots).issubset({"A", "B", "C", "D"}) for scenario in scenarios)

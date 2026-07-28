@@ -40,6 +40,37 @@ def test_ledger_enforces_elapsed_time_cap_before_dispatch() -> None:
     assert ledger.summary()["run_elapsed_ms"] == 5000
 
 
+def test_record_only_ledger_keeps_metrics_without_enforcing_caps() -> None:
+    ledger = EvaluationLedger(
+        provider="Agens",
+        model="test",
+        max_total_calls=1,
+        max_narrator_calls=1,
+        max_elapsed_seconds=0.0,
+        record_only=True,
+    )
+
+    first = ledger.reserve("narrator")
+    second = ledger.reserve("narrator")
+    ledger.record(
+        request_id=first,
+        agent="narrator",
+        transport="json_schema",
+        elapsed_ms=10,
+        usage={"total_tokens": 3},
+    )
+    ledger.record(
+        request_id=second,
+        agent="narrator",
+        transport="json_schema",
+        elapsed_ms=20,
+        usage={"total_tokens": 4},
+    )
+
+    assert ledger.summary()["record_only"] is True
+    assert ledger.summary()["call_count"] == 2
+
+
 def test_ledger_reports_unknown_cost_without_a_confirmed_price_card() -> None:
     ledger = EvaluationLedger(provider="DeepSeek", model="test")
     call_id = ledger.reserve("narrator")

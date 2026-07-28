@@ -368,16 +368,11 @@ def _current_motif(session: GameSession) -> str:
 
 def canonical_action_for_slot(slot: str) -> str:
     """Return the fixed rule action used by a registered evaluation slot."""
-    actions = {
-        "A": "选择稳妥路线，先核验线索。",
-        "B": "选择机遇路线，向同行者探问。",
-        "C": "选择风险路线，踏入未知险地。",
-        "D": "选择气运路线，借势试路。",
-    }
-    try:
-        return actions[slot]
-    except KeyError as exc:
-        raise ValueError(f"evaluation slot is not registered: {slot}") from exc
+    if slot not in {"A", "B", "C", "D"}:
+        raise ValueError(f"evaluation slot is not registered: {slot}")
+    # GameEngine resolves the slot against the current four displayed choices.
+    # Keeping the slot intact avoids a free-text parser defaulting every route to B.
+    return slot
 
 
 class _RuleReplayEngine(GameEngine):

@@ -11,7 +11,7 @@ from __future__ import annotations
 import os
 from typing import Any
 
-from ...artifacts import store
+from ...artifacts import sink, store
 from ...llm.provider_adapter import ProviderTransport
 from ...llm.provider_adapter import (
     response_format as provider_response_format,
@@ -282,7 +282,11 @@ def save_artifact(state: dict[str, Any]) -> dict[str, Any]:
             generated_data, world_description, opening_narrative = _parse_world_output(text)
 
     envelope = WorldOpeningEnvelopeV1.from_payload(generated_data)
-    out_path = store.write_output(AGENT_NAME, run_id, text)
+    out_path = store.write_output(
+        AGENT_NAME,
+        run_id,
+        "" if sink.evaluation_mode_enabled() else text,
+    )
     audit = {
         "run_id": run_id,
         "agent": AGENT_NAME,

@@ -16,7 +16,7 @@ import logging
 from collections.abc import Callable
 from typing import Any
 
-from ...artifacts import store
+from ...artifacts import sink, store
 from ...llm.client import LLMError, call_llm, call_llm_stream
 from ...llm.provider_adapter import ProviderTransport, narrator_transport, response_format
 from ...llm.runtime_context import runtime_api_key
@@ -220,7 +220,13 @@ def save_artifact(state: dict[str, Any]) -> dict[str, Any]:
         choices = list(envelope.choices)
     contract_diagnostics = _contract_diagnostics(text, narrative, state_delta, choices)
 
-    out_path = store.write_output(AGENT_NAME, run_id, text)
+    # Final accepted prose is captured by the evaluation runners. Agent-level
+    # artifacts retain no raw response when a contract or later rule check fails.
+    out_path = store.write_output(
+        AGENT_NAME,
+        run_id,
+        "" if sink.evaluation_mode_enabled() else text,
+    )
     audit = {
         "run_id": run_id, "agent": AGENT_NAME,
         "started_at": state.get("started_at"), "finished_at": utcnow_iso(),

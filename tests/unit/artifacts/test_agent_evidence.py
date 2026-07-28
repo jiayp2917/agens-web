@@ -18,7 +18,7 @@ def test_agent_artifacts_never_persist_inputs(tmp_path, monkeypatch) -> None:
         {
             "run_id": "narrator-run",
             "model": "test-model",
-            "output_text": '潮雾散去。<choices>["守渡口", "问舟客", "闯暗礁", "借潮行"]</choices>',
+            "output_text": '仅用于测试的原始叙事。<choices>["守渡口", "问舟客", "闯暗礁", "借潮行"]</choices>',
             "user_input": "this prompt text must not persist",
         }
     )
@@ -26,7 +26,7 @@ def test_agent_artifacts_never_persist_inputs(tmp_path, monkeypatch) -> None:
         {
             "run_id": "world-run",
             "model": "test-model",
-            "output_text": "",
+            "output_text": "仅用于测试的原始开局。",
             "llm_error": "simulated failure",
             "user_input": "this prompt text must not persist",
         }
@@ -35,7 +35,7 @@ def test_agent_artifacts_never_persist_inputs(tmp_path, monkeypatch) -> None:
         {
             "run_id": "judge-run",
             "model": "test-model",
-            "output_text": '{"approved":true}',
+            "output_text": '{"approved":true,"judgment_note":"仅用于测试的原始审判。"}',
             "user_input": "this prompt text must not persist",
         }
     )
@@ -43,6 +43,12 @@ def test_agent_artifacts_never_persist_inputs(tmp_path, monkeypatch) -> None:
     assert not list(evidence_root.rglob("input.json"))
     assert all(
         "this prompt text must not persist" not in path.read_text(encoding="utf-8")
+        for path in evidence_root.rglob("*")
+        if path.is_file()
+    )
+    assert all(
+        marker not in path.read_text(encoding="utf-8")
+        for marker in ("仅用于测试的原始叙事", "仅用于测试的原始开局", "仅用于测试的原始审判")
         for path in evidence_root.rglob("*")
         if path.is_file()
     )

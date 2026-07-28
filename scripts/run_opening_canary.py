@@ -16,6 +16,7 @@ from agens_novel.evaluation.ledger import (
     EvaluationLedger,
     configured_evaluation_limits,
     evaluation_budget_root,
+    evaluation_record_only,
 )
 from agens_novel.evaluation.model_config import EvaluationModelConfig
 from agens_novel.evaluation.scenarios import canonical_v3_scenarios
@@ -25,15 +26,20 @@ def main() -> int:
     args = _arguments()
     run_id, root = _prepare_artifact_root()
     config = EvaluationModelConfig.from_environment()
-    max_total_calls, max_narrator_calls = configured_evaluation_limits()
-    ledger = EvaluationLedger(
-        provider=config.provider,
-        model=config.model,
-        shared_budget=EvaluationBudget(
+    record_only = evaluation_record_only()
+    budget = None
+    if not record_only:
+        max_total_calls, max_narrator_calls = configured_evaluation_limits()
+        budget = EvaluationBudget(
             evaluation_budget_root(root),
             max_total_calls=max_total_calls,
             max_narrator_calls=max_narrator_calls,
-        ),
+        )
+    ledger = EvaluationLedger(
+        provider=config.provider,
+        model=config.model,
+        shared_budget=budget,
+        record_only=record_only,
     )
     result = run_opening_canary(config, args.scenario, ledger)
     result["run_id"] = run_id

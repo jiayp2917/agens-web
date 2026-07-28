@@ -6,10 +6,12 @@ from unittest.mock import patch
 
 from agens_novel.artifacts import sink
 from agens_novel.engine.game_engine import GameEngine
+from agens_novel.engine.turn_rules import choice_intent
 from agens_novel.evaluation.ledger import EvaluationLedger
 from agens_novel.evaluation.model_config import EvaluationModelConfig
 from agens_novel.evaluation.playthrough import (
     authority_state_hash,
+    canonical_action_for_slot,
     canonical_replay_session,
     canonical_slots,
     install_canonical_authority,
@@ -62,6 +64,11 @@ def test_canonical_slots_extend_only_for_post_arc_coverage() -> None:
 
     assert canonical_slots(scenario, max_turns=90) == scenario.slots
     assert canonical_slots(scenario, max_turns=95) == scenario.slots + ("A",) * 5
+
+
+def test_canonical_actions_preserve_fixed_slot_semantics() -> None:
+    for slot in ("A", "B", "C", "D"):
+        assert choice_intent(canonical_action_for_slot(slot)).slot == slot
 
 
 def test_live_opening_cannot_alter_canonical_authority_but_keeps_four_display_choices() -> None:

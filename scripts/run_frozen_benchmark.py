@@ -8,11 +8,16 @@ import os
 from pathlib import Path
 
 from agens_novel.artifacts.sink import ensure_evaluation_sink_ready
-from agens_novel.evaluation.benchmark import build_blind_review_packet, run_frozen_benchmark
+from agens_novel.evaluation.benchmark import (
+    build_blind_review_packet,
+    frozen_benchmark_acceptance,
+    run_frozen_benchmark,
+)
 from agens_novel.evaluation.ledger import (
     EvaluationBudget,
     EvaluationLedger,
     evaluation_budget_root,
+    evaluation_record_only,
 )
 from agens_novel.evaluation.manifest import write_inventory_manifest, write_manifest
 from agens_novel.evaluation.model_config import EvaluationModelConfig
@@ -55,11 +60,14 @@ def _run(
     root = ensure_evaluation_sink_ready()
     if root is None:
         raise RuntimeError("evaluation artifact root is unavailable")
-    budget = EvaluationBudget(
-        evaluation_budget_root(root),
-        max_total_calls=max_total_calls,
-        max_narrator_calls=max_narrator_calls,
-    )
+    record_only = evaluation_record_only()
+    budget = None
+    if not record_only:
+        budget = EvaluationBudget(
+            evaluation_budget_root(root),
+            max_total_calls=max_total_calls,
+            max_narrator_calls=max_narrator_calls,
+        )
     report, _path = run_frozen_benchmark(
         config,
         ledger=EvaluationLedger(
@@ -69,6 +77,7 @@ def _run(
             max_narrator_calls=max_narrator_calls,
             max_elapsed_seconds=max_elapsed_seconds,
             shared_budget=budget,
+            record_only=record_only,
         ),
     )
     write_inventory_manifest()
@@ -78,14 +87,17 @@ def _run(
                 "provider": report["provider"],
                 "model": report["model"],
                 "snapshot_count": len(report["results"]),
-                "strict_count": sum(bool(item["strict"]) for item in report["results"]),
+                "strict_count": report["acceptance"]["strict_count"],
+                "p0_issues": report["acceptance"]["p0_issues"],
+                "p1_issues": report["acceptance"]["p1_issues"],
+                "accepted": report["acceptance"]["accepted"],
                 "call_count": report["ledger"]["call_count"],
             },
             ensure_ascii=False,
             sort_keys=True,
         )
     )
-    return 0
+    return 0 if frozen_benchmark_acceptance(report)["accepted"] else 2
 
 
 def _blind(first_path: Path, second_path: Path) -> int:

@@ -17,7 +17,7 @@ import re
 from typing import Any
 
 from ... import paths
-from ...artifacts import store
+from ...artifacts import sink, store
 from ...llm.provider_adapter import (
     ProviderTransport,
     judge_transport,
@@ -140,7 +140,11 @@ def save_artifact(state: dict[str, Any]) -> dict[str, Any]:
         {"approved": approved, "issue_codes": [], "rewrite_required": not approved}
     )
 
-    out_path = store.write_output(AGENT_NAME, run_id, text)
+    out_path = store.write_output(
+        AGENT_NAME,
+        run_id,
+        "" if sink.evaluation_mode_enabled() else text,
+    )
     audit = {
         "run_id": run_id, "agent": AGENT_NAME,
         "started_at": state.get("started_at"), "finished_at": utcnow_iso(),
@@ -149,7 +153,9 @@ def save_artifact(state: dict[str, Any]) -> dict[str, Any]:
         "llm_error_code": state.get("llm_error_code", ""),
         "response_diagnostics": state.get("response_diagnostics", {}),
         "output_path": str(out_path),
-        "approved": approved, "judgment_note": judgment_note, "score": score,
+        "approved": approved,
+        "judgment_note": "" if sink.evaluation_mode_enabled() else judgment_note,
+        "score": score,
         "prompt_metrics": state.get("prompt_metrics") or {},
     }
     audit_path = store.write_audit(AGENT_NAME, run_id, audit)

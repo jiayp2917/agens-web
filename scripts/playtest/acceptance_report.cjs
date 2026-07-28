@@ -88,6 +88,7 @@ function latestModelDiagnostics(body, sinceMs = 0) {
     judge_elapsed_ms: numberMetric(judgeDiag.elapsed_ms),
     repair_elapsed_ms: numberMetric(narratorDiag.repair_elapsed_ms),
     repaired_output: Boolean(narratorDiag.repaired_output),
+    retried_after_request_failed: Boolean(narratorDiag.retried_after_request_failed),
     retried_after_incomplete_output: Boolean(narratorDiag.retried_after_incomplete_output),
     narrator_incomplete_output: narratorStatus === "incomplete_output",
     contract_recovery: narratorStatus === "incomplete_output",

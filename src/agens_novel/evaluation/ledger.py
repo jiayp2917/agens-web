@@ -46,6 +46,16 @@ def configured_evaluation_limits() -> tuple[int, int]:
     return total, narrator
 
 
+def evaluation_record_only() -> bool:
+    """Return whether this local evaluation records calls without enforcing caps."""
+    return os.environ.get("AGENS_EVALUATION_RECORD_ONLY", "").strip().lower() in {
+        "1",
+        "true",
+        "yes",
+        "on",
+    }
+
+
 class EvaluationBudget:
     """A process-safe, external fact ledger for all calls in one evaluation root.
 
@@ -364,6 +374,7 @@ class EvaluationLedger:
         reservation_cost: float | None = None,
         max_elapsed_seconds: float | None = None,
         shared_budget: EvaluationBudget | None = None,
+        record_only: bool = False,
         clock: Callable[[], float] = monotonic,
     ) -> None:
         self.provider = provider
@@ -375,6 +386,7 @@ class EvaluationLedger:
         self.reservation_cost = _non_negative_cost(reservation_cost)
         self.max_elapsed_seconds = max_elapsed_seconds
         self.shared_budget = shared_budget
+        self.record_only = bool(record_only)
         self._clock = clock
         self._started_at = clock()
         self._calls: list[EvaluationCall] = []
@@ -383,15 +395,23 @@ class EvaluationLedger:
 
     def reserve(self, agent: str) -> str:
         """Spend a request budget slot before sending traffic to a provider."""
-        if self.max_elapsed_seconds is not None and self.elapsed_seconds >= self.max_elapsed_seconds:
+        if (
+            not self.record_only
+            and self.max_elapsed_seconds is not None
+            and self.elapsed_seconds >= self.max_elapsed_seconds
+        ):
             raise EvaluationBudgetExceeded("provider evaluation time cap reached")
-        if self._reserved_total >= self.max_total_calls:
+        if not self.record_only and self._reserved_total >= self.max_total_calls:
             raise EvaluationBudgetExceeded("provider request cap reached")
-        if agent == "narrator" and self._reserved_narrator >= self.max_narrator_calls:
+        if (
+            not self.record_only
+            and agent == "narrator"
+            and self._reserved_narrator >= self.max_narrator_calls
+        ):
             raise EvaluationBudgetExceeded("narrator request cap reached")
         request_id = (
             self.shared_budget.reserve(agent, estimated_cost=self.reservation_cost)
-            if self.shared_budget is not None
+            if self.shared_budget is not None and not self.record_only
             else f"call-{self._reserved_total + 1:04d}"
         )
         self._reserved_total += 1
@@ -449,7 +469,7 @@ class EvaluationLedger:
             error_code=str(error_code or ""),
             response_diagnostics=dict(response_diagnostics or {}),
         )
-        if self.cost_limit is not None and estimate is not None:
+        if not self.record_only and self.cost_limit is not None and estimate is not None:
             current_cost = self.total_estimated_cost or 0.0
             if current_cost + estimate > self.cost_limit:
                 raise EvaluationBudgetExceeded("provider cost cap would be exceeded")
@@ -484,6 +504,7 @@ class EvaluationLedger:
             "estimated_cost": self.total_estimated_cost,
             "run_elapsed_ms": int(self.elapsed_seconds * 1000),
             "price_card": asdict(self.price_card) if self.price_card else None,
+            "record_only": self.record_only,
             "shared_budget": self.shared_budget.summary() if self.shared_budget else None,
             "calls": [asdict(call) for call in self._calls],
         }

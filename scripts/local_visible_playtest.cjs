@@ -108,6 +108,41 @@ function cleanText(value) {
   return browserDriver.cleanText(value);
 }
 
+function acceptedTurnEvidence(turns) {
+  const accepted = new Map();
+  for (const turn of turns) {
+    const turnIndex = Number(turn?.turn_index || 0);
+    const status = Number(turn?.http_status || 0);
+    const strict = turn?.narrator_status === "ok"
+      && !turn?.fallback
+      && !turn?.repaired_output
+      && !turn?.contract_recovery;
+    if (!turnIndex || !strict || status < 200 || status >= 300 || Number(turn?.turn_count || 0) !== turnIndex) {
+      continue;
+    }
+    accepted.set(turnIndex, {
+      turn: turnIndex,
+      slot: cleanText(turn.choice_letter),
+      narrative: cleanText(turn.latest_chronicle_text),
+      choices: (turn.choice_texts_after || []).map((choice) => cleanText(choice)).filter(Boolean),
+      strict: {
+        first_pass: !turn.retried_after_request_failed && !turn.retried_after_incomplete_output,
+        final: true,
+      },
+      retry: Boolean(turn.retried_after_request_failed || turn.retried_after_incomplete_output),
+      repair: Boolean(turn.repaired_output),
+      fallback: Boolean(turn.fallback),
+      recovery: Boolean(turn.contract_recovery),
+      timing_ms: {
+        end_to_end: Math.max(0, Number(turn.elapsed_ms || 0)),
+        full_response: Math.max(0, Number(turn.narrator_elapsed_ms || 0)),
+        ttft: null,
+      },
+    });
+  }
+  return [...accepted.values()].sort((left, right) => left.turn - right.turn);
+}
+
 module.exports = {
   canBreakthroughFromRealmText: visibleContentAudit.canBreakthroughFromRealmText,
   hasBreakthroughIntent: visibleContentAudit.hasBreakthroughIntent,
@@ -810,6 +845,7 @@ if (require.main === module) {
         }
       }
     }
+    summary.accepted_turns = acceptedTurnEvidence(turns);
     acceptanceReport.updateIssueCounts(summary, issues);
     summary.result = acceptanceDecision.evaluateAcceptance({
       result: summary.result,

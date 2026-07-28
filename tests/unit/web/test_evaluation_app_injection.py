@@ -65,6 +65,27 @@ def test_evaluation_app_runner_setup_does_not_read_a_key(tmp_path, monkeypatch) 
     assert runner.engine.model_runtime_resolver is not None
 
 
+def test_evaluation_app_can_record_calls_without_creating_a_budget(tmp_path, monkeypatch) -> None:
+    _evaluation_env(tmp_path, monkeypatch)
+    monkeypatch.setenv("AGENS_EVALUATION_RECORD_ONLY", "1")
+    monkeypatch.setattr(app_module, "create_database", lambda: SimpleNamespace())
+
+    app = app_module.create_app()
+
+    assert app.state.evaluation_ledger.record_only is True
+    assert app.state.evaluation_ledger.shared_budget is None
+
+
+def test_evaluation_app_pins_the_requested_story_version(tmp_path, monkeypatch) -> None:
+    _evaluation_env(tmp_path, monkeypatch)
+    monkeypatch.setenv("AGENS_EVALUATION_STORY_VERSION", "2")
+    monkeypatch.setattr(app_module, "create_database", lambda: SimpleNamespace())
+
+    app = app_module.create_app()
+
+    assert app.state.service._evaluation_hooks._story_version == 2
+
+
 def test_evaluation_app_rejects_a_database_without_an_isolation_name(tmp_path, monkeypatch) -> None:
     _evaluation_env(tmp_path, monkeypatch)
     monkeypatch.setenv(

@@ -8,6 +8,7 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
 
+from .. import paths
 from ..artifacts.sink import ArtifactPolicyError, create_evaluation_run_root, redact_value
 
 _VERSION = "ReleaseRunStateV1"
@@ -36,6 +37,24 @@ class ReleaseRunStateV1:
         )
         return state
 
+    @classmethod
+    def open(cls, path: Path) -> ReleaseRunStateV1:
+        """Open one existing external state file without creating a new run root."""
+        candidate = path.expanduser().resolve()
+        state_path = candidate / "release-run-state.json" if candidate.is_dir() else candidate
+        if state_path.name != "release-run-state.json":
+            raise ArtifactPolicyError("release recovery state has an invalid name")
+        try:
+            state_path.parent.relative_to(paths.PROJECT_ROOT.resolve())
+        except ValueError:
+            pass
+        else:
+            raise ArtifactPolicyError("release recovery state must be outside the repository")
+        provisional = cls(root=state_path.parent, run_id="unopened")
+        payload = provisional.read()
+        run_id = _short_value(str(payload.get("run_id") or ""), "run id")
+        return cls(root=state_path.parent, run_id=run_id)
+
     @property
     def path(self) -> Path:
         return self.root / "release-run-state.json"
@@ -55,6 +74,22 @@ class ReleaseRunStateV1:
             }
         )
         self._write(payload)
+
+    def latest_checkpoint(self, phase: str) -> dict[str, Any] | None:
+        """Return the latest safe checkpoint for one phase, if any."""
+        safe_phase = _short_value(phase, "phase")
+        checkpoints = self.read().get("checkpoints")
+        if not isinstance(checkpoints, list):
+            raise ArtifactPolicyError("release recovery checkpoints are invalid")
+        for checkpoint in reversed(checkpoints):
+            if isinstance(checkpoint, dict) and checkpoint.get("phase") == safe_phase:
+                return dict(checkpoint)
+        return None
+
+    def is_passed(self, phase: str) -> bool:
+        """Return whether the latest checkpoint for a phase is an accepted pass."""
+        checkpoint = self.latest_checkpoint(phase)
+        return bool(checkpoint and checkpoint.get("status") == "passed")
 
     def read(self) -> dict[str, Any]:
         try:

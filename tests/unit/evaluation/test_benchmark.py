@@ -7,6 +7,7 @@ from unittest.mock import patch
 from agens_novel.artifacts import sink
 from agens_novel.evaluation.benchmark import (
     build_blind_review_packet,
+    frozen_benchmark_acceptance,
     frozen_narrator_snapshots,
     run_frozen_benchmark,
 )
@@ -54,12 +55,13 @@ def test_frozen_benchmark_uses_nine_independent_snapshots(tmp_path, monkeypatch)
 
     snapshots = frozen_narrator_snapshots()
     assert len(snapshots) == 9
-    assert [item.turn_count for item in snapshots if item.scenario_key == "low_risk"] == [1, 10, 19]
+    assert [item.turn_count for item in snapshots if item.scenario_key == "low_risk"] == [1, 45, 90]
     assert all(item.session.story_version == 3 for item in snapshots)
     assert all(item.authority_hash for item in snapshots)
     assert len(report["results"]) == 9
     assert all(result["strict"] for result in report["results"])
     assert len({result["snapshot_id"] for result in report["results"]}) == 9
+    assert report["acceptance"]["accepted"] is True
 
 
 def test_frozen_benchmark_reserves_the_shared_budget(tmp_path, monkeypatch) -> None:
@@ -129,3 +131,26 @@ def test_blind_packet_hides_provider_and_model_names(tmp_path, monkeypatch) -> N
     assert packet["pair_count"] == 9
     assert "Agens" not in saved
     assert "DeepSeek" not in saved
+
+
+def test_frozen_benchmark_acceptance_reports_stable_issue_codes_without_text() -> None:
+    report = {
+        "results": [
+            {
+                "snapshot_id": item.snapshot_id,
+                "strict": True,
+                "narrative": "合格叙事。",
+                "choices": ["稳住根基", "拜访旧友", "踏入险地", "静候天命"],
+            }
+            for item in frozen_narrator_snapshots()
+        ]
+    }
+
+    assert frozen_benchmark_acceptance(report)["accepted"] is True
+    report["results"][0]["narrative"] = "English residue"
+    result = frozen_benchmark_acceptance(report)
+
+    assert result["accepted"] is False
+    assert result["issues"] == [
+        {"level": "P1", "sample": "high_steady-opening", "code": "visible_english"}
+    ]
