@@ -19,6 +19,15 @@ from agens_novel.evaluation.governance_state import GovernanceRunStateV1
 ROOT = Path(__file__).resolve().parents[1]
 _PROVIDERS = {"agens", "deepseek"}
 _TRANSPORTS = {"json_schema", "json_object"}
+_PHASE_NAMES = (
+    "opening_canary",
+    "v2_smoke",
+    "v3_high_steady",
+    "v3_low_risk",
+    "v3_middle_mixed",
+    "v3_post_arc",
+    "frozen_benchmark",
+)
 _SAFE_SUMMARY_KEYS = {
     "accepted",
     "call_count",
@@ -134,6 +143,7 @@ def _arguments() -> argparse.Namespace:
     parser.add_argument("--resume-state", type=Path)
     parser.add_argument("--port", type=int, default=8100)
     parser.add_argument("--dry-run", action="store_true")
+    parser.add_argument("--phase", action="append", choices=_PHASE_NAMES)
     args = parser.parse_args()
     if bool(args.artifact_parent) == bool(args.resume_state):
         parser.error("provide exactly one of --artifact-parent or --resume-state")
@@ -167,6 +177,7 @@ def _evaluation_environment(args: argparse.Namespace, evidence_root: Path) -> di
             "AGENS_EVALUATION_RESPONSE_MODE": args.transport,
             "AGENS_EVALUATION_ARTIFACT_PARENT": str(evidence_root),
             "AGENS_ENV": "development",
+            "AGNES_MAX_RETRIES": "1",
             "PYTHONPATH": str(ROOT / "src"),
         }
     )
@@ -203,7 +214,11 @@ def _phases(args: argparse.Namespace, evidence_root: Path) -> tuple[Qualificatio
         "frozen_benchmark",
         (sys.executable, str(ROOT / "scripts" / "run_frozen_benchmark.py"), "run"),
     )
-    return (canary, smoke, *v3, post_arc, benchmark)
+    phases = (canary, smoke, *v3, post_arc, benchmark)
+    if not args.phase:
+        return phases
+    selected = set(args.phase)
+    return tuple(phase for phase in phases if phase.name in selected)
 
 
 def _chrome_phase(

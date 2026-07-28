@@ -84,6 +84,47 @@ def test_qualification_runs_each_independent_phase_and_writes_safe_checkpoints(
     assert "prompt" not in json.dumps(payload).lower()
 
 
+def test_qualification_can_select_one_phase_and_limits_internal_retries(tmp_path, monkeypatch) -> None:
+    from agens_novel.artifacts import sink
+    from agens_novel.evaluation import governance_state
+
+    monkeypatch.setattr(sink, "_restrict_windows_acl", lambda _root: None)
+    monkeypatch.setattr(governance_state, "_restrict_windows_acl", lambda _root: None)
+    commands: list[list[str]] = []
+
+    def fake_run(command, **_kwargs):
+        command_list = list(command)
+        if command_list[:3] == ["git", "rev-parse", "--short"]:
+            return CompletedProcess(command_list, 0, "a840156\n", "")
+        commands.append(command_list)
+        return CompletedProcess(command_list, 0, '{"accepted":true}\n', "")
+
+    monkeypatch.setattr(runner.subprocess, "run", fake_run)
+    monkeypatch.setattr(
+        sys,
+        "argv",
+        [
+            "qualify_model.py",
+            "--provider",
+            "agens",
+            "--database-url",
+            "postgresql+psycopg://evaluation@127.0.0.1:55432/agens_web_local",
+            "--artifact-parent",
+            str(tmp_path / "external-evidence"),
+            "--phase",
+            "opening_canary",
+        ],
+    )
+
+    assert runner.main() == 0
+    assert len(commands) == 1
+    assert commands[0][commands[0].index("--name") + 1] == "opening_canary"
+    environment = runner._evaluation_environment(
+        runner._arguments(), tmp_path / "external-evidence"
+    )
+    assert environment["AGNES_MAX_RETRIES"] == "1"
+
+
 def test_qualification_reuses_passed_checkpoint_without_repeating_the_phase(tmp_path, monkeypatch) -> None:
     from agens_novel.evaluation import governance_state
 
