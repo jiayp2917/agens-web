@@ -242,7 +242,7 @@ def save_artifact(state: dict[str, Any]) -> dict[str, Any]:
         "contract_diagnostics": contract_diagnostics,
         "provider_json_schema": bool(state.get("provider_json_schema")),
         "provider_json_object": bool(state.get("provider_json_object")),
-        "provider_transport": str(state.get("provider_transport") or "legacy_tags"),
+        "provider_transport": str(state.get("provider_transport") or "json_object"),
         "provider_json_envelope_ok": bool(state.get("provider_json_envelope_ok")),
     }
     audit_path = store.write_audit(AGENT_NAME, run_id, audit)
@@ -262,7 +262,7 @@ def save_artifact(state: dict[str, Any]) -> dict[str, Any]:
         "contract_diagnostics": contract_diagnostics,
         "provider_json_schema": bool(state.get("provider_json_schema")),
         "provider_json_object": bool(state.get("provider_json_object")),
-        "provider_transport": str(state.get("provider_transport") or "legacy_tags"),
+        "provider_transport": str(state.get("provider_transport") or "json_object"),
         "provider_json_envelope_ok": bool(state.get("provider_json_envelope_ok")),
         "output_path": str(out_path),
         "audit_path": str(audit_path),

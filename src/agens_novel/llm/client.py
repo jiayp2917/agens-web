@@ -412,9 +412,9 @@ async def _observed_request(
 def _response_transport(payload: dict[str, Any]) -> str:
     format_value = payload.get("response_format")
     if not isinstance(format_value, dict):
-        return "legacy_tags"
+        return "none"
     kind = str(format_value.get("type") or "").strip()
-    return kind if kind in {"json_schema", "json_object"} else "legacy_tags"
+    return kind if kind in {"json_schema", "json_object"} else "none"
 
 
 def _handle_non_stream_response(resp: httpx.Response, started: float) -> LLMResponse:

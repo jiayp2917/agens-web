@@ -13,14 +13,11 @@ from agens_novel.llm.provider_adapter import ProviderTransport, narrator_transpo
 
 
 class TestNarratorParse:
-    def test_narrator_transport_keeps_provider_wire_formats_separate(self, monkeypatch) -> None:
-        monkeypatch.delenv("AGENS_DEEPSEEK_NARRATOR_TRANSPORT", raising=False)
-
-        assert narrator_transport({"provider": "Agens", "model": "agnes-2.0-flash"}) == ProviderTransport.JSON_SCHEMA
-        assert narrator_transport({"provider": "DeepSeek", "model": "deepseek-v4-flash"}) == ProviderTransport.LEGACY_TAGS
-
-        monkeypatch.setenv("AGENS_DEEPSEEK_NARRATOR_TRANSPORT", "json_object")
-        assert narrator_transport({"provider": "DeepSeek", "model": "deepseek-v4-flash"}) == ProviderTransport.JSON_OBJECT
+    def test_narrator_transport_uses_explicit_response_mode(self) -> None:
+        assert narrator_transport({}) == ProviderTransport.JSON_OBJECT
+        assert narrator_transport({"response_mode": "json_schema"}) == ProviderTransport.JSON_SCHEMA
+        assert narrator_transport({"provider_transport": "json_object"}) == ProviderTransport.JSON_OBJECT
+        assert narrator_transport({"response_mode": "legacy_tags"}) == ProviderTransport.JSON_OBJECT
 
     def test_unwrap_narrator_envelope_requires_exact_output_field(self) -> None:
         wrapped = json.dumps(
@@ -64,8 +61,8 @@ class TestNarratorParse:
         assert "闭关修炼" not in metrics.values()
         assert "<本回合输出契约>" in result["user_message"]
         assert "<state_update>{}</state_update>" not in result["user_message"]
-        assert "choices 标签不得省略" in result["user_message"]
-        assert "第一个字符不得是 <、{、[" in result["user_message"]
+        assert "choices 标签不得省略" not in result["user_message"]
+        assert "任何字段都不得包含标签、Markdown 或额外包装" in result["user_message"]
         assert "不得含任何英文字母" in result["user_message"]
 
     def test_build_prompt_uses_schema_fields_without_tag_contract(self, tmp_path, monkeypatch) -> None:
@@ -80,7 +77,7 @@ class TestNarratorParse:
                 "user_input": "拜访同门",
                 "game_state_json": "{}",
                 "chat_history": [],
-                "model": "agnes-2.0-flash",
+                "response_mode": "json_schema",
             }
         )
 

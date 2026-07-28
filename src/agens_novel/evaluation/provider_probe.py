@@ -23,6 +23,8 @@ from .ledger import EvaluationLedger
 from .model_config import EvaluationModelConfig
 
 ProbeCall = Callable[..., Awaitable[LLMResponse]]
+_PLAIN_JSON_TRANSPORT = "plain_json"
+_STREAM_TRANSPORT = "stream"
 
 
 @dataclass(frozen=True)
@@ -108,7 +110,7 @@ async def _probe_plain_json(
                 "content": '仅返回 JSON 对象：{"ok":true,"text":"中文"}。',
             }
         ],
-        transport=ProviderTransport.LEGACY_TAGS,
+        transport=None,
         validator=lambda text: isinstance(_json_object(text), dict),
         ledger=ledger,
     )
@@ -170,7 +172,7 @@ async def _probe_stream(
             on_chunk=on_chunk,
         )
     except (LLMError, OSError, ValueError) as exc:
-        result = _failure("stream", ProviderTransport.LEGACY_TAGS, exc)
+        result = _failure("stream", _STREAM_TRANSPORT, exc)
         _record_probe(ledger, request_id, result)
         return result
     text = str(response.get("text") or "")
@@ -178,7 +180,7 @@ async def _probe_stream(
         name="stream",
         supported=bool(text),
         strict=bool(text),
-        transport=ProviderTransport.LEGACY_TAGS.value,
+        transport=_STREAM_TRANSPORT,
         elapsed_ms=int(response.get("elapsed_ms") or 0),
         ttft_ms=int((first_chunk_at - started) * 1000) if first_chunk_at is not None else None,
         usage=_usage(response),
@@ -215,22 +217,23 @@ async def _request_probe(
     config: EvaluationModelConfig,
     request: ProbeCall,
     messages: list[Message],
-    transport: ProviderTransport,
+    transport: ProviderTransport | None,
     validator: Callable[[str], bool],
     ledger: EvaluationLedger | None,
 ) -> ProbeResult:
     request_id = ledger.reserve("provider_probe") if ledger is not None else ""
     try:
-        response = await request(
-            messages,
-            model=config.model,
-            base_url=config.base_url,
-            api_key=config.runtime_config().api_key,
-            max_tokens=256,
-            stream=False,
-            max_retries=0,
-            response_format=response_format(transport, _probe_schema(name)),
-        )
+        request_kwargs: dict[str, Any] = {
+            "model": config.model,
+            "base_url": config.base_url,
+            "api_key": config.runtime_config().api_key,
+            "max_tokens": 256,
+            "stream": False,
+            "max_retries": 0,
+        }
+        if transport is not None:
+            request_kwargs["response_format"] = response_format(transport, _probe_schema(name))
+        response = await request(messages, **request_kwargs)
     except (LLMError, OSError, ValueError) as exc:
         result = _failure(name, transport, exc)
         _record_probe(ledger, request_id, result)
@@ -241,7 +244,7 @@ async def _request_probe(
         name=name,
         supported=bool(text),
         strict=strict,
-        transport=transport.value,
+        transport=_transport_label(transport),
         elapsed_ms=int(response.get("elapsed_ms") or 0),
         ttft_ms=None,
         usage=_usage(response),
@@ -257,7 +260,9 @@ def _selected_transport(results: list[ProbeResult]) -> ProviderTransport:
         return ProviderTransport.JSON_SCHEMA
     if by_name["json_object"].strict:
         return ProviderTransport.JSON_OBJECT
-    return ProviderTransport.LEGACY_TAGS
+    # Do not issue a new tag-formatted request when both structured transports
+    # fail. The JSON object result remains the explicit failed recommendation.
+    return ProviderTransport.JSON_OBJECT
 
 
 def _contract_payload(name: str) -> dict[str, Any]:
@@ -282,12 +287,6 @@ def _contract_prompt_and_validator(
     transport: ProviderTransport,
 ) -> tuple[str, Callable[[str], bool]]:
     expected = json.dumps(payload, ensure_ascii=False, separators=(",", ":"))
-    if transport == ProviderTransport.LEGACY_TAGS:
-        tag = {"world_opening": "world_data", "narrator": "narrator_data", "judge": "judge_data"}[name]
-        return (
-            f"仅返回 <{tag}>{expected}</{tag}>。",
-            lambda text: _validate_contract(name, _tagged_json(text, tag)),
-        )
     return (
         f"仅返回该 JSON 对象，不添加解释：{expected}",
         lambda text: _validate_contract(name, _json_object(text)),
@@ -356,12 +355,8 @@ def _json_object(text: str) -> dict[str, Any] | None:
     return value if isinstance(value, dict) else None
 
 
-def _tagged_json(text: str, tag: str) -> dict[str, Any] | None:
-    start = text.find(f"<{tag}>")
-    end = text.find(f"</{tag}>", start)
-    if start < 0 or end < 0:
-        return None
-    return _json_object(text[start + len(tag) + 2 : end])
+def _transport_label(transport: ProviderTransport | None) -> str:
+    return transport.value if transport is not None else _PLAIN_JSON_TRANSPORT
 
 
 def _usage(response: LLMResponse) -> dict[str, int]:
@@ -373,12 +368,12 @@ def _usage(response: LLMResponse) -> dict[str, int]:
     }
 
 
-def _failure(name: str, transport: ProviderTransport, error: Exception) -> ProbeResult:
+def _failure(name: str, transport: ProviderTransport | str | None, error: Exception) -> ProbeResult:
     return ProbeResult(
         name=name,
         supported=False,
         strict=False,
-        transport=transport.value,
+        transport=transport if isinstance(transport, str) else _transport_label(transport),
         elapsed_ms=0,
         ttft_ms=None,
         usage={},

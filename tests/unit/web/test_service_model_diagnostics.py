@@ -42,24 +42,19 @@ def test_web_runner_records_only_sanitized_model_diagnostics() -> None:
     assert "api_key" not in event["diagnostics"]
 
 
-def test_web_runner_fallback_prompt_uses_current_failure_state() -> None:
+def test_web_runner_exposes_pending_failure_without_auto_fallback_prompt() -> None:
     runner = WebRunner(session_id="session-1", user_id="user-1")
 
-    runner._choose_model_failure("turn", "HTTP 404")
-    assert runner.response()["fallback_prompt"]["active"] is True
-
-    runner._record_model_result(
-        "narrator",
-        "turn",
-        "ok",
-        True,
-        True,
-        True,
-        "system",
-        {"elapsed_ms": 1000},
+    runner.engine.create_pending_model_failure(
+        stage="turn",
+        action="A",
+        slot="A",
+        frozen_result={"state_delta": {}, "turn_summary": "测试"},
+        error_code="request_failed",
     )
 
     assert runner.response()["fallback_prompt"]["active"] is False
+    assert runner.response()["pending_model_failure"]["stage"] == "turn"
 
 
 def test_web_runner_historical_model_failure_event_does_not_keep_prompt_active() -> None:
@@ -92,7 +87,7 @@ def test_web_runner_local_story_still_keeps_fallback_prompt_active() -> None:
     assert runner.response()["fallback_prompt"]["active"] is True
 
 
-def test_web_runner_from_snapshot_restores_current_fallback_prompt_state() -> None:
+def test_web_runner_from_snapshot_does_not_restore_auto_fallback_prompt() -> None:
     source = WebRunner(session_id="session-1", user_id="user-1")
     snapshot = source.snapshot()
 
@@ -109,7 +104,7 @@ def test_web_runner_from_snapshot_restores_current_fallback_prompt_state() -> No
         ],
     )
 
-    assert restored.response()["fallback_prompt"]["active"] is True
+    assert restored.response()["fallback_prompt"]["active"] is False
     assert restored.response()["fallback_prompt"]["text"] == PUBLIC_MODEL_FALLBACK_TEXT
 
 

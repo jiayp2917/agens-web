@@ -50,8 +50,10 @@ def load_agent_settings(agent_name: str, state: dict[str, Any] | None = None) ->
         or Settings().model
     )
     provider = str(state.get("provider") or (runtime.provider if runtime is not None else ""))
-    provider_transport = str(
-        state.get("provider_transport")
+    response_mode = str(
+        state.get("response_mode")
+        or (runtime.response_mode if runtime is not None else "")
+        or state.get("provider_transport")
         or (runtime.provider_transport if runtime is not None else "")
     )
     api_key = runtime_api_key() or str(state.get("api_key") or os.environ.get("AGNES_API_KEY") or "")
@@ -68,7 +70,9 @@ def load_agent_settings(agent_name: str, state: dict[str, Any] | None = None) ->
         "model": model,
         "base_url": base_url,
         "api_key_set": api_key_set,
-        "provider_transport": provider_transport,
+        "response_mode": response_mode or "json_object",
+        "provider_transport": response_mode or "json_object",
+        "stream": bool(state.get("stream", runtime.stream if runtime is not None else False)),
         "run_id": run_id,
         "started_at": utcnow_iso(),
     }

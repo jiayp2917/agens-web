@@ -12,7 +12,7 @@ import os
 from typing import Any
 
 from ...artifacts import sink, store
-from ...llm.provider_adapter import ProviderTransport
+from ...llm.provider_adapter import ProviderTransport, world_opening_transport
 from ...llm.provider_adapter import (
     response_format as provider_response_format,
 )
@@ -263,7 +263,7 @@ def save_artifact(state: dict[str, Any]) -> dict[str, Any]:
     text = state.get("output_text", "")
     llm_error = state.get("llm_error", "")
     generation_type = str(state.get("generation_type") or "new_game")
-    provider_transport = str(state.get("provider_transport") or "legacy_tags")
+    provider_transport = str(state.get("provider_transport") or "json_object")
     provider_structured = provider_transport in {"json_schema", "json_object"} or bool(
         state.get("provider_json_schema")
     )
@@ -346,9 +346,4 @@ def _should_use_world_builder_schema(state: dict[str, Any]) -> bool:
 
 
 def _world_transport(state: dict[str, Any]) -> ProviderTransport:
-    configured = str(state.get("provider_transport") or "").strip()
-    if configured:
-        return ProviderTransport(configured)
-    if state.get("provider_json_schema"):
-        return ProviderTransport.JSON_SCHEMA
-    return ProviderTransport.LEGACY_TAGS
+    return world_opening_transport(state)

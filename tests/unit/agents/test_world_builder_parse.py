@@ -9,10 +9,10 @@ from agens_novel.agents.world_builder import nodes
 from agens_novel.agents.world_builder.nodes import _parse_schema_world_output, _parse_world_output
 
 
-def test_world_builder_schema_prompt_is_used_for_agnes_model() -> None:
+def test_world_builder_schema_prompt_is_used_for_explicit_schema_mode() -> None:
     result = nodes.build_prompt(
         {
-            "model": "agnes-2.0-flash",
+            "response_mode": "json_schema",
             "generation_type": "profile_opening",
             "user_input": "角色名：许满；难度：普通；六维属性：根骨=5。",
         }
@@ -89,18 +89,17 @@ def test_world_builder_deepseek_json_object_uses_adapter(monkeypatch) -> None:
     assert calls[0]["response_format"] == {"type": "json_object"}
 
 
-def test_world_builder_deepseek_defaults_to_legacy_tag_adapter(monkeypatch) -> None:
-    monkeypatch.delenv("AGENS_DEEPSEEK_WORLD_OPENING_TRANSPORT", raising=False)
+def test_world_builder_defaults_to_json_object_without_provider_branching() -> None:
     result = nodes.build_prompt(
         {
-            "model": "deepseek-v4-flash",
+            "model": "any-openai-compatible-model",
             "generation_type": "profile_opening",
             "user_input": "角色名：许满。",
         }
     )
 
-    assert result["provider_transport"] == "legacy_tags"
-    assert "<world_data>" in result["system_message"]
+    assert result["provider_transport"] == "json_object"
+    assert "必须直接返回一个 JSON 对象" in result["system_message"]
 
 
 def test_profile_opening_schema_accepts_only_the_opening_envelope() -> None:

@@ -1,8 +1,7 @@
-"""Provider wire-format selection for one canonical agent contract."""
+"""Transport adapter for one canonical model response contract."""
 
 from __future__ import annotations
 
-import os
 from enum import StrEnum
 from typing import Any
 
@@ -10,22 +9,23 @@ from typing import Any
 class ProviderTransport(StrEnum):
     JSON_SCHEMA = "json_schema"
     JSON_OBJECT = "json_object"
+    # Only retained to read legacy saved responses; new calls never select it.
     LEGACY_TAGS = "legacy_tags"
 
 
 def narrator_transport(state: dict[str, Any]) -> ProviderTransport:
-    """Choose the explicit Narrator transport without changing its semantics."""
-    return _transport_for(state, "AGENS_DEEPSEEK_NARRATOR_TRANSPORT")
+    """Return the configured Narrator response mode."""
+    return _transport_for(state)
 
 
 def world_opening_transport(state: dict[str, Any]) -> ProviderTransport:
-    """Choose the World Builder transport for the same provider runtime."""
-    return _transport_for(state, "AGENS_DEEPSEEK_WORLD_OPENING_TRANSPORT")
+    """Return the configured World Opening response mode."""
+    return _transport_for(state)
 
 
 def judge_transport(state: dict[str, Any]) -> ProviderTransport:
-    """Choose the Judge transport for the same provider runtime."""
-    return _transport_for(state, "AGENS_DEEPSEEK_JUDGE_TRANSPORT")
+    """Return the configured offline Judge response mode."""
+    return _transport_for(state)
 
 
 def response_format(transport: ProviderTransport, schema: dict[str, Any]) -> dict[str, Any] | None:
@@ -37,17 +37,18 @@ def response_format(transport: ProviderTransport, schema: dict[str, Any]) -> dic
     return None
 
 
-def _transport_for(state: dict[str, Any], deepseek_env: str) -> ProviderTransport:
-    explicit = str(state.get("provider_transport") or "").strip().lower()
-    if explicit in {item.value for item in ProviderTransport}:
-        return ProviderTransport(explicit)
-    provider = str(state.get("provider") or "").strip().lower()
-    model = str(state.get("model") or "").strip().lower()
-    if provider == "agens" or model.startswith("agnes-"):
+def _transport_for(state: dict[str, Any]) -> ProviderTransport:
+    """Resolve an explicit response mode without inspecting provider identity.
+
+    ``provider_transport`` is retained only to read older stored configuration.
+    New requests default to OpenAI-compatible JSON object transport; legacy tags
+    are never selected as a new request or runtime fallback.
+    """
+    configured = str(
+        state.get("response_mode") or state.get("provider_transport") or ""
+    ).strip().lower()
+    if configured in {ProviderTransport.JSON_SCHEMA.value, ProviderTransport.JSON_OBJECT.value}:
+        return ProviderTransport(configured)
+    if state.get("provider_json_schema"):
         return ProviderTransport.JSON_SCHEMA
-    if provider == "deepseek" or model.startswith("deepseek"):
-        configured = os.environ.get(deepseek_env, "").strip().lower()
-        if configured == ProviderTransport.JSON_OBJECT.value:
-            return ProviderTransport.JSON_OBJECT
-        return ProviderTransport.LEGACY_TAGS
-    return ProviderTransport.LEGACY_TAGS
+    return ProviderTransport.JSON_OBJECT

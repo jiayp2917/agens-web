@@ -23,6 +23,8 @@ class RuntimeModelConfig:
     api_key: str
     source: str = "env"
     key_error: str = ""
+    response_mode: str = "json_object"
+    stream: bool = False
     provider_transport: str = ""
 
     @property
@@ -38,7 +40,10 @@ class RuntimeModelConfig:
             "api_key_set": self.api_key_set,
             "source": self.source,
             "key_error": self.key_error,
-            "provider_transport": self.provider_transport,
+            "response_mode": self.response_mode or self.provider_transport or "json_object",
+            "stream": self.stream,
+            # Compatibility metadata for already-persisted runner snapshots.
+            "provider_transport": self.response_mode or self.provider_transport or "json_object",
         }
 
 

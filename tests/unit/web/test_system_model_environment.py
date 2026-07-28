@@ -20,6 +20,22 @@ def test_system_model_environment_selects_deepseek_without_persisting_a_key(monk
     assert config["api_key"] == "test-system-key"
 
 
+def test_explicit_system_key_environment_does_not_depend_on_provider_label(monkeypatch) -> None:
+    monkeypatch.setenv("AGENS_SYSTEM_MODEL_PROVIDER", "OpenAI-compatible")
+    monkeypatch.setenv("AGENS_SYSTEM_MODEL_BASE_URL", "https://api.deepseek.com/v1")
+    monkeypatch.setenv("AGENS_SYSTEM_MODEL", "compatible-model")
+    monkeypatch.setenv("AGENS_SYSTEM_MODEL_KEY_ENV", "DEEPSEEK_API_KEY")
+    monkeypatch.setenv("DEEPSEEK_API_KEY", "test-system-key")
+    service = ModelConfigService(SimpleNamespace(get_model_config=lambda: {"provider": "Agens"}))
+
+    config = service.system()
+
+    assert config["provider"] == "OpenAI-compatible"
+    assert config["base_url"] == "https://api.deepseek.com/v1"
+    assert config["model"] == "compatible-model"
+    assert config["api_key"] == "test-system-key"
+
+
 def test_personal_model_configuration_still_overrides_system_environment(monkeypatch) -> None:
     monkeypatch.setenv("AGENS_SYSTEM_MODEL_PROVIDER", "DeepSeek")
     monkeypatch.setenv("DEEPSEEK_API_KEY", "test-system-key")

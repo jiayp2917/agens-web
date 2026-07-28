@@ -50,6 +50,28 @@ def test_probe_prefers_json_object_and_checks_all_agent_contracts(tmp_path, monk
     assert sink.sensitive_marker_counts(tmp_path / "evidence") == {"secret_like": 0, "url_like": 0}
 
 
+def test_probe_never_retries_contracts_with_legacy_tags(tmp_path, monkeypatch) -> None:
+    config = _config(tmp_path, monkeypatch)
+    prompts: list[str] = []
+
+    async def invalid_json_request(messages, **kwargs):
+        if "on_chunk" in kwargs:
+            kwargs["on_chunk"]("流式")
+            return {"text": "流式回应", "elapsed_ms": 1, "usage": {}}
+        prompts.append(messages[0]["content"])
+        return {"text": "not-json", "elapsed_ms": 1, "usage": {}}
+
+    report = asyncio.run(
+        probe_provider(config, request=invalid_json_request, stream_request=invalid_json_request)
+    )
+
+    assert report["recommended_transport"] == "json_object"
+    assert all(item["transport"] != "legacy_tags" for item in report["probes"])
+    assert all("<world_data>" not in prompt for prompt in prompts)
+    assert all("<narrator_data>" not in prompt for prompt in prompts)
+    assert all("<judge_data>" not in prompt for prompt in prompts)
+
+
 def _reject_schema_probe(response_format) -> None:
     if response_format and response_format.get("type") == "json_schema":
         if "probe_json_schema" in str(response_format):

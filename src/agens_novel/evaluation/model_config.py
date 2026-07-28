@@ -18,7 +18,7 @@ _KEY_ENV_BY_PROVIDER = {
     "agens": "AGNES_API_KEY",
     "deepseek": "DEEPSEEK_API_KEY",
 }
-_TRANSPORTS = {"json_schema", "json_object", "legacy_tags"}
+_RESPONSE_MODES = {"json_schema", "json_object"}
 _DEEPSEEK_DEFAULT_MODEL = "deepseek-v4-flash"
 _DEEPSEEK_DEFAULT_BASE_URL = "https://api.deepseek.com/v1"
 
@@ -31,7 +31,12 @@ class EvaluationModelConfig:
     model: str
     base_url: str
     key_environment: str
-    provider_transport: str = ""
+    response_mode: str = "json_object"
+
+    @property
+    def provider_transport(self) -> str:
+        """Compatibility alias for persisted evaluation metadata."""
+        return self.response_mode
 
     @classmethod
     def from_environment(cls) -> EvaluationModelConfig:
@@ -41,18 +46,22 @@ class EvaluationModelConfig:
         default_model, default_base_url = _provider_defaults(provider)
         model = os.environ.get("AGENS_EVALUATION_MODEL", "").strip() or default_model
         base_url = os.environ.get("AGENS_EVALUATION_BASE_URL", "").strip() or default_base_url
-        provider_transport = os.environ.get("AGENS_EVALUATION_TRANSPORT", "").strip().lower()
+        response_mode = (
+            os.environ.get("AGENS_EVALUATION_RESPONSE_MODE", "").strip().lower()
+            or os.environ.get("AGENS_EVALUATION_TRANSPORT", "").strip().lower()
+            or "json_object"
+        )
         key_environment = _KEY_ENV_BY_PROVIDER.get(provider.lower())
         if not provider or not model or not base_url or not key_environment:
             raise ArtifactPolicyError("evaluation provider, model, and base URL must be configured")
-        if provider_transport and provider_transport not in _TRANSPORTS:
-            raise ArtifactPolicyError("evaluation transport is unsupported")
+        if response_mode not in _RESPONSE_MODES:
+            raise ArtifactPolicyError("evaluation response transport is unsupported")
         return cls(
             provider=provider,
             model=model,
             base_url=base_url,
             key_environment=key_environment,
-            provider_transport=provider_transport,
+            response_mode=response_mode,
         )
 
     def runtime_config(self) -> RuntimeModelConfig:
@@ -66,7 +75,7 @@ class EvaluationModelConfig:
             base_url=self.base_url,
             api_key=api_key,
             source="evaluation",
-            provider_transport=self.provider_transport,
+            response_mode=self.response_mode,
         )
 
     def public_metadata(self) -> dict[str, str | bool]:
@@ -84,7 +93,8 @@ class EvaluationModelConfig:
             "api_key_set": True,
             "source": "evaluation",
             "key_error": "",
-            "provider_transport": self.provider_transport,
+            "response_mode": self.response_mode,
+            "provider_transport": self.response_mode,
         }
 
 

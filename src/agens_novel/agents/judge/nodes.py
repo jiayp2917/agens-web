@@ -105,7 +105,7 @@ def build_prompt(state: dict[str, Any]) -> dict[str, Any]:
 
 
 async def call_agnes_llm(state: dict[str, Any]) -> dict[str, Any]:
-    transport = ProviderTransport(str(state.get("provider_transport") or "legacy_tags"))
+    transport = ProviderTransport(str(state.get("provider_transport") or "json_object"))
     result = await call_agnes_llm_common(
         state,
         agent_name=AGENT_NAME,
@@ -175,7 +175,7 @@ def save_artifact(state: dict[str, Any]) -> dict[str, Any]:
         "output_path": str(out_path),
         "audit_path": str(audit_path),
         "finished_at": audit["finished_at"],
-        "provider_transport": str(state.get("provider_transport") or "legacy_tags"),
+        "provider_transport": str(state.get("provider_transport") or "json_object"),
         "llm_error_code": str(state.get("llm_error_code") or ""),
         "response_diagnostics": dict(state.get("response_diagnostics") or {}),
     }

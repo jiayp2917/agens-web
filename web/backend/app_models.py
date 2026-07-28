@@ -56,6 +56,8 @@ class ModelSettingsRequest(BaseModel):
     provider: str = Field(default="Agens", max_length=64)
     base_url: str = Field(default="https://apihub.agnes-ai.com/v1", max_length=512)
     model: str = Field(default="agnes-2.0-flash", max_length=128)
+    response_mode: str = Field(default="json_object", pattern=r"^(json_schema|json_object)$")
+    stream: bool = False
     api_key: str = Field(default="", max_length=512)
 
 

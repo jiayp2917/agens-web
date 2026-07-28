@@ -88,22 +88,23 @@ def test_schema_narrator_requires_accepted_provider_envelope() -> None:
     assert "JSON" in status.reason
 
 
-def test_narrator_compatibility_parse_without_raw_tags_is_not_strict_ok() -> None:
+def test_legacy_tag_transport_is_not_a_new_request_contract() -> None:
     result = {
         "narrative": "山门风起，外门弟子各自择路。",
         "state_delta": {"character": {}, "world": {}, "meta": {}},
         "choices": ["闭关", "拜访同门", "探查山径", "随缘而行"],
         "llm_error": "",
-        "contract_diagnostics": {
-            "raw_has_state_update_tag": False,
-            "raw_has_choices_tag": False,
-        },
+            "contract_diagnostics": {
+                "raw_has_state_update_tag": False,
+                "raw_has_choices_tag": False,
+            },
+            "provider_transport": "legacy_tags",
     }
 
     status = classify_narrator_result(result)
 
     assert status.kind == ModelResultKind.INCOMPLETE_OUTPUT
-    assert "choices 标签" in status.reason
+    assert "未知传输格式" in status.reason
 
 
 def test_request_failure_is_separate_from_incomplete_output() -> None:

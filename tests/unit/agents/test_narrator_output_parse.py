@@ -234,7 +234,7 @@ class TestNarratorParse:
         assert properties["narrative"]["pattern"] == "^[^A-Za-z]*$"
         assert properties["choices"]["items"]["pattern"] == "^[^A-Za-z]*$"
 
-    def test_contract_diagnostics_do_not_accept_fake_tag_substrings(self) -> None:
+    def test_contract_diagnostics_ignore_fake_tag_substrings_in_removed_json(self) -> None:
         text = (
             "山门旧录只把伪标签当作普通字段。\n"
             '{"state_delta":{"character":{},"world":{},"meta":{}},'
@@ -255,7 +255,7 @@ class TestNarratorParse:
 
         assert diagnostics["raw_has_state_update_tag"] is False
         assert diagnostics["raw_has_choices_tag"] is False
-        assert status.kind == ModelResultKind.INCOMPLETE_OUTPUT
+        assert status.kind == ModelResultKind.OK
 
     def test_state_update_with_extra_trailing_brace_is_recovered(self) -> None:
         text = (
