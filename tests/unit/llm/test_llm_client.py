@@ -87,28 +87,25 @@ class TestResolveConfig:
 
 
 class TestMaskKey:
-    """Test API key masking for logging."""
+    """Test that logging never retains API key characters."""
 
     def test_short_key(self):
-        assert mask_key("sk") == "****"
+        assert mask_key("sk") == "<set>"
 
     def test_normal_key(self):
         masked = mask_key("sk-1234567890abcdef")
-        assert masked.startswith("sk-1")
-        assert masked.endswith("cdef")
-        assert "****" in masked
+        assert masked == "<set>"
 
     def test_exact_8_chars(self):
-        # mask_key returns "****" for keys with length <= 8
         masked = mask_key("12345678")
-        assert masked == "****"
+        assert masked == "<set>"
 
     def test_9_chars_key(self):
         masked = mask_key("123456789")
-        assert masked == "1234****6789"
+        assert masked == "<set>"
 
     def test_empty_key(self):
-        assert mask_key("") == "****"
+        assert mask_key("") == "<unset>"
 
 
 class TestResolveRequestOptions:

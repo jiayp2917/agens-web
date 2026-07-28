@@ -102,6 +102,38 @@ def test_qualification_reuses_passed_checkpoint_without_repeating_the_phase(tmp_
     assert runner._phase_passed(state, "v2_smoke") is False
 
 
+def test_dry_run_creates_only_planned_external_checkpoints(tmp_path, monkeypatch) -> None:
+    from agens_novel.evaluation import governance_state
+
+    monkeypatch.setattr(governance_state, "_restrict_windows_acl", lambda _root: None)
+    monkeypatch.setattr(
+        sys,
+        "argv",
+        [
+            "qualify_model.py",
+            "--provider",
+            "agens",
+            "--database-url",
+            "postgresql+psycopg://evaluation@127.0.0.1:55432/agens_web_local",
+            "--artifact-parent",
+            str(tmp_path / "external-evidence"),
+            "--dry-run",
+        ],
+    )
+
+    assert runner.main() == 0
+    state_path = next(
+        (tmp_path / "external-evidence" / "qualification-state").glob(
+            "*/governance-run-state.json"
+        )
+    )
+    payload = GovernanceRunStateV1.open(state_path).read()
+    entries = [entry for entry in payload["checkpoints"] if entry["phase"] != "created"]
+    assert len(entries) == 7
+    assert {entry["checkpoint"] for entry in entries} == {"planned"}
+    assert all(entry["test_summary"] == {"mode": "dry_run"} for entry in entries)
+
+
 def test_qualification_rejects_any_database_except_the_local_browser_database() -> None:
     runner._validate_local_database("postgresql+psycopg://evaluation@127.0.0.1:55432/agens_web_local")
     with pytest.raises(ValueError, match="agens_web_local"):

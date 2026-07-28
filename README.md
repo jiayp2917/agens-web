@@ -121,17 +121,11 @@ Narrator `ok`、`fallback=false`、`fallback_prompt.active=false`、`contract_re
 生产模式会拒绝启动评估模式。证据只包含脱敏响应副本、版本/哈希、调用次数、延迟、token、
 strict/fallback 状态和费用估算，不保存 prompt、Key、Cookie、Authorization、真实 Base URL 或玩家数据。
 
-先运行 `scripts/probe_model_provider.py`。Agens 可使用 JSON Schema；DeepSeek 仅在 probe 确认后，
-才可在对应评估子进程设置 `AGENS_EVALUATION_TRANSPORT=json_object`，否则保持兼容标签传输。两种
-wire format 最终都归一到相同的版本化内部契约和规则校验。正式对照前还必须通过 20 回合 smoke；
-冻结九快照基准通过 `scripts/run_frozen_benchmark.py` 在两个独立模型进程中生成结果，再匿名生成盲审包。
-这些命令会产生真实模型调用，默认 pytest 门禁不执行。
-
-截至 2026-07-22，本地 probe 中 Agens 为 `json_schema`，其 20 回合 smoke 为 20/20 strict；
-DeepSeek 使用 `json_object`，但 smoke 在首回合后出现 fallback，仅 1/20 strict，已按止损规则停止。
-Agens v3 三局批处理未在评估时限内产生汇总，同样不计通过。因此当前没有可报告的双模型优劣、百分比
-或内容质量结论；可复核的本地结果与后续门禁见 `docs/PROJECT_AUDIT.md` 和
-`docs/NEXT_GOVERNANCE_BACKLOG.md`。
+使用 `scripts/qualify_model.py` 对每个模型独立编排开场、v2 smoke、三条 v3 路线、post-arc 和
+九快照审阅。新请求统一采用显式 `response_mode`，默认 `json_object`；不会按厂商、模型名或地址
+切换解析分支，旧标签只用于读取历史数据。`--dry-run` 只创建仓库外恢复检查点，明确不代表资格通过。
+不带 `--dry-run` 的资格运行会产生真实模型调用，默认 pytest 门禁不执行。实际资格结论和后续门禁见
+`docs/PROJECT_AUDIT.md` 与 `docs/NEXT_GOVERNANCE_BACKLOG.md`。
 
 ## Deployment Shape
 

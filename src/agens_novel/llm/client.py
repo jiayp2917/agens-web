@@ -117,10 +117,8 @@ def _build_payload(
 
 
 def mask_key(key: str) -> str:
-    """Return a masked version of an API key for logging."""
-    if len(key) <= 8:
-        return "****"
-    return key[:4] + "****" + key[-4:]
+    """Return a presence marker without retaining any key characters."""
+    return "<set>" if key else "<unset>"
 
 
 def _resolve_request_options(
@@ -212,7 +210,7 @@ async def call_llm(
     base = await _safe_request_base_url(base)
     timeout_seconds, max_retries = _resolve_request_options(timeout_seconds, max_retries)
     total_timeout_seconds = _resolve_total_timeout(total_timeout_seconds)
-    log.debug("call_llm: base=%s model=%s key=%s", base, mdl, mask_key(key))
+    log.debug("call_llm: model=%s key=%s", mdl, mask_key(key))
     payload = _build_payload(
         messages,
         model=mdl,
@@ -270,7 +268,7 @@ async def call_llm_stream(
     base = await _safe_request_base_url(base)
     timeout_seconds, max_retries = _resolve_request_options(timeout_seconds, max_retries)
     total_timeout_seconds = _resolve_total_timeout(total_timeout_seconds)
-    log.debug("call_llm_stream: base=%s model=%s key=%s", base, mdl, mask_key(key))
+    log.debug("call_llm_stream: model=%s key=%s", mdl, mask_key(key))
     payload = _build_payload(
         messages,
         model=mdl,

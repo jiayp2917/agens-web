@@ -44,8 +44,25 @@ class QualificationPhase:
 def main() -> int:
     args = _arguments()
     state, evidence_root = _open_state(args)
-    environment = _evaluation_environment(args, evidence_root)
     phases = _phases(args, evidence_root)
+    if args.dry_run:
+        planned = _record_dry_run(state, phases)
+        print(
+            json.dumps(
+                {
+                    "run_id": state.run_id,
+                    "provider": args.provider,
+                    "phase_count": len(phases),
+                    "planned_phases": planned,
+                    "dry_run": True,
+                    "accepted": False,
+                },
+                ensure_ascii=True,
+                sort_keys=True,
+            )
+        )
+        return 0
+    environment = _evaluation_environment(args, evidence_root)
     failed: list[str] = []
 
     for phase in phases:
@@ -89,6 +106,25 @@ def _phase_passed(state: GovernanceRunStateV1, phase: str) -> bool:
     return False
 
 
+def _record_dry_run(
+    state: GovernanceRunStateV1,
+    phases: tuple[QualificationPhase, ...],
+) -> list[str]:
+    """Record planned work without treating it as a provider qualification."""
+    planned: list[str] = []
+    for phase in phases:
+        if _phase_passed(state, phase.name):
+            continue
+        state.checkpoint(
+            phase.name,
+            "planned",
+            recovery_point=phase.name,
+            test_summary={"mode": "dry_run"},
+        )
+        planned.append(phase.name)
+    return planned
+
+
 def _arguments() -> argparse.Namespace:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--provider", required=True, choices=sorted(_PROVIDERS))
@@ -97,6 +133,7 @@ def _arguments() -> argparse.Namespace:
     parser.add_argument("--artifact-parent", type=Path)
     parser.add_argument("--resume-state", type=Path)
     parser.add_argument("--port", type=int, default=8100)
+    parser.add_argument("--dry-run", action="store_true")
     args = parser.parse_args()
     if bool(args.artifact_parent) == bool(args.resume_state):
         parser.error("provide exactly one of --artifact-parent or --resume-state")
