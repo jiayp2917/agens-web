@@ -74,7 +74,7 @@ def main() -> int:
     result["turns_requested"] = args.turns
     result["run_label"] = label
     result["run_id"] = run_id
-    path = sink.write_json("chrome_orchestrator", label, "summary.json", result)
+    path = _write_orchestrator_summary(artifact_root, label, result)
     if release_state is not None:
         release_state.checkpoint(
             checkpoint_phase,
@@ -161,6 +161,25 @@ def _scenario(key: str):
 
 def _prepare_artifact_root(parent: Path, *, label: str) -> tuple[str, Path]:
     return sink.create_evaluation_run_root(parent, label=label)
+
+
+def _write_orchestrator_summary(artifact_root: Path, label: str, result: dict[str, Any]) -> Path:
+    """Write the parent-process summary under the child evidence root safely."""
+    managed = {
+        "AGENS_EVALUATION_MODE": "1",
+        "AGENS_ARTIFACT_ROOT": str(artifact_root),
+        "AGENS_EVALUATION_RUN_LABEL": label,
+    }
+    previous = {key: os.environ.get(key) for key in managed}
+    try:
+        os.environ.update(managed)
+        return sink.write_json("chrome_orchestrator", label, "summary.json", result)
+    finally:
+        for key, value in previous.items():
+            if value is None:
+                os.environ.pop(key, None)
+            else:
+                os.environ[key] = value
 
 
 def _validate_database_url(raw_url: str) -> None:

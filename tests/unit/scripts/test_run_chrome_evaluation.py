@@ -70,6 +70,26 @@ def test_chrome_evaluation_reserves_a_unique_artifact_root(tmp_path, monkeypatch
     assert "AGENS_ARTIFACT_ROOT" not in os.environ
 
 
+def test_orchestrator_summary_uses_the_external_child_root(tmp_path, monkeypatch) -> None:
+    from agens_novel.artifacts import sink
+
+    monkeypatch.setattr(sink, "_restrict_windows_acl", lambda _root: None)
+    monkeypatch.setenv("AGENS_EVALUATION_MODE", "1")
+    monkeypatch.delenv("AGENS_ARTIFACT_ROOT", raising=False)
+    monkeypatch.delenv("AGENS_EVALUATION_RUN_LABEL", raising=False)
+
+    path = runner._write_orchestrator_summary(
+        tmp_path / "external-evidence",
+        "deepseek-opening",
+        {"result": "passed", "turns_completed": 0},
+    )
+
+    assert path.is_file()
+    assert path.is_relative_to(tmp_path / "external-evidence")
+    assert "AGENS_ARTIFACT_ROOT" not in os.environ
+    assert "AGENS_EVALUATION_RUN_LABEL" not in os.environ
+
+
 def test_browser_process_receives_no_provider_key(monkeypatch, tmp_path) -> None:
     monkeypatch.setenv("AGNES_API_KEY", "fake-agens-key")
     monkeypatch.setenv("DEEPSEEK_API_KEY", "fake-deepseek-key")
