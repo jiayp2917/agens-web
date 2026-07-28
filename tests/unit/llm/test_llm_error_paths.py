@@ -155,11 +155,12 @@ class TestExecuteWithRetryPropagation:
                 label="test_call",
             )
         assert error.value.error_code == "timeout"
+        assert error.value.response_diagnostics == {"transport_error_category": "total_timeout"}
 
     @pytest.mark.asyncio
     async def test_transport_error_exhausts_to_unavailable(self) -> None:
         async def transport_fails() -> httpx.Response:
-            raise httpx.TransportError("connection reset", request=_request())
+            raise httpx.ConnectError("connection reset", request=_request())
 
         with pytest.raises(LLMError, match="upstream transport unavailable") as error:
             await _execute_with_retry(
@@ -169,6 +170,7 @@ class TestExecuteWithRetryPropagation:
                 label="test_call",
             )
         assert error.value.error_code == "transport_unavailable"
+        assert error.value.response_diagnostics == {"transport_error_category": "connect_error"}
 
     @pytest.mark.asyncio
     @pytest.mark.parametrize("status_code", (429, 500, 503, 520))

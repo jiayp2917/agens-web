@@ -196,6 +196,7 @@ def test_result_diagnostics_are_non_secret_shape_facts() -> None:
         "provider_json_object": False,
         "provider_json_envelope_ok": False,
         "llm_error_code": "",
+        "response_transport_error_category": "",
         "response_finish_reason": "missing",
         "response_content_present": False,
         "response_content_length": 0,
@@ -249,3 +250,16 @@ def test_result_diagnostics_keeps_only_known_request_error_codes() -> None:
     assert result_diagnostics({"llm_error": "request rejected", "llm_error_code": "untrusted"})[
         "llm_error_code"
     ] == "other"
+
+
+def test_result_diagnostics_keeps_only_known_transport_error_categories() -> None:
+    assert result_diagnostics(
+        {
+            "response_diagnostics": {"transport_error_category": "connect_error"},
+        }
+    )["response_transport_error_category"] == "connect_error"
+    assert result_diagnostics(
+        {
+            "response_diagnostics": {"transport_error_category": "untrusted"},
+        }
+    )["response_transport_error_category"] == "other"

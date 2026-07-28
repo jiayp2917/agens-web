@@ -204,6 +204,9 @@ def result_diagnostics(result: dict[str, Any]) -> dict[str, Any]:
         "provider_json_object": bool(result.get("provider_json_object")),
         "provider_json_envelope_ok": bool(result.get("provider_json_envelope_ok")),
         "llm_error_code": _safe_error_code(result.get("llm_error_code")),
+        "response_transport_error_category": _safe_transport_error_category(
+            response.get("transport_error_category")
+        ),
         "response_finish_reason": _safe_finish_reason(response.get("finish_reason")),
         "response_content_present": bool(response.get("content_present")),
         "response_content_length": _int_metric(response.get("content_length")),
@@ -248,6 +251,23 @@ def _safe_error_code(value: Any) -> str:
         "http_other",
     }
     return code if code in allowed else "other"
+
+
+def _safe_transport_error_category(value: Any) -> str:
+    category = str(value or "")
+    allowed = {
+        "",
+        "total_timeout",
+        "connect_timeout",
+        "read_timeout",
+        "write_timeout",
+        "pool_timeout",
+        "connect_error",
+        "protocol_error",
+        "transport_error",
+        "unknown",
+    }
+    return category if category in allowed else "other"
 
 
 def _safe_finish_reason(value: Any) -> str:

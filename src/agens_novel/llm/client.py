@@ -630,11 +630,18 @@ async def _execute_with_retry(
                 label=label,
             )
     except TimeoutError as exc:
-        raise _with_error_code(LLMError(f"{label}: total timeout exceeded"), "timeout") from exc
+        raise _with_error_code(
+            LLMError(f"{label}: total timeout exceeded"),
+            "timeout",
+            response_diagnostics={"transport_error_category": "total_timeout"},
+        ) from exc
     except RetryExhausted as exc:
         raise _with_error_code(
             LLMError(f"{label}: upstream transport unavailable"),
             "transport_unavailable",
+            response_diagnostics={
+                "transport_error_category": _transport_error_category(exc.__cause__)
+            },
         ) from exc
     except httpx.HTTPStatusError as exc:
         raise _with_error_code(
@@ -643,8 +650,15 @@ async def _execute_with_retry(
         ) from exc
 
 
-def _with_error_code(error: LLMError, code: str) -> LLMError:
+def _with_error_code(
+    error: LLMError,
+    code: str,
+    *,
+    response_diagnostics: dict[str, object] | None = None,
+) -> LLMError:
     error.error_code = code
+    if response_diagnostics is not None:
+        error.response_diagnostics = dict(response_diagnostics)
     return error
 
 
@@ -654,6 +668,25 @@ def _http_error_code(status_code: int) -> str:
     if 500 <= status_code <= 599:
         return "http_5xx"
     return "http_other"
+
+
+def _transport_error_category(error: BaseException | None) -> str:
+    """Return a stable, non-sensitive category for a failed HTTP transport."""
+    if isinstance(error, httpx.ConnectTimeout):
+        return "connect_timeout"
+    if isinstance(error, httpx.ReadTimeout):
+        return "read_timeout"
+    if isinstance(error, httpx.WriteTimeout):
+        return "write_timeout"
+    if isinstance(error, httpx.PoolTimeout):
+        return "pool_timeout"
+    if isinstance(error, httpx.ConnectError):
+        return "connect_error"
+    if isinstance(error, httpx.ProtocolError):
+        return "protocol_error"
+    if isinstance(error, httpx.TransportError):
+        return "transport_error"
+    return "unknown"
 
 
 def _parse_sse_lines(lines: list[str]) -> list[dict[str, Any]]:
