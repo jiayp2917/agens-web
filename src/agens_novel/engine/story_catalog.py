@@ -425,9 +425,11 @@ def _post_arc_turn_delta(
         ("远行新讯", "一份不属于旧主线的新讯从远方抵达。"),
         ("旧人回响", "此前同行者带来与旧结局不同的后续选择。"),
     )
-    available = [item for item in post_events if item[0] not in motifs] or list(post_events)
-    selected = available[(post_turns - 1) % len(available)]
-    motifs.append(selected[0])
+    available = [item for item in post_events if item[0] not in motifs]
+    candidates = available or list(post_events)
+    selected = candidates[(post_turns - 1) % len(candidates)]
+    motif = selected[0] if available else f"{selected[0]}:post-{post_turns}"
+    motifs.append(motif)
     next_state = dict(state)
     next_state.update(
         {

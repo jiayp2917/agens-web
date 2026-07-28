@@ -344,6 +344,7 @@ def test_v3_resolves_into_post_arc_and_preserves_two_seeded_commitments() -> Non
         assert story["story_phase"] == "余波"
 
     assert len(set(endings)) == 1
+    assert len(session.story_state["recent_motifs"]) == len(set(session.story_state["recent_motifs"]))
     assert all(entry["dimensions"] for entry in session.story_state["consequence_log"])
 
 
