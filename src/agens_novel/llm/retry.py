@@ -39,8 +39,9 @@ async def with_retry(
     Retries on:
       * httpx.TransportError (network, timeout)
       * HTTP status codes in RETRYABLE_HTTP_STATUSES
+      * a provider-neutral ``empty_completion`` error code
 
-    Does NOT retry on 4xx (other than the list above) or on user errors.
+    Does NOT retry on 4xx (other than the list above), refusals, or user errors.
     """
     attempt = 0
     while True:
@@ -65,6 +66,17 @@ async def with_retry(
             delay = _backoff(attempt, initial_backoff, max_backoff)
             log.warning(
                 "%s: HTTP %d (attempt %d); retrying in %.2fs", label, status, attempt + 1, delay
+            )
+            await asyncio.sleep(delay)
+        except Exception as e:
+            if getattr(e, "error_code", None) != "empty_completion" or attempt >= max_retries:
+                raise
+            delay = _backoff(attempt, initial_backoff, max_backoff)
+            log.warning(
+                "%s: empty completion (attempt %d); retrying in %.2fs",
+                label,
+                attempt + 1,
+                delay,
             )
             await asyncio.sleep(delay)
         attempt += 1

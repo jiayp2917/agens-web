@@ -30,12 +30,13 @@ from agens_novel.engine.model_result import is_retryable_model_request_failure
 from agens_novel.llm.client import (
     LLMAuthError,
     LLMBadRequest,
+    LLMCompletionError,
     LLMError,
     _execute_with_retry,
     _handle_non_stream_response,
     _handle_stream_response,
 )
-from agens_novel.llm.retry import RETRYABLE_HTTP_STATUSES
+from agens_novel.llm.retry import RETRYABLE_HTTP_STATUSES, with_retry
 
 _COMPLETIONS_URL = "https://apihub.agnes-ai.com/v1/chat/completions"
 
@@ -141,6 +142,52 @@ def _status_error(status_code: int) -> httpx.HTTPStatusError:
 
 
 class TestExecuteWithRetryPropagation:
+    @pytest.mark.asyncio
+    async def test_empty_completion_retries_once_then_returns_result(self) -> None:
+        attempts = 0
+
+        async def empty_then_succeeds() -> str:
+            nonlocal attempts
+            attempts += 1
+            if attempts == 1:
+                raise LLMCompletionError(
+                    "empty_completion",
+                    usage={"completion_tokens": 4096},
+                    response_diagnostics={"content_present": False},
+                    elapsed_ms=0,
+                )
+            return "accepted"
+
+        result = await with_retry(
+            empty_then_succeeds,
+            max_retries=1,
+            initial_backoff=0,
+            max_backoff=0,
+            label="test_call",
+        )
+
+        assert result == "accepted"
+        assert attempts == 2
+
+    @pytest.mark.asyncio
+    async def test_refusal_completion_is_not_retried(self) -> None:
+        attempts = 0
+
+        async def refusal() -> str:
+            nonlocal attempts
+            attempts += 1
+            raise LLMCompletionError(
+                "refusal_completion",
+                usage={},
+                response_diagnostics={"refusal_present": True},
+                elapsed_ms=0,
+            )
+
+        with pytest.raises(LLMCompletionError, match="refusal_completion"):
+            await with_retry(refusal, max_retries=1, initial_backoff=0, max_backoff=0)
+
+        assert attempts == 1
+
     @pytest.mark.asyncio
     async def test_total_timeout_exceeds(self) -> None:
         async def never_finishes() -> httpx.Response:
