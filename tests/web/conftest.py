@@ -17,6 +17,8 @@ import pytest
 from fastapi.testclient import TestClient
 from sqlalchemy import create_engine, text
 
+from tests.postgres_fixtures import postgres_test_url as _register_pg_test_url  # noqa: F401
+
 _MUTATION_PATH = re.compile(
     r"^/api/sessions/(?P<session_id>[^/]+)/(?:start|choice|action|save|load|end)$"
 )
@@ -94,7 +96,7 @@ def _isolated_pg_db(_pg_test_url, monkeypatch: pytest.MonkeyPatch) -> Iterator[N
     """Point create_app() at the shared test DB and truncate before each test."""
     url = _pg_test_url
     if url is None:
-        pytest.skip("TEST_DATABASE_URL not configured")
+        raise RuntimeError("tests/web requires TEST_DATABASE_URL for 127.0.0.1:55432")
     monkeypatch.setenv("DATABASE_URL", url)
     engine = create_engine(url)
     try:

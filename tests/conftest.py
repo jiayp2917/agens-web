@@ -11,41 +11,20 @@
 from __future__ import annotations
 
 import os
-from collections.abc import Iterator
+from collections.abc import Generator, Iterator
 from pathlib import Path
 from unittest.mock import AsyncMock, patch
 
 import pytest
 
 
-@pytest.fixture(scope="session")
-def _pg_test_url() -> str | None:
-    """Shared PostgreSQL test DB URL (TEST_DATABASE_URL), or None if unset.
-
-    Creates the schema + seeds catalogs once when a URL is configured. Does NOT
-    skip here — callers skip at function scope so cross-module skip propagation
-    stays reliable (session-scoped pytest.skip() is unreliable across modules).
-    """
-    url = os.environ.get("TEST_DATABASE_URL")
-    if not url:
-        return None
-    from alembic import command
-    from alembic.config import Config
-
-    from web.backend.database_postgres import PostgresWebDatabase
-
-    previous_database_url = os.environ.get("DATABASE_URL")
-    os.environ["DATABASE_URL"] = url
-    try:
-        command.upgrade(Config(str(Path(__file__).resolve().parents[1] / "alembic.ini")), "head")
-        db = PostgresWebDatabase(url)
-    finally:
-        if previous_database_url is None:
-            os.environ.pop("DATABASE_URL", None)
-        else:
-            os.environ["DATABASE_URL"] = previous_database_url
-    db.engine.dispose()
-    return url
+def pytest_collection_modifyitems(items: list[pytest.Item]) -> None:
+    """Classify the PostgreSQL-backed Web suite without duplicating markers."""
+    web_root = Path(__file__).resolve().parent / "web"
+    for item in items:
+        path = Path(str(item.path)).resolve()
+        if path.is_relative_to(web_root):
+            item.add_marker(pytest.mark.postgres)
 
 
 @pytest.fixture
@@ -87,7 +66,7 @@ def set_api_key(monkeypatch: pytest.MonkeyPatch) -> str:
 
 
 @pytest.fixture
-def fake_narrator_llm() -> AsyncMock:
+def fake_narrator_llm() -> Generator[tuple[AsyncMock, str], None, None]:
     """Stub for narrator agent's call_llm_stream."""
     canned = (
         "你感受到体内灵气涌动，丹田中一团温热的力量缓缓凝聚。\n"
@@ -110,7 +89,7 @@ def fake_narrator_llm() -> AsyncMock:
 
 
 @pytest.fixture
-def fake_judge_llm() -> AsyncMock:
+def fake_judge_llm() -> Generator[tuple[AsyncMock, str], None, None]:
     """Stub for judge agent's call_llm."""
     canned = '{"approved": true, "corrected_delta": {}, "judgment_note": "ok", "review_score": 8}'
     mock = AsyncMock(return_value={
@@ -126,7 +105,7 @@ def fake_judge_llm() -> AsyncMock:
 
 
 @pytest.fixture
-def fake_world_builder_llm() -> AsyncMock:
+def fake_world_builder_llm() -> Generator[tuple[AsyncMock, str], None, None]:
     """Stub for world_builder agent's call_llm."""
     canned_data = {
         "character": {

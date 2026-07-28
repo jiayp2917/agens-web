@@ -69,7 +69,6 @@ def test_auto_ddl_schema_includes_database_comments() -> None:
     assert "当前等于 session_id" in comments
 
 
-@pytest.mark.skipif(not os.environ.get("TEST_DATABASE_URL"), reason="TEST_DATABASE_URL not configured")
 def test_postgres_database_url_smoke(monkeypatch) -> None:
     from alembic import command
     from alembic.config import Config

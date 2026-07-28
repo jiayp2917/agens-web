@@ -20,6 +20,54 @@ EXPECTED_TABLES = 18
 ROOT = Path(__file__).resolve().parents[1]
 
 
+def _restore_snapshots() -> dict[str, dict[str, object]]:
+    """Representative persisted saves for every supported story version."""
+    base = {
+        "turn_count": 1,
+        "game_started": True,
+        "game_over": False,
+        "character": {"name": "restore_hero", "realm": "练气", "age": 18},
+    }
+    return {
+        "v1": {
+            **base,
+            "world": {"story_key": "border-vein-crisis", "story_version": 1},
+        },
+        "v2": {
+            **base,
+            "world": {
+                "story_key": "border-vein-crisis",
+                "story_version": 2,
+                "story_state": {"phase_key": "turning"},
+            },
+        },
+        "v3": {
+            **base,
+            "turn_count": 95,
+            "world": {
+                "story_key": "border-vein-crisis",
+                "story_version": 3,
+                "story_state": {
+                    "phase_key": "post_arc",
+                    "status": "post_arc",
+                    "arc_resolution": "resolved",
+                    "post_arc_turns": 5,
+                },
+            },
+            "pending_model_failure": {
+                "failure_id": "restore-pending-model",
+                "stage": "narrator",
+                "request_number": 96,
+                "slot": "B",
+                "rule_outcome_hash": "a" * 64,
+                "rule_rng_counter": 95,
+                "base_version": 95,
+                "status": "pending",
+            },
+        },
+    }
+
+
 def main() -> int:
     raw_url = os.environ.get("TEST_DATABASE_URL", "").strip()
     if not raw_url:
@@ -88,17 +136,15 @@ def _drop_database(admin, database_name: str) -> None:
 
 def _insert_fixture(database_url: URL) -> None:
     engine = create_engine(database_url)
-    snapshot = json.dumps(
-        {
-            "turn_count": 1,
-            "game_started": True,
-            "game_over": False,
-            "character": {"name": "restore_hero", "realm": "练气", "age": 18},
-            "world": {"story_key": "border-vein-crisis", "story_version": 1},
-        },
+    snapshots = _restore_snapshots()
+    v3_snapshot = json.dumps(snapshots["v3"], ensure_ascii=False)
+    events = json.dumps(
+        [
+            {"type": "narrative", "text": "恢复演练"},
+            {"type": "model_failure", "failure_id": "restore-pending-model"},
+        ],
         ensure_ascii=False,
     )
-    events = json.dumps([{"type": "narrative", "text": "恢复演练"}], ensure_ascii=False)
     try:
         with engine.begin() as conn:
             conn.execute(
@@ -118,20 +164,26 @@ def _insert_fixture(database_url: URL) -> None:
                          CAST(:snapshot AS JSONB), CAST(:events AS JSONB), 1, 1)
                     """
                 ),
-                {"snapshot": snapshot, "events": events},
+                {"snapshot": v3_snapshot, "events": events},
             )
-            conn.execute(
-                text(
-                    """
-                    INSERT INTO saves
-                        (id, user_id, name, snapshot, events, created_at, updated_at)
-                    VALUES
-                        ('restore-save', 'restore-marker', 'slot_restore',
-                         CAST(:snapshot AS JSONB), CAST(:events AS JSONB), 1, 1)
-                    """
-                ),
-                {"snapshot": snapshot, "events": events},
-            )
+            for version, snapshot in snapshots.items():
+                conn.execute(
+                    text(
+                        """
+                        INSERT INTO saves
+                            (id, user_id, name, snapshot, events, created_at, updated_at)
+                        VALUES
+                            (:id, 'restore-marker', :name,
+                             CAST(:snapshot AS JSONB), CAST(:events AS JSONB), 1, 1)
+                        """
+                    ),
+                    {
+                        "id": f"restore-save-{version}",
+                        "name": f"slot_{version}",
+                        "snapshot": json.dumps(snapshot, ensure_ascii=False),
+                        "events": events,
+                    },
+                )
             conn.execute(
                 text(
                     """
@@ -158,7 +210,7 @@ def _insert_fixture(database_url: URL) -> None:
                          '玄元历一年第1回合', '恢复演练回合', 'event')
                     """
                 ),
-                {"snapshot": snapshot},
+                {"snapshot": v3_snapshot},
             )
             conn.execute(
                 text(
@@ -168,10 +220,14 @@ def _insert_fixture(database_url: URL) -> None:
                          result_version, response, created_at)
                     VALUES
                         ('restore-session', 'restore-turn-request', 'turn', 0, 1,
-                         CAST(:response AS JSONB), 1)
+                        CAST(:response AS JSONB), 1)
                     """
                 ),
-                {"response": json.dumps({"turn_count": 1, "version": 1})},
+                {
+                    "response": json.dumps(
+                        {"turn_count": 95, "version": 1, "pending_model_failure": True}
+                    )
+                },
             )
             conn.execute(
                 text(
@@ -286,7 +342,7 @@ def _verify_restore(database_url: URL) -> dict[str, int | str | bool]:
                     """
                     SELECT
                         (SELECT count(*) FROM sessions WHERE id = 'restore-session') AS sessions,
-                        (SELECT count(*) FROM saves WHERE id = 'restore-save') AS saves,
+                        (SELECT count(*) FROM saves WHERE user_id = 'restore-marker') AS saves,
                         (SELECT count(*) FROM game_runs WHERE id = 'restore-session') AS runs,
                         (SELECT count(*) FROM game_turns gt
                          JOIN game_runs gr ON gr.id = gt.run_id
@@ -304,7 +360,13 @@ def _verify_restore(database_url: URL) -> dict[str, int | str | bool]:
                          WHERE user_id = 'restore-marker' AND runs_completed = 1) AS progress,
                         (SELECT count(*) FROM game_turns gt
                          LEFT JOIN game_runs gr ON gr.id = gt.run_id
-                         WHERE gr.id IS NULL) AS orphan_turns
+                         WHERE gr.id IS NULL) AS orphan_turns,
+                        (SELECT count(*) FROM saves
+                         WHERE snapshot #>> '{world,story_version}' IN ('1', '2', '3')) AS save_versions,
+                        (SELECT count(*) FROM saves
+                         WHERE name = 'slot_v3'
+                           AND snapshot #>> '{world,story_state,status}' = 'post_arc'
+                           AND snapshot ? 'pending_model_failure') AS post_arc_pending
                     """
                 )
             ).mappings().one()
@@ -316,18 +378,23 @@ def _verify_restore(database_url: URL) -> dict[str, int | str | bool]:
             and table_count == EXPECTED_TABLES
             and marker_count == 1
             and all(int(graph[key]) == 1 for key in (
-                "sessions", "saves", "runs", "turns", "mutations",
+                "sessions", "runs", "turns", "mutations",
                 "achievements", "rewards", "bonuses", "progress",
             ))
+            and int(graph["saves"]) == 3
+            and int(graph["save_versions"]) == 3
+            and int(graph["post_arc_pending"]) == 1
             and int(graph["orphan_turns"]) == 0
         ),
         "restored_revision": revision,
         "restored_tables": table_count,
         "restored_marker_count": marker_count,
         "restored_business_graph_ok": all(int(graph[key]) == 1 for key in (
-            "sessions", "saves", "runs", "turns", "mutations",
+            "sessions", "runs", "turns", "mutations",
             "achievements", "rewards", "bonuses", "progress",
-        )),
+        )) and int(graph["saves"]) == 3,
+        "restored_save_versions": int(graph["save_versions"]),
+        "restored_post_arc_pending": int(graph["post_arc_pending"]),
         "restored_orphan_turns": int(graph["orphan_turns"]),
     }
 

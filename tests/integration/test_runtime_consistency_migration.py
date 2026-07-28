@@ -18,11 +18,14 @@ from sqlalchemy.exc import DBAPIError
 
 pytestmark = [
     pytest.mark.integration,
-    pytest.mark.skipif(
-        not os.environ.get("TEST_DATABASE_URL"),
-        reason="TEST_DATABASE_URL not configured",
-    ),
+    pytest.mark.postgres,
 ]
+
+
+@pytest.fixture(scope="module", autouse=True)
+def _requires_local_postgres() -> None:
+    if not os.environ.get("TEST_DATABASE_URL"):
+        raise RuntimeError("PostgreSQL integration tests require TEST_DATABASE_URL")
 
 _ROOT = Path(__file__).resolve().parents[2]
 _PREVIOUS_REVISION = "20260705_0007"

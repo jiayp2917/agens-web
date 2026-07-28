@@ -61,6 +61,7 @@ markers = [
     "destructive: destructive/fuzz-style tests",
     "e2e: end-to-end scenarios (may be slow/flaky)",
     "web: tests that exercise the FastAPI/browser web adapter",
+    "postgres: tests that require the local PostgreSQL integration service",
     "llm_real: tests that call real LLM APIs (require AGNES_API_KEY)",
 ]
 addopts = [
@@ -69,9 +70,7 @@ addopts = [
     "--strict-config",
     "-p no:cacheprovider",
     "-n",
-    "auto",
-    "--dist",
-    "loadgroup",
+    "0",
 ]
 filterwarnings = [
     "ignore::DeprecationWarning:jinja2.*",
