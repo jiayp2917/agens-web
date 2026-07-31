@@ -114,18 +114,17 @@ Narrator `ok`、`fallback=false`、`fallback_prompt.active=false`、`contract_re
 - `AGNES_TOTAL_TIMEOUT_SECONDS`：单次模型调用整体时限。
 - 不得把用户 Key 写入 `os.environ`，也不得通过命令行参数传入真实 Key。
 
-## Local Model Evaluation
+## Local Model Verification
 
-两模型对照只允许在本机、独立进程和仓库外证据目录中运行。评估模式要求
-`AGENS_EVALUATION_MODE=1` 与 `AGENS_ARTIFACT_ROOT`，后者必须在仓库外且仅当前用户可访问；
-生产模式会拒绝启动评估模式。证据只包含脱敏响应副本、版本/哈希、调用次数、延迟、token、
-strict/fallback 状态和费用估算，不保存 prompt、Key、Cookie、Authorization、真实 Base URL 或玩家数据。
+本地开发、测试和浏览器验证都启动普通 `web.backend.app`，由 `ModelConfigService` 解析当前
+PostgreSQL 系统模型配置。数据库未配置时，`AGENS_SYSTEM_MODEL_*` 或兼容的 `AGNES_*` 才作为启动
+回退；Key 只在单次模型调用边界读取或解密。不存在独立的评估应用、模型解析器、预算账本或专用环境变量。
 
-使用 `scripts/qualify_model.py` 对每个模型独立编排开场、v2 smoke、三条 v3 路线、post-arc 和
-九快照审阅。新请求统一采用显式 `response_mode`，默认 `json_object`；不会按厂商、模型名或地址
-切换解析分支，旧标签只用于读取历史数据。`--dry-run` 只创建仓库外恢复检查点，明确不代表资格通过。
-不带 `--dry-run` 的资格运行会产生真实模型调用，默认 pytest 门禁不执行。实际资格结论和后续门禁见
-`docs/PROJECT_AUDIT.md` 与 `docs/NEXT_GOVERNANCE_BACKLOG.md`。
+新请求显式使用 `response_mode`，默认 `json_object`；解析不按厂商、模型名或地址分支。浏览器工具通过
+公开 API 运行，并把临时脱敏汇总写入系统临时目录，或写入 `AGENS_PLAYTEST_OUTPUT_DIR` 指定的仓库外目录。
+不得保存 prompt、原始响应、Key、Cookie、Authorization、真实 Base URL 或玩家数据。默认 pytest 门禁
+不会调用真实模型；真实模型资格结论和后续门禁见 `docs/PROJECT_AUDIT.md` 与
+`docs/NEXT_GOVERNANCE_BACKLOG.md`。
 
 ## Deployment Shape
 

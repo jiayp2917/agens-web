@@ -1,5 +1,19 @@
 # Changelog
 
+## 2026-08-01
+
+### Changed - unified local model runtime
+
+- `ead9620` made PostgreSQL-backed system model configuration the normal local runtime path and retained system/compatibility environment variables only as bootstrap fallback. HTTPX now honors standard `HTTP_PROXY`, `HTTPS_PROXY` and `NO_PROXY` while retaining URL validation, redirect refusal and timeouts.
+- `0c163e5` removed the dedicated evaluation application, resolver, artifact root/ACL, ledger, provider qualification scripts and evaluation-only environment variables. Deterministic scenarios and authority replay remain ordinary local verification modules; browser verification uses the normal public Web API and a transient repository-external output directory.
+- Removed the now-unreachable model-call observer chain and obsolete raw-artifact documentation. The boundary regression prevents the removed runtime symbols from returning, while model envelopes, rule authority, save compatibility and player-directed failure handling remain unchanged.
+
+### Verification
+
+- Targeted Python regression: 39 passed. `compileall`, Ruff, C901 and mypy passed. Non-`llm_real` collection found 867 tests with 1 deselected.
+- Vitest passed 8 files / 18 tests; React production build and `npm audit --audit-level=high` passed with zero vulnerabilities. Skill-copy verification and `git diff --check` passed.
+- No real model, production connection, deployment, push or port `5432` access occurred. PostgreSQL/Web and backup/restore gates remain pending because no listener is available on the required `127.0.0.1:55432`; the installed PostgreSQL service is stopped and configured for `5432`, so it was not started or reconfigured.
+
 ## 2026-07-23
 
 ### Changed - local governance implementation closure

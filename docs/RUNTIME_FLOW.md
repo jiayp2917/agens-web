@@ -54,7 +54,7 @@ npm.cmd run dev -- --host 127.0.0.1 --port 5173
 2. 拒绝用户信息、query、fragment 和 IP 字面量。
 3. 官方域名内置允许；自定义域名必须在 `AGENS_MODEL_BASE_URL_ALLOWLIST`。
 4. 请求前解析全部 A/AAAA，任何 loopback、private、link-local、reserved 或 multicast 地址都拒绝。
-5. HTTPX 使用 `follow_redirects=False`、`trust_env=False` 和整体调用时限。
+5. HTTPX 使用 `follow_redirects=False`、标准代理环境变量和整体调用时限。
 
 ## 5. 创建会话与开局
 
@@ -83,8 +83,8 @@ POST /api/sessions/{id}/start
 
 `WebGameService` 只保留路由稳定门面、runner 管理与事务协调：开局和会话生命周期委托给
 `service_sessions.py`，A/B/C/D 回合委托给 `service_turns.py`，存读档和结束委托给
-`service_saves.py`。普通产品运行使用默认空 `EvaluationHooks`；评估 resolver、ledger 和
-canonical hook 仅由隔离评估应用工厂注入。
+`service_saves.py`。每个 runner 在模型调用前通过 `ModelConfigService` 解析用户或系统配置；
+浏览器验证走同一条公开 API 和配置路径。
 
 六维属性由后端重新校验：手动单项 2-8、总和 30；随机单项 0-10、总和 30。运行时尺度统一为 0-10，5 为中性值。
 
@@ -164,14 +164,11 @@ Narrator 请求成功但缺少叙事或四个 choices 时，普通回合可以�
 
 浏览器验收命令保持 `scripts/local_visible_playtest.cjs` 兼容；它将浏览器操作、持久化审计、可见内容审计、报告构造和纯函数裁决分离。脱敏 replay fixture 覆盖通过、失败、fallback、重复和状态冲突，不能写入仓库内运行证据。
 
-## 12. 本地模型评估
+## 12. 本地模型验证
 
-评估进程用只读 `EvaluationModelConfigResolver` 替代产品模型解析器。Key 仅在一次 Agent
-调用的私有运行时上下文读取，不能进入 session、Agent 可序列化 state、数据库、日志或证据。
-`AGENS_EVALUATION_MODE=1` 时，`AGENS_ARTIFACT_ROOT` 必须位于仓库外；默认
-`runtime/artifacts` 被禁用，所有持久化值在最终边界再次脱敏。启动/结束分别写入不含 prompt、
-Key、Cookie、Authorization 或真实 Base URL 的 manifest 和 inventory hash。
+本地模型验证启动普通 `web.backend.app`，并通过公共 API 使用当前 PostgreSQL 系统模型配置。
+Key 仅在一次 Agent 调用的私有运行时上下文读取，不能进入 session、Agent 可序列化 state、
+数据库或日志。浏览器工具的临时脱敏汇总默认写入系统临时目录；配置的输出目录必须位于仓库外。
 
-能力 probe、20 回合 smoke、完整局和 Chrome 分别使用串行进程与独立 PostgreSQL 库。评估模式在
-`AGENS_ENV=prod|production` 下会被 FastAPI 启动检查拒绝。真实 provider 结果必须标为
-`llm_real`，不得被 fallback、repair 或 contract recovery 冒充严格成功。
+模型 smoke、完整局和 Chrome 流程与 PostgreSQL 测试串行运行，并使用不同数据库。真实 provider
+结果必须标为 `llm_real`，不得被 fallback、repair 或 contract recovery 冒充严格成功。

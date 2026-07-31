@@ -55,9 +55,8 @@ React/Vite
 `app_dependencies.py` 提供 current user/admin、session owner、rate limit 和统一 service exception 映射。
 
 `WebGameService` 保持路由依赖的稳定门面。`service_sessions.py`、`service_turns.py` 和
-`service_saves.py` 分别承接会话生命周期、回合与存读档用例；评估接入只依赖
-`EvaluationHooks` 接口的默认 no-op 实现。具体 resolver、ledger 和评估配置仅由
-`evaluation_app.py` 组装，产品服务不导入 `agens_novel.evaluation`。
+`service_saves.py` 分别承接会话生命周期、回合与存读档用例。模型配置只由普通
+`ModelConfigService` 在调用前解析；产品和本地验证不再存在第二个应用工厂或评估配置链。
 
 ## 4. 会话一致性
 
@@ -120,7 +119,7 @@ Agent 不拥有状态结算权。
 `llm/client.py` 使用 `httpx.AsyncClient`：
 
 - `follow_redirects=False`
-- `trust_env=False`
+- `trust_env=True`，继承标准 `HTTP_PROXY`、`HTTPS_PROXY` 和 `NO_PROXY`
 - 408/429/5xx 可重试
 - `AGNES_TOTAL_TIMEOUT_SECONDS` 整体时限
 - asyncio 取消自然传播
@@ -128,9 +127,7 @@ Agent 不拥有状态结算权。
 
 Narrator 请求成功但正文或四项选项不完整时，TurnFlow 可用规则结果和本地主线选项维持游戏，但该路径记录为 `contract_recovery`，与 provider fallback 分开，不能计入严格 live 验收。兼容 parser 可以读取裸 JSON 或行式选项；严格分类要求归一化后的 envelope 完整、四槽唯一、无可见英文或结构残留，而不强迫所有 provider 使用相同 wire format。模型历史投影为 `AcceptedTurnContextV1`，只保存已接受正文、选项和规则后果摘要。
 
-本地对照位于 `src/agens_novel/evaluation/`：每个 provider 在独立进程使用只读 resolver；能力 probe 选择传输格式，ledger 在 HTTP 调用前执行调用数/费用上限，外部 ArtifactSink 写脱敏 manifest、响应副本和 inventory。冻结九快照 benchmark 不采用任一模型的历史；盲审包随机左右且不包含 provider/model 名称。该子系统在生产模式被拒绝启动。
-
-本地浏览器验收的 CLI 仍由 `scripts/local_visible_playtest.cjs` 提供。浏览器驱动、持久化回合审计、玩家可见内容审计、报告构造和最终裁决分别位于 `scripts/playtest/`；replay fixture 锁定证据字段和退出码，运行工件仍在仓库外或被 Git 忽略。
+确定性场景和权威回放位于 `src/agens_novel/verification/`，用于普通本地验证，不装配模型配置或发起模型调用。本地浏览器验收的 CLI 仍由 `scripts/local_visible_playtest.cjs` 提供，并通过普通 Web API 运行。浏览器驱动、持久化回合审计、玩家可见内容审计、报告构造和最终裁决分别位于 `scripts/playtest/`；运行产物只允许在系统临时目录或显式指定的仓库外目录中出现。
 
 ## 7. 模型配置
 
@@ -189,8 +186,8 @@ Compose：
 - read-only root、cap drop、no-new-privileges、tmpfs、CPU/内存/PID 限制；
 - PostgreSQL、Redis 与 Squid 只通过内部网络访问，不发布宿主机端口；
 - 生产 `RateLimiter` 使用 Redis 原子滑动窗口，两个应用实例共享计数，Redis 故障时敏感写请求 fail closed 为 503；
-- LLM 客户端通过显式 `AGENS_EGRESS_PROXY_URL` 使用 Squid，保持 `trust_env=False`、`follow_redirects=False`；
-- `deploy/apply-egress-acl.sh` 在 `DOCKER-USER` 建立应用专用链，仅允许 DB、Redis、Squid 和必要内部流量，阻止绕过代理的直接出站。
+- LLM 客户端继承标准 `HTTP_PROXY`、`HTTPS_PROXY` 和 `NO_PROXY`，保持 `follow_redirects=False`；部署若使用 Squid，通过这些标准变量配置，而非应用专用代理变量。
+- `deploy/apply-egress-acl.sh` 是独立的部署网络控制；本地代码不依赖其存在，也不通过它选择模型配置。
 
 主机部署顺序是安全边界的一部分：必须先解析依赖地址、完整写入应用专用链并将其插入 `DOCKER-USER` 首位，最后才启用 `net.bridge.bridge-nf-call-iptables=1`。运行 Docker 容器的主机不得通过卸载 `br_netfilter` 恢复状态，因为它可能连带移除 `bridge` 模块并使 Docker 网络对象与内核 bridge 设备失去一致性；恢复只能保留模块并按已记录值调整 sysctl。
 

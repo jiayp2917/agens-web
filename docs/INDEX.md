@@ -15,8 +15,8 @@
 - 四套世界包保留 60 回合 v1 旧档兼容；新局默认绑定九阶段 90 回合 v2。v3 的九阶段、承诺、路线后果和 post-arc 已在本地实现，但尚未完成真实模型与浏览器完整局验收，默认版本不变。
 - gameplay recovery 与 provider fallback 分开记录；Narrator 契约不完整不能计作 live-model 成功。
 - Narrator 内部契约是正文加四选项；选择意图和规则结果才是权威状态，兼容 state update 仅作诊断。
-- 本地双模型评估使用仓库外、脱敏的 `AGENS_ARTIFACT_ROOT`；生产拒绝 `AGENS_EVALUATION_MODE`。
-- 生产形态包含内部 Redis 共享限流、Squid 受控出站代理和专用 egress ACL；本地纯单测仍可使用内存限流。
+- 本地开发、测试和浏览器验证复用普通 Web 应用及 PostgreSQL 系统模型配置；环境变量只在数据库未配置时作为启动回退。
+- 生产形态包含内部 Redis 共享限流和部署侧网络控制；本地纯单测仍可使用内存限流。
 - 2026-07-14 服务器隔离与生产 Stage 1 曾验证上述形态，但 strict choice 因 Narrator 正文英文残留触发 fallback 而停止；2026-07-20 重启后只读复核确认 ACL、bridge filtering 和持久化服务均未恢复。当前运行健康不等于发布验收通过，v2、回滚演练、当前候选的 strict smoke 与 ACL 持久化均待完成。
 - 当前本地验证结果、精确计数和 strict live 证据只在 `PROJECT_AUDIT.md` 维护。
 - 本地工作树与生产状态分开；生产通过只接受服务器侧备份、部署、回滚和 strict smoke 的脱敏事实。
@@ -51,4 +51,4 @@
 - 默认 pytest 排除 `llm_real`；真实模型验收单独执行。
 - 本地自动化不等于生产验收。
 - HTTP 200 不等于模型成功；fallback 或 contract recovery 都视为 live-model 失败。
-- 浏览器脚本可把临时证据写入被 Git 忽略的 `output/playwright/`；普通提交不得包含这些产物，需要长期保留时移到仓库外 artifact 目录并保存清单。
+- 浏览器脚本只把临时脱敏汇总写入系统临时目录，或 `AGENS_PLAYTEST_OUTPUT_DIR` 指定的仓库外目录；仓库路径会被拒绝。

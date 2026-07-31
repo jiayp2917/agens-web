@@ -82,7 +82,7 @@
 - gameplay recovery 与 provider fallback 分开记录；两者都不能冒充严格 live-model 成功。
 - repair 不作为普通回合常态路径；必要重试、repair 和 Judge 必须脱敏记录。
 - 不记录原始 prompt、原始响应、凭据或用户隐私。
-- 本地模型评估使用独立进程、外部 ArtifactSink、manifest/hash inventory、调用与费用上限；生产模式必须拒绝评估启动。
+- 本地模型验证复用普通 Web 应用和 PostgreSQL 系统模型配置；调用次数、费用和临时浏览器汇总只作记录，不形成第二个运行面。
 
 ### 2.5 UI 与交互
 
@@ -142,7 +142,7 @@ P0 随时抢占。没有 P0 时，按 `NEXT_GOVERNANCE_BACKLOG.md` 中经过证�
 
 - 每次基线记录 commit、工作树状态、日期、环境和证据路径，不混用 HEAD 与未提交工作树。
 - Chrome 数据库不得与 `tests\web` 共用并发测试库。
-- `output/playwright/` 默认忽略；长期证据移到仓库外 artifact 目录并保存清单。
+- 浏览器临时汇总默认写入系统临时目录，或显式指定的仓库外目录；脚本拒绝仓库内输出路径。
 - 当前事实只写入 `PROJECT_AUDIT.md`，未完成项只写入 `NEXT_GOVERNANCE_BACKLOG.md`。
 - 本地通过不等于生产通过；HTTP 200、fallback 或历史记录不能替代当前生产验收。
 

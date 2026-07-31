@@ -79,9 +79,9 @@ start/choice/action/save/load/end 请求必须包含：
 - 官方 Agens、DeepSeek、Qwen/DashScope、GLM 域名内置允许。
 - 自定义 hostname 必须在 `AGENS_MODEL_BASE_URL_ALLOWLIST`；可按 `host:port` 精确允许非 443 HTTPS 端口。
 - 请求前解析全部 A/AAAA；任一地址不是 global unicast 即拒绝，包括 loopback、private、link-local、reserved、multicast 和云 metadata 地址。
-- HTTPX 设置 `trust_env=False` 和 `follow_redirects=False`，不继承本机代理，也不跟随重定向。
-- 生产模型请求额外使用显式 `AGENS_EGRESS_PROXY_URL` 指向内部 Squid；代理只允许 HTTPS CONNECT 443 到官方域名和部署 allowlist。
-- `DOCKER-USER` 应用专用链拒绝应用绕过代理直连公网、loopback、private、link-local、metadata 和 reserved 目标。应用层 URL 校验、代理 ACL 与主机 egress ACL 是三层独立防线。
+- HTTPX 设置 `trust_env=True` 和 `follow_redirects=False`，继承标准 `HTTP_PROXY`、`HTTPS_PROXY` 和 `NO_PROXY`，但不跟随重定向。
+- 部署若使用 Squid，通过标准代理环境变量配置。应用层 URL 校验与部署侧代理 ACL、主机 egress ACL 是相互独立的防线。
+- `DOCKER-USER` 应用专用链可拒绝应用直连公网、loopback、private、link-local、metadata 和 reserved 目标；它不参与模型配置或解析选择。
 - ACL 应先完整安装并置于 `DOCKER-USER` 首位，再开启 bridge IPv4 filtering，避免放行链尚未建立时中断应用到数据库等同桥流量。
 
 ## Request Boundary
@@ -114,15 +114,11 @@ Remove-Item Env:AGNES_API_KEY
 
 正式用户配置应通过登录后的模型设置 API 保存为数据库密文。
 
-## Local Model Evaluation Boundary
+## Local Browser Output Boundary
 
-- 仅本地评估进程可设置 `AGENS_EVALUATION_MODE=1`；`AGENS_ENV=prod|production` 下 FastAPI 会拒绝启动。
-- 必须配置位于仓库外的 `AGENS_ARTIFACT_ROOT`。启动时限制为当前 Windows 用户和 SYSTEM；ACL 无法收紧时 fail closed。
-- 正常产品运行不写 `runtime/artifacts` 的模型输入/输出。评估运行也禁止双写到该目录或 `output/playwright`。
-- ArtifactSink 最终写入前脱敏，禁止保存 prompt、Key、Cookie、Authorization、真实 Base URL、真实玩家数据或未脱敏浏览器网络内容。
-- 只允许保存脱敏响应副本、manifest/hash、provider/model、transport、调用次数、延迟、token、retry、strict、fallback 和费用估算。价格未知时明确记录 unknown。
-- 评估目录默认保留 30 天；`cleanup_expired()` 先 dry-run，只有显式确认才删除。敏感扫描只报告类别和计数，不回显匹配文本。
-- `AGENS_EVALUATION_TRANSPORT` 仅影响当前评估子进程；能力 probe 的推荐结果不得写回产品环境、数据库或用户模型配置。
+- 本地开发、测试和浏览器验证没有独立的模型配置或凭据链；它们复用普通 Web 应用的 PostgreSQL 优先配置解析。
+- `scripts/local_visible_playtest.cjs` 与 `scripts/playwright_evidence.py` 默认使用系统临时目录，并拒绝仓库内输出路径。`AGENS_PLAYTEST_OUTPUT_DIR` 只能指向仓库外目录。
+- 工具不得持久化 prompt、原始响应、Key、Cookie、Authorization、真实 Base URL 或玩家数据。临时输出只包含脱敏结构、可见内容检查结果和必要的运行摘要。
 
 ## Verification
 
