@@ -11,11 +11,11 @@ import re
 
 from sqlalchemy import text
 
-from agens_novel.evaluation.playthrough import (
+from agens_novel.verification.authority import (
     authority_state_hash_from_persisted_state,
     canonical_authority_trajectory,
 )
-from agens_novel.evaluation.scenarios import canonical_v3_scenarios
+from agens_novel.verification.scenarios import canonical_v3_scenarios
 
 from web.backend.database import create_database
 

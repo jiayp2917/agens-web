@@ -10,12 +10,12 @@ from typing import Any
 
 from agens_novel.engine.choices import fallback_choices
 from agens_novel.engine.game_engine import GameEngine
-from agens_novel.evaluation.playthrough import (
+from agens_novel.game.constants import format_realm_name
+from agens_novel.verification.authority import (
     canonical_authority_trajectory,
     canonical_replay_session,
 )
-from agens_novel.evaluation.scenarios import canonical_v3_scenarios
-from agens_novel.game.constants import format_realm_name
+from agens_novel.verification.scenarios import canonical_v3_scenarios
 
 
 def run_golden_route(*, seed: str, story_version: int = 2, max_turns: int = 90) -> dict[str, Any]:

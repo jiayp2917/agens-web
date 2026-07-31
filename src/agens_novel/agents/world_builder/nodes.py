@@ -11,7 +11,6 @@ from __future__ import annotations
 import os
 from typing import Any
 
-from ...artifacts import sink, store
 from ...llm.provider_adapter import ProviderTransport, world_opening_transport
 from ...llm.provider_adapter import (
     response_format as provider_response_format,
@@ -258,8 +257,7 @@ async def call_agnes_llm(state: dict[str, Any]) -> dict[str, Any]:
 
 
 def save_artifact(state: dict[str, Any]) -> dict[str, Any]:
-    """Parse <world_data> JSON from the LLM output and persist."""
-    run_id = state.get("run_id") or store.new_run_id()
+    """Parse the World Opening envelope without persisting provider output."""
     text = state.get("output_text", "")
     llm_error = state.get("llm_error", "")
     generation_type = str(state.get("generation_type") or "new_game")
@@ -282,46 +280,13 @@ def save_artifact(state: dict[str, Any]) -> dict[str, Any]:
             generated_data, world_description, opening_narrative = _parse_world_output(text)
 
     envelope = WorldOpeningEnvelopeV1.from_payload(generated_data)
-    out_path = store.write_output(
-        AGENT_NAME,
-        run_id,
-        "" if sink.evaluation_mode_enabled() else text,
-    )
-    audit = {
-        "run_id": run_id,
-        "agent": AGENT_NAME,
-        "started_at": state.get("started_at"),
-        "finished_at": utcnow_iso(),
-        "model": state.get("model"),
-        "usage": state.get("usage", {}),
-        "elapsed_ms": state.get("elapsed_ms", 0),
-        "llm_error": llm_error,
-        "llm_error_code": state.get("llm_error_code", ""),
-        "response_diagnostics": state.get("response_diagnostics", {}),
-        "output_path": str(out_path),
-        "generation_type": generation_type,
-        "provider_transport": provider_transport,
-        "provider_json_schema": bool(state.get("provider_json_schema")),
-        "provider_json_object": bool(state.get("provider_json_object")),
-        "provider_json_envelope_ok": bool(envelope) if provider_structured else False,
-    }
-    audit_path = store.write_audit(AGENT_NAME, run_id, audit)
-    store.append_global_log(
-        {
-            "event": "world_builder_run_finished",
-            "run_id": run_id,
-            "ok": not llm_error,
-            "type": state.get("generation_type", "new_game"),
-        }
-    )
-
     return {
         "generated_data": generated_data,
         "world_description": world_description,
         "opening_narrative": opening_narrative,
-        "output_path": str(out_path),
-        "audit_path": str(audit_path),
-        "finished_at": audit["finished_at"],
+        "output_path": "",
+        "audit_path": "",
+        "finished_at": utcnow_iso(),
         "provider_transport": provider_transport,
         "provider_json_schema": bool(state.get("provider_json_schema")),
         "provider_json_object": bool(state.get("provider_json_object")),

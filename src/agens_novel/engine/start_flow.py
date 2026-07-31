@@ -179,7 +179,7 @@ class StartFlow:
                 engine.game_session,
                 generation_type="profile_opening",
             )
-            if is_retryable_model_request_failure(result) and _opening_retry_allowed():
+            if is_retryable_model_request_failure(result):
                 log.info(
                     "profile opening world_builder request failed with retryable provider error; retrying once"
                 )
@@ -362,7 +362,6 @@ class StartFlow:
         if (
             world_status.kind != ModelResultKind.REQUEST_FAILED
             or not is_retryable_model_request_failure(result)
-            or not _opening_retry_allowed()
         ):
             return result, world_status, parsed
         try:
@@ -476,7 +475,6 @@ class StartFlow:
         should_retry = (
             world_status.kind == ModelResultKind.INCOMPLETE_OUTPUT
             and not result.get("retried_after_incomplete_output")
-            and _opening_retry_allowed()
         )
         if not should_retry:
             return result, world_status, parsed
@@ -586,17 +584,6 @@ def _strict_opening_retry_prompt(prompt: str) -> str:
         "discovered_locations、lore_facts；所有可见字符串必须是中文，不得含任何英文单词、英文地点名、"
         "标签、占位选项或单独的 A/B/C/D 字母。choices 必须是四条引用本局地点或势力的完整中文行动句。"
     )
-
-
-def _opening_retry_allowed() -> bool:
-    """Optionally suppress opening retries for a one-request evaluation canary."""
-    raw_limit = os.environ.get("AGENS_EVALUATION_OPENING_MAX_ATTEMPTS", "").strip()
-    if not raw_limit:
-        return True
-    try:
-        return int(raw_limit) > 1
-    except ValueError as exc:
-        raise ValueError("AGENS_EVALUATION_OPENING_MAX_ATTEMPTS must be an integer") from exc
 
 
 def _error_code_for_status(status: ModelResultStatus) -> str:

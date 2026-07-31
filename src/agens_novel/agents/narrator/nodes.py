@@ -16,7 +16,6 @@ import logging
 from collections.abc import Callable
 from typing import Any
 
-from ...artifacts import sink, store
 from ...llm.client import LLMError, call_llm, call_llm_stream
 from ...llm.provider_adapter import ProviderTransport, narrator_transport, response_format
 from ...llm.runtime_context import runtime_api_key
@@ -204,8 +203,7 @@ async def _maybe_repair_narrator_output(
 
 
 def save_artifact(state: dict[str, Any]) -> dict[str, Any]:
-    """Parse a transport-neutral Narrator envelope and persist safe evidence."""
-    run_id = state.get("run_id") or store.new_run_id()
+    """Parse a transport-neutral Narrator envelope without persisting provider output."""
     text = state.get("output_text", "")
     llm_error = state.get("llm_error", "")
 
@@ -221,37 +219,6 @@ def save_artifact(state: dict[str, Any]) -> dict[str, Any]:
         choices = list(envelope.choices)
     contract_diagnostics = _contract_diagnostics(text, narrative, state_delta, choices)
 
-    # Final accepted prose is captured by the evaluation runners. Agent-level
-    # artifacts retain no raw response when a contract or later rule check fails.
-    out_path = store.write_output(
-        AGENT_NAME,
-        run_id,
-        "" if sink.evaluation_mode_enabled() else text,
-    )
-    audit = {
-        "run_id": run_id, "agent": AGENT_NAME,
-        "started_at": state.get("started_at"), "finished_at": utcnow_iso(),
-        "model": state.get("model"), "usage": state.get("usage", {}),
-        "elapsed_ms": state.get("elapsed_ms", 0), "llm_error": llm_error,
-        "llm_error_code": state.get("llm_error_code", ""),
-        "response_diagnostics": state.get("response_diagnostics", {}),
-        "output_path": str(out_path),
-        "narrative_chars": len(narrative),
-        "prompt_metrics": state.get("prompt_metrics") or {},
-        "repaired_output": bool(state.get("repaired_output")),
-        "repair_elapsed_ms": int(state.get("repair_elapsed_ms") or 0),
-        "contract_diagnostics": contract_diagnostics,
-        "provider_json_schema": bool(state.get("provider_json_schema")),
-        "provider_json_object": bool(state.get("provider_json_object")),
-        "provider_transport": str(state.get("provider_transport") or "json_object"),
-        "provider_json_envelope_ok": bool(state.get("provider_json_envelope_ok")),
-    }
-    audit_path = store.write_audit(AGENT_NAME, run_id, audit)
-    store.append_global_log({
-        "event": "narrator_run_finished", "run_id": run_id,
-        "ok": not llm_error, "chars": len(narrative),
-    })
-
     return {
         "narrative": narrative,
         "state_delta": state_delta,
@@ -265,9 +232,9 @@ def save_artifact(state: dict[str, Any]) -> dict[str, Any]:
         "provider_json_object": bool(state.get("provider_json_object")),
         "provider_transport": str(state.get("provider_transport") or "json_object"),
         "provider_json_envelope_ok": bool(state.get("provider_json_envelope_ok")),
-        "output_path": str(out_path),
-        "audit_path": str(audit_path),
-        "finished_at": audit["finished_at"],
+        "output_path": "",
+        "audit_path": "",
+        "finished_at": utcnow_iso(),
         "llm_error_code": str(state.get("llm_error_code") or ""),
         "response_diagnostics": dict(state.get("response_diagnostics") or {}),
     }

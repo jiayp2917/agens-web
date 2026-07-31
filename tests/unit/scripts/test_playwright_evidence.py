@@ -104,6 +104,11 @@ def test_write_playwright_evidence_outputs_parseable_files(tmp_path) -> None:
     assert rows[0]["prompt_tokens"] == "500"
 
 
+def test_write_playwright_evidence_rejects_a_repository_directory() -> None:
+    with pytest.raises(ValueError, match="outside the repository"):
+        write_playwright_evidence(ROOT / "output" / "playwright", "blocked", {}, [])
+
+
 def test_write_playwright_evidence_keeps_nested_objects_parseable(tmp_path) -> None:
     paths = write_playwright_evidence(
         tmp_path,

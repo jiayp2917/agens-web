@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from agens_novel.evaluation.scenarios import canonical_scenario_hash, canonical_v3_scenarios
+from agens_novel.verification.scenarios import canonical_scenario_hash, canonical_v3_scenarios
 
 
 def test_canonical_v3_scenarios_are_fixed_and_use_valid_30_point_profiles() -> None:

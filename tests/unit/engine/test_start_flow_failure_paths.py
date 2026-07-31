@@ -216,23 +216,6 @@ def test_profile_opening_empty_result_uses_strict_retry(monkeypatch) -> None:
     assert engine.game_session.region == good["world"]["region"]
 
 
-def test_profile_opening_canary_limit_suppresses_the_retry(monkeypatch) -> None:
-    monkeypatch.setenv("AGNES_API_KEY", "sk-test-1234567890")
-    monkeypatch.setenv("AGENS_START_MODEL_WORLD", "1")
-    monkeypatch.setenv("AGENS_EVALUATION_OPENING_MAX_ATTEMPTS", "1")
-    engine = GameEngine()
-    calls: list[str] = []
-
-    def runner(_agent_name, _user_input, _session, **_kwargs):
-        calls.append("world_builder")
-        return {"generated_data": {}, "llm_error": ""}
-
-    with patch.object(engine, "run_agent", side_effect=runner):
-        engine.start_from_profile({"char_name": "canary"})
-
-    assert calls == ["world_builder"]
-
-
 def test_profile_opening_failure_freezes_binding_until_player_resolves(monkeypatch) -> None:
     monkeypatch.setenv("AGNES_API_KEY", "sk-test-1234567890")
     monkeypatch.setenv("AGENS_START_MODEL_WORLD", "1")

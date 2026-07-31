@@ -5,7 +5,7 @@ const fs = require("fs");
 const path = require("path");
 const crypto = require("crypto");
 const { spawnSync } = require("child_process");
-const { browserArtifactDir } = require("./evaluation_artifacts.cjs");
+const { browserOutputDir } = require("./playtest_output.cjs");
 const browserDriver = require("./playtest/browser_driver.cjs");
 const acceptanceDecision = require("./playtest/acceptance_decision.cjs");
 const acceptanceReport = require("./playtest/acceptance_report.cjs");
@@ -13,7 +13,7 @@ const persistedTurnAudit = require("./playtest/persisted_turn_audit.cjs");
 const visibleContentAudit = require("./playtest/visible_content_audit.cjs");
 
 const ROOT = path.resolve(__dirname, "..");
-const OUT_DIR = browserArtifactDir(ROOT);
+const OUT_DIR = browserOutputDir(ROOT);
 const BASE_URL = process.env.AGENS_PLAYTEST_URL || "http://127.0.0.1:5173/static/";
 const API_BASE_URL = process.env.AGENS_PLAYTEST_API_BASE || "";
 const TARGET_TURNS = Number(process.env.AGENS_PLAYTEST_TURNS || "20");

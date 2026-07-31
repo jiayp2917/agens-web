@@ -10,8 +10,11 @@ from __future__ import annotations
 import argparse
 import csv
 import json
+import tempfile
 from pathlib import Path
 from typing import Any
+
+_PROJECT_ROOT = Path(__file__).resolve().parents[1]
 
 
 def write_playwright_evidence(
@@ -24,7 +27,7 @@ def write_playwright_evidence(
 
     Returns absolute file paths keyed by ``json``, ``ndjson`` and ``csv``.
     """
-    out = Path(output_dir)
+    out = _outside_repository_output_dir(output_dir)
     out.mkdir(parents=True, exist_ok=True)
 
     safe_name = _safe_name(name)
@@ -131,10 +134,19 @@ def _safe_name(name: str) -> str:
     return cleaned.strip("-") or "playwright-evidence"
 
 
+def _outside_repository_output_dir(output_dir: str | Path) -> Path:
+    out = Path(output_dir).expanduser().resolve()
+    try:
+        out.relative_to(_PROJECT_ROOT)
+    except ValueError:
+        return out
+    raise ValueError("Playwright evidence output must be outside the repository")
+
+
 def main() -> int:
     parser = argparse.ArgumentParser(description="Write strict Playwright/Chrome evidence files.")
     parser.add_argument("--input", required=True, help="JSON file containing summary and turns.")
-    parser.add_argument("--output-dir", default="output/playwright")
+    parser.add_argument("--output-dir", default=str(Path(tempfile.gettempdir()) / "agens-web-playwright"))
     parser.add_argument("--name", required=True)
     args = parser.parse_args()
 

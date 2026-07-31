@@ -17,7 +17,6 @@ import re
 from typing import Any
 
 from ... import paths
-from ...artifacts import sink, store
 from ...llm.provider_adapter import (
     ProviderTransport,
     judge_transport,
@@ -120,11 +119,10 @@ async def call_agnes_llm(state: dict[str, Any]) -> dict[str, Any]:
 
 
 def save_artifact(state: dict[str, Any]) -> dict[str, Any]:
-    """Parse JSON verdict from the LLM output and persist.
+    """Parse a JSON verdict without persisting provider output.
 
     On LLM error, defaults to approved=False (safe default).
     """
-    run_id = state.get("run_id") or store.new_run_id()
     text = state.get("output_text", "")
     llm_error = state.get("llm_error", "")
 
@@ -140,30 +138,6 @@ def save_artifact(state: dict[str, Any]) -> dict[str, Any]:
         {"approved": approved, "issue_codes": [], "rewrite_required": not approved}
     )
 
-    out_path = store.write_output(
-        AGENT_NAME,
-        run_id,
-        "" if sink.evaluation_mode_enabled() else text,
-    )
-    audit = {
-        "run_id": run_id, "agent": AGENT_NAME,
-        "started_at": state.get("started_at"), "finished_at": utcnow_iso(),
-        "model": state.get("model"), "usage": state.get("usage", {}),
-        "elapsed_ms": state.get("elapsed_ms", 0), "llm_error": llm_error,
-        "llm_error_code": state.get("llm_error_code", ""),
-        "response_diagnostics": state.get("response_diagnostics", {}),
-        "output_path": str(out_path),
-        "approved": approved,
-        "judgment_note": "" if sink.evaluation_mode_enabled() else judgment_note,
-        "score": score,
-        "prompt_metrics": state.get("prompt_metrics") or {},
-    }
-    audit_path = store.write_audit(AGENT_NAME, run_id, audit)
-    store.append_global_log({
-        "event": "judge_run_finished", "run_id": run_id,
-            "ok": not llm_error, "approved": decision.approved, "score": score,
-    })
-
     return {
         "approved": decision.approved,
         "corrected_delta": {},
@@ -172,9 +146,9 @@ def save_artifact(state: dict[str, Any]) -> dict[str, Any]:
         "judgment_note": judgment_note,
         "review_score": score,
         "prompt_metrics": state.get("prompt_metrics") or {},
-        "output_path": str(out_path),
-        "audit_path": str(audit_path),
-        "finished_at": audit["finished_at"],
+        "output_path": "",
+        "audit_path": "",
+        "finished_at": utcnow_iso(),
         "provider_transport": str(state.get("provider_transport") or "json_object"),
         "llm_error_code": str(state.get("llm_error_code") or ""),
         "response_diagnostics": dict(state.get("response_diagnostics") or {}),

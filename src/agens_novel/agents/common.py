@@ -16,8 +16,6 @@ from typing import Any
 
 from agens_novel.settings import Settings
 
-from ..artifacts import store
-from ..artifacts.sink import ensure_evaluation_sink_ready
 from ..engine.choices import clean_choice_text
 from ..llm.client import LLMError, call_llm
 from ..llm.runtime_context import current_model_runtime, runtime_api_key
@@ -35,7 +33,6 @@ def load_agent_settings(agent_name: str, state: dict[str, Any] | None = None) ->
     user's key cannot leak into another request through process globals.
     """
     state = state or {}
-    ensure_evaluation_sink_ready()
     runtime = current_model_runtime()
     base_url = str(
         state.get("base_url")
@@ -61,9 +58,8 @@ def load_agent_settings(agent_name: str, state: dict[str, Any] | None = None) ->
         api_key_set = bool(state.get("api_key_set")) and bool(api_key)
     else:
         api_key_set = bool(api_key)
-    run_id = store.new_run_id()
     log.info(
-        "[%s.load_settings] run_id=%s model=%s key_set=%s", agent_name, run_id, model, api_key_set
+        "[%s.load_settings] model=%s key_set=%s", agent_name, model, api_key_set
     )
     return {
         "provider": provider,
@@ -73,7 +69,6 @@ def load_agent_settings(agent_name: str, state: dict[str, Any] | None = None) ->
         "response_mode": response_mode or "json_object",
         "provider_transport": response_mode or "json_object",
         "stream": bool(state.get("stream", runtime.stream if runtime is not None else False)),
-        "run_id": run_id,
         "started_at": utcnow_iso(),
     }
 
