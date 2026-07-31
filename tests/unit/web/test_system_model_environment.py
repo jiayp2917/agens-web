@@ -10,7 +10,7 @@ def test_system_model_environment_selects_deepseek_without_persisting_a_key(monk
     monkeypatch.setenv("AGENS_SYSTEM_MODEL_BASE_URL", "https://api.deepseek.com/v1")
     monkeypatch.setenv("AGENS_SYSTEM_MODEL", "deepseek-v4-flash")
     monkeypatch.setenv("DEEPSEEK_API_KEY", "test-system-key")
-    service = ModelConfigService(SimpleNamespace(get_model_config=lambda: {"provider": "Agens"}))
+    service = ModelConfigService(SimpleNamespace(get_model_config=lambda: {}))
 
     config = service.system()
 
@@ -26,7 +26,7 @@ def test_explicit_system_key_environment_does_not_depend_on_provider_label(monke
     monkeypatch.setenv("AGENS_SYSTEM_MODEL", "compatible-model")
     monkeypatch.setenv("AGENS_SYSTEM_MODEL_KEY_ENV", "DEEPSEEK_API_KEY")
     monkeypatch.setenv("DEEPSEEK_API_KEY", "test-system-key")
-    service = ModelConfigService(SimpleNamespace(get_model_config=lambda: {"provider": "Agens"}))
+    service = ModelConfigService(SimpleNamespace(get_model_config=lambda: {}))
 
     config = service.system()
 
@@ -54,3 +54,23 @@ def test_personal_model_configuration_still_overrides_system_environment(monkeyp
 
     assert effective["source"] == "user"
     assert effective["model"] == "personal-model"
+
+
+def test_stored_system_configuration_takes_priority_over_environment(monkeypatch) -> None:
+    monkeypatch.setenv("AGENS_SYSTEM_MODEL_PROVIDER", "DeepSeek")
+    monkeypatch.setenv("DEEPSEEK_API_KEY", "test-system-key")
+    stored = {
+        "provider": "Agens",
+        "base_url": "https://apihub.agnes-ai.com/v1",
+        "model": "stored-model",
+        "response_mode": "json_object",
+        "stream": False,
+        "api_key_encrypted": "ciphertext",
+        "api_key_masked": "<set>",
+    }
+
+    config = ModelConfigService(SimpleNamespace(get_model_config=lambda: stored)).system()
+
+    assert config["provider"] == "Agens"
+    assert config["model"] == "stored-model"
+    assert config["api_key_encrypted"] == "ciphertext"

@@ -8,7 +8,6 @@ import httpx
 import pytest
 
 from agens_novel.llm.client import (
-    InvalidEgressProxyUrl,
     LLMAuthError,
     LLMBadRequest,
     LLMCompletionError,
@@ -21,7 +20,6 @@ from agens_novel.llm.client import (
     _resolve_request_options,
     _resolve_total_timeout,
     mask_key,
-    validate_egress_proxy_url,
 )
 from agens_novel.llm.runtime_context import model_call_observer
 from agens_novel.llm.types import LLMResponse
@@ -150,14 +148,15 @@ def test_build_payload_includes_optional_response_format() -> None:
     assert payload["response_format"] == response_format
 
 
-def test_http_client_uses_only_explicit_egress_proxy(monkeypatch) -> None:
-    monkeypatch.setenv("HTTPS_PROXY", "http://ambient-proxy.invalid:9999")
-    monkeypatch.setenv("AGENS_EGRESS_PROXY_URL", "http://egress-proxy:3128")
+def test_http_client_inherits_standard_proxy_environment(monkeypatch) -> None:
+    monkeypatch.setenv("HTTP_PROXY", "http://http-proxy.invalid:8080")
+    monkeypatch.setenv("HTTPS_PROXY", "http://https-proxy.invalid:8443")
+    monkeypatch.setenv("NO_PROXY", "localhost,127.0.0.1")
 
     options = _http_client_options(30.0)
 
-    assert options["proxy"] == "http://egress-proxy:3128"
-    assert options["trust_env"] is False
+    assert options["trust_env"] is True
+    assert "proxy" not in options
     assert options["follow_redirects"] is False
 
 
@@ -276,28 +275,6 @@ def test_non_json_content_is_not_an_envelope() -> None:
 
     assert parsed["response_diagnostics"]["content_present"] is True
     assert parsed["response_diagnostics"]["reasoning_content_present"] is False
-
-
-@pytest.mark.parametrize(
-    "value",
-    (
-        "socks5://egress-proxy:1080",
-        "http://user:pass@egress-proxy:3128",
-        "http://egress-proxy:3128/path",
-        "http://egress-proxy:3128?mode=open",
-        "http://:3128",
-        "http://egress-proxy:70000",
-    ),
-)
-def test_explicit_egress_proxy_rejects_unsafe_or_malformed_urls(value: str) -> None:
-    with pytest.raises(InvalidEgressProxyUrl):
-        validate_egress_proxy_url(value)
-
-
-def test_explicit_egress_proxy_normalizes_authority() -> None:
-    assert validate_egress_proxy_url(" HTTP://Egress-Proxy:3128/ ") == (
-        "http://egress-proxy:3128"
-    )
 
 
 def test_retryable_response_is_not_collapsed_to_bad_request() -> None:

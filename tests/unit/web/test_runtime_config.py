@@ -18,7 +18,6 @@ def _valid_production_env(monkeypatch: pytest.MonkeyPatch) -> None:
         "SESSION_COOKIE_SECURE": "1",
         "AGENS_RATE_LIMIT_BACKEND": "redis",
         "AGENS_RATE_LIMIT_REDIS_URL": "redis://redis:6379/0",
-        "AGENS_EGRESS_PROXY_URL": "http://egress-proxy:3128",
     }
     for name, value in values.items():
         monkeypatch.setenv(name, value)
@@ -47,7 +46,7 @@ def test_production_rejects_validation_seed(monkeypatch) -> None:
 
 @pytest.mark.parametrize(
     "name",
-    ("AGENS_RATE_LIMIT_REDIS_URL", "AGENS_EGRESS_PROXY_URL"),
+    ("AGENS_RATE_LIMIT_REDIS_URL",),
 )
 def test_production_requires_shared_runtime_services(monkeypatch, name: str) -> None:
     _valid_production_env(monkeypatch)
@@ -62,22 +61,6 @@ def test_production_rejects_memory_rate_limiter(monkeypatch) -> None:
     monkeypatch.setenv("AGENS_RATE_LIMIT_BACKEND", "memory")
 
     with pytest.raises(RuntimeError, match="must be redis"):
-        validate_runtime_config()
-
-
-@pytest.mark.parametrize(
-    "value",
-    (
-        "socks5://egress-proxy:1080",
-        "http://user:pass@egress-proxy:3128",
-        "http://egress-proxy:3128/path",
-    ),
-)
-def test_production_rejects_invalid_egress_proxy_url(monkeypatch, value: str) -> None:
-    _valid_production_env(monkeypatch)
-    monkeypatch.setenv("AGENS_EGRESS_PROXY_URL", value)
-
-    with pytest.raises(RuntimeError, match="valid HTTP"):
         validate_runtime_config()
 
 

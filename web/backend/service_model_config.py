@@ -117,9 +117,6 @@ class ModelConfigService:
         }
 
     def system(self) -> dict[str, Any]:
-        configured = _system_environment_config()
-        if configured is not None:
-            return configured
         stored = self.db.get_model_config() or {}
         settings = Settings()
         source = "system"
@@ -140,6 +137,9 @@ class ModelConfigService:
             if not encrypted and env_key:
                 config["api_key"] = env_key
         else:
+            configured = _system_environment_config()
+            if configured is not None:
+                return configured
             config = {
                 "provider": "Agens",
                 "base_url": os.environ.get("AGNES_BASE_URL") or settings.base_url,

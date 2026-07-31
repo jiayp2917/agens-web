@@ -13,8 +13,6 @@ from fastapi.responses import FileResponse, JSONResponse
 from fastapi.staticfiles import StaticFiles
 from starlette.middleware.trustedhost import TrustedHostMiddleware
 
-from agens_novel.artifacts.sink import evaluation_mode_enabled
-from agens_novel.llm.client import InvalidEgressProxyUrl, validate_egress_proxy_url
 from agens_novel.logging_setup import setup_logging
 
 from .auth import DEV_SESSION_SECRET
@@ -39,8 +37,6 @@ _PLACEHOLDER_MARKERS = ("change_me", "changeme", "replace_me", "example.com", "<
 
 
 def validate_runtime_config() -> None:
-    if is_production_mode() and evaluation_mode_enabled():
-        raise RuntimeError("AGENS_EVALUATION_MODE is disabled in production.")
     if not is_production_mode():
         return
     _validate_production_runtime_services()
@@ -56,15 +52,6 @@ def _validate_production_runtime_services() -> None:
         raise RuntimeError("AGENS_RATE_LIMIT_BACKEND must be redis in production.")
     if not os.environ.get("AGENS_RATE_LIMIT_REDIS_URL", "").strip():
         raise RuntimeError("AGENS_RATE_LIMIT_REDIS_URL required in production.")
-    proxy_url = os.environ.get("AGENS_EGRESS_PROXY_URL", "").strip()
-    if not proxy_url:
-        raise RuntimeError("AGENS_EGRESS_PROXY_URL required in production.")
-    try:
-        validate_egress_proxy_url(proxy_url)
-    except InvalidEgressProxyUrl as exc:
-        raise RuntimeError("AGENS_EGRESS_PROXY_URL must be a valid HTTP(S) proxy URL.") from exc
-
-
 def _required_production_values() -> dict[str, str]:
     required = {
         "DATABASE_URL": os.environ.get("DATABASE_URL", "").strip(),
@@ -139,11 +126,9 @@ def create_app(
     *,
     service_factory: Callable[[], tuple[WebGameService, object | None]] | None = None,
 ) -> FastAPI:
-    """Create the product application or an explicitly supplied isolated variant."""
+    """Create the product application with an optional test service factory."""
     setup_logging()
     validate_runtime_config()
-    if evaluation_mode_enabled() and service_factory is None:
-        raise RuntimeError("evaluation mode requires web.backend.evaluation_app")
     production = is_production_mode()
     app = FastAPI(
         title="agens-web",

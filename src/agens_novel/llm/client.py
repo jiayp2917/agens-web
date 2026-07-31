@@ -19,7 +19,6 @@ import time
 from collections.abc import Callable
 from dataclasses import dataclass, field
 from typing import Any
-from urllib.parse import urlsplit, urlunsplit
 
 import httpx
 
@@ -66,10 +65,6 @@ class LLMAuthError(LLMError):
 
 class LLMBadRequest(LLMError):
     """4xx other than auth."""
-
-
-class InvalidEgressProxyUrl(ValueError):
-    """Raised when the explicit outbound proxy URL is malformed."""
 
 
 def _resolve_config(
@@ -148,43 +143,12 @@ def _resolve_total_timeout(total_timeout_seconds: float | None) -> float:
     return max(1.0, total_timeout_seconds)
 
 
-def validate_egress_proxy_url(raw_url: str) -> str:
-    value = str(raw_url or "").strip()
-    if not value:
-        return ""
-    try:
-        parsed = urlsplit(value)
-        port = parsed.port
-    except ValueError as exc:
-        raise InvalidEgressProxyUrl("AGENS_EGRESS_PROXY_URL is invalid.") from exc
-    if parsed.scheme.lower() not in {"http", "https"}:
-        raise InvalidEgressProxyUrl("AGENS_EGRESS_PROXY_URL must use HTTP or HTTPS.")
-    if not parsed.hostname or parsed.username or parsed.password:
-        raise InvalidEgressProxyUrl(
-            "AGENS_EGRESS_PROXY_URL must not contain credentials or an empty host."
-        )
-    if parsed.path not in {"", "/"} or parsed.query or parsed.fragment:
-        raise InvalidEgressProxyUrl(
-            "AGENS_EGRESS_PROXY_URL must not contain a path, query, or fragment."
-        )
-    hostname = parsed.hostname.rstrip(".").lower()
-    if not hostname or "%" in hostname:
-        raise InvalidEgressProxyUrl("AGENS_EGRESS_PROXY_URL contains an invalid host.")
-    normalized_host = f"[{hostname}]" if ":" in hostname else hostname
-    netloc = f"{normalized_host}:{port}" if port is not None else normalized_host
-    return urlunsplit((parsed.scheme.lower(), netloc, "", "", ""))
-
-
 def _http_client_options(timeout_seconds: float) -> dict[str, Any]:
-    options: dict[str, Any] = {
+    return {
         "timeout": timeout_seconds,
         "follow_redirects": False,
-        "trust_env": False,
+        "trust_env": True,
     }
-    proxy = validate_egress_proxy_url(os.environ.get("AGENS_EGRESS_PROXY_URL", ""))
-    if proxy:
-        options["proxy"] = proxy
-    return options
 
 
 async def call_llm(

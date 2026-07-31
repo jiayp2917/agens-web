@@ -18,16 +18,7 @@ pytestmark = pytest.mark.xdist_group("pg_test_db")
 def _set_production_runtime_services(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setenv("AGENS_RATE_LIMIT_BACKEND", "redis")
     monkeypatch.setenv("AGENS_RATE_LIMIT_REDIS_URL", "redis://redis:6379/0")
-    monkeypatch.setenv("AGENS_EGRESS_PROXY_URL", "http://egress-proxy:3128")
     monkeypatch.setattr("web.backend.app.create_rate_limiter", InMemoryRateLimiter)
-
-
-def test_production_rejects_evaluation_mode(monkeypatch: pytest.MonkeyPatch) -> None:
-    monkeypatch.setenv("AGENS_ENV", "production")
-    monkeypatch.setenv("AGENS_EVALUATION_MODE", "1")
-
-    with pytest.raises(RuntimeError, match="AGENS_EVALUATION_MODE"):
-        create_app()
 
 
 def test_production_rejects_default_session_secret(tmp_path: Path, monkeypatch) -> None:
