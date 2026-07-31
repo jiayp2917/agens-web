@@ -12,6 +12,8 @@ _BANNED_TOKENS = (
     "EvaluationModelConfig",
     "EvaluationLedger",
     "evaluation_app",
+    "ModelCallObserver",
+    "model_call_observer",
 )
 
 

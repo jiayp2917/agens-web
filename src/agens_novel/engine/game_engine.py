@@ -95,7 +95,6 @@ class GameEngine:
         self.on_model_failure_state: Callback | None = None
         self.model_config: dict[str, Any] = {}
         self.model_runtime_resolver: Callable[[], RuntimeModelConfig] | None = None
-        self.model_call_observer: Any = None
         self._start_flow = StartFlow(self)
         self._turn_flow = TurnFlow(self)
         self._breakthrough_flow = BreakthroughFlow(self)
@@ -118,8 +117,6 @@ class GameEngine:
         """Call the agent runner through the GameEngine module patch seam."""
         model_config = self.model_config if isinstance(self.model_config, dict) else {}
         runtime = self.model_runtime_resolver() if self.model_runtime_resolver else None
-        if self.model_call_observer is not None:
-            kwargs.setdefault("model_call_observer", self.model_call_observer)
         if runtime is not None:
             kwargs.setdefault("provider", runtime.provider)
             kwargs.setdefault("model", runtime.model)

@@ -15,13 +15,11 @@ from agens_novel.llm.client import (
     _execute_with_retry,
     _handle_non_stream_response,
     _http_client_options,
-    _observed_request,
     _resolve_config,
     _resolve_request_options,
     _resolve_total_timeout,
     mask_key,
 )
-from agens_novel.llm.runtime_context import model_call_observer
 from agens_novel.llm.types import LLMResponse
 
 
@@ -160,46 +158,7 @@ def test_http_client_inherits_standard_proxy_environment(monkeypatch) -> None:
     assert options["follow_redirects"] is False
 
 
-@pytest.mark.asyncio
-async def test_observed_request_reserves_and_records_safe_metadata() -> None:
-    calls = []
-
-    class Observer:
-        def before_request(self, **kwargs):
-            calls.append(("before", kwargs))
-            return "ticket"
-
-        def after_request(self, ticket, **kwargs):
-            calls.append(("after", ticket, kwargs))
-
-    async def operation():
-        return LLMResponse(text="中文", elapsed_ms=4, usage={"total_tokens": 3})
-
-    with model_call_observer("narrator", Observer()):
-        response = await _observed_request(
-            transport="json_object",
-            stream=False,
-            operation=operation,
-        )
-
-    assert response["text"] == "中文"
-    assert calls[0] == ("before", {"agent": "narrator", "transport": "json_object", "stream": False})
-    assert calls[1][0] == "after"
-    assert calls[1][1] == "ticket"
-    assert calls[1][2]["usage"] == {"total_tokens": 3}
-
-
-@pytest.mark.asyncio
-async def test_observed_empty_completion_preserves_only_safe_diagnostics() -> None:
-    calls = []
-
-    class Observer:
-        def before_request(self, **_kwargs):
-            return "ticket"
-
-        def after_request(self, ticket, **kwargs):
-            calls.append((ticket, kwargs))
-
+def test_empty_completion_preserves_only_safe_diagnostics() -> None:
     response = httpx.Response(
         200,
         json={
@@ -214,19 +173,12 @@ async def test_observed_empty_completion_preserves_only_safe_diagnostics() -> No
         request=httpx.Request("POST", "https://provider.invalid/v1/chat/completions"),
     )
 
-    async def operation():
-        return _handle_non_stream_response(response, time.monotonic())
+    with pytest.raises(LLMCompletionError, match="empty_completion") as error:
+        _handle_non_stream_response(response, time.monotonic())
 
-    with model_call_observer("world_builder", Observer()):
-        with pytest.raises(LLMCompletionError, match="empty_completion"):
-            await _observed_request(transport="json_schema", stream=False, operation=operation)
-
-    assert calls[0][0] == "ticket"
-    assert calls[0][1]["success"] is False
-    assert calls[0][1]["error_code"] == "empty_completion"
-    assert calls[0][1]["usage"]["completion_tokens"] == 4096
-    assert calls[0][1]["elapsed_ms"] >= 0
-    assert calls[0][1]["response_diagnostics"] == {
+    assert error.value.error_code == "empty_completion"
+    assert error.value.usage["completion_tokens"] == 4096
+    assert error.value.response_diagnostics == {
         "finish_reason": "length",
         "choices_present": True,
         "message_present": True,
