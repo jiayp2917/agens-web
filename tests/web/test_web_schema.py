@@ -73,14 +73,14 @@ def test_postgres_database_url_smoke(monkeypatch) -> None:
     from alembic import command
     from alembic.config import Config
 
-    monkeypatch.setenv("DATABASE_URL", os.environ["TEST_DATABASE_URL"])
+    monkeypatch.setenv("DATABASE_URL", os.environ["DATABASE_URL"])
     monkeypatch.setenv("SESSION_COOKIE_SECURE", "0")
     monkeypatch.setenv("AGNES_API_KEY", "test-key")
     monkeypatch.setenv("INVITE_ADMIN_CODE", "pg-admin-invite-123")
     monkeypatch.setenv("SESSION_SECRET", "test-postgres-session-secret")
     monkeypatch.setenv("AGENS_ALLOWED_ORIGINS", "https://game.example.test")
 
-    engine = create_engine(os.environ["TEST_DATABASE_URL"], isolation_level="AUTOCOMMIT")
+    engine = create_engine(os.environ["DATABASE_URL"], isolation_level="AUTOCOMMIT")
     try:
         with engine.connect() as conn:
             conn.execute(text("DROP SCHEMA IF EXISTS public CASCADE"))

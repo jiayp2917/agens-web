@@ -124,7 +124,7 @@ def allowed_hosts_from_env() -> list[str]:
 
 def create_app(
     *,
-    service_factory: Callable[[], tuple[WebGameService, object | None]] | None = None,
+    service_factory: Callable[[], WebGameService] | None = None,
 ) -> FastAPI:
     """Create the product application with an optional test service factory."""
     setup_logging()
@@ -139,7 +139,7 @@ def create_app(
         openapi_url=None if production else "/openapi.json",
     )
     factory = service_factory or _create_product_game_service
-    app.state.service, app.state.evaluation_ledger = factory()
+    app.state.service = factory()
     app.state.rate_limiter = create_rate_limiter()
     _configure_middleware(app, production)
     _configure_handlers(app)
@@ -151,9 +151,9 @@ def create_app(
     return app
 
 
-def _create_product_game_service() -> tuple[WebGameService, object | None]:
-    """Create the product service without evaluation configuration."""
-    return WebGameService(create_database()), None
+def _create_product_game_service() -> WebGameService:
+    """Create the product service."""
+    return WebGameService(create_database())
 
 
 def _configure_middleware(app: FastAPI, production: bool) -> None:

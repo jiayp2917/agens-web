@@ -191,7 +191,7 @@ Compose：
 
 主机部署顺序是安全边界的一部分：必须先解析依赖地址、完整写入应用专用链并将其插入 `DOCKER-USER` 首位，最后才启用 `net.bridge.bridge-nf-call-iptables=1`。运行 Docker 容器的主机不得通过卸载 `br_netfilter` 恢复状态，因为它可能连带移除 `bridge` 模块并使 Docker 网络对象与内核 bridge 设备失去一致性；恢复只能保留模块并按已记录值调整 sysctl。
 
-本地迁移门禁使用独立临时库验证 0007 已有数据升级、孤儿/重复数据 fail-closed、0008 downgrade/re-upgrade 和 downgrade 阻塞条件。`scripts/verify_pg_backup_restore.py` 只接受 `TEST_DATABASE_URL`，使用 `pg_dump/pg_restore` 验证 head、18 张表和数据标记，不接受生产 `DATABASE_URL` 作为输入。
+本地迁移门禁在唯一的本机 `DATABASE_URL` 中重建 `public` schema，验证 0007 已有数据升级、孤儿/重复数据 fail-closed、0008 downgrade/re-upgrade 和 downgrade 阻塞条件。`scripts/verify_pg_backup_restore.py` 使用同一数据库完成 `pg_dump`、清库和 `pg_restore`，验证 head、18 张表和数据标记，结束时恢复 Alembic head。
 
 ## 11. 已删除内容
 

@@ -4,8 +4,8 @@
 
 - `ead9620` and `0c163e5` removed the dedicated evaluation runtime. Local development, tests and browser verification now use ordinary `web.backend.app` and PostgreSQL-first `ModelConfigService` resolution; the deleted evaluation variables no longer exist in active source, configuration or deployment examples.
 - Standard proxy environment variables are inherited by HTTPX. HTTPS URL validation, redirect refusal, request timeouts, envelope validation, rule authority, v1/v2/v3 save compatibility and explicit player handling of model failures are unchanged.
-- Targeted cleanup regressions, static checks, frontend tests/build/audit and skill-copy verification passed. The non-real-model suite was collected successfully but has not run because the required local database listener is absent.
-- The installed PostgreSQL service is stopped and configured for `5432`, while the required `127.0.0.1:55432` endpoint has no listener. This batch did not start, reconfigure or connect to `5432`; consequently `tests\\web`, PostgreSQL integration and backup/restore remain unverified on this commit.
+- Targeted cleanup regressions, static checks, frontend tests/build/audit and skill-copy verification passed. The non-real-model suite was collected successfully but has not run because no local `DATABASE_URL` is currently configured for the application process.
+- 本机只保留一个 PostgreSQL 开发/测试数据库，由 `DATABASE_URL` 连接。测试允许清空其应用表或重建 `public` schema；本批尚未在当前连接串上重跑 PostgreSQL、浏览器和备份恢复门禁。
 
 ## Scope
 
@@ -37,7 +37,7 @@
 - Judge `approved` 只接受 JSON bool；突破、飞升和死亡先记录叙事/turn history，再结算终局。`GameSession.error` 随存档保存和恢复。
 - Narrator 使用 `NarratorEnvelopeV1(narrative, choices)`；`state_update` 仅保留为兼容诊断，不参与权威状态或 strict 结果。World Builder 和 Judge 使用各自版本化 envelope。
 - v3 为每局生成两条命数承诺，包含九阶段事件、最近五项 motif 去重、路线后果以及主线在第 90 回合后的 `post_arc`。v1/v2 按精确版本读取，v3 仍不是默认内容。
-- 本地 fallback 开场已修复“牵动，其”和“生于魔道遗孤”等已知模板拼接问题；fallback 回合调用 `settle_turn()`，会同步推进年龄、寿元和主线状态。
+- 玩家明确选择本地故事后的开场已修复“牵动，其”和“生于魔道遗孤”等已知模板拼接问题；本地故事回合调用 `settle_turn()`，会同步推进年龄、寿元和主线状态。
 
 ### Model Runtime Boundary
 

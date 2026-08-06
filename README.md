@@ -13,7 +13,7 @@ Web-only 文字修仙模拟器。当前主线由 React/Vite、FastAPI、PostgreS
 - 访客局持久化到 PostgreSQL，默认保留 24 小时；登录或注册成功后删除当前访客局并清除访客 Cookie。
 - start/choice/action/save/load/end 都要求 `request_id` 与 `expected_version`，后端通过会话锁、CAS 和幂等结果防止双击、重试和并发覆盖。
 - 回合日志、session snapshot、活跃/终局 run、奖励和遗泽消费使用同一数据库事务；失败恢复内存 runner。
-- fallback 会自动切换本地故事，玩家直接使用下方 A/B/C/D；fallback 不能算 live-model 成功。
+- 模型失败会保留待处理状态；玩家可显式选择重试、转入本地故事或结束本局。任何本地故事处理均不算 live-model 成功。
 - 四套世界包保留 60 回合 `story_version=1` 旧档兼容；新局默认使用九阶段 90 回合 `story_version=2`。`story_version=3` 已实现九阶段事件、两条命数承诺、最近五项 motif 去重、路线后果与 90 回合后的 `post_arc`，但尚未完成真实模型和浏览器完整局验收，默认版本不变。
 - 普通回合由事件表声明模型可承接的 delta 类型；Web `choice_index` 与引擎 A/B/C/D 输入共用同一语义包装。
 - Narrator 缺任一契约段时会记录 `contract_recovery`；即使规则侧能继续结算，也不能计作 live-model 成功。
@@ -30,20 +30,11 @@ Web-only 文字修仙模拟器。当前主线由 React/Vite、FastAPI、PostgreS
 
 ```powershell
 cd D:\chat\agens-web
-F:\pg\bin\pg_isready.exe -h 127.0.0.1 -p 55432
-$env:TEST_DATABASE_URL = "postgresql+psycopg://agens_test@127.0.0.1:55432/agens_web_test"
+$env:DATABASE_URL = "<本机 PostgreSQL 连接串>"
+F:\pg\bin\pg_isready.exe -h 127.0.0.1 -p 5432
 ```
 
-若未启动：
-
-```powershell
-.\scripts\start_local_pg.ps1
-```
-
-不要在 PostgreSQL 仍运行时删除 `.tmp\pg-test-20260626-55432` 或手工处理
-`postmaster.pid`。先检查 `pg_isready`、`pg_ctl status` 和端口占用。
-
-`tests\web` 会在每个测试前 truncate `TEST_DATABASE_URL` 指向的应用表。真实浏览器验收必须使用独立数据库，且不要与 pytest 并发运行。
+本仓库只使用这一个本机开发/测试数据库。`tests\web`、迁移和备份恢复门禁会清空或重建其 schema；运行测试前不要保留需要持久化的本地会话、存档或模型配置。数据库、pytest 与浏览器流程仍须串行运行。
 
 ## Install
 
@@ -63,7 +54,7 @@ npm.cmd ci
 
 ```powershell
 cd D:\chat\agens-web
-$env:DATABASE_URL = "postgresql+psycopg://agens_test@127.0.0.1:55432/agens_web_test"
+$env:DATABASE_URL = "<本机 PostgreSQL 连接串>"
 $env:AGENS_PG_AUTO_DDL = "1"
 $env:SESSION_COOKIE_SECURE = "0"
 $env:PYTHONPATH = "D:\chat\agens-web\src"
@@ -84,7 +75,7 @@ npm.cmd run dev -- --host 127.0.0.1 --port 5173
 
 ```powershell
 cd D:\chat\agens-web
-$env:TEST_DATABASE_URL = "postgresql+psycopg://agens_test@127.0.0.1:55432/agens_web_test"
+$env:DATABASE_URL = "<本机 PostgreSQL 连接串>"
 
 .\.venv\Scripts\python.exe -m compileall -q src tests web scripts migrations
 .\.venv\Scripts\python.exe -m ruff check src web tests scripts migrations

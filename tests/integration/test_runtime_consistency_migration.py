@@ -4,7 +4,6 @@ from __future__ import annotations
 
 import json
 import os
-import uuid
 from collections.abc import Iterator
 from contextlib import contextmanager
 from pathlib import Path
@@ -16,6 +15,8 @@ from sqlalchemy import create_engine, text
 from sqlalchemy.engine import URL, make_url
 from sqlalchemy.exc import DBAPIError
 
+from web.backend.local_postgres_safety import require_loopback_postgres_url
+
 pytestmark = [
     pytest.mark.integration,
     pytest.mark.postgres,
@@ -24,8 +25,8 @@ pytestmark = [
 
 @pytest.fixture(scope="module", autouse=True)
 def _requires_local_postgres() -> None:
-    if not os.environ.get("TEST_DATABASE_URL"):
-        raise RuntimeError("PostgreSQL integration tests require TEST_DATABASE_URL")
+    if not os.environ.get("DATABASE_URL"):
+        raise RuntimeError("PostgreSQL integration tests require DATABASE_URL")
 
 _ROOT = Path(__file__).resolve().parents[2]
 _PREVIOUS_REVISION = "20260705_0007"
@@ -34,30 +35,23 @@ _HEAD_REVISION = "20260721_0009"
 
 @contextmanager
 def _temporary_database(monkeypatch: pytest.MonkeyPatch) -> Iterator[URL]:
-    source = make_url(os.environ["TEST_DATABASE_URL"])
-    database_name = f"agens_migration_{uuid.uuid4().hex[:12]}"
-    admin_url = source.set(database="postgres")
-    admin = create_engine(admin_url, isolation_level="AUTOCOMMIT")
+    source = require_loopback_postgres_url(make_url(os.environ["DATABASE_URL"]))
+    database = create_engine(source)
+    cfg = _alembic_config()
+    _reset_public_schema(database)
     try:
-        with admin.connect() as conn:
-            conn.execute(text(f'CREATE DATABASE "{database_name}"'))
-        database_url = source.set(database=database_name)
-        monkeypatch.setenv(
-            "DATABASE_URL",
-            database_url.render_as_string(hide_password=False),
-        )
-        yield database_url
+        monkeypatch.setenv("DATABASE_URL", source.render_as_string(hide_password=False))
+        yield source
     finally:
-        with admin.connect() as conn:
-            conn.execute(
-                text(
-                    "SELECT pg_terminate_backend(pid) FROM pg_stat_activity "
-                    "WHERE datname = :database_name AND pid <> pg_backend_pid()"
-                ),
-                {"database_name": database_name},
-            )
-            conn.execute(text(f'DROP DATABASE IF EXISTS "{database_name}"'))
-        admin.dispose()
+        _reset_public_schema(database)
+        command.upgrade(cfg, "head")
+        database.dispose()
+
+
+def _reset_public_schema(database) -> None:
+    with database.begin() as conn:
+        conn.execute(text("DROP SCHEMA IF EXISTS public CASCADE"))
+        conn.execute(text("CREATE SCHEMA public"))
 
 
 def _alembic_config() -> Config:

@@ -7,7 +7,6 @@ from pathlib import Path
 _UNIT_ROOT = Path(__file__).resolve().parent
 _FORBIDDEN_REFERENCES = (
     "PostgresWebDatabase",
-    "TEST_DATABASE_URL",
     "web.backend.database_postgres",
     "sqlalchemy import create_engine",
 )

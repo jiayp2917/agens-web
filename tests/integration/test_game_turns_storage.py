@@ -48,20 +48,18 @@ class TestRarityUnlockGates:
 
 
 @pytest.fixture()
-def pg_db(_pg_test_url: str | None, monkeypatch: pytest.MonkeyPatch):
-    """A fresh PostgresWebDatabase against this invocation's disposable database."""
-    if _pg_test_url is None:
-        raise RuntimeError("PostgreSQL integration tests require TEST_DATABASE_URL")
+def pg_db(_pg_url: str, monkeypatch: pytest.MonkeyPatch):
+    """A fresh PostgresWebDatabase against the local test database."""
     from web.backend.database_postgres import PostgresWebDatabase
 
-    engine = create_engine(_pg_test_url)
+    engine = create_engine(_pg_url)
     try:
         with engine.begin() as conn:
             conn.execute(text("TRUNCATE TABLE game_runs, game_turns, player_progress, users RESTART IDENTITY CASCADE"))
     finally:
         engine.dispose()
-    monkeypatch.setenv("DATABASE_URL", _pg_test_url)
-    database = PostgresWebDatabase(_pg_test_url)
+    monkeypatch.setenv("DATABASE_URL", _pg_url)
+    database = PostgresWebDatabase(_pg_url)
     yield database
     database.engine.dispose()
 

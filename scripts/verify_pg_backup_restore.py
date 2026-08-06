@@ -7,7 +7,6 @@ import os
 import shutil
 import subprocess
 import tempfile
-import uuid
 from pathlib import Path
 
 from alembic import command
@@ -16,6 +15,7 @@ from sqlalchemy import create_engine, text
 from sqlalchemy.engine import URL, make_url
 
 from agens_novel.engine.pending_model_failure import PendingModelFailureV1
+from web.backend.local_postgres_safety import require_loopback_postgres_url
 
 EXPECTED_REVISION = "20260721_0009"
 EXPECTED_TABLES = 18
@@ -70,38 +70,29 @@ def _restore_snapshots() -> dict[str, dict[str, object]]:
 
 
 def main() -> int:
-    raw_url = os.environ.get("TEST_DATABASE_URL", "").strip()
+    raw_url = os.environ.get("DATABASE_URL", "").strip()
     if not raw_url:
-        raise RuntimeError("TEST_DATABASE_URL is required; production DATABASE_URL is not accepted")
-    source_url = make_url(raw_url)
-    if not source_url.drivername.startswith("postgresql"):
-        raise RuntimeError("TEST_DATABASE_URL must use PostgreSQL")
+        raise RuntimeError("DATABASE_URL is required")
+    source_url = require_loopback_postgres_url(make_url(raw_url))
 
     pg_dump = _pg_tool("pg_dump")
     pg_restore = _pg_tool("pg_restore")
-    source_name = f"agens_backup_src_{uuid.uuid4().hex[:10]}"
-    target_name = f"agens_backup_dst_{uuid.uuid4().hex[:10]}"
-    admin_url = source_url.set(database="postgres")
-    admin = create_engine(admin_url, isolation_level="AUTOCOMMIT")
-    dump_path = Path(tempfile.gettempdir()) / f"{source_name}.dump"
+    dump_path = Path(tempfile.gettempdir()) / "agens_web_backup_restore.dump"
 
     try:
-        _create_database(admin, source_name)
-        _create_database(admin, target_name)
-        source = source_url.set(database=source_name)
-        target = source_url.set(database=target_name)
-        os.environ["DATABASE_URL"] = source.render_as_string(hide_password=False)
+        _reset_public_schema(source_url)
+        os.environ["DATABASE_URL"] = source_url.render_as_string(hide_password=False)
         command.upgrade(Config(str(ROOT / "alembic.ini")), "head")
-        _insert_fixture(source)
-        _run_pg_dump(pg_dump, source, dump_path)
-        _run_pg_restore(pg_restore, target, dump_path)
-        result = _verify_restore(target)
+        _insert_fixture(source_url)
+        _run_pg_dump(pg_dump, source_url, dump_path)
+        _reset_public_schema(source_url)
+        _run_pg_restore(pg_restore, source_url, dump_path)
+        result = _verify_restore(source_url)
         print(json.dumps(result, ensure_ascii=True, sort_keys=True))
         return 0 if result["backup_restore_ok"] else 1
     finally:
-        for database_name in (source_name, target_name):
-            _drop_database(admin, database_name)
-        admin.dispose()
+        _reset_public_schema(source_url)
+        command.upgrade(Config(str(ROOT / "alembic.ini")), "head")
         dump_path.unlink(missing_ok=True)
 
 
@@ -118,21 +109,14 @@ def _pg_tool(name: str) -> Path:
     raise RuntimeError(f"{name} is required; add it to PATH or set PG_BIN")
 
 
-def _create_database(admin, database_name: str) -> None:
-    with admin.connect() as conn:
-        conn.execute(text(f'CREATE DATABASE "{database_name}"'))
-
-
-def _drop_database(admin, database_name: str) -> None:
-    with admin.connect() as conn:
-        conn.execute(
-            text(
-                "SELECT pg_terminate_backend(pid) FROM pg_stat_activity "
-                "WHERE datname = :database_name AND pid <> pg_backend_pid()"
-            ),
-            {"database_name": database_name},
-        )
-        conn.execute(text(f'DROP DATABASE IF EXISTS "{database_name}"'))
+def _reset_public_schema(database_url: URL) -> None:
+    engine = create_engine(database_url)
+    try:
+        with engine.begin() as conn:
+            conn.execute(text("DROP SCHEMA IF EXISTS public CASCADE"))
+            conn.execute(text("CREATE SCHEMA public"))
+    finally:
+        engine.dispose()
 
 
 def _insert_fixture(database_url: URL) -> None:

@@ -15,8 +15,7 @@
 
 ```powershell
 cd D:\chat\agens-web
-.\scripts\start_local_pg.ps1
-$env:DATABASE_URL = "postgresql+psycopg://agens_test@127.0.0.1:55432/agens_web_test"
+$env:DATABASE_URL = "<本机 PostgreSQL 连接串>"
 $env:AGENS_PG_AUTO_DDL = "1"
 $env:SESSION_COOKIE_SECURE = "0"
 $env:PYTHONPATH = "D:\chat\agens-web\src"
@@ -131,12 +130,11 @@ POST /api/sessions/{id}/choice
 模型请求失败时：
 
 1. 事件流写入脱敏 model failure。
-2. 引擎自动进入本地故事并生成四个选项。
-3. `FallbackBanner` 只提示“已切换本地故事”，不显示无效“继续本局”按钮。
-4. 玩家直接点击下方 A/B/C/D。
-5. 本地故事同样调用 `settle_turn()`，推进年龄、寿元、阶段反馈和突破准备。
+2. 引擎保存 `PendingModelFailureV1`，冻结本次规则结果；权威回合、随机数和 `game_turns` 不会因失败推进。
+3. 玩家显式选择重试模型、转入本地故事或结束本局；重复请求返回同一处理结果，过期版本返回 409。
+4. 只有玩家选择本地故事后才生成本地 A/B/C/D 选项；该路径同样调用 `settle_turn()`，推进年龄、寿元、阶段反馈和突破准备。
 
-Narrator 请求成功但缺少叙事或四个 choices 时，普通回合可以用规则叙事和本地主线选项继续，但必须记录 `incomplete_output` / `contract_recovery`。`state_update` 不再是严格契约字段；即使兼容 parser 读到它，也只作为诊断。这种恢复不激活 provider fallback banner，也不算严格 live-model 成功。
+Narrator 请求成功但缺少叙事或四个 choices 时，同样进入待处理失败状态并记录 `incomplete_output` / `contract_recovery`。`state_update` 不再是严格契约字段；即使兼容 parser 读到它，也只作为诊断。任何后续处理都不算严格 live-model 成功。
 
 ## 9. 存读档与结束
 
@@ -158,9 +156,9 @@ Narrator 请求成功但缺少叙事或四个 choices 时，普通回合可以�
 
 ## 11. 验证隔离
 
-`tests\web` 会 truncate `TEST_DATABASE_URL` 指向的表。真实 Chrome 验收必须使用另一数据库，且不要与 pytest 并发运行。fallback 或 contract recovery 都不能算 live-model 成功，本地成功也不能替代生产验收。
+`tests\web` 会 truncate 唯一的本机 `DATABASE_URL` 指向的应用表。pytest、迁移、备份恢复和 Chrome 验收必须串行运行；运行测试前不保留需要持久化的本地会话、存档或模型配置。fallback 或 contract recovery 都不能算 live-model 成功，本地成功也不能替代生产验收。
 
-迁移测试在同一 PostgreSQL 实例创建独立临时数据库，覆盖已有库升级、孤儿/重复数据回滚、downgrade/re-upgrade 和阻塞条件。备份恢复通过 `scripts/verify_pg_backup_restore.py` 使用另两座临时库执行，结束时无条件删除数据库和 dump 文件。
+迁移测试在唯一的本机数据库内重建 `public` schema，覆盖已有库升级、孤儿/重复数据回滚、downgrade/re-upgrade 和阻塞条件。备份恢复通过 `scripts/verify_pg_backup_restore.py` 在同一数据库中完成 dump、清库和 restore，结束时恢复 Alembic head 并删除临时 dump 文件。
 
 浏览器验收命令保持 `scripts/local_visible_playtest.cjs` 兼容；它将浏览器操作、持久化审计、可见内容审计、报告构造和纯函数裁决分离。脱敏 replay fixture 覆盖通过、失败、fallback、重复和状态冲突，不能写入仓库内运行证据。
 

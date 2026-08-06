@@ -124,7 +124,7 @@ Remove-Item Env:AGNES_API_KEY
 
 ```powershell
 .\.venv\Scripts\python.exe -m pytest -q tests\unit\llm\test_url_security.py
-$env:TEST_DATABASE_URL = "postgresql+psycopg://agens_test@127.0.0.1:55432/agens_web_test"
+$env:DATABASE_URL = "<本机 PostgreSQL 连接串>"
 .\.venv\Scripts\python.exe -m pytest -q tests\web -n0
 .\.venv\Scripts\python.exe -m ruff check src web tests scripts migrations
 .\.venv\Scripts\python.exe -m mypy src web\backend

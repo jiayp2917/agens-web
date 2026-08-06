@@ -1,9 +1,9 @@
 """Web test DB isolation.
 
 After the Option C consolidation the web layer is PostgreSQL-only, so every
-web test runs against a single shared test database (TEST_DATABASE_URL).
-This autouse fixture truncates all application tables before each test for
-isolation; each test's ``create_app()`` then re-seeds catalogs on startup.
+web test runs against the configured local database. This autouse fixture
+truncates all application tables before each test; each test's ``create_app()``
+then re-seeds catalogs on startup.
 """
 
 from __future__ import annotations
@@ -17,7 +17,7 @@ import pytest
 from fastapi.testclient import TestClient
 from sqlalchemy import create_engine, text
 
-from tests.postgres_fixtures import postgres_test_url as _register_pg_test_url  # noqa: F401
+from tests.postgres_fixtures import postgres_database_url as _register_pg_url  # noqa: F401
 from tests.web.api_fixtures import _runner
 
 _MUTATION_PATH = re.compile(
@@ -99,11 +99,9 @@ _TEST_TABLES = (
 
 
 @pytest.fixture(autouse=True)
-def _isolated_pg_db(_pg_test_url, monkeypatch: pytest.MonkeyPatch) -> Iterator[None]:
-    """Point create_app() at the shared test DB and truncate before each test."""
-    url = _pg_test_url
-    if url is None:
-        raise RuntimeError("tests/web requires TEST_DATABASE_URL for 127.0.0.1:55432")
+def _reset_local_pg_db(_pg_url: str, monkeypatch: pytest.MonkeyPatch) -> Iterator[None]:
+    """Point create_app() at the local database and truncate before each test."""
+    url = _pg_url
     monkeypatch.setenv("DATABASE_URL", url)
     engine = create_engine(url)
     try:

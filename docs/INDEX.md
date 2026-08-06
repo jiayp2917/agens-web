@@ -11,7 +11,7 @@
 - 访客 session 写入 PostgreSQL，默认 24 小时；登录/注册后删除访客局。
 - mutation API 强制 request ID + version，使用锁、CAS、幂等记录和事务提交。
 - Agent 编排是项目内 `SequentialAgentGraph`，不是 LangGraph。
-- fallback 自动切换本地故事，但不能算 live-model 成功。
+- 模型失败保留待处理状态，玩家显式选择重试、转入本地故事或结束本局；本地故事不能算 live-model 成功。
 - 四套世界包保留 60 回合 v1 旧档兼容；新局默认绑定九阶段 90 回合 v2。v3 的九阶段、承诺、路线后果和 post-arc 已在本地实现，但尚未完成真实模型与浏览器完整局验收，默认版本不变。
 - gameplay recovery 与 provider fallback 分开记录；Narrator 契约不完整不能计作 live-model 成功。
 - Narrator 内部契约是正文加四选项；选择意图和规则结果才是权威状态，兼容 state update 仅作诊断。
@@ -47,7 +47,7 @@
 
 ## 验证原则
 
-- `tests\web` 会清空其 `TEST_DATABASE_URL`；不要与真实浏览器共享数据库并发运行。
+- `tests\web` 会清空唯一的本机 `DATABASE_URL`；不要与浏览器流程并发运行，也不要在测试前保留需要持久化的本地数据。
 - 默认 pytest 排除 `llm_real`；真实模型验收单独执行。
 - 本地自动化不等于生产验收。
 - HTTP 200 不等于模型成功；fallback 或 contract recovery 都视为 live-model 失败。

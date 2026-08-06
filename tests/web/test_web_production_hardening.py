@@ -53,7 +53,7 @@ def test_production_requires_allowed_origins(tmp_path: Path, monkeypatch) -> Non
 
 def test_production_hides_openapi_and_rejects_untrusted_host(tmp_path: Path, monkeypatch) -> None:
     monkeypatch.setenv("AGENS_ENV", "production")
-    monkeypatch.setenv("DATABASE_URL", os.environ["TEST_DATABASE_URL"])
+    monkeypatch.setenv("DATABASE_URL", os.environ["DATABASE_URL"])
     monkeypatch.setenv("INVITE_ADMIN_CODE", "admin-invite-123")
     monkeypatch.setenv("SESSION_SECRET", "test-session-secret-with-more-than-32-characters")
     monkeypatch.setenv("AGENS_ALLOWED_ORIGINS", "https://game.example.test")
@@ -80,7 +80,7 @@ def test_production_aliases_reject_runtime_auto_ddl(monkeypatch, environment: st
     monkeypatch.setenv("AGENS_PG_AUTO_DDL", "1")
 
     with pytest.raises(RuntimeError, match="prod/production"):
-        PostgresWebDatabase(os.environ["TEST_DATABASE_URL"])
+        PostgresWebDatabase(os.environ["DATABASE_URL"])
 
 
 def test_origin_mismatch_is_rejected_for_state_changes(tmp_path: Path, monkeypatch) -> None:
