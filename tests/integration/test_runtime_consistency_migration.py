@@ -148,6 +148,66 @@ def test_existing_0007_session_turn_is_backfilled_before_foreign_key(
         assert _revision(database_url) == _HEAD_REVISION
 
 
+def test_partially_applied_user_model_config_migration_reaches_head(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    with _temporary_database(monkeypatch) as database_url:
+        cfg = _alembic_config()
+        command.upgrade(cfg, "20260622_0004")
+        engine = create_engine(database_url)
+        try:
+            with engine.begin() as conn:
+                conn.execute(
+                    text(
+                        "ALTER TABLE model_config "
+                        "ADD COLUMN api_key_encrypted TEXT NOT NULL DEFAULT ''"
+                    )
+                )
+        finally:
+            engine.dispose()
+
+        command.upgrade(cfg, "head")
+
+        engine = create_engine(database_url)
+        try:
+            with engine.connect() as conn:
+                user_config_table = conn.execute(
+                    text("SELECT to_regclass('public.user_model_configs')")
+                ).scalar_one()
+        finally:
+            engine.dispose()
+
+        assert user_config_table == "user_model_configs"
+        assert _revision(database_url) == _HEAD_REVISION
+
+
+def test_partially_applied_runtime_consistency_migration_reaches_head(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    with _temporary_database(monkeypatch) as database_url:
+        cfg = _alembic_config()
+        command.upgrade(cfg, "20260705_0007")
+        engine = create_engine(database_url)
+        try:
+            with engine.begin() as conn:
+                conn.execute(
+                    text(
+                        "CREATE TABLE session_mutations ("
+                        "session_id TEXT NOT NULL REFERENCES sessions(id) ON DELETE CASCADE, "
+                        "request_id TEXT NOT NULL, operation TEXT NOT NULL, "
+                        "expected_version INTEGER NOT NULL, result_version INTEGER NOT NULL, "
+                        "response JSONB NOT NULL, created_at DOUBLE PRECISION NOT NULL, "
+                        "PRIMARY KEY (session_id, request_id))"
+                    )
+                )
+        finally:
+            engine.dispose()
+
+        command.upgrade(cfg, "head")
+
+        assert _revision(database_url) == _HEAD_REVISION
+
+
 def test_orphan_turn_blocks_upgrade_without_partial_schema(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:

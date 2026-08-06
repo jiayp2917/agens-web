@@ -17,9 +17,16 @@ def upgrade() -> None:
     op.execute("ALTER TABLE sessions ADD COLUMN IF NOT EXISTS version INTEGER NOT NULL DEFAULT 0")
     op.execute(
         """
-        ALTER TABLE sessions
-        ADD CONSTRAINT ck_sessions_owner
-        CHECK ((user_id IS NOT NULL) <> (guest_token_hash IS NOT NULL))
+        DO $$
+        BEGIN
+            IF NOT EXISTS (
+                SELECT 1 FROM pg_constraint WHERE conname = 'ck_sessions_owner'
+            ) THEN
+                ALTER TABLE sessions
+                ADD CONSTRAINT ck_sessions_owner
+                CHECK ((user_id IS NOT NULL) <> (guest_token_hash IS NOT NULL));
+            END IF;
+        END $$
         """
     )
     op.execute("CREATE INDEX IF NOT EXISTS ix_sessions_guest_expiry ON sessions(expires_at)")
@@ -74,12 +81,23 @@ def upgrade() -> None:
         "CREATE UNIQUE INDEX IF NOT EXISTS uq_game_turns_request ON game_turns(run_id, request_id) WHERE request_id IS NOT NULL"
     )
     op.execute(
-        "ALTER TABLE game_turns ADD CONSTRAINT fk_game_turns_run FOREIGN KEY (run_id) REFERENCES game_runs(id) ON DELETE CASCADE"
+        """
+        DO $$
+        BEGIN
+            IF NOT EXISTS (
+                SELECT 1 FROM pg_constraint WHERE conname = 'fk_game_turns_run'
+            ) THEN
+                ALTER TABLE game_turns
+                ADD CONSTRAINT fk_game_turns_run
+                FOREIGN KEY (run_id) REFERENCES game_runs(id) ON DELETE CASCADE;
+            END IF;
+        END $$
+        """
     )
 
     op.execute(
         """
-        CREATE TABLE session_mutations (
+        CREATE TABLE IF NOT EXISTS session_mutations (
             session_id TEXT NOT NULL REFERENCES sessions(id) ON DELETE CASCADE,
             request_id TEXT NOT NULL,
             operation TEXT NOT NULL,
@@ -105,13 +123,16 @@ def upgrade() -> None:
         "user_id, source_session_id, bonus_type, bonus_value",
     )
     op.execute(
-        "CREATE UNIQUE INDEX uq_run_achievement_business ON run_achievements(user_id, session_id, achievement_key)"
+        "CREATE UNIQUE INDEX IF NOT EXISTS uq_run_achievement_business "
+        "ON run_achievements(user_id, session_id, achievement_key)"
     )
     op.execute(
-        "CREATE UNIQUE INDEX uq_account_reward_business ON account_rewards(user_id, source_session_id, reward_type, reward_value)"
+        "CREATE UNIQUE INDEX IF NOT EXISTS uq_account_reward_business "
+        "ON account_rewards(user_id, source_session_id, reward_type, reward_value)"
     )
     op.execute(
-        "CREATE UNIQUE INDEX uq_legacy_bonus_business ON legacy_bonuses(user_id, source_session_id, bonus_type, bonus_value)"
+        "CREATE UNIQUE INDEX IF NOT EXISTS uq_legacy_bonus_business "
+        "ON legacy_bonuses(user_id, source_session_id, bonus_type, bonus_value)"
     )
 
 
