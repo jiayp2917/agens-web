@@ -4,6 +4,8 @@ from __future__ import annotations
 
 from unittest.mock import patch
 
+import pytest
+
 from agens_novel.engine.game_engine import GameEngine
 from agens_novel.engine.world_generator import build_world_fallback
 from agens_novel.game.constants import ATTRIBUTE_KEYS
@@ -38,6 +40,12 @@ def _complete_model_opening() -> dict:
         }
     )
     return generated
+
+
+@pytest.fixture(autouse=True)
+def _remove_real_model_key(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Keep profile-opening unit tests on their local or explicitly mocked path."""
+    monkeypatch.delenv("AGNES_API_KEY", raising=False)
 
 
 def test_start_from_profile_initializes_session(tmp_path, monkeypatch):
