@@ -136,7 +136,7 @@ Narrator 请求成功但正文或四项选项不完整时，TurnFlow 可用规�
 | `model_config` | 管理员 | 系统 Agens 默认 |
 | `user_model_configs` | 单个注册用户 | 个人 provider/base URL/model/加密 Key |
 
-Key 由 `MODEL_CONFIG_SECRET` 派生的 Fernet 密钥加密。响应只返回 masked 状态。缺少或错误 secret 时 fail closed，不退回密文、其他用户 Key 或进程全局用户 Key。
+Key 由 `MODEL_CONFIG_SECRET` 派生的 Fernet 密钥加密。响应只返回 masked 状态。本机系统环境 Key 是直接来源；仅当环境 Key 缺失且数据库密文无法解密时 fail closed，不退回密文或其他用户 Key。
 
 ## 8. PostgreSQL Schema
 

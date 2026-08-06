@@ -120,7 +120,7 @@ class ModelConfigService:
         stored = self.db.get_model_config() or {}
         settings = Settings()
         source = "system"
-        env_key = os.environ.get("AGNES_API_KEY", "")
+        env_key = _system_environment_api_key()
         if stored:
             encrypted = str(stored.get("api_key_encrypted") or "")
             config = {
@@ -130,11 +130,11 @@ class ModelConfigService:
                 "response_mode": stored.get("response_mode") or "json_object",
                 "stream": bool(stored.get("stream", False)),
                 "api_key_set": bool(encrypted or env_key),
-                "api_key_masked": stored.get("api_key_masked") if encrypted else (mask_api_key(env_key) if env_key else "<unset>"),
+                "api_key_masked": mask_api_key(env_key) if env_key else stored.get("api_key_masked", "<unset>"),
                 "api_key_encrypted": encrypted,
                 "source": source,
             }
-            if not encrypted and env_key:
+            if env_key:
                 config["api_key"] = env_key
         else:
             configured = _system_environment_config()
@@ -176,12 +176,14 @@ class ModelConfigService:
         encrypted = str(effective.get("api_key_encrypted") or "")
         api_key = str(effective.get("api_key") or "")
         key_error = ""
-        if encrypted:
+        if encrypted and not api_key:
             try:
                 api_key = decrypt_api_key(encrypted)
             except ModelConfigSecretError:
                 api_key = ""
-                key_error = "MODEL_CONFIG_SECRET unavailable"
+                key_error = "stored_model_key_unavailable"
+        if not api_key and not key_error:
+            key_error = "no_model_key_configured"
         return {
             "provider": effective.get("provider") or "Agens",
             "base_url": effective.get("base_url") or Settings().base_url,
@@ -266,3 +268,11 @@ def _system_environment_config() -> dict[str, Any] | None:
         "source": "system",
         "api_key": api_key,
     }
+
+
+def _system_environment_api_key() -> str:
+    """Read the explicitly configured system key, then the Agens-compatible default."""
+    key_environment = os.environ.get("AGENS_SYSTEM_MODEL_KEY_ENV", "").strip()
+    if key_environment in _SYSTEM_KEY_ENVIRONMENTS:
+        return os.environ.get(key_environment, "")
+    return os.environ.get("AGNES_API_KEY", "")

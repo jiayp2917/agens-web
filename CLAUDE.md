@@ -117,7 +117,7 @@ Do not add custom layers before checking whether existing FastAPI, SQLAlchemy/Al
 
 - Ordinary registered users configure personal model settings through `/api/settings/model`; guests receive 401.
 - Users with no personal config use the system default Agens config. Admins manage that default through `/api/admin/settings/model`.
-- `MODEL_CONFIG_SECRET` is required for encrypted stored keys in production. Never write raw model API keys to docs, logs, frontend code, saves, snapshots, or database plaintext columns.
+- `MODEL_CONFIG_SECRET` remains required by the production startup policy and to decrypt encrypted stored keys. A configured system environment Key remains usable for local runtime when an older stored Key cannot be decrypted. Never write raw model API keys to docs, logs, frontend code, saves, snapshots, or database plaintext columns.
 
 ## 2026-07-10 Runtime Consistency And Model URL Boundary
 

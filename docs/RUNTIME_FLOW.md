@@ -44,7 +44,7 @@ npm.cmd run dev -- --host 127.0.0.1 --port 5173
 - `DELETE /api/settings/model`：删除个人配置并回到系统默认。
 - `GET/POST /api/admin/settings/model`：管理员维护系统默认配置。
 - API 只返回 provider、base URL、model、`api_key_set` 和 masked 状态，不返回原始 Key。
-- PostgreSQL 只保存加密 Key；缺少 `MODEL_CONFIG_SECRET` 时解密 fail closed。
+- PostgreSQL 只保存加密 Key；系统环境 Key 在本机运行时优先可用。仅当环境 Key 缺失且旧数据库密文无法解密时，调用才以脱敏配置错误 fail closed。
 - 用户 Key 通过当前 session 的 runner 显式传入模型调用，不写进进程级 `os.environ`。
 
 保存配置与每次请求都会校验模型 Base URL：

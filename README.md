@@ -100,7 +100,7 @@ Narrator `ok`、`fallback=false`、`fallback_prompt.active=false`、`contract_re
 
 - `GET/POST/DELETE /api/settings/model`：当前登录用户个人配置。
 - `GET/POST /api/admin/settings/model`：管理员维护系统默认配置。
-- `MODEL_CONFIG_SECRET`：加密/解密 PostgreSQL 中的模型 Key；缺失时 fail closed。
+- `MODEL_CONFIG_SECRET`：用于加密/解密 PostgreSQL 中已存的模型 Key。本机运行时系统环境 Key 是直接来源；旧密文无法解密且环境 Key 缺失时，调用会返回脱敏配置错误。
 - `AGENS_MODEL_BASE_URL_ALLOWLIST`：自定义 OpenAI-compatible HTTPS 主机白名单，逗号分隔；官方域名无需重复配置。
 - `AGNES_TOTAL_TIMEOUT_SECONDS`：单次模型调用整体时限。
 - 不得把用户 Key 写入 `os.environ`，也不得通过命令行参数传入真实 Key。

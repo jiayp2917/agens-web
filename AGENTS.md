@@ -148,7 +148,7 @@ cd <repo>
 
 - `/api/settings/model` is a logged-in user endpoint, not an admin/global endpoint. Each registered user owns one personal model config and may clear it to use the system Agens default.
 - `/api/admin/settings/model` is the admin-only system-default endpoint. Do not mix it with user settings.
-- Stored API keys must be encrypted with `MODEL_CONFIG_SECRET`; PostgreSQL must not store raw keys, and responses/logs must only expose `api_key_set` and masked state.
+- Stored API keys must be encrypted with `MODEL_CONFIG_SECRET`; PostgreSQL must not store raw keys, and responses/logs must only expose `api_key_set` and masked state. A configured system environment Key takes priority for a local runtime when an older stored Key cannot be decrypted.
 - Model calls must receive the resolved per-session config explicitly. Do not inject user keys into `os.environ`.
 
 ## 2026-07-10 Runtime Consistency And Model URL Boundary

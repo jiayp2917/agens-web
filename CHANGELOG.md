@@ -1,5 +1,17 @@
 # Changelog
 
+## 2026-08-06
+
+### Fixed - local model configuration recovery
+
+- A configured system environment Key now remains usable when the PostgreSQL system configuration contains an older encrypted Key whose `MODEL_CONFIG_SECRET` is unavailable. Stored Fernet Key compatibility remains unchanged when that Secret exists; no Key is written to logs, sessions, responses or plaintext database fields.
+- Missing all usable Key sources now produces a stable, redacted configuration diagnostic instead of treating an unusable stored Key as a successful runtime configuration.
+
+### Verification
+
+- Pure unit regression: `tests/unit/web/test_system_model_environment.py` passed 9 tests. Ruff, mypy and `compileall` passed for the changed Python files.
+- PostgreSQL and FastAPI runtime verification remains pending a local PostgreSQL authentication source. This entry does not claim a database, model, browser or production validation result.
+
 ## 2026-08-01
 
 ### Changed - unified local model runtime

@@ -27,7 +27,7 @@
 ### Security And Persistence
 
 - 用户模型 URL 在保存和请求前通过同一 HTTPS、allowlist、DNS/IP 和无重定向校验；非公网地址 fail closed。HTTP 客户端只继承标准代理环境变量。
-- 用户和系统模型 Key 使用 `MODEL_CONFIG_SECRET` 派生的 Fernet 密文。响应、日志、session、存档和回合记录只保留脱敏状态；用户 Key 不写入 `os.environ`。
+- 用户和系统模型 Key 使用 `MODEL_CONFIG_SECRET` 派生的 Fernet 密文。系统环境 Key 可在本机运行时直接使用，不会被无法解密的旧系统密文遮蔽。响应、日志、session、存档和回合记录只保留脱敏状态；用户 Key 不写入 `os.environ`。
 - 访客 session 使用 PostgreSQL token hash 与 TTL；登录/注册后删除访客局。写请求通过会话锁、CAS、幂等记录和单一事务提交 session、turn、run、奖励、进度与遗泽。
 - 迁移 `20260710_0008_runtime_consistency` 对无法关联的历史 turn fail closed；`20260721_0009_spirit_root_metadata` 为灵根 catalog 增加展示 metadata，不修改会话或玩法数据。
 
