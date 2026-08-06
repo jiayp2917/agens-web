@@ -30,10 +30,11 @@ Web-only 文字修仙模拟器。当前主线由 React/Vite、FastAPI、PostgreS
 
 ```powershell
 cd D:\chat\agens-web
-$env:DATABASE_URL = "<本机 PostgreSQL 连接串>"
 F:\pg\bin\pg_isready.exe -h 127.0.0.1 -p 5432
 ```
 
+本机开发默认连接 `jiayp2917@127.0.0.1:5432/agens_web`，无需手动设置
+`DATABASE_URL`。显式设置该变量可覆盖本机默认值；生产环境仍必须显式配置。
 本仓库只使用这一个本机开发/测试数据库。`tests\web`、迁移和备份恢复门禁会清空或重建其 schema；运行测试前不要保留需要持久化的本地会话、存档或模型配置。数据库、pytest 与浏览器流程仍须串行运行。
 
 ## Install

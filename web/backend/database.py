@@ -190,16 +190,21 @@ class WebDatabaseProtocol(Protocol):
     def insert_catalog(self, table: str, row: dict[str, Any]) -> dict[str, Any]: ...
 
 
-def create_database():
-    """Create the PostgreSQL web database.
+_LOCAL_DATABASE_URL = "postgresql+psycopg://jiayp2917@127.0.0.1:5432/agens_web"
 
-    The connection always comes from ``DATABASE_URL``.
-    """
+
+def resolve_database_url() -> str:
+    """Use an explicit URL, or the established local development database."""
+    configured = os.environ.get("DATABASE_URL", "").strip()
+    if configured:
+        return configured
+    if os.environ.get("AGENS_ENV", "").strip().lower() in {"prod", "production"}:
+        raise RuntimeError("DATABASE_URL is required in production.")
+    return _LOCAL_DATABASE_URL
+
+
+def create_database():
+    """Create the PostgreSQL web database."""
     from .database_postgres import PostgresWebDatabase
 
-    url = os.environ.get("DATABASE_URL")
-    if not url:
-        raise RuntimeError(
-            "DATABASE_URL is required (PostgreSQL-only since the Option C consolidation)."
-        )
-    return PostgresWebDatabase(url)
+    return PostgresWebDatabase(resolve_database_url())
