@@ -1,11 +1,17 @@
 # Project Audit
 
+## 2026-08-06 Local Runtime Verification
+
+- `DATABASE_URL` now remains an explicit override, while local non-production commands resolve the established loopback PostgreSQL database by default. Production still fails closed without an explicit URL.
+- The current local default was exercised through Alembic head, PostgreSQL Web tests, migration integration, backup/restore and a no-model guest-session API flow. The local HTTP Cookie default is now non-secure only outside production; production keeps the explicit secure-cookie requirement.
+- The current verification completed without real model calls: `tests\\web -n0` passed 95 tests, the full non-`llm_real` suite passed 884 tests with 1 deselection, Vitest passed 18 tests, and the frontend build and high-severity audit passed.
+
 ## 2026-08-01 Unified Local Runtime Cleanup
 
 - `ead9620` and `0c163e5` removed the dedicated evaluation runtime. Local development, tests and browser verification now use ordinary `web.backend.app` and PostgreSQL-first `ModelConfigService` resolution; the deleted evaluation variables no longer exist in active source, configuration or deployment examples.
 - Standard proxy environment variables are inherited by HTTPX. HTTPS URL validation, redirect refusal, request timeouts, envelope validation, rule authority, v1/v2/v3 save compatibility and explicit player handling of model failures are unchanged.
-- Targeted cleanup regressions, static checks, frontend tests/build/audit and skill-copy verification passed. The non-real-model suite was collected successfully but has not run because no local `DATABASE_URL` is currently configured for the application process.
-- 本机只保留一个 PostgreSQL 开发/测试数据库，由 `DATABASE_URL` 连接。测试允许清空其应用表或重建 `public` schema；本批尚未在当前连接串上重跑 PostgreSQL、浏览器和备份恢复门禁。
+- Targeted cleanup regressions, static checks, frontend tests/build/audit and skill-copy verification passed. The later 2026-08-06 entry records the completed local PostgreSQL, browser-home and backup/restore verification.
+- 本机只保留一个 PostgreSQL 开发/测试数据库。显式 `DATABASE_URL` 可覆盖默认连接；测试允许清空其应用表或重建 `public` schema，并且必须与迁移、备份恢复和浏览器流程串行运行。
 
 ## Scope
 

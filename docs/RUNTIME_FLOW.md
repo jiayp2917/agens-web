@@ -15,9 +15,7 @@
 
 ```powershell
 cd D:\chat\agens-web
-$env:DATABASE_URL = "<本机 PostgreSQL 连接串>"
-$env:AGENS_PG_AUTO_DDL = "1"
-$env:SESSION_COOKIE_SECURE = "0"
+\.\.venv\Scripts\alembic.exe upgrade head
 $env:PYTHONPATH = "D:\chat\agens-web\src"
 .\.venv\Scripts\python.exe -m uvicorn web.backend.app:app --host 127.0.0.1 --port 8000 --reload
 ```
@@ -27,7 +25,7 @@ cd D:\chat\agens-web\web\frontend-react
 npm.cmd run dev -- --host 127.0.0.1 --port 5173
 ```
 
-浏览器访问 `http://127.0.0.1:5173/static/`。
+浏览器访问 `http://127.0.0.1:5173/`。
 
 ## 3. 认证与访客会话
 

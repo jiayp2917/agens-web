@@ -2,6 +2,12 @@
 
 ## 2026-08-06
 
+### Verified - local PostgreSQL runtime
+
+- `0ec675f` established the local non-production PostgreSQL default while retaining explicit `DATABASE_URL` as an override and as a production requirement. Migrations, fixtures, backup/restore and local import tooling now resolve that same path.
+- Local HTTP sessions no longer default to a `Secure` Cookie. Production still requires an explicit secure Cookie setting.
+- Verified without a real model call: Alembic head `20260721_0009`, `tests\\web -n0` (95 passed), migration integration (11 passed), backup/restore (18 tables and v1/v2/v3/post-arc/pending-failure coverage), non-`llm_real` pytest (884 passed, 1 deselected), Vitest (18 passed), build, high-severity npm audit, static checks and skill-copy verification.
+
 ### Fixed - local model configuration recovery
 
 - A configured system environment Key now remains usable when the PostgreSQL system configuration contains an older encrypted Key whose `MODEL_CONFIG_SECRET` is unavailable. Stored Fernet Key compatibility remains unchanged when that Secret exists; no Key is written to logs, sessions, responses or plaintext database fields.
@@ -10,7 +16,7 @@
 ### Verification
 
 - Pure unit regression: `tests/unit/web/test_system_model_environment.py` passed 9 tests. Ruff, mypy and `compileall` passed for the changed Python files.
-- PostgreSQL and FastAPI runtime verification remains pending a local PostgreSQL authentication source. This entry does not claim a database, model, browser or production validation result.
+- The later local PostgreSQL runtime entry records the completed database and no-model FastAPI verification. It does not claim real-model or production validation.
 
 ## 2026-08-01
 

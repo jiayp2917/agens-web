@@ -47,7 +47,7 @@
 
 ## 验证原则
 
-- `tests\web` 会清空唯一的本机 `DATABASE_URL`；不要与浏览器流程并发运行，也不要在测试前保留需要持久化的本地数据。
+- `tests\web` 会清空唯一的本机数据库；不要与浏览器流程并发运行，也不要在测试前保留需要持久化的本地数据。显式 `DATABASE_URL` 只作为本机默认连接的覆盖项。
 - 默认 pytest 排除 `llm_real`；真实模型验收单独执行。
 - 本地自动化不等于生产验收。
 - HTTP 200 不等于模型成功；fallback 或 contract recovery 都视为 live-model 失败。
