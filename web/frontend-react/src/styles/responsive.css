@@ -259,6 +259,11 @@
 }
 
 @media (max-width: 520px) {
+  .hero h1 {
+    gap: 8px;
+    font-size: 40px;
+  }
+
   .icon-btn {
     width: 44px;
     height: 44px;

@@ -4,7 +4,6 @@ from __future__ import annotations
 
 import argparse
 import json
-import os
 
 from web.backend.database_postgres import PostgresWebDatabase
 
@@ -13,9 +12,6 @@ def main() -> None:
     parser = argparse.ArgumentParser()
     parser.add_argument("--input", required=True)
     args = parser.parse_args()
-
-    if not os.environ.get("DATABASE_URL"):
-        raise SystemExit("DATABASE_URL is required")
 
     data = json.load(open(args.input, encoding="utf-8"))
     db = PostgresWebDatabase()

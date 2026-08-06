@@ -33,9 +33,12 @@ class PostgresWebDatabase:
     """PostgreSQL implementation matching the SQLite web database API."""
 
     def __init__(self, database_url: str | None = None) -> None:
-        self.database_url = database_url or os.environ.get("DATABASE_URL", "")
-        if not self.database_url:
-            raise RuntimeError("DATABASE_URL is required (PostgreSQL-only since the Option C consolidation).")
+        if database_url:
+            self.database_url = database_url
+        else:
+            from .database import resolve_database_url
+
+            self.database_url = resolve_database_url()
         self.engine: Engine = create_engine(self.database_url, pool_pre_ping=True, future=True)
         self._catalog = CatalogRepository(self.engine)
         self._rewards = RewardsRepository(self.engine)

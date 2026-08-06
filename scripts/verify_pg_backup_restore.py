@@ -1,13 +1,20 @@
 """Exercise a PostgreSQL dump/restore against disposable local databases."""
 
+# ruff: noqa: E402
+
 from __future__ import annotations
 
 import json
 import os
 import shutil
 import subprocess
+import sys
 import tempfile
 from pathlib import Path
+
+ROOT = Path(__file__).resolve().parents[1]
+if str(ROOT) not in sys.path:
+    sys.path.insert(0, str(ROOT))
 
 from alembic import command
 from alembic.config import Config
@@ -15,11 +22,11 @@ from sqlalchemy import create_engine, text
 from sqlalchemy.engine import URL, make_url
 
 from agens_novel.engine.pending_model_failure import PendingModelFailureV1
+from web.backend.database import resolve_database_url
 from web.backend.local_postgres_safety import require_loopback_postgres_url
 
 EXPECTED_REVISION = "20260721_0009"
 EXPECTED_TABLES = 18
-ROOT = Path(__file__).resolve().parents[1]
 
 
 def _restore_snapshots() -> dict[str, dict[str, object]]:
@@ -70,10 +77,7 @@ def _restore_snapshots() -> dict[str, dict[str, object]]:
 
 
 def main() -> int:
-    raw_url = os.environ.get("DATABASE_URL", "").strip()
-    if not raw_url:
-        raise RuntimeError("DATABASE_URL is required")
-    source_url = require_loopback_postgres_url(make_url(raw_url))
+    source_url = require_loopback_postgres_url(make_url(resolve_database_url()))
 
     pg_dump = _pg_tool("pg_dump")
     pg_restore = _pg_tool("pg_restore")
@@ -81,7 +85,6 @@ def main() -> int:
 
     try:
         _reset_public_schema(source_url)
-        os.environ["DATABASE_URL"] = source_url.render_as_string(hide_password=False)
         command.upgrade(Config(str(ROOT / "alembic.ini")), "head")
         _insert_fixture(source_url)
         _run_pg_dump(pg_dump, source_url, dump_path)

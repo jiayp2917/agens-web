@@ -1,7 +1,8 @@
 """Database factory and shared protocol for the web adapter (PostgreSQL only).
 
-Option C consolidation: the SQLite backend was removed. Dev, test, and
-production all use PostgreSQL via DATABASE_URL.
+Option C consolidation: the SQLite backend was removed. Dev and test use the
+established local PostgreSQL default when DATABASE_URL is unset; production
+requires an explicit DATABASE_URL.
 """
 
 from __future__ import annotations

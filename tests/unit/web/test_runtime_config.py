@@ -5,6 +5,7 @@ from __future__ import annotations
 import pytest
 
 from web.backend.app import validate_runtime_config
+from web.backend.auth import cookie_kwargs
 
 
 def _valid_production_env(monkeypatch: pytest.MonkeyPatch) -> None:
@@ -28,6 +29,13 @@ def test_development_runtime_does_not_require_production_values(monkeypatch) -> 
     monkeypatch.setenv("AGENS_ENV", "development")
 
     validate_runtime_config()
+
+
+def test_local_cookie_defaults_to_http_without_explicit_override(monkeypatch) -> None:
+    monkeypatch.delenv("AGENS_ENV", raising=False)
+    monkeypatch.delenv("SESSION_COOKIE_SECURE", raising=False)
+
+    assert cookie_kwargs()["secure"] is False
 
 
 def test_valid_production_runtime_passes(monkeypatch) -> None:

@@ -3,7 +3,6 @@
 from __future__ import annotations
 
 import json
-import os
 from collections.abc import Iterator
 from contextlib import contextmanager
 from pathlib import Path
@@ -15,6 +14,7 @@ from sqlalchemy import create_engine, text
 from sqlalchemy.engine import URL, make_url
 from sqlalchemy.exc import DBAPIError
 
+from web.backend.database import resolve_database_url
 from web.backend.local_postgres_safety import require_loopback_postgres_url
 
 pytestmark = [
@@ -23,11 +23,6 @@ pytestmark = [
 ]
 
 
-@pytest.fixture(scope="module", autouse=True)
-def _requires_local_postgres() -> None:
-    if not os.environ.get("DATABASE_URL"):
-        raise RuntimeError("PostgreSQL integration tests require DATABASE_URL")
-
 _ROOT = Path(__file__).resolve().parents[2]
 _PREVIOUS_REVISION = "20260705_0007"
 _HEAD_REVISION = "20260721_0009"
@@ -35,7 +30,7 @@ _HEAD_REVISION = "20260721_0009"
 
 @contextmanager
 def _temporary_database(monkeypatch: pytest.MonkeyPatch) -> Iterator[URL]:
-    source = require_loopback_postgres_url(make_url(os.environ["DATABASE_URL"]))
+    source = require_loopback_postgres_url(make_url(resolve_database_url()))
     database = create_engine(source)
     cfg = _alembic_config()
     _reset_public_schema(database)

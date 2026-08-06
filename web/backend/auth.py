@@ -12,6 +12,7 @@ from dataclasses import dataclass
 from typing import Any, Protocol
 
 from .database_common import public_user
+from .security import is_production_mode
 
 try:
     from argon2 import PasswordHasher as Argon2PasswordHasher
@@ -93,7 +94,8 @@ def parse_session_token(token: str, secret: str | None = None) -> SessionClaims 
 
 
 def cookie_kwargs() -> dict[str, Any]:
-    secure = os.environ.get("SESSION_COOKIE_SECURE", "1").strip().lower() not in ("0", "false", "no")
+    configured = os.environ.get("SESSION_COOKIE_SECURE", "").strip().lower()
+    secure = configured not in ("0", "false", "no") if configured else is_production_mode()
     return {
         "httponly": True,
         "secure": secure,
