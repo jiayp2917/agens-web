@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from agens_novel.engine.start_flow import apply_profile_session
 from agens_novel.engine.turn_rules import settle_turn_outcome
-from agens_novel.game.realm import golden_breakthrough_flags
+from agens_novel.game.realm import RealmSystem, golden_breakthrough_flags
 from agens_novel.rule_rng import new_run_seed
 from agens_novel.session.game_session import GameSession
 
@@ -58,6 +58,37 @@ def test_validation_seed_becomes_the_persisted_run_seed(monkeypatch) -> None:
     monkeypatch.setenv("AGENS_VALIDATION_SEED", "local-v2-fixed-seed")
 
     assert new_run_seed() == "local-v2-fixed-seed"
+
+
+def test_validation_mode_is_persisted_and_independent_of_replay_environment(monkeypatch) -> None:
+    session = GameSession(
+        run_seed="local-v2-fixed-seed",
+        story_version=2,
+        realm_stage=6,
+        realm_turn_count=11,
+        validation_mode="golden_route",
+        attributes={
+            "root_bone": 7,
+            "comprehension": 7,
+            "luck": 7,
+            "willpower": 3,
+            "physique": 3,
+            "soul": 3,
+        },
+    )
+    restored = GameSession.from_save_dict(session.to_save_dict())
+    monkeypatch.delenv("AGENS_VALIDATION_SEED", raising=False)
+
+    class AlwaysAdvanceRuleRng:
+        def random(self, _stream: str) -> float:
+            return 0.0
+
+    realm_system = RealmSystem()
+    assert realm_system.try_advance_stage(session, rule_rng=AlwaysAdvanceRuleRng()) is None
+    assert realm_system.try_advance_stage(restored, rule_rng=AlwaysAdvanceRuleRng()) is None
+
+    restored.validation_mode = ""
+    assert realm_system.try_advance_stage(restored, rule_rng=AlwaysAdvanceRuleRng()) is not None
 
 
 def test_v3_long_form_progress_grants_rule_owned_breakthrough_preparation() -> None:

@@ -42,6 +42,16 @@ def new_run_seed() -> str:
     return secrets.token_hex(16)
 
 
+def new_run_validation_mode() -> str:
+    """Capture validation-only rule behavior when a new run is created.
+
+    The environment variable is intentionally read only at run creation.  Its
+    resulting mode is stored in the session so save/load and rule-only replay
+    do not depend on the environment of the process doing the replay.
+    """
+    return "golden_route" if os.environ.get("AGENS_VALIDATION_SEED", "").strip() else ""
+
+
 def rule_rng_for_session(session: Any) -> RuleRng | None:
     """Return the persisted RNG for a session, or ``None`` for legacy saves.
 

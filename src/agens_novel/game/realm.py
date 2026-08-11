@@ -9,7 +9,6 @@ from __future__ import annotations
 
 import hashlib
 import logging
-import os
 import random
 from dataclasses import dataclass, field
 from typing import Any
@@ -320,7 +319,7 @@ class RealmSystem:
         min_stage = self._minimum_stage_for_chronicle_pace(session, cfg)
         if min_stage > stage:
             return self._stage_delta(min_stage, cfg.stages, paced=True)
-        if os.environ.get("AGENS_VALIDATION_SEED", "").strip() and is_high_aptitude_v2(session):
+        if _uses_golden_validation_route(session) and is_high_aptitude_v2(session):
             return None
 
         attrs = getattr(session, "attributes", {}) if hasattr(session, "attributes") else {}
@@ -465,13 +464,15 @@ def _v3_breakthrough_flags(session: Any) -> tuple[str, ...]:
 
 
 def _breakthrough_roll(session: Any, rule_rng: RuleRng | None = None) -> float:
-    seed = os.environ.get("AGENS_VALIDATION_SEED", "").strip()
-    if not seed:
+    if not _uses_golden_validation_route(session):
         return rule_rng.random("breakthrough") if rule_rng is not None else random.random()
-    # Production rejects this variable; validation needs the golden route to be
-    # independent of whichever world key the live opening model selected.
+    # The route is persisted with the run so replay does not depend on process
+    # environment. It stays independent of whichever world the opening chose.
     if is_high_aptitude_v2(session):
         return 0.0
+    seed = str(getattr(session, "run_seed", "") or "").strip()
+    if not seed:
+        return rule_rng.random("breakthrough") if rule_rng is not None else random.random()
     payload = "|".join(
         (
             seed,
@@ -483,6 +484,10 @@ def _breakthrough_roll(session: Any, rule_rng: RuleRng | None = None) -> float:
     )
     digest = hashlib.sha256(payload.encode("utf-8")).digest()
     return int.from_bytes(digest[:8], "big") / float(2**64)
+
+
+def _uses_golden_validation_route(session: Any) -> bool:
+    return str(getattr(session, "validation_mode", "") or "") == "golden_route"
 
 
 _REQUIREMENT_ALIASES: dict[str, tuple[str, ...]] = {

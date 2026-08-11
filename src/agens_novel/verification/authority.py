@@ -99,6 +99,7 @@ def authority_state_hash_from_persisted_state(state: dict[str, Any]) -> str | No
         "error": str(state.get("error") or ""),
         "run_seed": str(rule_state["run_seed"] or ""),
         "rule_rng_counter": rule_state["rng_counter"],
+        "validation_mode": str(rule_state.get("validation_mode") or ""),
         "local_story_active": bool(local_story.get("active")),
         "character": {
             "realm": character.get("realm"),

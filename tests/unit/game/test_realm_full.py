@@ -106,10 +106,9 @@ class TestAscensionFinale:
         assert meta.get("breakthrough_result") == "failure"
         assert "finale" not in meta
 
-    def test_validation_seed_keeps_high_aptitude_v2_ascension_world_independent(
-        self, monkeypatch
+    def test_persisted_validation_route_keeps_high_aptitude_v2_ascension_world_independent(
+        self,
     ) -> None:
-        monkeypatch.setenv("AGENS_VALIDATION_SEED", "agens-golden-169")
         rs = RealmSystem()
 
         for story_key in ("local-world", "live-model-world"):
@@ -122,6 +121,7 @@ class TestAscensionFinale:
                     "comprehension": 7,
                     "luck": 7,
                 },
+                validation_mode="golden_route",
             )
             delta = rs.attempt_breakthrough(session)
 

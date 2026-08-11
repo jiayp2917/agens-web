@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from agens_novel.engine.turn_rules import choice_intent
+from agens_novel.session.game_session import GameSession
 from agens_novel.verification.authority import (
     authority_state_hash,
     authority_state_hash_from_persisted_state,
@@ -37,3 +38,10 @@ def test_replay_hashes_are_deterministic_and_match_persisted_state() -> None:
     assert authority_state_hash_from_persisted_state(session.as_game_state()) == authority_state_hash(
         session
     )
+
+
+def test_authority_hash_includes_persisted_validation_mode() -> None:
+    ordinary = GameSession(run_seed="fixed-seed")
+    validation = GameSession(run_seed="fixed-seed", validation_mode="golden_route")
+
+    assert authority_state_hash(ordinary) != authority_state_hash(validation)

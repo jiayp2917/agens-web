@@ -58,6 +58,7 @@ class GameSession:
     realm_turn_count: int = 0
     run_seed: str = ""
     rule_rng_counter: int = 0
+    validation_mode: str = ""
     game_started: bool = False
     game_over: bool = False
 
@@ -138,6 +139,7 @@ class GameSession:
             "rule_state": {
                 "run_seed": self.run_seed,
                 "rng_counter": self.rule_rng_counter,
+                "validation_mode": self.validation_mode,
             },
             "character": {
                 "name": self.char_name,
@@ -273,6 +275,7 @@ class GameSession:
             "rule_rng": {
                 "run_seed": self.run_seed,
                 "counter": self.rule_rng_counter,
+                "validation_mode": self.validation_mode,
             },
             "game_started": self.game_started,
             "game_over": self.game_over,
@@ -345,6 +348,10 @@ class GameSession:
                 max(0, raw_counter)
                 if isinstance(raw_counter, int) and not isinstance(raw_counter, bool)
                 else 0
+            )
+            validation_mode = rule_rng.get("validation_mode")
+            session.validation_mode = (
+                validation_mode if validation_mode == "golden_route" else ""
             )
         session.game_started = data.get("game_started", False)
         session.game_over = data.get("game_over", False)

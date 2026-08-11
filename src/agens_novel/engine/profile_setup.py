@@ -15,7 +15,7 @@ from ..game.constants import (
     TALENT_OPTIONS,
     compute_starting_lifespan,
 )
-from ..rule_rng import new_run_seed
+from ..rule_rng import new_run_seed, new_run_validation_mode
 from ..session.game_session import GameSession
 from ..utils.strings import dedupe_strings
 from .profile_opening import profile_default_world
@@ -44,6 +44,7 @@ def apply_profile_session(session: GameSession, profile: dict[str, Any]) -> None
     session.turn_count = 0
     session.rule_rng_counter = 0
     session.run_seed = new_run_seed()
+    session.validation_mode = new_run_validation_mode()
     session.char_name = str(profile.get("char_name") or "无名")
     session.realm = "练气"
     session.realm_stage = 1
