@@ -26,13 +26,13 @@
 - [x] 新局默认九阶段 90 回合 v2，非生产黄金路线验证器与 v1 60 回合旧存档兼容能力已经实现。
 - [x] Web API 测试已按领域拆分，生产共享限流已改为 Redis，Redis 故障按 fail-closed 处理。
 - [x] Docker/Compose、非 root、只读根目录、一次性 migration、Redis/Squid 与 egress ACL 资产已经实现；生产备份与 Stage 1 只保留为历史服务器证据。
-- [x] Narrator 全中文严格契约、编年史连续性守卫与内容回退文本已经收口；干净候选已完成 90 回合黄金路线和 20 回合混合 headed Chrome 验收。
+- [x] Narrator 全中文严格契约、编年史连续性守卫与内容回退文本已经收口；2026-08-11 当前系统默认模型已在普通本机 Web 应用完成严格开局、20 回合 smoke 和第 87 回合自然终局长局。
 - [x] `plan/spec/audit/backlog/changelog` 的长期目标、当前事实、未完成项和历史证据已分离。
 
 ### 未完成
 
 - [ ] 完成 `story_version=3` 的真实模型、三局完整流程和独立浏览器内容验收；实现已保留默认 v2 与 v1/v2 精确存档兼容，但 v3 不得在验收前成为默认版本。
-- [ ] 完成 Agens 与 DeepSeek 的六局 v3 对照和匿名九快照盲审；能力 probe 已完成，Agens 20 回合 smoke 通过，DeepSeek 在第一回合 fallback 后按止损规则停止，评估只能使用仓库外脱敏证据目录。
+- [ ] 若需要更换系统模型或比较多个模型，先批准独立目标和验收设计；本机 v2 定版不以旧 provider 结果代替当前资格，也不生成模型排名。
 - [ ] 将同一 provider/network 下的 choice p50 降到 5 秒以内，并完成 408/429/5xx、超时和取消专项验证。
 - [ ] 恢复本机 Docker CLI，并对当前 clean 候选执行 Compose config 与镜像构建门禁；此前 Docker 相关通过仅是历史服务器或静态资产证据。
 - [ ] 使用当前候选重新执行生产 v1 strict live smoke、旧镜像回滚演练、v2 切换与 v2 strict smoke；生产 Narrator 正文英文 fallback 只在本地修复，不得视为已在生产消除。
@@ -132,7 +132,7 @@ P0 随时抢占。没有 P0 时，按 `NEXT_GOVERNANCE_BACKLOG.md` 中经过证�
 
 ### 5.2 浏览器与模型
 
-- 玩法、状态落账、模型契约或核心交互变化后，用独立数据库执行真实浏览器验收。
+- 玩法、状态落账、模型契约或核心交互变化后，在现有本机项目数据库串行执行真实浏览器验收；验收前先备份，因为测试可能清空应用表或重建 schema。
 - 垂直切片验证连续推进、内容质量、状态一致性、存读档和异常交互。
 - 长局运行至规则终局，验证主线持续、路线差异、寿元压力、突破、失败恢复和结局。
 - live-model 必须同时满足请求成功、Narrator 契约完整、无 provider fallback、无 gameplay recovery。

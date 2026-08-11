@@ -7,7 +7,7 @@ Web-only 文字修仙模拟器。当前主线由 React/Vite、FastAPI、PostgreS
 
 - 游戏模式 v5 Alpha：A/B/C/D 固定为 A 稳妥、B 机遇、C 风险、D 气运，无自由文本主入口，无 HP/MP 常驻 UI。
 - PostgreSQL-only；Alembic 是 schema authority。当前 head 为 `20260721_0009_spirit_root_metadata`。
-- 注册用户可保存个人模型配置；无个人配置时使用系统 Agens 默认；访客不可配置模型。
+- 当前注册用户可保存加密的个人模型配置；无个人配置时使用系统默认模型；访客不可配置模型。个人 Key 仅保留浏览器会话的目标尚未实现，详见 `docs/NEXT_GOVERNANCE_BACKLOG.md`。
 - 模型 Key 只以应用层密文写入 PostgreSQL，API、日志、存档、session snapshot 和前端包都不得出现原文。
 - 自定义模型地址只允许 HTTPS 官方域名或 `AGENS_MODEL_BASE_URL_ALLOWLIST` 中的主机；请求前会解析全部 A/AAAA，任何非公网地址均拒绝。
 - 访客局持久化到 PostgreSQL，默认保留 24 小时；登录或注册成功后删除当前访客局并清除访客 Cookie。
@@ -21,7 +21,7 @@ Web-only 文字修仙模拟器。当前主线由 React/Vite、FastAPI、PostgreS
 - 灵根规则和网页 catalog 初始化共用 `game/spirit_roots.py` 注册表；同步只追加缺失名称并补齐缺失 metadata，不覆盖已有 PostgreSQL 记录。前端优先显示权威寿元，仅在字段缺失或非法时回退境界默认值。
 - `WebGameService` 保持 API 门面，session、turn、save/load 用例已拆到独立模块；评估能力只通过默认空钩子接入，产品服务不依赖评估实现。
 - 前端关键面板使用 SVG 九宫双线内收角与同轮廓背景蒙版；工具按钮、寿元条、细滚动条和 A/B/C/D 六态已按当前素材规范统一，移动端保留同一视觉语言。
-- 2026-07-23 当前工作树已通过本地静态、PostgreSQL Web（96 项）、非真实模型 pytest（914 项）、前端测试、生产构建、高危依赖审计和测试库备份恢复；双模型结果和未完成项见审计与 backlog。
+- 2026-08-11 当前本机 v2 候选已通过静态检查、PostgreSQL Web（95 项）、迁移兼容（11 项）、非真实模型 pytest（897 项，排除 1 项 `llm_real`）、备份恢复、前端测试（19 项）、构建和高危依赖审计。普通 Web 应用的严格开局、20 回合 smoke 与固定策略长局均通过；长局在第 87 回合自然飞升，未以补写内容凑足 90 回合。
 - 本轮不检查、修改或声明生产环境状态。生产发布仍需要在独立范围内重新执行部署、数据库、网络隔离和严格 live-model 验收。
 当前本地门禁、strict live 证据、性能数据和残余风险统一见
 [docs/PROJECT_AUDIT.md](docs/PROJECT_AUDIT.md)。本地通过不等于生产通过。
@@ -114,6 +114,10 @@ PostgreSQL 系统模型配置。数据库未配置时，`AGENS_SYSTEM_MODEL_*` �
 不得保存 prompt、原始响应、Key、Cookie、Authorization、真实 Base URL 或玩家数据。默认 pytest 门禁
 不会调用真实模型；真实模型资格结论和后续门禁见 `docs/PROJECT_AUDIT.md` 与
 `docs/NEXT_GOVERNANCE_BACKLOG.md`。
+
+2026-08-11 的本机 v2 定版只验证当前系统默认模型：严格开局和 20 个正式回合均为 strict，
+固定策略长局在第 87 回合自然终局，保存、读取、刷新、双击、409 恢复和权威回放均通过。
+这不是其他模型、v3 或生产环境的验收结论。
 
 ## Deployment Shape
 

@@ -13,6 +13,10 @@
 
 ## 2. 本地启动
 
+本机 v2 定版使用同一个 127.0.0.1:5432 项目数据库，迁移、测试和浏览器流程必须串行执行。
+2026-08-11 已在普通 Web 应用上完成当前系统默认模型的严格开局、20 回合 smoke 和自然终局长局；
+该记录不覆盖其他模型、v3 或生产验收。
+
 ```powershell
 cd D:\chat\agens-web
 \.\.venv\Scripts\alembic.exe upgrade head
@@ -36,6 +40,9 @@ npm.cmd run dev -- --host 127.0.0.1 --port 5173
 5. 登录或注册成功后，后端删除当前访客 session，清除访客 Cookie；前端清除活动 session 并回到账号态，不迁移访客局。
 
 ## 4. 模型设置
+
+当前个人模型 Key 仍会作为加密配置写入 `user_model_configs`。浏览器 `sessionStorage` 临时传递、
+服务端不持久化的产品目标尚未实施，不能把它写成当前运行事实。
 
 - `GET /api/settings/model`：返回当前用户有效配置摘要及 `source: user|system`。
 - `POST /api/settings/model`：保存当前用户个人配置。

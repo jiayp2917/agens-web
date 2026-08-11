@@ -1,10 +1,19 @@
 # Project Audit
 
+## 2026-08-11 Local v2 Release Acceptance
+
+- Scope: only the normal local `web.backend.app`, Vite, PostgreSQL on 127.0.0.1:5432 and the current system default model. No production connection, deployment, push, DeepSeek comparison or v3 default switch occurred.
+- FastAPI health and Vite both returned HTTP 200. The external pre-gate PostgreSQL dump was readable with `pg_restore --list`; the later backup/restore gate rebuilt and restored Alembic `20260721_0009` successfully.
+- Static checks, skill-copy verification, Web tests (95), migration compatibility (11), non-`llm_real` pytest (897 passed, 1 deselected), Vitest (19), React build and high-severity npm audit all passed.
+- The ordinary headed Chrome flow passed strict opening and 20/20 strict formal turns with no fallback, repair or recovery. The fixed-strategy long flow remained strict through its natural turn-87 ascension; it was accepted as a rule terminal, not padded to 90 turns. Save/load, refresh, double-click, HTTP 409 recovery and authority replay passed.
+- The local-story desktop and 390x844 browser flows passed separately. Entering local story remains a player choice and is not strict model success.
+- This is a local v2 acceptance result only. `story_version=3`, personal Key session-only storage, other model qualification and all production work remain outside this conclusion.
+
 ## 2026-08-06 Local Runtime Verification
 
 - `DATABASE_URL` now remains an explicit override, while local non-production commands resolve the established loopback PostgreSQL database by default. Production still fails closed without an explicit URL.
 - The current local default was exercised through Alembic head, PostgreSQL Web tests, migration integration, backup/restore and a no-model guest-session API flow. The local HTTP Cookie default is now non-secure only outside production; production keeps the explicit secure-cookie requirement.
-- The current verification completed without real model calls: `tests\\web -n0` passed 95 tests, the full non-`llm_real` suite passed 884 tests with 1 deselection, Vitest passed 18 tests, and the frontend build and high-severity audit passed.
+- That no-model verification completed with `tests\\web -n0` passing 95 tests, the full non-`llm_real` suite passing 884 tests with 1 deselection, Vitest passing 18 tests, and the frontend build and high-severity audit passing.
 
 ## 2026-08-01 Unified Local Runtime Cleanup
 
@@ -15,7 +24,7 @@
 
 ## Scope
 
-本文件只记录当前本地工作树在 2026-08-01 的可复核状态。它不复述历史服务器操作、旧 fingerprint
+本文件的当前结论为 2026-08-11 本机 v2 定版证据。后续章节保留历史本地记录，但不复述历史服务器操作、旧 fingerprint
 的性能数字或过期测试计数。本轮没有连接、修改或验证生产环境；本地通过不能构成部署或公开发布结论。
 
 ## Current Architecture
@@ -59,7 +68,7 @@
 - 大型回归测试按 Web API 工作流、GameSession 状态/存档历史、开局/普通回合/破境失败路径和 Narrator prompt/解析/repair 分组。`scripts/verify_skill_copies.py` 只报告 `.claude/skills` 副本漂移，不修改开发者工作树。
 - `requirements-dev.txt` 与确认过时的路线文档已删除。`Makefile` 和 `scripts/import_web_data_to_pg.py` 因缺少仓库外依赖确认而保留。
 
-## Current Local Verification
+## Historical Local Verification (through 2026-08-06)
 
 ### Static, Database And Frontend Gates
 
@@ -76,7 +85,7 @@
 - 隔离 Chrome 的 390x844 fallback 局确认开场中文语法正常，A 选择后从 16 岁推进到 17 岁、寿元从 84 变为 83，A/B/C/D 可继续选择。
 - 该切片故意不提供模型 Key，浏览器控制台有一个预期的 401 模型请求错误；它不能作为无错误 live-model 浏览器验收，也不能替代 v3 长局或移动端长文本完整验收。
 
-### Provider Results And Stop Conditions
+### Historical Provider Results And Stop Conditions
 
 - Agens capability probe：7/7 strict，使用 `json_schema`。v2 20 回合 smoke：20/20 strict，fallback、repair 和 retry 均为 0。
 - DeepSeek capability probe：6/7 strict；`json_schema` 不支持，adapter 使用 `json_object`。v2 smoke 在首回合后进入 fallback，仅 1/20 strict，已按预算和质量止损，不再发起该 provider 的真实调用。
@@ -96,16 +105,15 @@
 
 | Risk | Level | Current boundary |
 | --- | --- | --- |
-| DeepSeek strict smoke failed | P1 | Fix the DeepSeek adapter/prompt and pass a new 20-turn smoke before any paid v3 run. |
-| Agens v3 full flows incomplete | P1 | Run bounded, independently stored complete flows and browser acceptance before changing the default story version. |
-| Content evaluation incomplete | P1 | Complete frozen nine-snapshot blind review plus natural ascension, death/longevity and main-failure Chrome scenarios. |
-| Live latency baseline absent for this worktree | P1 | Collect a current strict live baseline; `choice p50 <= 5s` remains an observation target, not a passed gate. |
-| Mobile long-text acceptance incomplete | P1 | Run a separate 390x844 long chronicle and long A/B/C/D acceptance flow. |
+| Other model qualification incomplete | P1 | Any later system-model replacement must pass strict opening, 20-turn smoke and one v2 long scenario on the normal local Web chain. |
+| v3 acceptance incomplete | P1 | Complete its separate full-flow, content and post-arc checks before changing the default story version. |
+| Personal Key session-only storage unimplemented | P1 | Move personal Key handling from server persistence to browser-session-only use without changing save, CAS or failure behavior. |
+| Live latency target | P2 | The v2 run recorded timings, but `choice p50 <= 5s` remains an observation target rather than a release gate. |
 | Production state not reverified | P1 | Deployment, Docker, backup, rollback, ACL and production strict smoke are explicitly outside this local batch. |
 
 ## Acceptance Boundary
 
 - HTTP 200 is not live-model success.
 - `fallback=true`, `fallback_prompt.active=true`, `contract_recovery=true`, visible structure residue or a non-`ok` Narrator result fail strict live acceptance.
-- Browser, PostgreSQL and local model evaluation use independent databases/processes and must not run concurrently where tests truncate shared state.
+- 本机浏览器、PostgreSQL 测试和本地模型验收共用同一个项目数据库；由于测试会清空应用表或重建 schema，三类流程必须串行运行。
 - Local tests and local browser evidence do not authorize deployment, production database changes or a public-release claim.

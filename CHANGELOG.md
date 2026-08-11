@@ -1,5 +1,19 @@
 # Changelog
 
+## 2026-08-11
+
+### Verified - local v2 release acceptance
+
+- `0a4eae7` makes persisted authority replay fail closed when it cannot be verified, freezes the opening snapshot before browser turns, and limits the expected model-unavailable notice to player-selected local-story evidence.
+- `6ef416e` splits prompt-state projection and local-story option matching without changing their behavior; focused regression coverage protects rule-state projection and blocked-breakthrough slot matching.
+- `a86c60c` updates the frontend lockfile from `nanoid` 3.3.16 to 3.3.18, resolving the high-severity audit finding.
+- The normal local application on PostgreSQL 5432 passed strict opening, a 20-turn strict smoke and a fixed-strategy long flow that naturally ascended on turn 87. No fallback, repair or recovery was used; authority replay, save/load, refresh, double-click and HTTP 409 recovery passed.
+
+### Verification
+
+- FastAPI health and Vite returned HTTP 200. `compileall`, Ruff, C901, mypy and skill-copy verification passed; Web tests passed 95, migration compatibility passed 11, non-`llm_real` pytest passed 897 with 1 deselected, backup/restore passed, Vitest passed 19, React build passed and high-severity npm audit reported zero vulnerabilities.
+- This is local v2 evidence only. No production connection, deployment, push, v3 default switch or other-model qualification occurred. Personal Key browser-session-only storage remains unimplemented and is tracked in the active backlog.
+
 ## 2026-08-06
 
 ### Verified - local PostgreSQL runtime
