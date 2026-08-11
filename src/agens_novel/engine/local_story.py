@@ -13,6 +13,34 @@ DEFAULT_STORY_ID = "misty_gate"
 DEFAULT_NODE_ID = "start"
 NO_MATCH_NOTICE = "这次行动未能对应当前局面，请从当前 A/B/C/D 选项中继续。"
 _RECOVERY_MARKERS = ("\u7597\u4f24", "\u8c03\u606f", "\u6062\u590d", "\u7a33\u4f4f\u6839\u57fa")
+_REVISIT_STEMS = ("甲", "乙", "丙", "丁", "戊", "己", "庚", "辛", "壬", "癸")
+_REVISIT_BRANCHES = ("子", "丑", "寅", "卯", "辰", "巳", "午", "未", "申", "酉", "戌", "亥")
+_REVISIT_WEATHER = (
+    "山雾压低了石阶，钟声比往日更近，",
+    "药径的露水凝在靴边，远处传来巡山木梆，",
+    "静室外的松涛一阵紧过一阵，",
+    "接引台前新来的散修比平日更多，",
+    "旧阵边缘的微光在暮色里一闪即逝，",
+    "山风卷过药香，连檐下铜铃也轻轻作响，",
+    "夜雨洗过山门，石缝里的青苔泛着水光，",
+    "晨光越过雾脊，执事的传讯符正落向外门，",
+    "远处兽影掠过林线，留下几声短促的枝响，",
+    "云海翻到半山腰，来往弟子的脚步都放轻了，",
+)
+_REVISIT_OBSERVATIONS = (
+    "你据此重新衡量此前积累，再作取舍。",
+    "你把已经摸清的线索逐一放回眼前。",
+    "你没有照搬旧法，而是审视此刻的根基。",
+    "你将上回留下的余波也算进了这次判断。",
+    "你收住急躁，把能用的准备重新理顺。",
+    "你记起先前的得失，决定换一个角度应对。",
+    "你先辨明局势变化，才继续眼前的行动。",
+    "你把过去的收获和隐患一并纳入盘算。",
+    "你留意到细微异动，行事不再照着旧路。",
+    "你确认根基尚稳，才作出下一步选择。",
+    "你将散乱的经验重新串起，稳住心绪。",
+    "你听清周遭动静，准备以新的判断前行。",
+)
 
 
 @dataclass(frozen=True)
@@ -302,6 +330,7 @@ def start_local_story(session: GameSession, story_id: str | None = None) -> Loca
     session.local_story_active = True
     session.local_story_id = story_key
     session.local_story_node_id = DEFAULT_NODE_ID
+    session.local_story_repeat_counts = {}
     node = _node(story_key, DEFAULT_NODE_ID)
     session.last_choices = [option.text for option in node.options]
     return LocalStoryResult(
@@ -472,7 +501,12 @@ def _visible_option(
     option: LocalStoryOption,
     breakthrough_allowed: bool,
 ) -> LocalStoryOption:
-    if breakthrough_allowed and index == 2 and not option.breakthrough:
+    if (
+        breakthrough_allowed
+        and index == 2
+        and not option.breakthrough
+        and any(item.breakthrough for item in node.options)
+    ):
         return _required_breakthrough_option(node_key, node)
     if not option.breakthrough:
         return option
@@ -552,17 +586,19 @@ def _local_story_result_text(
     node_key: str,
     option: LocalStoryOption,
 ) -> str:
-    if option.next_node != node_key:
-        return option.result
-
-    repeat_counts = getattr(session, "_local_story_repeat_counts", {})
+    repeat_counts = session.local_story_repeat_counts
     if not isinstance(repeat_counts, dict):
         repeat_counts = {}
     count_key = f"{story_key}:{node_key}:{option.text}"
     repeat_count = int(repeat_counts.get(count_key) or 0) + 1
     repeat_counts[count_key] = repeat_count
-    session._local_story_repeat_counts = repeat_counts
+    session.local_story_repeat_counts = repeat_counts
 
     if repeat_count <= 1:
         return option.result
-    return f"{option.result}（第{repeat_count}次复盘此路，你把前一夜的散乱处又收束了一分。）"
+    revisit_index = repeat_count - 2
+    stem = _REVISIT_STEMS[revisit_index % len(_REVISIT_STEMS)]
+    branch = _REVISIT_BRANCHES[revisit_index % len(_REVISIT_BRANCHES)]
+    weather = _REVISIT_WEATHER[revisit_index % len(_REVISIT_WEATHER)]
+    observation = _REVISIT_OBSERVATIONS[revisit_index % len(_REVISIT_OBSERVATIONS)]
+    return f"{option.result}（值{stem}{branch}之时，{weather}{observation}）"

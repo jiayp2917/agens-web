@@ -110,6 +110,7 @@ class GameSession:
     local_story_active: bool = False
     local_story_id: str = ""
     local_story_node_id: str = ""
+    local_story_repeat_counts: dict[str, int] = field(default_factory=dict)
     pending_model_failure: dict[str, Any] = field(default_factory=dict)
 
     # ── Run metadata ──
@@ -186,6 +187,7 @@ class GameSession:
                 "active": self.local_story_active,
                 "story_id": self.local_story_id,
                 "node_id": self.local_story_node_id,
+                "repeat_counts": dict(self.local_story_repeat_counts),
             },
             "pending_model_failure": dict(self.pending_model_failure),
         }
@@ -323,6 +325,7 @@ class GameSession:
                 "active": self.local_story_active,
                 "story_id": self.local_story_id,
                 "node_id": self.local_story_node_id,
+                "repeat_counts": dict(self.local_story_repeat_counts),
             },
             "pending_model_failure": dict(self.pending_model_failure),
             "finale": self.finale,
@@ -437,6 +440,13 @@ class GameSession:
             session.local_story_active = bool(local_story.get("active", False))
             session.local_story_id = str(local_story.get("story_id") or "")
             session.local_story_node_id = str(local_story.get("node_id") or "")
+            raw_repeat_counts = local_story.get("repeat_counts")
+            if isinstance(raw_repeat_counts, dict):
+                session.local_story_repeat_counts = {
+                    str(key): value
+                    for key, value in raw_repeat_counts.items()
+                    if isinstance(key, str) and isinstance(value, int) and not isinstance(value, bool)
+                }
         pending_failure = data.get("pending_model_failure")
         from ..engine.pending_model_failure import PendingModelFailureV1
 

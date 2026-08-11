@@ -9,6 +9,7 @@ from agens_novel.engine.game_engine import GameEngine
 from agens_novel.engine.local_story import (
     DEFAULT_STORY_ID,
     NO_MATCH_NOTICE,
+    advance_local_story,
     current_local_story_choices,
 )
 from agens_novel.session.game_session import GameSession
@@ -230,6 +231,73 @@ def test_local_story_hides_breakthrough_choices_until_realm_allows() -> None:
         engine._parse_breakthrough_action(choice)
         for choice in engine.game_session.last_choices
     )
+
+
+def test_local_story_keeps_authored_choices_when_another_node_has_no_breakthrough() -> None:
+    session = GameSession(
+        game_started=True,
+        local_story_active=True,
+        local_story_id=DEFAULT_STORY_ID,
+        local_story_node_id="outer_gate",
+        realm="练气",
+        realm_stage=9,
+        breakthrough_flags=["foundation_aid"],
+    )
+    engine = GameEngine()
+    engine.game_session = GameSession.from_save_dict(session.to_save_dict())
+    engine._enter_local_story("unit-test", emit_narrative=False)
+
+    assert len(engine.game_session.last_choices) == 4
+    assert not any(
+        engine._parse_breakthrough_action(choice)
+        for choice in engine.game_session.last_choices
+    )
+    engine.handle_action(engine.game_session.last_choices[2])
+    assert engine.game_session.turn_count == 1
+
+
+def test_local_story_repeat_tracking_survives_save_load() -> None:
+    session = GameSession(
+        game_started=True,
+        local_story_active=True,
+        local_story_id=DEFAULT_STORY_ID,
+        local_story_node_id="preparation",
+    )
+    session.last_choices = current_local_story_choices(session)
+
+    first = advance_local_story(session, session.last_choices[1])
+    session.last_choices = first.choices
+    middle = advance_local_story(session, session.last_choices[1])
+    session.last_choices = middle.choices
+
+    restored = GameSession.from_save_dict(session.to_save_dict())
+    repeated = advance_local_story(restored, restored.last_choices[1])
+
+    assert repeated.narrative != first.narrative
+    assert "值甲子之时" in repeated.narrative
+
+
+def test_local_story_revisits_use_distinct_authored_context() -> None:
+    session = GameSession(
+        game_started=True,
+        local_story_active=True,
+        local_story_id=DEFAULT_STORY_ID,
+        local_story_node_id="preparation",
+    )
+    session.last_choices = current_local_story_choices(session)
+    preparation_visits: list[str] = []
+
+    for _ in range(4):
+        preparation_result = advance_local_story(session, session.last_choices[1])
+        preparation_visits.append(preparation_result.narrative)
+        session.last_choices = preparation_result.choices
+        outer_gate_result = advance_local_story(session, session.last_choices[1])
+        session.last_choices = outer_gate_result.choices
+
+    assert len(set(preparation_visits)) == len(preparation_visits)
+    assert "值甲子之时" in preparation_visits[1]
+    assert "值乙丑之时" in preparation_visits[2]
+    assert "值丙寅之时" in preparation_visits[3]
 
 
 def test_local_story_can_reach_first_major_breakthrough(monkeypatch, tmp_path) -> None:
