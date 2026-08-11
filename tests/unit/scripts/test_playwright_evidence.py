@@ -285,6 +285,42 @@ console.log(JSON.stringify({{
     assert payload["harmlessHits"] == ["english_word"]
 
 
+def test_visible_content_audit_allows_the_expected_local_story_notice() -> None:
+    module_path = json.dumps(str(ROOT / "scripts" / "playtest" / "visible_content_audit.cjs"))
+    payload = _node_json(
+        f"""
+const audit = require({module_path});
+const issues = [];
+audit.auditVisibleContent({{
+  allowModelUnavailableNotice: true,
+  turnRecord: {{ turn_index: 1, phase: "main", game_over: false, finale: false }},
+  beforeSnapshot: {{ forbidden_hits: ["model_unavailable_notice"], chronicle: [], status: {{ realm: "练气1层" }} }},
+  afterSnapshot: {{
+    forbidden_hits: ["model_unavailable_notice"],
+    chronicle: [{{ age: "18岁", text: "接引台前的试炼已经开始。", latest: true }}],
+    latest_chronicle: [{{ age: "18岁", text: "接引台前的试炼已经开始。", latest: true }}],
+    choices: [
+      {{ letter: "A", text: "稳步准备" }},
+      {{ letter: "B", text: "向师兄请教" }},
+      {{ letter: "C", text: "冒险试探" }},
+      {{ letter: "D", text: "静待机缘" }},
+    ],
+    status: {{ age: "18岁", realm: "练气1层" }},
+    viewport: {{ horizontal_overflow: false }},
+    world_intel: ["接引营戒备森严"],
+  }},
+  auditState: audit.createVisibleAuditState(),
+  issue: (level, text) => issues.push({{ level, text }}),
+}});
+console.log(JSON.stringify(issues));
+"""
+    )
+
+    assert "player-visible forbidden/internal text appeared" not in {
+        item["text"] for item in payload
+    }
+
+
 def test_acceptance_report_preserves_visible_issue_category_and_judge_failure() -> None:
     report_path = json.dumps(str(ROOT / "scripts" / "playtest" / "acceptance_report.cjs"))
     payload = _node_json(
@@ -302,6 +338,45 @@ console.log(JSON.stringify(issues));
     assert payload[0]["text"] == "visible content issue"
     assert payload[0]["visible_text"] == "仅用于脱敏回放"
     assert payload[1]["text"] == "judge model request failed; rule-only settlement used"
+
+
+def test_acceptance_report_requires_verified_authority_replay() -> None:
+    report_path = json.dumps(str(ROOT / "scripts" / "playtest" / "acceptance_report.cjs"))
+    payload = _node_json(
+        f"""
+const report = require({report_path});
+const verified = [];
+report.applyPersistedTurnAudit(
+  {{ last_turn_count: 1 }},
+  {{ continuous: true, turn_count: 1, last_turn: 1, authority_match: true }},
+  report.createIssueCollector(verified),
+);
+const unavailable = [];
+report.applyPersistedTurnAudit(
+  {{ last_turn_count: 1 }},
+  {{
+    continuous: true,
+    turn_count: 1,
+    last_turn: 1,
+    authority_match: null,
+    authority_mismatch_count: 0,
+    authority_replay_source: "",
+  }},
+  report.createIssueCollector(unavailable),
+);
+console.log(JSON.stringify({{ verified, unavailable }}));
+"""
+    )
+
+    assert payload["verified"] == []
+    assert payload["unavailable"] == [
+        {
+            "level": "P0",
+            "text": "persisted authority hashes were not verified against the rule trajectory",
+            "mismatch_count": 0,
+            "replay_source": "",
+        }
+    ]
 
 
 def test_browser_driver_keeps_slot_strategy_and_content_batch_configuration() -> None:

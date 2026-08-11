@@ -142,6 +142,7 @@ function annotateVisibleSnapshot(snapshot) {
 
 function auditVisibleContent({
   enabled = true,
+  allowModelUnavailableNotice = false,
   turnRecord,
   beforeSnapshot,
   afterSnapshot,
@@ -152,7 +153,7 @@ function auditVisibleContent({
   const forbidden = unique([
     ...(beforeSnapshot?.forbidden_hits || []),
     ...(afterSnapshot?.forbidden_hits || []),
-  ]);
+  ]).filter((hit) => !(allowModelUnavailableNotice && hit === "model_unavailable_notice"));
   turnRecord.forbidden_hits = forbidden;
   turnRecord.forbidden_count = forbidden.length;
   turnRecord.horizontal_overflow = Boolean(afterSnapshot.viewport?.horizontal_overflow);

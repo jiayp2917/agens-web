@@ -2,12 +2,56 @@
 
 const { spawnSync } = require("child_process");
 
-function readPersistedTurnAudit({ root, pythonExe, sessionId, environment = process.env }) {
+function readPersistedOpeningState({ root, pythonExe, sessionId, environment = process.env }) {
+  const py = `
+import json
+import os
+
+from sqlalchemy import text
+
+from web.backend.database import create_database
+
+db = create_database()
+with db.engine.connect() as conn:
+    row = conn.execute(
+        text("SELECT snapshot FROM sessions WHERE id = :session_id"),
+        {"session_id": os.environ["AGENS_PLAYTEST_SESSION_ID"]},
+    ).mappings().first()
+
+if row is None or not isinstance(row["snapshot"], dict):
+    raise ValueError("playtest session has no persisted opening snapshot")
+
+print(json.dumps(row["snapshot"], ensure_ascii=True))
+`;
+  const result = spawnSync(pythonExe, ["-c", py], {
+    cwd: root,
+    env: { ...environment, AGENS_PLAYTEST_SESSION_ID: sessionId },
+    encoding: "utf8",
+    maxBuffer: 1024 * 1024,
+  });
+  if (result.status !== 0) {
+    throw new Error(`Failed to read persisted opening state: ${(result.stderr || result.stdout || "").trim()}`);
+  }
+  const state = JSON.parse(result.stdout);
+  if (!state || typeof state !== "object" || Array.isArray(state)) {
+    throw new Error("Persisted opening state is not an object");
+  }
+  return state;
+}
+
+function readPersistedTurnAudit({
+  root,
+  pythonExe,
+  sessionId,
+  openingState = null,
+  environment = process.env,
+}) {
   const py = `
 import hashlib
 import json
 import os
 import re
+import sys
 
 from sqlalchemy import text
 
@@ -24,6 +68,13 @@ from agens_novel.session.game_session import GameSession
 from web.backend.database import create_database
 
 session_id = os.environ["AGENS_PLAYTEST_SESSION_ID"]
+try:
+    audit_input = json.loads(sys.stdin.buffer.read().decode("utf-8") or "{}")
+except json.JSONDecodeError:
+    audit_input = {}
+opening_state_input = audit_input.get("opening_state")
+if not isinstance(opening_state_input, dict):
+    opening_state_input = None
 db = create_database()
 with db.engine.connect() as conn:
     rows = conn.execute(
@@ -59,36 +110,22 @@ if scenario_key:
     ]
     authority_replay_source = "canonical_scenario"
 elif rows:
-    events = rows[0]["events"] if isinstance(rows[0]["events"], list) else []
-    opening_state = next(
-        (
-            event.get("state")
-            for event in events
-            if isinstance(event, dict)
-            and event.get("type") == "character_created"
-            and isinstance(event.get("state"), dict)
-        ),
-        None,
-    )
+    opening_state = opening_state_input
+    if opening_state is None:
+        events = rows[0]["events"] if isinstance(rows[0]["events"], list) else []
+        opening_state = next(
+            (
+                event.get("state")
+                for event in events
+                if isinstance(event, dict)
+                and event.get("type") == "character_created"
+                and isinstance(event.get("state"), dict)
+            ),
+            None,
+        )
     if isinstance(opening_state, dict):
         replay = GameEngine()
-        replay.game_session = GameSession.from_save_dict({
-            "turn_count": opening_state.get("turn_count", 0),
-            "realm_turn_count": opening_state.get("realm_turn_count", 0),
-            "rule_rng": {
-                "run_seed": (opening_state.get("rule_state") or {}).get("run_seed", ""),
-                "counter": (opening_state.get("rule_state") or {}).get("rng_counter", 0),
-            },
-            "game_started": opening_state.get("game_started", False),
-            "game_over": opening_state.get("game_over", False),
-            "character": opening_state.get("character") or {},
-            "world": opening_state.get("world") or {},
-            "last_choices": opening_state.get("choices") or [],
-            "local_story": opening_state.get("local_story") or {},
-            "pending_model_failure": opening_state.get("pending_model_failure") or {},
-            "finale": opening_state.get("finale", False),
-            "error": opening_state.get("error", ""),
-        })
+        replay.game_session = GameSession.from_save_dict(opening_state)
 
         def replay_agent(agent_name, _user_input, session, **_kwargs):
             if agent_name == "narrator":
@@ -208,6 +245,7 @@ print(json.dumps({
     env: { ...environment, AGENS_PLAYTEST_SESSION_ID: sessionId },
     encoding: "utf8",
     maxBuffer: 1024 * 1024,
+    input: JSON.stringify({ opening_state: openingState }),
   });
   if (result.status !== 0) {
     throw new Error(`Failed to audit persisted turns: ${(result.stderr || result.stdout || "").trim()}`);
@@ -215,4 +253,4 @@ print(json.dumps({
   return JSON.parse(result.stdout);
 }
 
-module.exports = { readPersistedTurnAudit };
+module.exports = { readPersistedOpeningState, readPersistedTurnAudit };

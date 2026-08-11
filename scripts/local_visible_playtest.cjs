@@ -234,6 +234,7 @@ if (require.main === module) {
 
   let browser;
   let playtestSessionId = "";
+  let persistedOpeningState = null;
   try {
     browserDriver.ensureInvite({ root: ROOT, pythonExe: pythonExe(), inviteCode });
     summary.invite_seeded = true;
@@ -347,9 +348,12 @@ if (require.main === module) {
     }
     await page.waitForSelector(".choice-button", { timeout: REQUEST_TIMEOUT_MS });
     const startUiSnapshot = CONTENT_AUDIT ? await browserDriver.uiSnapshot(page, "start") : null;
-    if (CONTENT_AUDIT && startUiSnapshot?.forbidden_hits?.length) {
+    const startForbiddenHits = (startUiSnapshot?.forbidden_hits || []).filter(
+      (hit) => !(LOCAL_STORY_MODE && hit === "model_unavailable_notice"),
+    );
+    if (CONTENT_AUDIT && startForbiddenHits.length) {
       issue("P1", "player-visible forbidden/internal text appeared at start", {
-        hits: startUiSnapshot.forbidden_hits,
+        hits: startForbiddenHits,
         latest_text: startUiSnapshot.latest_chronicle?.at(-1)?.text || "",
         fallback_banner_set: Boolean(startUiSnapshot.fallback_banner),
       });
@@ -368,6 +372,21 @@ if (require.main === module) {
     }
     await page.screenshot({ path: `${screenshotBase}-start.png`, fullPage: true });
     summary.start_passed = true;
+
+    if (REQUIRE_PERSISTED_AUDIT && playtestSessionId && startResponse.ok()) {
+      try {
+        persistedOpeningState = persistedTurnAudit.readPersistedOpeningState({
+          root: ROOT,
+          pythonExe: pythonExe(),
+          sessionId: playtestSessionId,
+        });
+        summary.persisted_opening_state_captured = true;
+      } catch (error) {
+        issue("P0", "persisted turn audit could not capture the opening state", {
+          error: String(error).slice(0, 1000),
+        });
+      }
+    }
 
     if (
       !startResponse.ok()
@@ -555,6 +574,7 @@ if (require.main === module) {
         };
         visibleContentAudit.auditVisibleContent({
           enabled: CONTENT_AUDIT,
+          allowModelUnavailableNotice: LOCAL_STORY_MODE,
           turnRecord,
           beforeSnapshot,
           afterSnapshot,
@@ -685,6 +705,7 @@ if (require.main === module) {
       };
       visibleContentAudit.auditVisibleContent({
         enabled: CONTENT_AUDIT,
+        allowModelUnavailableNotice: LOCAL_STORY_MODE,
         turnRecord,
         beforeSnapshot,
         afterSnapshot,
@@ -872,6 +893,7 @@ if (require.main === module) {
         };
         visibleContentAudit.auditVisibleContent({
           enabled: CONTENT_AUDIT,
+          allowModelUnavailableNotice: LOCAL_STORY_MODE,
           turnRecord,
           beforeSnapshot,
           afterSnapshot,
@@ -956,6 +978,7 @@ if (require.main === module) {
             root: ROOT,
             pythonExe: pythonExe(),
             sessionId: playtestSessionId,
+            openingState: persistedOpeningState,
           });
           acceptanceReport.applyPersistedTurnAudit(summary, persisted, issue);
         } catch (error) {

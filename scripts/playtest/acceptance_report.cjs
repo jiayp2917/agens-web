@@ -248,9 +248,10 @@ function applyPersistedTurnAudit(summary, persisted, issue) {
       browser_turn_count: Number(summary.last_turn_count || 0),
     });
   }
-  if (persisted.authority_match === false) {
-    issue("P0", "persisted authority hashes diverged from the registered rule trajectory", {
+  if (persisted.authority_match !== true) {
+    issue("P0", "persisted authority hashes were not verified against the rule trajectory", {
       mismatch_count: persisted.authority_mismatch_count,
+      replay_source: persisted.authority_replay_source || "",
     });
   }
   if (persisted.duplicate_narrative_count > 0) {
