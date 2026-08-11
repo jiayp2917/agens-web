@@ -88,6 +88,42 @@ class TestNarratorParse:
         assert "<state_update>{}</state_update>" not in result["user_message"]
         assert "<choices>[" not in result["user_message"]
 
+    def test_build_prompt_excludes_verbose_display_only_world_profile(self, tmp_path, monkeypatch) -> None:
+        monkeypatch.setattr(
+            "agens_novel.paths.system_prompt_path",
+            lambda _name: tmp_path / "narrator_schema.md",
+        )
+        (tmp_path / "narrator_schema.md").write_text("schema prompt", encoding="utf-8")
+        state_json = json.dumps(
+            {
+                "turn_count": 12,
+                "rule_state": {"run_seed": "fixed", "rng_counter": 11},
+                "character": {"realm": "练气", "age": 28},
+                "world": {
+                    "current_scene": "潮音渡口",
+                    "story_key": "ocean-v2",
+                    "world_profile": {
+                        "world_name": "沧澜群岛",
+                        "chronicle_0_16": ["展示文本" * 500],
+                    },
+                },
+            },
+            ensure_ascii=False,
+        )
+
+        result = build_prompt(
+            {
+                "user_input": "继续修行",
+                "game_state_json": state_json,
+                "chat_history": [],
+            }
+        )
+
+        assert "ocean-v2" in result["user_message"]
+        assert "潮音渡口" in result["user_message"]
+        assert "chronicle_0_16" not in result["user_message"]
+        assert result["prompt_metrics"]["game_state_chars"] < len(state_json)
+
     def test_json_object_prompt_uses_the_structured_contract_and_safe_history(
         self, tmp_path, monkeypatch
     ) -> None:

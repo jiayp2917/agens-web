@@ -46,7 +46,7 @@ log = logging.getLogger(__name__)
 
 AGENT_NAME = "narrator"
 _NO_ASCII_LETTERS_PATTERN = r"^[^A-Za-z]*$"
-_NARRATOR_MIN_MAX_TOKENS = 8192
+_NARRATOR_MIN_MAX_TOKENS = 16384
 _NARRATOR_RESPONSE_FORMAT: dict[str, Any] = {
     "type": "json_schema",
     "json_schema": {

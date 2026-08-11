@@ -30,7 +30,7 @@ class Settings(BaseSettings):
     base_url: str = "https://apihub.agnes-ai.com/v1"
     model: str = "agnes-2.0-flash"
     temperature: float = 0.7
-    max_tokens: int = 8192
+    max_tokens: int = 16384
     request_timeout_seconds: float = 60.0
     total_timeout_seconds: float = 90.0
     max_retries: int = 3

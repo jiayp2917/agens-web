@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import json
 import logging
 from typing import Any
 
@@ -33,7 +34,7 @@ def build_prompt(state: dict[str, Any]) -> dict[str, Any]:
     if not user_input:
         raise ValueError("user_input is required.")
 
-    game_state_json = state.get("game_state_json", "{}")
+    game_state_json = _narrator_state_for_prompt(state.get("game_state_json", "{}"))
 
     # Build messages: system + compact chat history + current turn.
     history: list[dict] = list(state.get("chat_history") or [])
@@ -125,3 +126,66 @@ def _compact_history_for_prompt(history: list[dict]) -> list[dict]:
         })
     compacted.extend(recent)
     return compacted
+
+
+def _narrator_state_for_prompt(value: Any) -> str:
+    """Keep rule context while excluding verbose display-only opening data."""
+    raw = value if isinstance(value, str) else "{}"
+    try:
+        state = json.loads(raw)
+    except (TypeError, json.JSONDecodeError):
+        return raw
+    if not isinstance(state, dict):
+        return raw
+
+    character_value = state.get("character")
+    character: dict[str, Any] = character_value if isinstance(character_value, dict) else {}
+    world_value = state.get("world")
+    world: dict[str, Any] = world_value if isinstance(world_value, dict) else {}
+    profile_value = world.get("world_profile")
+    profile: dict[str, Any] = profile_value if isinstance(profile_value, dict) else {}
+    projected = {
+        key: state[key]
+        for key in ("turn_count", "realm_turn_count", "game_over", "finale")
+        if key in state
+    }
+    if isinstance(state.get("rule_state"), dict):
+        projected["rule_state"] = state["rule_state"]
+    character_fields = {
+        key: character[key]
+        for key in (
+            "name", "realm", "realm_stage", "spirit_root", "spirit_root_grade",
+            "age", "talent", "family_background", "difficulty", "attributes",
+            "breakthrough_flags", "techniques", "inventory", "titles", "relationships",
+            "status_effects", "lifespan", "remaining_lifespan",
+        )
+        if key in character
+    }
+    if character_fields:
+        projected["character"] = character_fields
+    world_fields = {
+        key: world[key]
+        for key in ("current_scene", "location", "region", "story_key", "story_version")
+        if key in world
+    }
+    for key in ("active_quests", "discovered_locations", "lore_facts"):
+        if key in world:
+            world_fields[key] = _recent_items(world[key])
+    if isinstance(world.get("story_state"), dict):
+        world_fields["story_state"] = world["story_state"]
+    profile_fields = {
+        key: profile[key]
+        for key in ("world_key", "world_name", "fate_hooks")
+        if key in profile
+    }
+    if profile_fields:
+        world_fields["world_profile"] = profile_fields
+    if world_fields:
+        projected["world"] = world_fields
+    if isinstance(state.get("local_story"), dict):
+        projected["local_story"] = state["local_story"]
+    return json.dumps(projected, ensure_ascii=False, separators=(",", ":"))
+
+
+def _recent_items(value: Any) -> list[Any]:
+    return list(value[-6:]) if isinstance(value, list) else []

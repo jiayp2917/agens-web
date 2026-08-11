@@ -305,7 +305,7 @@ async def test_json_narrator_uses_the_provider_neutral_output_budget(monkeypatch
         None,
     )
 
-    assert captured["max_tokens"] == 8192
+    assert captured["max_tokens"] == 16384
     assert transport.value == "json_object"
     assert envelope_ok is True
 
@@ -313,4 +313,4 @@ async def test_json_narrator_uses_the_provider_neutral_output_budget(monkeypatch
 def test_narrator_output_budget_cannot_be_lowered_below_structured_minimum(monkeypatch) -> None:
     monkeypatch.setenv("AGNES_MAX_TOKENS", "4096")
 
-    assert nodes._narrator_max_tokens() == 8192
+    assert nodes._narrator_max_tokens() == 16384
