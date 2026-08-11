@@ -12,10 +12,14 @@ import re
 from sqlalchemy import text
 
 from agens_novel.verification.authority import (
+    authority_state_hash,
     authority_state_hash_from_persisted_state,
     canonical_authority_trajectory,
 )
 from agens_novel.verification.scenarios import canonical_v3_scenarios
+from agens_novel.engine.choices import fallback_choices
+from agens_novel.engine.game_engine import GameEngine
+from agens_novel.session.game_session import GameSession
 
 from web.backend.database import create_database
 
@@ -24,10 +28,12 @@ db = create_database()
 with db.engine.connect() as conn:
     rows = conn.execute(
         text("""
-            SELECT game_turns.turn_no, game_turns.narrative, game_turns.state_after
-                 , game_turns.choices, game_turns.state_delta
+            SELECT game_turns.turn_no, game_turns.choice_taken, game_turns.narrative
+                 , game_turns.state_after, game_turns.choices, game_turns.state_delta
+                 , sessions.events
             FROM game_turns
             JOIN game_runs ON game_runs.id = game_turns.run_id
+            JOIN sessions ON sessions.id = game_runs.session_id
             WHERE game_runs.session_id = :session_id
             ORDER BY game_turns.turn_no
         """),
@@ -38,6 +44,7 @@ turns = [int(row["turn_no"]) for row in rows]
 scenario_key = os.environ.get("AGENS_PLAYTEST_CANONICAL_SCENARIO", "").strip()
 story_version = int(os.environ.get("AGENS_PLAYTEST_STORY_VERSION", "3") or 3)
 expected_hashes = []
+authority_replay_source = ""
 if scenario_key:
     scenario = next((item for item in canonical_v3_scenarios() if item.key == scenario_key), None)
     if scenario is None:
@@ -50,8 +57,65 @@ if scenario_key:
             max_turns=len(rows),
         )
     ]
+    authority_replay_source = "canonical_scenario"
+elif rows:
+    events = rows[0]["events"] if isinstance(rows[0]["events"], list) else []
+    opening_state = next(
+        (
+            event.get("state")
+            for event in events
+            if isinstance(event, dict)
+            and event.get("type") == "character_created"
+            and isinstance(event.get("state"), dict)
+        ),
+        None,
+    )
+    if isinstance(opening_state, dict):
+        replay = GameEngine()
+        replay.game_session = GameSession.from_save_dict({
+            "turn_count": opening_state.get("turn_count", 0),
+            "realm_turn_count": opening_state.get("realm_turn_count", 0),
+            "rule_rng": {
+                "run_seed": (opening_state.get("rule_state") or {}).get("run_seed", ""),
+                "counter": (opening_state.get("rule_state") or {}).get("rng_counter", 0),
+            },
+            "game_started": opening_state.get("game_started", False),
+            "game_over": opening_state.get("game_over", False),
+            "character": opening_state.get("character") or {},
+            "world": opening_state.get("world") or {},
+            "last_choices": opening_state.get("choices") or [],
+            "local_story": opening_state.get("local_story") or {},
+            "pending_model_failure": opening_state.get("pending_model_failure") or {},
+            "finale": opening_state.get("finale", False),
+            "error": opening_state.get("error", ""),
+        })
+
+        def replay_agent(agent_name, _user_input, session, **_kwargs):
+            if agent_name == "narrator":
+                return {
+                    "narrative": "规则回放已结算本回合因果。",
+                    "choices": fallback_choices(session),
+                    "state_delta": {},
+                    "llm_error": "",
+                }
+            return {"approved": True, "llm_error": ""}
+
+        replay.run_agent = replay_agent
+        for row in rows:
+            state_delta = row["state_delta"] if isinstance(row["state_delta"], dict) else {}
+            meta = state_delta.get("meta") if isinstance(state_delta.get("meta"), dict) else {}
+            category = str(meta.get("choice_category") or "")
+            if category == "breakthrough":
+                replay.attempt_breakthrough()
+            else:
+                slot = str(meta.get("choice_slot") or row["choice_taken"] or "")[:1].upper()
+                if slot not in {"A", "B", "C", "D"}:
+                    raise ValueError("persisted turn has no valid choice slot for authority replay")
+                replay.handle_action(slot)
+            expected_hashes.append(authority_state_hash(replay.game_session))
+        authority_replay_source = "recorded_opening"
 authority_mismatch_count = 0
-if scenario_key:
+if expected_hashes:
     if len(expected_hashes) != len(rows):
         authority_mismatch_count = abs(len(expected_hashes) - len(rows))
     for index, row in enumerate(rows[: len(expected_hashes)]):
@@ -122,8 +186,9 @@ print(json.dumps({
     "turn_count": len(turns),
     "last_turn": turns[-1] if turns else 0,
     "continuous": turns == list(range(1, len(turns) + 1)),
-    "authority_match": authority_mismatch_count == 0 if scenario_key and rows else None,
+    "authority_match": authority_mismatch_count == 0 if expected_hashes and rows else None,
     "authority_mismatch_count": authority_mismatch_count,
+    "authority_replay_source": authority_replay_source,
     "duplicate_narrative_count": len(duplicates),
     "duplicates": duplicates,
     "story_status": str(story_state.get("status") or ""),

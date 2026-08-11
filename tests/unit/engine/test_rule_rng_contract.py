@@ -5,6 +5,7 @@ from __future__ import annotations
 from agens_novel.engine.start_flow import apply_profile_session
 from agens_novel.engine.turn_rules import settle_turn_outcome
 from agens_novel.game.realm import golden_breakthrough_flags
+from agens_novel.rule_rng import new_run_seed
 from agens_novel.session.game_session import GameSession
 
 
@@ -51,6 +52,12 @@ def test_profile_start_persists_rng_state_through_save_round_trip() -> None:
     assert settle_turn_outcome("A【稳妥】稳住根基", restored).state_delta == settle_turn_outcome(
         "A【稳妥】另一段显示文案", session
     ).state_delta
+
+
+def test_validation_seed_becomes_the_persisted_run_seed(monkeypatch) -> None:
+    monkeypatch.setenv("AGENS_VALIDATION_SEED", "local-v2-fixed-seed")
+
+    assert new_run_seed() == "local-v2-fixed-seed"
 
 
 def test_v3_long_form_progress_grants_rule_owned_breakthrough_preparation() -> None:

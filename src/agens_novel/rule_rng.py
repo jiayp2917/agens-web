@@ -8,6 +8,7 @@ and a stable stream name instead of sharing process-global ``random`` state.
 from __future__ import annotations
 
 import hashlib
+import os
 import secrets
 from dataclasses import dataclass
 from typing import Any
@@ -35,6 +36,9 @@ class RuleRng:
 
 def new_run_seed() -> str:
     """Create a non-secret, persisted seed for a new local game run."""
+    validation_seed = os.environ.get("AGENS_VALIDATION_SEED", "").strip()
+    if validation_seed:
+        return validation_seed
     return secrets.token_hex(16)
 
 

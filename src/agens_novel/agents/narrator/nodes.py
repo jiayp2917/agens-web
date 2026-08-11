@@ -20,6 +20,7 @@ from ...llm.client import LLMError, call_llm, call_llm_stream
 from ...llm.provider_adapter import ProviderTransport, narrator_transport, response_format
 from ...llm.runtime_context import runtime_api_key
 from ...llm.types import Message
+from ...settings import Settings
 from ...utils.timing import utcnow_iso
 from ..common import load_agent_settings
 from ..contracts import NarratorEnvelopeV1
@@ -45,7 +46,7 @@ log = logging.getLogger(__name__)
 
 AGENT_NAME = "narrator"
 _NO_ASCII_LETTERS_PATTERN = r"^[^A-Za-z]*$"
-_NARRATOR_MAX_TOKENS = 4096
+_NARRATOR_MIN_MAX_TOKENS = 8192
 _NARRATOR_RESPONSE_FORMAT: dict[str, Any] = {
     "type": "json_schema",
     "json_schema": {
@@ -142,6 +143,7 @@ async def _primary_narrator_call(
     stream_callback: Callable[[str], None] | None,
 ) -> tuple[dict[str, Any], str, ProviderTransport, bool]:
     transport = narrator_transport(state)
+    max_tokens = _narrator_max_tokens()
     if transport != ProviderTransport.LEGACY_TAGS:
         resp = await call_llm(
             messages,
@@ -149,7 +151,7 @@ async def _primary_narrator_call(
             base_url=state.get("base_url"),
             api_key=runtime_api_key(),
             temperature=0.0,
-            max_tokens=_NARRATOR_MAX_TOKENS,
+            max_tokens=max_tokens,
             stream=False,
             response_format=response_format(transport, _NARRATOR_RESPONSE_FORMAT),
         )
@@ -160,7 +162,7 @@ async def _primary_narrator_call(
             base_url=state.get("base_url"),
             api_key=runtime_api_key(),
             temperature=0.0,
-            max_tokens=_NARRATOR_MAX_TOKENS,
+            max_tokens=max_tokens,
             on_chunk=stream_callback,
         )
     else:
@@ -170,7 +172,7 @@ async def _primary_narrator_call(
             base_url=state.get("base_url"),
             api_key=runtime_api_key(),
             temperature=0.0,
-            max_tokens=_NARRATOR_MAX_TOKENS,
+            max_tokens=max_tokens,
             stream=False,
         )
     output_text = str(resp.get("text") or "")
@@ -178,6 +180,11 @@ async def _primary_narrator_call(
         return dict(resp), output_text, transport, False
     unwrapped = _unwrap_narrator_envelope(output_text)
     return dict(resp), unwrapped or output_text, transport, unwrapped is not None
+
+
+def _narrator_max_tokens() -> int:
+    """Reserve enough completion budget for visible structured narration."""
+    return max(_NARRATOR_MIN_MAX_TOKENS, Settings().max_tokens)
 
 
 async def _maybe_repair_narrator_output(
