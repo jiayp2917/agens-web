@@ -122,6 +122,25 @@ def test_local_story_matches_slot_prefixed_choice_before_keywords() -> None:
     assert "反复核对药引" in session.turn_history[-1]["narrative"]
 
 
+def test_local_story_matches_visible_blocked_breakthrough_action() -> None:
+    session = GameSession(
+        game_started=True,
+        local_story_active=True,
+        local_story_id=DEFAULT_STORY_ID,
+        local_story_node_id="preparation",
+        realm="练气",
+        realm_stage=3,
+    )
+    engine = GameEngine()
+    engine.game_session = session
+    engine._enter_local_story("unit-test", emit_narrative=False)
+
+    engine.handle_action(session.last_choices[2])
+
+    assert session.local_story_node_id == "preparation"
+    assert session.turn_history[-1]["delta"]["meta"].get("breakthrough_result") is None
+
+
 def test_local_story_save_round_trip_preserves_node() -> None:
     session = GameSession()
     session.local_story_active = True

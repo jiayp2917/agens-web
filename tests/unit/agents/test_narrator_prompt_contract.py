@@ -124,6 +124,24 @@ class TestNarratorParse:
         assert "chronicle_0_16" not in result["user_message"]
         assert result["prompt_metrics"]["game_state_chars"] < len(state_json)
 
+    def test_prompt_state_projection_preserves_rule_fields_and_rejects_invalid_json(self) -> None:
+        from agens_novel.agents.narrator.prompting import _narrator_state_for_prompt
+
+        raw = json.dumps(
+            {
+                "turn_count": 3,
+                "rule_state": {"run_seed": "fixed"},
+                "world": {"active_quests": [1, 2, 3, 4, 5, 6, 7]},
+            }
+        )
+
+        projected = json.loads(_narrator_state_for_prompt(raw))
+
+        assert projected["turn_count"] == 3
+        assert projected["rule_state"] == {"run_seed": "fixed"}
+        assert projected["world"]["active_quests"] == [2, 3, 4, 5, 6, 7]
+        assert _narrator_state_for_prompt("not-json") == "not-json"
+
     def test_json_object_prompt_uses_the_structured_contract_and_safe_history(
         self, tmp_path, monkeypatch
     ) -> None:

@@ -12,6 +12,7 @@ from .choices import normalize_choices
 DEFAULT_STORY_ID = "misty_gate"
 DEFAULT_NODE_ID = "start"
 NO_MATCH_NOTICE = "这次行动未能对应当前局面，请从当前 A/B/C/D 选项中继续。"
+_RECOVERY_MARKERS = ("\u7597\u4f24", "\u8c03\u606f", "\u6062\u590d", "\u7a33\u4f4f\u6839\u57fa")
 
 
 @dataclass(frozen=True)
@@ -383,36 +384,78 @@ def _match_option(
     action_text: str,
     session: GameSession,
 ) -> LocalStoryOption | None:
-    raw = (action_text or "").strip()
+    raw = _normalized_action(action_text)
     if not raw:
         return None
     normalized_choices = normalize_choices([option.text for option in node.options])
+    displayed_match = _match_displayed_option(node, raw, session, normalized_choices)
+    if displayed_match is not None:
+        return displayed_match
+    authored_match = _match_authored_option(node, raw, normalized_choices)
+    if authored_match is not None:
+        return authored_match
+    return _match_recovery_or_keyword(node, raw, session)
+
+
+def _normalized_action(action_text: str) -> str:
+    raw = (action_text or "").strip()
     normalized_action = normalize_choices([raw])
-    if normalized_action:
-        raw = normalized_action[0]
+    return normalized_action[0] if normalized_action else raw
 
+
+def _match_displayed_option(
+    node: LocalStoryNode,
+    raw: str,
+    session: GameSession,
+    normalized_choices: list[str],
+) -> LocalStoryOption | None:
     displayed_choices = normalize_choices(session.last_choices)
-    if len(displayed_choices) == len(node.options):
-        for index, displayed in enumerate(displayed_choices):
-            if raw != displayed:
-                continue
-            option = node.options[index]
-            if index < len(normalized_choices) and displayed != normalized_choices[index]:
-                if index == 2 and any(item.breakthrough for item in node.options):
-                    return _required_breakthrough_option(session.local_story_node_id, node)
-                if option.breakthrough:
-                    return _blocked_breakthrough_option(session, session.local_story_node_id, index)
-            return option
+    if len(displayed_choices) != len(node.options):
+        return None
+    for index, displayed in enumerate(displayed_choices):
+        if raw == displayed:
+            return _displayed_option(node, session, normalized_choices, index, displayed)
+    return None
 
+
+def _displayed_option(
+    node: LocalStoryNode,
+    session: GameSession,
+    normalized_choices: list[str],
+    index: int,
+    displayed: str,
+) -> LocalStoryOption:
+    option = node.options[index]
+    if index >= len(normalized_choices) or displayed == normalized_choices[index]:
+        return option
+    if index == 2 and any(item.breakthrough for item in node.options):
+        return _required_breakthrough_option(session.local_story_node_id, node)
+    if option.breakthrough:
+        return _blocked_breakthrough_option(session, session.local_story_node_id, index)
+    return option
+
+
+def _match_authored_option(
+    node: LocalStoryNode,
+    raw: str,
+    normalized_choices: list[str],
+) -> LocalStoryOption | None:
     for index, option in enumerate(node.options):
         if index < len(normalized_choices) and raw == normalized_choices[index]:
             return option
         if raw == option.text:
             return option
+    return None
 
+
+def _match_recovery_or_keyword(
+    node: LocalStoryNode,
+    raw: str,
+    session: GameSession,
+) -> LocalStoryOption | None:
     compact = raw.lower().replace(" ", "")
     if breakthrough_blocking_effects(session.status_effects) and any(
-        marker in compact for marker in ("疗伤", "调息", "恢复", "稳住根基")
+        marker in compact for marker in _RECOVERY_MARKERS
     ):
         return next((option for option in node.options if not option.breakthrough), None)
     for option in node.options:

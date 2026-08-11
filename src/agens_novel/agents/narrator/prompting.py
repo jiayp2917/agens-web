@@ -18,6 +18,30 @@ log = logging.getLogger(__name__)
 _RECENT_HISTORY_MESSAGES = 6
 # Prompt soft cap stays below the storage cap so the narrator prompt remains bounded.
 _HISTORY_PROMPT_SOFT_CAP = _RECENT_HISTORY_MESSAGES + 1
+_PROMPT_ROOT_FIELDS = ("turn_count", "realm_turn_count", "game_over", "finale")
+_PROMPT_CHARACTER_FIELDS = (
+    "name",
+    "realm",
+    "realm_stage",
+    "spirit_root",
+    "spirit_root_grade",
+    "age",
+    "talent",
+    "family_background",
+    "difficulty",
+    "attributes",
+    "breakthrough_flags",
+    "techniques",
+    "inventory",
+    "titles",
+    "relationships",
+    "status_effects",
+    "lifespan",
+    "remaining_lifespan",
+)
+_PROMPT_WORLD_FIELDS = ("current_scene", "location", "region", "story_key", "story_version")
+_PROMPT_WORLD_RECENT_FIELDS = ("active_quests", "discovered_locations", "lore_facts")
+_PROMPT_PROFILE_FIELDS = ("world_key", "world_name", "fate_hooks")
 
 def build_prompt(state: dict[str, Any]) -> dict[str, Any]:
     transport = narrator_transport(state)
@@ -131,60 +155,57 @@ def _compact_history_for_prompt(history: list[dict]) -> list[dict]:
 def _narrator_state_for_prompt(value: Any) -> str:
     """Keep rule context while excluding verbose display-only opening data."""
     raw = value if isinstance(value, str) else "{}"
-    try:
-        state = json.loads(raw)
-    except (TypeError, json.JSONDecodeError):
-        return raw
-    if not isinstance(state, dict):
+    state = _json_object(raw)
+    if state is None:
         return raw
 
-    character_value = state.get("character")
-    character: dict[str, Any] = character_value if isinstance(character_value, dict) else {}
-    world_value = state.get("world")
-    world: dict[str, Any] = world_value if isinstance(world_value, dict) else {}
-    profile_value = world.get("world_profile")
-    profile: dict[str, Any] = profile_value if isinstance(profile_value, dict) else {}
-    projected = {
-        key: state[key]
-        for key in ("turn_count", "realm_turn_count", "game_over", "finale")
-        if key in state
-    }
+    projected = _project_fields(state, _PROMPT_ROOT_FIELDS)
     if isinstance(state.get("rule_state"), dict):
         projected["rule_state"] = state["rule_state"]
-    character_fields = {
-        key: character[key]
-        for key in (
-            "name", "realm", "realm_stage", "spirit_root", "spirit_root_grade",
-            "age", "talent", "family_background", "difficulty", "attributes",
-            "breakthrough_flags", "techniques", "inventory", "titles", "relationships",
-            "status_effects", "lifespan", "remaining_lifespan",
-        )
-        if key in character
-    }
-    if character_fields:
-        projected["character"] = character_fields
-    world_fields = {
-        key: world[key]
-        for key in ("current_scene", "location", "region", "story_key", "story_version")
-        if key in world
-    }
-    for key in ("active_quests", "discovered_locations", "lore_facts"):
-        if key in world:
-            world_fields[key] = _recent_items(world[key])
-    if isinstance(world.get("story_state"), dict):
-        world_fields["story_state"] = world["story_state"]
-    profile_fields = {
-        key: profile[key]
-        for key in ("world_key", "world_name", "fate_hooks")
-        if key in profile
-    }
-    if profile_fields:
-        world_fields["world_profile"] = profile_fields
+
+    character = _mapping_or_empty(state.get("character"))
+    character_fields = _project_fields(character, _PROMPT_CHARACTER_FIELDS)
+    _add_section(projected, "character", character_fields)
+
+    world_fields = _project_world(_mapping_or_empty(state.get("world")))
     if world_fields:
         projected["world"] = world_fields
     if isinstance(state.get("local_story"), dict):
         projected["local_story"] = state["local_story"]
     return json.dumps(projected, ensure_ascii=False, separators=(",", ":"))
+
+
+def _json_object(raw: str) -> dict[str, Any] | None:
+    try:
+        value = json.loads(raw)
+    except (TypeError, json.JSONDecodeError):
+        return None
+    return value if isinstance(value, dict) else None
+
+
+def _mapping_or_empty(value: Any) -> dict[str, Any]:
+    return value if isinstance(value, dict) else {}
+
+
+def _project_fields(value: dict[str, Any], fields: tuple[str, ...]) -> dict[str, Any]:
+    return {key: value[key] for key in fields if key in value}
+
+
+def _add_section(target: dict[str, Any], name: str, value: dict[str, Any]) -> None:
+    if value:
+        target[name] = value
+
+
+def _project_world(world: dict[str, Any]) -> dict[str, Any]:
+    projected = _project_fields(world, _PROMPT_WORLD_FIELDS)
+    for key in _PROMPT_WORLD_RECENT_FIELDS:
+        if key in world:
+            projected[key] = _recent_items(world[key])
+    if isinstance(world.get("story_state"), dict):
+        projected["story_state"] = world["story_state"]
+    profile = _project_fields(_mapping_or_empty(world.get("world_profile")), _PROMPT_PROFILE_FIELDS)
+    _add_section(projected, "world_profile", profile)
+    return projected
 
 
 def _recent_items(value: Any) -> list[Any]:
