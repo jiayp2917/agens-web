@@ -4,6 +4,7 @@ from __future__ import annotations
 
 from unittest.mock import patch
 
+from agens_novel.engine.choices import choice_with_semantic
 from agens_novel.engine.game_engine import GameEngine
 from agens_novel.engine.local_story import (
     DEFAULT_STORY_ID,
@@ -106,6 +107,21 @@ def test_local_story_d_keyword_match_and_no_match_keep_choices(monkeypatch, tmp_
     assert any(NO_MATCH_NOTICE in msg for msg in infos)
 
 
+def test_local_story_matches_slot_prefixed_choice_before_keywords() -> None:
+    engine = GameEngine()
+    session = engine.game_session
+    session.game_started = True
+    engine._enter_local_story("unit-test", emit_narrative=False)
+
+    engine.handle_action(choice_with_semantic(0, session.last_choices[0]))
+    engine.handle_action(choice_with_semantic(1, session.last_choices[1]))
+    selected = choice_with_semantic(2, session.last_choices[2])
+    engine.handle_action(selected)
+
+    assert session.local_story_node_id == "preparation"
+    assert "反复核对药引" in session.turn_history[-1]["narrative"]
+
+
 def test_local_story_save_round_trip_preserves_node() -> None:
     session = GameSession()
     session.local_story_active = True
@@ -178,6 +194,19 @@ def test_local_story_hides_breakthrough_choices_until_realm_allows() -> None:
     engine._enter_local_story("unit-test", emit_narrative=False)
 
     assert len(engine.game_session.last_choices) == 4
+    assert not any(
+        engine._parse_breakthrough_action(choice)
+        for choice in engine.game_session.last_choices
+    )
+
+    before_turn_count = engine.game_session.turn_count
+    engine.handle_action(engine.game_session.last_choices[0])
+
+    assert engine.game_session.turn_count == before_turn_count + 1
+    assert engine.game_session.local_story_node_id == "preparation"
+    assert engine.game_session.turn_history[-1]["delta"].get("meta", {}).get(
+        "breakthrough_result"
+    ) is None
     assert not any(
         engine._parse_breakthrough_action(choice)
         for choice in engine.game_session.last_choices

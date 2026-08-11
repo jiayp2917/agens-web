@@ -346,6 +346,33 @@ def current_local_story_choices(session: GameSession) -> list[str]:
     return [option.text for option in _node(story_key, node_key).options]
 
 
+def available_local_story_choices(
+    session: GameSession,
+    *,
+    breakthrough_allowed: bool,
+) -> list[str]:
+    """Return visible local-story choices without exposing blocked breakthroughs.
+
+    A local story must remain playable when the realm rules disallow a
+    breakthrough.  Generic fallback text cannot be matched back to an authored
+    local-story branch, so blocked slots use deterministic local safe actions.
+    """
+    story_key = session.local_story_id or DEFAULT_STORY_ID
+    node_key = session.local_story_node_id or DEFAULT_NODE_ID
+    node = _node(story_key, node_key)
+    return [
+        _visible_option(
+            session,
+            node_key,
+            node,
+            index,
+            option,
+            breakthrough_allowed,
+        ).text
+        for index, option in enumerate(node.options)
+    ]
+
+
 def _node(story_id: str, node_id: str) -> LocalStoryNode:
     story = _STORIES.get(story_id) or _STORIES[DEFAULT_STORY_ID]
     return story.get(node_id) or story[DEFAULT_NODE_ID]
@@ -364,6 +391,19 @@ def _match_option(
     if normalized_action:
         raw = normalized_action[0]
 
+    displayed_choices = normalize_choices(session.last_choices)
+    if len(displayed_choices) == len(node.options):
+        for index, displayed in enumerate(displayed_choices):
+            if raw != displayed:
+                continue
+            option = node.options[index]
+            if index < len(normalized_choices) and displayed != normalized_choices[index]:
+                if index == 2 and any(item.breakthrough for item in node.options):
+                    return _required_breakthrough_option(session.local_story_node_id, node)
+                if option.breakthrough:
+                    return _blocked_breakthrough_option(session, session.local_story_node_id, index)
+            return option
+
     for index, option in enumerate(node.options):
         if index < len(normalized_choices) and raw == normalized_choices[index]:
             return option
@@ -379,6 +419,88 @@ def _match_option(
         if any(keyword.lower().replace(" ", "") in compact for keyword in option.keywords):
             return option
     return None
+
+
+def _visible_option(
+    session: GameSession,
+    node_key: str,
+    node: LocalStoryNode,
+    index: int,
+    option: LocalStoryOption,
+    breakthrough_allowed: bool,
+) -> LocalStoryOption:
+    if breakthrough_allowed and index == 2 and not option.breakthrough:
+        return _required_breakthrough_option(node_key, node)
+    if not option.breakthrough:
+        return option
+    return _blocked_breakthrough_option(session, node_key, index)
+
+
+def _required_breakthrough_option(
+    node_key: str,
+    node: LocalStoryNode,
+) -> LocalStoryOption:
+    """Place the available local breakthrough on the fixed C route."""
+    source = next(option for option in node.options if option.breakthrough)
+    return LocalStoryOption(
+        text="正式冲击筑基，承担破境失败风险",
+        next_node=source.next_node,
+        delta=source.delta,
+        result=source.result,
+        keywords=("正式", "冲击", "破境", "风险"),
+        breakthrough=True,
+    )
+
+
+def _blocked_breakthrough_option(
+    session: GameSession,
+    node_key: str,
+    index: int,
+) -> LocalStoryOption:
+    """Build a slot-preserving authored action for a blocked breakthrough."""
+    safe_actions = (
+        (
+            "静心调息，先把根基稳住",
+            {"character": {"attributes": {"willpower": 1}}},
+            "你收束躁动气息，先让根基重新平稳下来。",
+            ("调息", "根基", "稳住"),
+        ),
+        (
+            "向同门请教，补足眼前修行准备",
+            {"character": {"attributes": {"comprehension": 1}}},
+            "你向同门请教细处，把眼前的修行准备补得更扎实。",
+            ("请教", "准备", "修行"),
+        ),
+        (
+            "整理药引与心得，补足修行准备",
+            {"character": {"attributes": {"comprehension": 1}}},
+            "你整理药引与心得，把缺漏逐项记下，准备从容补足。",
+            ("整理", "药引", "心得"),
+        ),
+        (
+            "顺应天时，静候气机自然成熟",
+            {"character": {"attributes": {"luck": 1}}},
+            "你顺应天时静候气机，未强求结果，心境反而清明了些。",
+            ("顺应", "天时", "静候"),
+        ),
+    )
+    text, delta, result, initial_keywords = safe_actions[
+        min(max(index, 0), len(safe_actions) - 1)
+    ]
+    keywords: tuple[str, ...] = tuple(initial_keywords)
+    blockers = breakthrough_blocking_effects(session.status_effects)
+    if index == 0 and blockers:
+        joined = "、".join(blockers)
+        text = f"疗伤调息，先化解{joined}并稳住根基"
+        result = f"你先以药力调息，逐步化解{joined}，不再勉强前行。"
+        keywords = ("疗伤", "调息", "化解", "根基")
+    return LocalStoryOption(
+        text=text,
+        next_node=node_key or DEFAULT_NODE_ID,
+        delta=delta,
+        result=result,
+        keywords=keywords,
+    )
 
 
 def _local_story_result_text(

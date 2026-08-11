@@ -31,6 +31,7 @@ const CONFLICT_PROBE = process.env.AGENS_PLAYTEST_CONFLICT_PROBE === "1";
 const REQUIRE_FINALE = process.env.AGENS_PLAYTEST_REQUIRE_FINALE === "1";
 const REQUIRE_PERSISTED_AUDIT = process.env.AGENS_PLAYTEST_REQUIRE_PERSISTED_AUDIT === "1";
 const REQUIRE_LIVE_OPENING = process.env.AGENS_PLAYTEST_REQUIRE_LIVE_OPENING === "1";
+const LOCAL_STORY_MODE = process.env.AGENS_PLAYTEST_LOCAL_STORY === "1";
 const VIEWPORT = browserDriver.parseViewport(process.env.AGENS_PLAYTEST_VIEWPORT || "1440x1000");
 const SLOT_SEQUENCE = browserDriver.parseSlotSequence(process.env.AGENS_PLAYTEST_SLOT_SEQUENCE || "");
 
@@ -109,6 +110,41 @@ function cleanText(value) {
   return browserDriver.cleanText(value);
 }
 
+function displayedChoiceText(value) {
+  let text = cleanText(value).replace(/^【(?:稳妥|机遇|风险|气运)】\s*/, "");
+  for (let index = 0; index < 3; index += 1) {
+    const next = text
+      .replace(/^(?:[（(]?\s*[A-Da-d1-4]\s*[）)]?|选项\s*[A-Da-d])(?:\s*[.:：、)）．。-]|\s+(?=(?:稳妥|机遇|风险|气运)\s*[：:]))\s*/, "")
+      .replace(/^(?:稳妥|机遇|风险|气运)\s*[：:]\s*/, "")
+      .trim();
+    if (next === text) break;
+    text = next;
+  }
+  return text;
+}
+
+async function waitForRenderedChoices(page, choices) {
+  const expected = Array.isArray(choices)
+    ? choices.map((choice) => displayedChoiceText(choice)).filter(Boolean)
+    : [];
+  if (expected.length !== 4) return;
+  await page.waitForFunction((expectedChoices) => {
+    const actual = [...document.querySelectorAll(".choice-button")].map((button, index) => {
+      const letter = String(
+        button.querySelector(".choice-mark")?.textContent || String.fromCharCode(65 + index),
+      ).trim().slice(0, 1);
+      const source = button.querySelector(".choice-copy")?.textContent || button.textContent || "";
+      return String(source)
+        .replace(/\s+/g, " ")
+        .replace(new RegExp(`^${letter}\\s*[.:\uFF1A\u3001)\uFF09-]?\\s*`), "")
+        .replace(/^[A-Da-d1-4]\s*[.:\uFF1A\u3001)\uFF09-]?\s*/, "")
+        .trim();
+    });
+    return actual.length === expectedChoices.length
+      && actual.every((choice, index) => choice === expectedChoices[index]);
+  }, expected, { timeout: REQUEST_TIMEOUT_MS });
+}
+
 function acceptedTurnEvidence(turns) {
   const accepted = new Map();
   for (const turn of turns) {
@@ -178,6 +214,7 @@ if (require.main === module) {
     requestTimeoutMs: REQUEST_TIMEOUT_MS,
   });
   summary.opening_only = OPENING_ONLY;
+    summary.local_story_mode = LOCAL_STORY_MODE;
   const turns = [];
   const issues = [];
   const requests = [];
@@ -272,6 +309,42 @@ if (require.main === module) {
     }
     playtestSessionId = cleanText(startBody?.session_id);
     Object.assign(summary, acceptanceReport.startAcceptance(startBody, startResponse.status(), cleanText));
+    if (LOCAL_STORY_MODE && startResponse.ok()) {
+      const pending = startBody?.pending_model_failure;
+      if (pending?.stage !== "opening") {
+        issue("P0", "local-story mode did not receive a pending opening failure", {
+          pending_stage: cleanText(pending?.stage),
+        });
+        summary.result = "failed_or_partial";
+      } else {
+        const actionResponse = page.waitForResponse(
+          (resp) => resp.url().includes("/api/sessions/") && resp.url().includes("/action"),
+          { timeout: REQUEST_TIMEOUT_MS },
+        );
+        await page.getByRole("button", { name: "本地故事" }).click();
+        const response = await actionResponse;
+        let body = null;
+        try {
+          body = await response.json();
+        } catch {
+          // The status and visible choices below still determine acceptance.
+        }
+        const choices = Array.isArray(body?.choices) ? body.choices : [];
+        await waitForRenderedChoices(page, choices);
+        summary.local_story_opening_passed = Boolean(
+          response.ok() && body?.local_story?.active && !body?.pending_model_failure && choices.length === 4,
+        );
+        if (!summary.local_story_opening_passed) {
+          issue("P0", "player-selected local story did not complete the opening", {
+            http_status: response.status(),
+            choices_count: choices.length,
+            local_story_active: Boolean(body?.local_story?.active),
+            pending_model_failure: Boolean(body?.pending_model_failure),
+          });
+          summary.result = "failed_or_partial";
+        }
+      }
+    }
     await page.waitForSelector(".choice-button", { timeout: REQUEST_TIMEOUT_MS });
     const startUiSnapshot = CONTENT_AUDIT ? await browserDriver.uiSnapshot(page, "start") : null;
     if (CONTENT_AUDIT && startUiSnapshot?.forbidden_hits?.length) {
@@ -298,16 +371,18 @@ if (require.main === module) {
 
     if (
       !startResponse.ok()
-      || summary.start_fallback
-      || (REQUIRE_LIVE_OPENING && !summary.start_model_ok)
-      || summary.start_choices_count !== 4
+      || (LOCAL_STORY_MODE
+        ? !summary.local_story_opening_passed
+        : (summary.start_fallback
+          || (REQUIRE_LIVE_OPENING && !summary.start_model_ok)
+          || summary.start_choices_count !== 4))
       || !summary.start_world_name_set
       || summary.start_chronicle_count < 1
       || !summary.start_initial_situation_set
     ) {
       issue("P0", "start did not satisfy opening acceptance", {
         http_status: summary.start_http_status,
-        fallback: summary.start_fallback,
+        fallback: LOCAL_STORY_MODE ? !summary.local_story_opening_passed : summary.start_fallback,
         model_ok: summary.start_model_ok,
         choices_count: summary.start_choices_count,
         world_name_set: summary.start_world_name_set,
@@ -451,13 +526,14 @@ if (require.main === module) {
         }
         const elapsed = Date.now() - started;
         const fallback = Boolean(body?.fallback_prompt?.active || body?.session?.fallback_prompt?.active);
+        const localStoryActive = Boolean(body?.local_story?.active || body?.session?.local_story?.active);
         const turnCount = Number(body?.turn_count ?? body?.session?.turn_count ?? 0);
         const afterChoices = Array.isArray(body?.choices)
           ? body.choices
           : Array.isArray(body?.session?.choices)
             ? body.session.choices
             : [];
-        await page.waitForSelector(".choice-button", { timeout: REQUEST_TIMEOUT_MS });
+        await waitForRenderedChoices(page, afterChoices);
         const afterSnapshot = CONTENT_AUDIT ? await browserDriver.uiSnapshot(page, `${phase}-turn-1-after`) : null;
         const turnRecord = {
           phase,
@@ -467,6 +543,7 @@ if (require.main === module) {
           choice_letter: selected.letter,
           http_status: response ? response.status() : "",
           fallback,
+          local_story_active: localStoryActive,
           turn_count: turnCount,
           elapsed_ms: elapsed,
           choices_count: afterChoices.length,
@@ -484,9 +561,14 @@ if (require.main === module) {
           auditState,
           issue,
         });
-        auditModelDiagnostics(turnRecord, phase);
+        if (!LOCAL_STORY_MODE) auditModelDiagnostics(turnRecord, phase);
         turns.push(turnRecord);
-        summary.double_click_probe_passed = Boolean(response?.ok() && !fallback && turnCount === 1 && choiceResponseCount === 1);
+        summary.double_click_probe_passed = Boolean(
+          response?.ok()
+          && (LOCAL_STORY_MODE ? localStoryActive : !fallback)
+          && turnCount === 1
+          && choiceResponseCount === 1,
+        );
         if (!summary.double_click_probe_passed) {
           issue(response ? "P1" : "P0", "double-click probe did not prove single-submit behavior", {
             turn_index: 1,
@@ -496,7 +578,7 @@ if (require.main === module) {
             turn_count: turnCount,
             choice_response_count: choiceResponseCount,
           });
-          if (!response || fallback || turnCount < 1) {
+          if (!response || turnCount < 1 || (LOCAL_STORY_MODE ? !localStoryActive : fallback)) {
             summary.result = "failed_or_partial";
           }
         }
@@ -566,6 +648,7 @@ if (require.main === module) {
       }
       const elapsed = Date.now() - started;
       const fallback = Boolean(body?.fallback_prompt?.active || body?.session?.fallback_prompt?.active);
+      const localStoryActive = Boolean(body?.local_story?.active || body?.session?.local_story?.active);
       const turnCount = Number(body?.turn_count ?? body?.session?.turn_count ?? 0);
       const afterChoices = Array.isArray(body?.choices)
         ? body.choices
@@ -576,7 +659,7 @@ if (require.main === module) {
       const finale = Boolean(body?.finale ?? body?.session?.finale);
       const diagnostics = acceptanceReport.latestModelDiagnostics(body, started);
       if (!gameOver) {
-        await page.waitForSelector(".choice-button", { timeout: REQUEST_TIMEOUT_MS });
+        await waitForRenderedChoices(page, afterChoices);
       } else {
         await page.waitForTimeout(500);
       }
@@ -589,6 +672,7 @@ if (require.main === module) {
         choice_letter: selected.letter,
         http_status: response.status(),
         fallback,
+        local_story_active: localStoryActive,
         game_over: gameOver,
         finale,
         turn_count: turnCount,
@@ -607,7 +691,7 @@ if (require.main === module) {
         auditState,
         issue,
       });
-      auditModelDiagnostics(turnRecord, "main");
+      if (!LOCAL_STORY_MODE) auditModelDiagnostics(turnRecord, "main");
       turns.push(turnRecord);
 
       const turnAdvanced = turnCount === turn;
@@ -615,7 +699,15 @@ if (require.main === module) {
       const strictModelOk = diagnostics.narrator_status === "ok"
         && !diagnostics.contract_recovery
         && (!diagnostics.provider_json_schema || diagnostics.provider_json_envelope_ok);
-      const terminalAccepted = response.ok() && !fallback && strictModelOk && turnAdvanced && gameOver;
+      const localStoryAccepted = LOCAL_STORY_MODE
+        && response.ok()
+        && localStoryActive
+        && !body?.pending_model_failure
+        && turnAdvanced
+        && (gameOver || hasFourChoices);
+      const terminalAccepted = localStoryAccepted
+        ? gameOver
+        : response.ok() && !fallback && strictModelOk && turnAdvanced && gameOver;
       if (terminalAccepted) {
         summary.ended_early_game_over = true;
         summary.ended_at_turn = turn;
@@ -624,8 +716,10 @@ if (require.main === module) {
         await page.screenshot({ path: `${screenshotBase}-terminal-turn${turn}.png`, fullPage: true });
         break;
       }
-      if (!response.ok() || fallback || !strictModelOk || !turnAdvanced || !hasFourChoices) {
-        issue("P0", "choice did not satisfy live-model acceptance", {
+      if (!(LOCAL_STORY_MODE ? localStoryAccepted : (response.ok() && !fallback && strictModelOk && turnAdvanced && hasFourChoices))) {
+        issue("P0", LOCAL_STORY_MODE
+          ? "local-story choice did not preserve the expected session state"
+          : "choice did not satisfy live-model acceptance", {
           turn_index: turn,
           http_status: response.status(),
           fallback,
@@ -657,7 +751,11 @@ if (require.main === module) {
 
     if (summary.ended_early_game_over) {
       if (!summary.save_load_passed) summary.save_load_skipped_terminal = true;
-    } else if (summary.accepted_live_turns >= TARGET_TURNS && summary.fallback_count === 0 && !issues.some((item) => item.level === "P0")) {
+    } else if ((LOCAL_STORY_MODE
+      ? turns.filter((turn) => turn.local_story_active).length >= TARGET_TURNS
+      : summary.accepted_live_turns >= TARGET_TURNS && summary.fallback_count === 0)
+      && !issues.some((item) => item.level === "P0")) {
+      summary.local_story_turns = turns.filter((turn) => turn.local_story_active).length;
       await browserDriver.runSaveLoadProbe(page, {
         summary,
         issue,
@@ -737,6 +835,7 @@ if (require.main === module) {
         }
         const elapsed = Date.now() - started;
         const fallback = Boolean(body?.fallback_prompt?.active || body?.session?.fallback_prompt?.active);
+        const localStoryActive = Boolean(body?.local_story?.active || body?.session?.local_story?.active);
         const turnCount = Number(body?.turn_count ?? body?.session?.turn_count ?? 0);
         const afterChoices = Array.isArray(body?.choices)
           ? body.choices
@@ -747,7 +846,7 @@ if (require.main === module) {
         const finale = Boolean(body?.finale ?? body?.session?.finale);
         const diagnostics = acceptanceReport.latestModelDiagnostics(body, started);
         if (!gameOver) {
-          await page.waitForSelector(".choice-button", { timeout: REQUEST_TIMEOUT_MS });
+          await waitForRenderedChoices(page, afterChoices);
         } else {
           await page.waitForTimeout(500);
         }
@@ -760,6 +859,7 @@ if (require.main === module) {
           choice_letter: selected.letter,
           http_status: response.status(),
           fallback,
+          local_story_active: localStoryActive,
           game_over: gameOver,
           finale,
           turn_count: turnCount,
@@ -778,14 +878,22 @@ if (require.main === module) {
           auditState,
           issue,
         });
-        auditModelDiagnostics(turnRecord, phase);
+        if (!LOCAL_STORY_MODE) auditModelDiagnostics(turnRecord, phase);
         turns.push(turnRecord);
         const turnAdvanced = turnCount === turn;
         const hasFourChoices = afterChoices.length === 4;
         const strictModelOk = diagnostics.narrator_status === "ok"
           && !diagnostics.contract_recovery
           && (!diagnostics.provider_json_schema || diagnostics.provider_json_envelope_ok);
-        const terminalAccepted = response.ok() && !fallback && strictModelOk && turnAdvanced && gameOver;
+        const localStoryAccepted = LOCAL_STORY_MODE
+          && Boolean(body?.local_story?.active)
+          && !body?.pending_model_failure
+          && response.ok()
+          && turnAdvanced
+          && (gameOver || hasFourChoices);
+        const terminalAccepted = localStoryAccepted
+          ? gameOver
+          : response.ok() && !fallback && strictModelOk && turnAdvanced && gameOver;
         if (terminalAccepted) {
           summary.ended_early_game_over = true;
           summary.ended_at_turn = turn;
@@ -794,8 +902,12 @@ if (require.main === module) {
           await page.screenshot({ path: `${screenshotBase}-terminal-${phase}-turn${turn}.png`, fullPage: true });
           break;
         }
-        if (!response.ok() || fallback || !strictModelOk || !turnAdvanced || !hasFourChoices) {
-          issue("P0", "post-load choice did not satisfy live-model acceptance", {
+        if (!(LOCAL_STORY_MODE
+          ? localStoryAccepted
+          : (response.ok() && !fallback && strictModelOk && turnAdvanced && hasFourChoices))) {
+          issue("P0", LOCAL_STORY_MODE
+            ? "local-story choice did not preserve the expected session state"
+            : "post-load choice did not satisfy live-model acceptance", {
             turn_index: turn,
             phase,
             http_status: response.status(),

@@ -29,6 +29,7 @@ from .choices import (
     normalize_choices,
 )
 from .local_story import (
+    available_local_story_choices,
     current_local_story_choices,
     start_local_story,
 )
@@ -401,6 +402,11 @@ class GameEngine:
     def _filter_unavailable_breakthrough_choices(self, choices: list[str]) -> list[str]:
         """Keep breakthrough actions in the C slot and aligned with realm rules."""
         can, _reason = self.realm_system.can_attempt_breakthrough(self.game_session)
+        if self.game_session.local_story_active:
+            return available_local_story_choices(
+                self.game_session,
+                breakthrough_allowed=can,
+            )
         fallbacks = fallback_choices(self.game_session)
         blockers = breakthrough_blocking_effects(self.game_session.status_effects)
 
