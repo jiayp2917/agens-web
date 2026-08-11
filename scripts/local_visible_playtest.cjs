@@ -116,6 +116,7 @@ function displayedChoiceText(value) {
     const next = text
       .replace(/^(?:[（(]?\s*[A-Da-d1-4]\s*[）)]?|选项\s*[A-Da-d])(?:\s*[.:：、)）．。-]|\s+(?=(?:稳妥|机遇|风险|气运)\s*[：:]))\s*/, "")
       .replace(/^(?:稳妥|机遇|风险|气运)\s*[：:]\s*/, "")
+      .replace(/^[A-Da-d1-4](?=[\u3400-\u9fff])/, "")
       .trim();
     if (next === text) break;
     text = next;
@@ -138,6 +139,7 @@ async function waitForRenderedChoices(page, choices) {
         .replace(/\s+/g, " ")
         .replace(new RegExp(`^${letter}\\s*[.:\uFF1A\u3001)\uFF09-]?\\s*`), "")
         .replace(/^[A-Da-d1-4]\s*[.:\uFF1A\u3001)\uFF09-]?\s*/, "")
+        .replace(/^[A-Da-d1-4](?=[\u3400-\u9fff])/, "")
         .trim();
     });
     return actual.length === expectedChoices.length
@@ -187,6 +189,7 @@ module.exports = {
   normalizedRealmLabel: visibleContentAudit.normalizedRealmLabel,
   redactEvidence,
   realmClaimMatchesCurrent: visibleContentAudit.realmClaimMatchesCurrent,
+  displayedChoiceText,
 };
 
 if (require.main === module) {

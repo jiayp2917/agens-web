@@ -49,6 +49,26 @@ describe("GamePage toolbar", () => {
     expect(screen.getByRole("button", { name: "D：随缘而行" })).toBeInTheDocument();
   });
 
+  it("removes unpunctuated slot prefixes from player-visible choice text", () => {
+    render(
+      <GamePage
+        session={{
+          ...session,
+          choices: ["A继续温养根基", "B拜访知情修士", "C追查传闻地点", "D随缘听旧签"],
+        }}
+        busy={false}
+        runTurn={vi.fn().mockResolvedValue(undefined)}
+        openDialog={vi.fn()}
+        onHome={vi.fn()}
+      />,
+    );
+
+    expect(screen.getByRole("button", { name: "A：继续温养根基" })).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "B：拜访知情修士" })).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "C：追查传闻地点" })).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "D：随缘听旧签" })).toBeInTheDocument();
+  });
+
   it("routes the save and settings entries through the existing handlers", async () => {
     const openDialog = vi.fn();
     const onHome = vi.fn();
