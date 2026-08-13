@@ -8,8 +8,8 @@ StartLimitBurst=12
 
 [Service]
 Type=oneshot
-Environment=COMPOSE_PROJECT_NAME=agens-web
-Environment=COMPOSE_FILE=@AGENS_WEB_DIR@/deploy/docker-compose.yml
+Environment=COMPOSE_PROJECT_NAME=@AGENS_COMPOSE_PROJECT@
+Environment=COMPOSE_FILE=@AGENS_COMPOSE_FILE@
 ExecStartPre=/bin/sh @AGENS_WEB_DIR@/deploy/wait-for-egress-runtime.sh
 ExecStart=/bin/sh @AGENS_WEB_DIR@/deploy/apply-egress-acl.sh
 RemainAfterExit=yes

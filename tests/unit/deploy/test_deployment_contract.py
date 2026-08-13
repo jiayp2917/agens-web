@@ -107,6 +107,14 @@ def test_host_acl_persistence_waits_for_healthy_runtime_before_enabling_filterin
     assert "apply-egress-acl.sh" in service
     assert "Restart=on-failure" in service
     assert "StartLimitBurst=12" in service
+    assert "COMPOSE_PROJECT_NAME=@AGENS_COMPOSE_PROJECT@" in service
+    assert "COMPOSE_FILE=@AGENS_COMPOSE_FILE@" in service
+    assert "COMPOSE_PROJECT_NAME=agens-web" not in service
+    assert "--compose-project" in installer
+    assert "--compose-file" in installer
+    assert "compose file is missing" in installer
+    assert "@AGENS_COMPOSE_PROJECT@" in installer
+    assert "@AGENS_COMPOSE_FILE@" in installer
     assert "systemctl enable --now agens-web-egress-acl.service" in installer
     assert "modprobe -r br_netfilter" not in installer
     assert "modprobe -r br_netfilter" not in runtime_wait
