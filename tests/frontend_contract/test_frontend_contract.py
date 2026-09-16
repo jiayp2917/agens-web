@@ -2,11 +2,6 @@ from __future__ import annotations
 
 from pathlib import Path
 
-import pytest
-
-pytestmark = pytest.mark.xdist_group("pg_test_db")
-
-
 ROOT = Path(__file__).resolve().parents[2]
 SRC = ROOT / "web" / "frontend-react" / "src"
 
