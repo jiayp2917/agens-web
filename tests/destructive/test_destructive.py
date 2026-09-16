@@ -11,7 +11,6 @@ from typing import Any
 
 import pytest
 
-from agens_novel.agents.judge.nodes import _parse_judge_output
 from agens_novel.agents.narrator.nodes import _parse_narrator_output
 from agens_novel.engine.model_result import ModelResultKind, classify_narrator_result
 from agens_novel.session.game_session import GameSession
@@ -101,14 +100,6 @@ class TestParserDestructive:
             "choices": choices,
         })
         assert status.kind in {ModelResultKind.OK, ModelResultKind.INCOMPLETE_OUTPUT}
-
-    @pytest.mark.parametrize("text", ["", "not json", '{"approved": "yes"}'])
-    def test_judge_parser_handles_malformed_output(self, text: str) -> None:
-        approved, corrected_delta, note, score = _parse_judge_output(text)
-        assert isinstance(approved, bool)
-        assert isinstance(corrected_delta, dict)
-        assert isinstance(note, str)
-        assert isinstance(score, int)
 
 
 class TestAsGameState:

@@ -15,7 +15,6 @@ class ModelResultKind(StrEnum):
     OK = "ok"
     REQUEST_FAILED = "request_failed"
     INCOMPLETE_OUTPUT = "incomplete_output"
-    JUDGE_FAILED = "judge_failed"
     LOCAL_FALLBACK = "local_fallback"
 
 
@@ -98,16 +97,6 @@ def classify_world_builder_result(result: dict[str, Any]) -> ModelResultStatus:
     return ModelResultStatus(ModelResultKind.OK)
 
 
-def classify_judge_result(result: dict[str, Any]) -> ModelResultStatus:
-    """Classify a judge result."""
-    if result.get("llm_error"):
-        return ModelResultStatus(
-            ModelResultKind.JUDGE_FAILED,
-            f"天道审判失败: {result['llm_error']}",
-        )
-    return ModelResultStatus(ModelResultKind.OK)
-
-
 def is_retryable_model_request_failure(result: dict[str, Any]) -> bool:
     """Return True for transient provider failures worth one live retry."""
     if not isinstance(result, dict):
@@ -176,8 +165,6 @@ def result_diagnostics(result: dict[str, Any]) -> dict[str, Any]:
         "retried_after_request_failed": bool(result.get("retried_after_request_failed")),
         "retried_after_incomplete_output": bool(result.get("retried_after_incomplete_output")),
         "repair_elapsed_ms": int(result.get("repair_elapsed_ms") or 0),
-        "judge_approved": result.get("approved") if "approved" in result else None,
-        "has_corrected_delta": bool(result.get("corrected_delta")),
         "prompt_chars": _int_metric(prompt_metrics.get("prompt_chars")),
         "message_count": _int_metric(prompt_metrics.get("message_count")),
         "history_count": _int_metric(prompt_metrics.get("history_count")),

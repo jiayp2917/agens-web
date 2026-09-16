@@ -24,7 +24,6 @@ log = logging.getLogger(__name__)
 _MODULES = {
     "narrator": "agens_novel.agents.narrator",
     "world_builder": "agens_novel.agents.world_builder",
-    "judge": "agens_novel.agents.judge",
 }
 
 
@@ -67,14 +66,12 @@ def run_turn_sync(
     """Run a single agent turn synchronously and return the full result dict.
 
     Args:
-        agent_name: Which agent to invoke ("narrator", "judge", "world_builder").
+        agent_name: Which agent to invoke ("narrator", "world_builder").
         user_input: The player's action text.
         session: Current GameSession.
         **kwargs: Extra state fields.  Supports:
             stream_callback: Callable[[str], None] — per-chunk callback for
                              streaming narrative (narrator only).
-            narrative: str — for judge agent.
-            state_delta: dict — for judge agent.
             generation_type: str — for world_builder agent.
     """
     import os
@@ -110,11 +107,6 @@ def run_turn_sync(
         state["chat_history"] = list(session.chat_history)
     if agent_name == "narrator":
         state["repair_incomplete_output"] = bool(kwargs.pop("repair_incomplete_output", False))
-
-    # Judge needs additional context.
-    if agent_name == "judge":
-        state["narrative"] = kwargs.get("narrative", "")
-        state["state_delta"] = kwargs.get("state_delta", {})
 
     # World builder needs generation type.
     if agent_name == "world_builder":

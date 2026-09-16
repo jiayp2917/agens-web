@@ -9,8 +9,6 @@ from typing import Any
 class ProviderTransport(StrEnum):
     JSON_SCHEMA = "json_schema"
     JSON_OBJECT = "json_object"
-    # Only retained to read legacy saved responses; new calls never select it.
-    LEGACY_TAGS = "legacy_tags"
 
 
 def narrator_transport(state: dict[str, Any]) -> ProviderTransport:
@@ -20,11 +18,6 @@ def narrator_transport(state: dict[str, Any]) -> ProviderTransport:
 
 def world_opening_transport(state: dict[str, Any]) -> ProviderTransport:
     """Return the configured World Opening response mode."""
-    return _transport_for(state)
-
-
-def judge_transport(state: dict[str, Any]) -> ProviderTransport:
-    """Return the configured offline Judge response mode."""
     return _transport_for(state)
 
 

@@ -302,7 +302,6 @@ async def test_json_narrator_uses_the_provider_neutral_output_budget(monkeypatch
     _response, _text, transport, envelope_ok = await nodes._primary_narrator_call(
         {"response_mode": "json_object"},
         [],
-        None,
     )
 
     assert captured["max_tokens"] == 16384

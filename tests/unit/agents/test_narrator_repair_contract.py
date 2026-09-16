@@ -16,10 +16,6 @@ class TestNarratorParse:
 
         calls = []
 
-        async def fake_call_llm_stream(*_args, **_kwargs):
-            calls.append(_kwargs)
-            return {"text": "山门前风声渐紧。", "elapsed_ms": 10, "usage": {}}
-
         async def fake_call_llm(*_args, **_kwargs):
             calls.append(_kwargs)
             if len(calls) == 1:
@@ -34,7 +30,6 @@ class TestNarratorParse:
                 "usage": {},
             }
 
-        monkeypatch.setattr(nodes, "call_llm_stream", fake_call_llm_stream)
         monkeypatch.setattr(nodes, "call_llm", fake_call_llm)
         result = asyncio.run(nodes.call_agnes_llm({
             "api_key_set": True,
@@ -77,11 +72,9 @@ class TestNarratorParse:
                 "usage": {},
             }
 
-        async def unexpected_stream(*_args, **_kwargs):
-            raise AssertionError("schema mode must use one non-streaming primary call")
-
         monkeypatch.setattr(nodes, "call_llm", fake_call_llm)
-        monkeypatch.setattr(nodes, "call_llm_stream", unexpected_stream)
+        # The narrator no longer has a streaming path at all; guard against its return.
+        assert not hasattr(nodes, "call_llm_stream")
         result = asyncio.run(
             nodes.call_agnes_llm(
                 {

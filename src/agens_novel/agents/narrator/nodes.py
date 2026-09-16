@@ -4,19 +4,15 @@ Takes the player's action + current game state, produces narrative text +
 a structured state delta wrapped in ``<state_update>`` tags.
 
 4-node pattern: load_settings → build_prompt → call_agnes_llm → save_artifact
-
-Stream support: when a ``stream_callback`` is present in state, the LLM call
-uses streaming and each chunk is forwarded to the callback in real-time.
 """
 
 from __future__ import annotations
 
 import json
 import logging
-from collections.abc import Callable
 from typing import Any
 
-from ...llm.client import LLMError, call_llm, call_llm_stream
+from ...llm.client import LLMError, call_llm
 from ...llm.provider_adapter import ProviderTransport, narrator_transport, response_format
 from ...llm.runtime_context import runtime_api_key
 from ...llm.types import Message
@@ -79,12 +75,7 @@ def load_settings(state: dict[str, Any]) -> dict[str, Any]:
 
 
 async def call_agnes_llm(state: dict[str, Any]) -> dict[str, Any]:
-    """Call the LLM with streaming support.
-
-    If ``stream_callback`` is present in state, uses ``call_llm_stream``
-    which invokes the callback for each text chunk.  Otherwise falls back
-    to a normal non-streaming call.
-    """
+    """Call the LLM under the narrator response-format contract."""
     if not state.get("api_key_set"):
         return {
             "output_text": "", "llm_error": "AGNES_API_KEY 未设置。",
@@ -97,15 +88,9 @@ async def call_agnes_llm(state: dict[str, Any]) -> dict[str, Any]:
             "elapsed_ms": 0, "usage": {},
         }
 
-    stream_callback: Callable[[str], None] | None = state.get("stream_callback")
-    # Fallback: try thread-local context (avoids msgpack serialization issues).
-    if stream_callback is None:
-        from ...engine._stream_context import get as _get_stream_cb
-        stream_callback = _get_stream_cb()
-
     try:
         resp, output_text, transport, provider_json_envelope_ok = (
-            await _primary_narrator_call(state, messages, stream_callback)
+            await _primary_narrator_call(state, messages)
         )
         output_text, repaired_output, repair_elapsed_ms, repair_usage = (
             await _maybe_repair_narrator_output(state, output_text)
@@ -140,44 +125,20 @@ async def call_agnes_llm(state: dict[str, Any]) -> dict[str, Any]:
 async def _primary_narrator_call(
     state: dict[str, Any],
     messages: list[Message],
-    stream_callback: Callable[[str], None] | None,
 ) -> tuple[dict[str, Any], str, ProviderTransport, bool]:
     transport = narrator_transport(state)
     max_tokens = _narrator_max_tokens()
-    if transport != ProviderTransport.LEGACY_TAGS:
-        resp = await call_llm(
-            messages,
-            model=state.get("model"),
-            base_url=state.get("base_url"),
-            api_key=runtime_api_key(),
-            temperature=0.0,
-            max_tokens=max_tokens,
-            stream=False,
-            response_format=response_format(transport, _NARRATOR_RESPONSE_FORMAT),
-        )
-    elif stream_callback is not None:
-        resp = await call_llm_stream(
-            messages,
-            model=state.get("model"),
-            base_url=state.get("base_url"),
-            api_key=runtime_api_key(),
-            temperature=0.0,
-            max_tokens=max_tokens,
-            on_chunk=stream_callback,
-        )
-    else:
-        resp = await call_llm(
-            messages,
-            model=state.get("model"),
-            base_url=state.get("base_url"),
-            api_key=runtime_api_key(),
-            temperature=0.0,
-            max_tokens=max_tokens,
-            stream=False,
-        )
+    resp = await call_llm(
+        messages,
+        model=state.get("model"),
+        base_url=state.get("base_url"),
+        api_key=runtime_api_key(),
+        temperature=0.0,
+        max_tokens=max_tokens,
+        stream=False,
+        response_format=response_format(transport, _NARRATOR_RESPONSE_FORMAT),
+    )
     output_text = str(resp.get("text") or "")
-    if transport == ProviderTransport.LEGACY_TAGS:
-        return dict(resp), output_text, transport, False
     unwrapped = _unwrap_narrator_envelope(output_text)
     return dict(resp), unwrapped or output_text, transport, unwrapped is not None
 

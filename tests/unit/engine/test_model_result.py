@@ -4,7 +4,6 @@ from __future__ import annotations
 
 from agens_novel.engine.model_result import (
     ModelResultKind,
-    classify_judge_result,
     classify_narrator_result,
     classify_world_builder_result,
     is_retryable_model_request_failure,
@@ -124,14 +123,6 @@ def test_world_builder_missing_structured_data_is_incomplete() -> None:
     assert status.kind == ModelResultKind.INCOMPLETE_OUTPUT
 
 
-def test_judge_llm_error_is_judge_failed() -> None:
-    result = {"approved": False, "corrected_delta": {}, "llm_error": "HTTP 500"}
-
-    status = classify_judge_result(result)
-
-    assert status.kind == ModelResultKind.JUDGE_FAILED
-
-
 def test_retryable_model_request_failure_detects_transient_provider_errors() -> None:
     assert is_retryable_model_request_failure(
         {"llm_error": 'HTTP 404: {"error":{"type":"upstream_error","code":"404"}}'}
@@ -171,8 +162,6 @@ def test_result_diagnostics_are_non_secret_shape_facts() -> None:
         "retried_after_request_failed": False,
         "retried_after_incomplete_output": False,
         "repair_elapsed_ms": 0,
-        "judge_approved": None,
-        "has_corrected_delta": False,
         "prompt_chars": 100,
         "message_count": 3,
         "history_count": 2,

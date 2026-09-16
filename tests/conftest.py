@@ -1,7 +1,6 @@
 ﻿"""Pytest fixtures.
 
-- ``fake_narrator_llm``  : stub for narrator agent's call_llm_stream.
-- ``fake_judge_llm``     : stub for judge agent's call_llm.
+- ``fake_narrator_llm``  : stub for narrator agent's call_llm.
 - ``fake_world_builder_llm``: stub for world_builder agent's call_llm.
 - ``temp_project_root``  : an isolated runtime/ tree under tmp_path.
 - ``clean_settings``     : clear AGNES_* env vars during a test.
@@ -67,7 +66,7 @@ def set_api_key(monkeypatch: pytest.MonkeyPatch) -> str:
 
 @pytest.fixture
 def fake_narrator_llm() -> Generator[tuple[AsyncMock, str], None, None]:
-    """Stub for narrator agent's call_llm_stream."""
+    """Stub for narrator agent's call_llm."""
     canned = (
         "你感受到体内灵气涌动，丹田中一团温热的力量缓缓凝聚。\n"
         "周围的灵气向你汇聚，树叶微微颤动。\n"
@@ -84,23 +83,7 @@ def fake_narrator_llm() -> Generator[tuple[AsyncMock, str], None, None]:
         "elapsed_ms": 1500,
         "raw": {"stub": True},
     })
-    with patch("agens_novel.agents.narrator.nodes.call_llm_stream", mock):
-        yield mock, canned
-
-
-@pytest.fixture
-def fake_judge_llm() -> Generator[tuple[AsyncMock, str], None, None]:
-    """Stub for judge agent's call_llm."""
-    canned = '{"approved": true, "corrected_delta": {}, "judgment_note": "ok", "review_score": 8}'
-    mock = AsyncMock(return_value={
-        "text": canned,
-        "model": "agnes-2.0-flash",
-        "usage": {"prompt_tokens": 150, "completion_tokens": 30, "total_tokens": 180},
-        "finish_reason": "stop",
-        "elapsed_ms": 500,
-        "raw": {"stub": True},
-    })
-    with patch("agens_novel.agents.common.call_llm", mock):
+    with patch("agens_novel.agents.narrator.nodes.call_llm", mock):
         yield mock, canned
 
 

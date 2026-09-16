@@ -8,7 +8,6 @@ Output is wrapped in ``<world_data>`` tags containing structured JSON.
 
 from __future__ import annotations
 
-import os
 from typing import Any
 
 from ...llm.provider_adapter import ProviderTransport, world_opening_transport
@@ -22,7 +21,6 @@ from .parsing import _parse_schema_world_output, _parse_world_output
 from .prompting import build_prompt as build_prompt
 
 AGENT_NAME = "world_builder"
-_WORLD_BUILDER_SCHEMA_ENV = "AGENS_WORLD_BUILDER_RESPONSE_SCHEMA"
 _WORLD_BUILDER_RESPONSE_FORMAT: dict[str, Any] = {
     "type": "json_schema",
     "json_schema": {
@@ -299,16 +297,6 @@ def save_artifact(state: dict[str, Any]) -> dict[str, Any]:
 # ─────────────────────────────────────────────────────────────────────────────
 # Helpers
 # ─────────────────────────────────────────────────────────────────────────────
-
-def _should_use_world_builder_schema(state: dict[str, Any]) -> bool:
-    configured = os.environ.get(_WORLD_BUILDER_SCHEMA_ENV, "auto").strip().lower()
-    if configured in {"1", "true", "yes", "on"}:
-        return True
-    if configured in {"0", "false", "no", "off"}:
-        return False
-    model = str(state.get("model") or os.environ.get("AGNES_MODEL") or "").strip().lower()
-    return model.startswith("agnes-")
-
 
 def _world_transport(state: dict[str, Any]) -> ProviderTransport:
     return world_opening_transport(state)

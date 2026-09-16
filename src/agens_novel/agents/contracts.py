@@ -56,24 +56,3 @@ class WorldOpeningEnvelopeV1:
             situation,
             (normalized[0], normalized[1], normalized[2], normalized[3]),
         )
-
-
-@dataclass(frozen=True)
-class JudgeDecisionV1:
-    """A diagnostic verdict; it intentionally carries no state delta."""
-
-    approved: bool
-    issue_codes: tuple[str, ...]
-    rewrite_required: bool
-
-    @classmethod
-    def from_payload(cls, payload: Any) -> JudgeDecisionV1:
-        data = payload if isinstance(payload, dict) else {}
-        approved = data.get("approved") is True
-        raw_codes = data.get("issue_codes")
-        issue_codes = tuple(
-            str(code).strip()
-            for code in raw_codes
-            if str(code).strip()
-        ) if isinstance(raw_codes, list) else ()
-        return cls(approved, issue_codes, bool(data.get("rewrite_required")))
