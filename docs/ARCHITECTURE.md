@@ -13,7 +13,7 @@ React/Vite
   -> WebGameService (session/turn/save use cases) / WebRunner
   -> GameEngine facade
   -> StartFlow / TurnFlow / BreakthroughFlow / ModelFallbackPolicy
-  -> SequentialAgentGraph (World Builder / Narrator / Judge)
+  -> SequentialAgentGraph (World Builder / Narrator)
   -> GameSession + RealmSystem
   -> PostgreSQL / Alembic
 ```
@@ -96,8 +96,8 @@ React/Vite
 | 模块 | 职责 |
 | --- | --- |
 | `start_flow.py` | profile 校验、动态开局、World Builder、profile-aware fallback |
-| `turn_flow.py` | 普通回合、本地故事、Narrator/Judge、记录与选项提交 |
-| `breakthrough_flow.py` | 规则突破、叙事、Judge 非权威修正、终局回调 |
+| `turn_flow.py` | 普通回合、本地故事、Narrator、记录与选项提交 |
+| `breakthrough_flow.py` | 规则突破、叙事、终局回调 |
 | `model_fallback_policy.py` | 失败决策、脱敏玩家提示 |
 | `turn_rules.py` | A/B/C/D 类别、时间、属性、寿元、事件、长期剧情和终局规则 |
 | `event_catalog.py` | 数据驱动编年史事件、阶段目标、选项提示和允许 delta 类型 |
@@ -106,18 +106,17 @@ React/Vite
 | `action_delta_policy.py` | 兼容模型 delta 的诊断清洗、叙事/落账一致性守卫 |
 | `game_session.py` / `state_delta.py` | 权威状态门面、delta 分区应用、存档序列化 |
 
-Judge 的 `approved` 只接受 JSON 布尔值。突破结果、age、lifespan、game_over、finale 和 `story_update` 等规则字段不接受模型覆盖。Session/存档保存 `story_key`、`story_version` 和可变 `story_state`，不会复制不可变剧情定义，也不会静默升级旧存档。
+突破结果、age、lifespan、game_over、finale 和 `story_update` 等规则字段不接受模型覆盖。Session/存档保存 `story_key`、`story_version` 和可变 `story_state`，不会复制不可变剧情定义，也不会静默升级旧存档。
 
 ## 6. Agent 与模型客户端
 
-三个 Agent 使用 `SequentialAgentGraph` 顺序执行 load settings、build prompt、call LLM、save artifact。
+两个 Agent 使用 `SequentialAgentGraph` 顺序执行 load settings、build prompt、call LLM、save artifact。
 普通回合的权威顺序是 `ChoiceIntentV1 -> RuleTurnOutcomeV1 -> NarratorEnvelopeV1 -> persistence`；
 Agent 不拥有状态结算权。
 
 - World Builder：本局世界、0-16 岁编年史、16 岁局势和初始 A/B/C/D。
 - Narrator：短编年史和下一回合四项选项。内部统一为 `NarratorEnvelopeV1(narrative, choices)`；Agens 可用 JSON Schema，DeepSeek 可用已探测的 JSON object 或兼容标签。旧 `state_update` 可被 parser 读取作诊断，但不会进入规则或持久化权威状态。
 - World Builder：内部为 `WorldOpeningEnvelopeV1`；它只提供开场表现，世界/剧情绑定仍由规则目录校验。
-- Judge：内部为 `JudgeDecisionV1`；只审核高风险或连续性敏感的非规则表现，不能改变规则结果。
 
 `llm/client.py` 使用 `httpx.AsyncClient`：
 

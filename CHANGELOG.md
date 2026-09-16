@@ -1,5 +1,14 @@
 # Changelog
 
+## 2026-09-16
+
+### Changed - dead-path cleanup, doc sync and static test reclassification
+
+- Removed the unwired judge agent path: `agents/judge/`, its `turn_runner.py` registration and state branch, `JudgeDecisionV1`, `judge_transport`, judge result classification/diagnostics keys and judge tests. Judge had not been invoked by any turn flow since the rule-engine authority refactor. Stale judge claims in `src/agens_novel/agents/README.md`, `AGENTS.md`, `docs/ARCHITECTURE.md`, `docs/RUNTIME_FLOW.md`, `docs/USER_TUTORIAL.md`, `docs/PROJECT_AUDIT.md` and `docs/plan.md` were corrected to the rule-engine-authoritative architecture.
+- Removed unreachable legacy transport code: `ProviderTransport.LEGACY_TAGS`, the narrator legacy/stream call branches (transport never resolved to legacy tags) and the unused `_should_use_world_builder_schema` helper. String defaults that only read older saved responses in `model_result.py` are unchanged.
+- Moved `tests/web/test_frontend_contract.py` to `tests/frontend_contract/` so its 16 static frontend contract tests no longer require the local PostgreSQL service (previously forced by the `tests/web` autouse DB fixture and postgres marker).
+- Pushed the previously local-only `master` history (through `daad7dd`) to the `agens-web` remote and removed the unrelated `origin` remote (`jiayp2917/agens.git`) to eliminate mispush risk.
+
 ## 2026-08-11
 
 ### Verified - local v2 release acceptance

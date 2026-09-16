@@ -49,8 +49,8 @@
 ### Rule Authority And Content
 
 - 规则引擎拥有年龄、寿元、境界、伤势、死亡、奖励、终局和 A/B/C/D 槽位语义。模型只表达叙事和固定槽位选项，不能改变权威结果。
-- Judge `approved` 只接受 JSON bool；突破、飞升和死亡先记录叙事/turn history，再结算终局。`GameSession.error` 随存档保存和恢复。
-- Narrator 使用 `NarratorEnvelopeV1(narrative, choices)`；`state_update` 仅保留为兼容诊断，不参与权威状态或 strict 结果。World Builder 和 Judge 使用各自版本化 envelope。
+- 突破、飞升和死亡先记录叙事/turn history，再结算终局。`GameSession.error` 随存档保存和恢复。
+- Narrator 使用 `NarratorEnvelopeV1(narrative, choices)`；`state_update` 仅保留为兼容诊断，不参与权威状态或 strict 结果。World Builder 使用 `WorldOpeningEnvelopeV1`。
 - v3 为每局生成两条命数承诺，包含九阶段事件、最近五项 motif 去重、路线后果以及主线在第 90 回合后的 `post_arc`。v1/v2 按精确版本读取，v3 仍不是默认内容。
 - 玩家明确选择本地故事后的开场已修复“牵动，其”和“生于魔道遗孤”等已知模板拼接问题；本地故事回合调用 `settle_turn()`，会同步推进年龄、寿元和主线状态。
 

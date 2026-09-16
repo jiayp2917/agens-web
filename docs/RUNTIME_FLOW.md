@@ -114,7 +114,6 @@ POST /api/sessions/{id}/choice
   -> NarratorEnvelopeV1 生成短叙事与四个选项；Agens 可用 JSON Schema，其他 provider
      由 adapter 使用 JSON object 或兼容标签传输
   -> 可选 parsed state_update 只保留诊断，不进入权威状态
-  -> 必要时 Judge 只给诊断裁定，不修改规则结果
   -> GameSession.apply_delta()
   -> 记录 turn_history
   -> 同一事务写 game_turns、session snapshot、终局 bundle 和幂等结果
@@ -125,7 +124,7 @@ POST /api/sessions/{id}/choice
 
 ## 7. 突破与终局
 
-- `RealmSystem` 先生成成功/失败权威 delta；Judge 不得修改突破结果、境界、层数、寿元、飞升或终局字段。
+- `RealmSystem` 先生成成功/失败权威 delta；突破结果、境界、层数、寿元、飞升或终局字段不接受模型覆盖。
 - 飞升、死亡和突破回合先记录叙事与 turn history，再清空 choices 并触发终局回调。
 - `GameSession.error` 随存档序列化和恢复，读档后终局原因保持一致。
 - 终局 run、成就、奖励、玩家进度和遗泽使用同一事务及业务唯一约束；重试不会重复发奖。

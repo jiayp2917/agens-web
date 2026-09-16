@@ -80,7 +80,7 @@
 - Narrator 必须返回完整叙事和四项固定语义选项；权威状态只来自 `ChoiceIntentV1 -> RuleTurnOutcomeV1`。具体传输格式由 provider adapter 决定。
 - 缺少正文或选项、结构残留、英文状态词或无效选项均属于契约失败；兼容 `state_update` 只作诊断。
 - gameplay recovery 与 provider fallback 分开记录；两者都不能冒充严格 live-model 成功。
-- repair 不作为普通回合常态路径；必要重试、repair 和 Judge 必须脱敏记录。
+- repair 不作为普通回合常态路径；必要重试和 repair 必须脱敏记录。
 - 不记录原始 prompt、原始响应、凭据或用户隐私。
 - 本地模型验证复用普通 Web 应用和 PostgreSQL 系统模型配置；调用次数、费用和临时浏览器汇总只作记录，不形成第二个运行面。
 
@@ -136,7 +136,7 @@ P0 随时抢占。没有 P0 时，按 `NEXT_GOVERNANCE_BACKLOG.md` 中经过证�
 - 垂直切片验证连续推进、内容质量、状态一致性、存读档和异常交互。
 - 长局运行至规则终局，验证主线持续、路线差异、寿元压力、突破、失败恢复和结局。
 - live-model 必须同时满足请求成功、Narrator 契约完整、无 provider fallback、无 gameplay recovery。
-- 性能报告至少包含样本数、p50、p95、最大值、超时数及 Narrator/repair/Judge 耗时。
+- 性能报告至少包含样本数、p50、p95、最大值、超时数及 Narrator/repair 耗时。
 
 ### 5.3 证据边界
 
